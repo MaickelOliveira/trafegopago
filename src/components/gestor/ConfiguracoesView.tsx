@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { clsx } from "clsx";
 
@@ -34,6 +34,36 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
   const [editing, setEditing] = useState<Client | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [metaAccounts, setMetaAccounts] = useState<AdAccount[]>([]);
+  const [loadingMeta, setLoadingMeta] = useState(false);
+  const [metaError, setMetaError] = useState("");
+
+  const fetchMetaAccounts = useCallback(async () => {
+    setLoadingMeta(true);
+    setMetaError("");
+    try {
+      const res = await fetch("/api/meta/ad-accounts");
+      const data = await res.json();
+      if (!res.ok) { setMetaError(data.error || "Erro ao buscar contas"); return; }
+      setMetaAccounts(data);
+    } catch {
+      setMetaError("Erro de conexão");
+    } finally {
+      setLoadingMeta(false);
+    }
+  }, []);
+
+  function toggleMetaAccount(acc: AdAccount) {
+    setForm((f) => {
+      const exists = f.adAccounts.some((a) => a.id === acc.id);
+      return {
+        ...f,
+        adAccounts: exists
+          ? f.adAccounts.filter((a) => a.id !== acc.id)
+          : [...f.adAccounts, acc],
+      };
+    });
+  }
 
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
@@ -256,38 +286,94 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm font-medium text-slate-700">Contas de anúncio</label>
-                  <button onClick={addAccount} className="text-xs text-blue-600 hover:underline">+ Adicionar</button>
                 </div>
-                <div className="space-y-2">
-                  {form.adAccounts.map((acc, i) => (
-                    <div key={i} className="flex gap-2 items-start">
-                      <select
-                        value={acc.platform}
-                        onChange={(e) => updateAccount(i, "platform", e.target.value)}
-                        className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-500"
-                      >
-                        <option value="meta">Meta</option>
-                        <option value="google">Google</option>
-                      </select>
-                      <input
-                        value={acc.name}
-                        onChange={(e) => updateAccount(i, "name", e.target.value)}
-                        placeholder="Nome da conta"
-                        className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-500"
-                      />
-                      <input
-                        value={acc.id}
-                        onChange={(e) => updateAccount(i, "id", e.target.value)}
-                        placeholder="act_XXXXXXX"
-                        className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-blue-500"
-                      />
-                      <button onClick={() => removeFormAccount(i)} className="text-red-400 hover:text-red-600 mt-1.5">
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+
+                {/* Meta accounts picker */}
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-blue-700">📘 Contas Meta</span>
+                    <button
+                      type="button"
+                      onClick={fetchMetaAccounts}
+                      disabled={loadingMeta}
+                      className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition"
+                    >
+                      {loadingMeta ? "Buscando..." : metaAccounts.length > 0 ? "Atualizar" : "Buscar contas"}
+                    </button>
+                  </div>
+                  {metaError && <p className="text-xs text-red-600 mb-2">{metaError}</p>}
+                  {metaAccounts.length > 0 && (
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {metaAccounts.map((acc) => {
+                        const selected = form.adAccounts.some((a) => a.id === acc.id);
+                        return (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => toggleMetaAccount(acc)}
+                            className={clsx(
+                              "w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition",
+                              selected
+                                ? "border-blue-500 bg-white text-blue-700 font-semibold"
+                                : "border-blue-200 bg-white/60 text-slate-600 hover:bg-white"
+                            )}
+                          >
+                            <span className={clsx("h-4 w-4 rounded flex items-center justify-center border text-white shrink-0", selected ? "bg-blue-600 border-blue-600" : "border-slate-300")}>
+                              {selected && <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                            </span>
+                            <span className="truncate flex-1">{acc.name}</span>
+                            <span className="text-slate-400 font-mono shrink-0">{acc.id}</span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  ))}
+                  )}
+                  {metaAccounts.length === 0 && !loadingMeta && !metaError && (
+                    <p className="text-xs text-blue-500">Clique em "Buscar contas" para ver as contas disponíveis no seu token Meta.</p>
+                  )}
+                </div>
+
+                {/* Google accounts manual */}
+                <div className="rounded-xl border border-orange-200 bg-orange-50 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-orange-700">🔵 Contas Google (manual)</span>
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, adAccounts: [...f.adAccounts, { id: "", name: "", platform: "google" }] }))}
+                      className="text-xs text-orange-600 hover:underline"
+                    >
+                      + Adicionar
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {form.adAccounts.filter((a) => a.platform === "google").map((acc) => {
+                      const i = form.adAccounts.indexOf(acc);
+                      return (
+                        <div key={i} className="flex gap-2 items-center">
+                          <input
+                            value={acc.name}
+                            onChange={(e) => updateAccount(i, "name", e.target.value)}
+                            placeholder="Nome da conta"
+                            className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-500 bg-white"
+                          />
+                          <input
+                            value={acc.id}
+                            onChange={(e) => updateAccount(i, "id", e.target.value)}
+                            placeholder="123-456-7890"
+                            className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono outline-none focus:border-blue-500 bg-white"
+                          />
+                          <button onClick={() => removeFormAccount(i)} className="text-red-400 hover:text-red-600">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {form.adAccounts.filter((a) => a.platform === "google").length === 0 && (
+                      <p className="text-xs text-orange-500">Nenhuma conta Google adicionada.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
