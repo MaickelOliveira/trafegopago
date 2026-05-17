@@ -27,6 +27,15 @@ const FUNNEL_OPTIONS: { value: FunnelType; label: string; desc: string; icon: st
 
 const COLORS = ["#3B82F6","#8B5CF6","#EC4899","#F59E0B","#10B981","#EF4444","#06B6D4","#84CC16"];
 
+type AppConfig = {
+  metaToken: string;
+  anthropicApiKey: string;
+  uazapiServer: string;
+  uazapiToken: string;
+  appBaseUrl: string;
+  uazapiWebhookForward: string;
+};
+
 export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
   const router = useRouter();
   const [clients, setClients] = useState(initial);
@@ -37,6 +46,41 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
   const [metaAccounts, setMetaAccounts] = useState<AdAccount[]>([]);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [metaError, setMetaError] = useState("");
+
+  // Global config state
+  const [showGlobalConfig, setShowGlobalConfig] = useState(false);
+  const [globalConfig, setGlobalConfig] = useState<AppConfig>({
+    metaToken: "", anthropicApiKey: "", uazapiServer: "",
+    uazapiToken: "", appBaseUrl: "", uazapiWebhookForward: "",
+  });
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [configMsg, setConfigMsg] = useState("");
+
+  async function openGlobalConfig() {
+    const res = await fetch("/api/gestor/config");
+    const data = await res.json();
+    setGlobalConfig(data);
+    setConfigMsg("");
+    setShowGlobalConfig(true);
+  }
+
+  async function saveGlobalConfig() {
+    setSavingConfig(true);
+    setConfigMsg("");
+    try {
+      const res = await fetch("/api/gestor/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(globalConfig),
+      });
+      if (res.ok) setConfigMsg("Salvo com sucesso!");
+      else setConfigMsg("Erro ao salvar.");
+    } catch {
+      setConfigMsg("Erro de conexão.");
+    } finally {
+      setSavingConfig(false);
+    }
+  }
 
   const fetchMetaAccounts = useCallback(async () => {
     setLoadingMeta(true);
@@ -153,12 +197,24 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
           <h1 className="text-2xl font-bold text-slate-900">Configurações</h1>
           <p className="text-sm text-slate-500 mt-1">Gerencie clientes e contas de anúncio</p>
         </div>
-        <button
-          onClick={openNew}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition"
-        >
-          + Novo cliente
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={openGlobalConfig}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            APIs & Tokens
+          </button>
+          <button
+            onClick={openNew}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition"
+          >
+            + Novo cliente
+          </button>
+        </div>
       </div>
 
       {/* Client list */}
@@ -212,6 +268,94 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
           </div>
         ))}
       </div>
+
+      {/* Global config modal */}
+      {showGlobalConfig && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl overflow-y-auto max-h-[90vh]">
+            <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+              <h2 className="font-semibold text-slate-900">APIs & Tokens</h2>
+              <button onClick={() => setShowGlobalConfig(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+
+              {/* Meta */}
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">📘 Meta Ads</p>
+                <SecretField
+                  label="Access Token"
+                  value={globalConfig.metaToken}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, metaToken: v }))}
+                  placeholder="EAAxxxxxxx..."
+                />
+              </div>
+
+              {/* Anthropic */}
+              <div className="rounded-xl border border-purple-200 bg-purple-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">🤖 Anthropic (IA)</p>
+                <SecretField
+                  label="API Key"
+                  value={globalConfig.anthropicApiKey}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, anthropicApiKey: v }))}
+                  placeholder="sk-ant-..."
+                />
+              </div>
+
+              {/* UazAPI / WhatsApp */}
+              <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">💬 WhatsApp (UazAPI)</p>
+                <Field
+                  label="Servidor"
+                  value={globalConfig.uazapiServer}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, uazapiServer: v }))}
+                  placeholder="https://nexopro.uazapi.com"
+                />
+                <SecretField
+                  label="Token"
+                  value={globalConfig.uazapiToken}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, uazapiToken: v }))}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+                <Field
+                  label="Webhook forward (opcional)"
+                  value={globalConfig.uazapiWebhookForward}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, uazapiWebhookForward: v }))}
+                  placeholder="https://... (n8n ou outro)"
+                />
+              </div>
+
+              {/* App URL */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">🌐 URL da Plataforma</p>
+                <Field
+                  label="URL base pública"
+                  value={globalConfig.appBaseUrl}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, appBaseUrl: v }))}
+                  placeholder="https://whatsappmonitor-trafegopago.ztcjzs.easypanel.host"
+                />
+              </div>
+
+              {configMsg && (
+                <p className={clsx("rounded-lg px-3 py-2 text-sm text-center font-medium",
+                  configMsg.includes("sucesso") ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-600 border border-red-200"
+                )}>{configMsg}</p>
+              )}
+            </div>
+            <div className="border-t border-slate-100 px-6 py-4 flex justify-end gap-3">
+              <button onClick={() => setShowGlobalConfig(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition">
+                Fechar
+              </button>
+              <button onClick={saveGlobalConfig} disabled={savingConfig} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition">
+                {savingConfig ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal form */}
       {showForm && (
@@ -448,6 +592,36 @@ function Field({
         placeholder={placeholder}
         className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
       />
+    </div>
+  );
+}
+
+function SecretField({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-700 mb-1.5">{label}</label>
+      <div className="relative">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 pr-10 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition font-mono"
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+        >
+          {show
+            ? <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 4.411m0 0L21 21" /></svg>
+            : <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+          }
+        </button>
+      </div>
     </div>
   );
 }
