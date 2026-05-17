@@ -257,14 +257,13 @@ export function DashboardView({ client }: { client: Client }) {
           <h2 className="text-sm font-bold text-white mb-1">Funil de conversão</h2>
           <p className="text-xs text-slate-400 mb-4">Queda em cada etapa do funil</p>
           {totalImpressions > 0 ? (() => {
-            const resultLabel2 = totalLeads > 0 ? "Leads" : "Conversas";
-            const resultVal2   = totalLeads > 0 ? totalLeads : totalConversas;
             const steps = [
               { name: "Impressões", value: totalImpressions, fill: "#818cf8" },
               { name: "Alcance",    value: totalReach,       fill: "#38bdf8" },
               { name: "Cliques",    value: totalClicks,      fill: "#34d399" },
-              { name: resultLabel2, value: resultVal2,       fill: "#fb923c" },
-              ...(totalPurchases > 0 ? [{ name: "Compras", value: totalPurchases, fill: "#f472b6" }] : []),
+              ...(totalConversas > 0 ? [{ name: "Conversas", value: totalConversas, fill: "#a78bfa" }] : []),
+              ...(totalLeads > 0     ? [{ name: "Leads",     value: totalLeads,     fill: "#fb923c" }] : []),
+              ...(totalPurchases > 0 ? [{ name: "Compras",   value: totalPurchases, fill: "#f472b6" }] : []),
             ].filter((d) => d.value > 0);
 
             const maxVal   = steps[0].value;
