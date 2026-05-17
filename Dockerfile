@@ -28,11 +28,20 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Copia wa-service e node_modules necessários para Baileys
+COPY --from=builder --chown=nextjs:nodejs /app/wa-service.js ./wa-service.js
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+
+# Script de inicialização
+COPY --chown=nextjs:nodejs start.sh ./start.sh
+RUN chmod +x ./start.sh
+
 # Pasta de dados (será montada como volume no EasyPanel)
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
 USER nextjs
 
 EXPOSE 3000
+EXPOSE 3002
 
-CMD ["node", "server.js"]
+CMD ["./start.sh"]
