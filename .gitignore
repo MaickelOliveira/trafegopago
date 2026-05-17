@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# dados persistentes (não subir pro git - montar como volume no servidor)
+/data/
+/public/uploads/
+
+# sessão whatsapp (credenciais sensíveis)
+wa-session/
+
+# claude code settings
+.claude/
