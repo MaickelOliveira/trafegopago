@@ -261,8 +261,7 @@ export function DashboardView({ client }: { client: Client }) {
               { name: "Impressões", value: totalImpressions, fill: "#818cf8" },
               { name: "Alcance",    value: totalReach,       fill: "#38bdf8" },
               { name: "Cliques",    value: totalClicks,      fill: "#34d399" },
-              ...(totalConversas > 0 ? [{ name: "Conversas", value: totalConversas, fill: "#a78bfa" }] : []),
-              ...(totalLeads > 0     ? [{ name: "Leads",     value: totalLeads,     fill: "#fb923c" }] : []),
+              ...(totalConversas > 0 ? [{ name: "Conversas", value: totalConversas, fill: "#a78bfa" }] : totalLeads > 0 ? [{ name: "Leads", value: totalLeads, fill: "#fb923c" }] : []),
               ...(totalPurchases > 0 ? [{ name: "Compras",   value: totalPurchases, fill: "#f472b6" }] : []),
             ].filter((d) => d.value > 0);
 
