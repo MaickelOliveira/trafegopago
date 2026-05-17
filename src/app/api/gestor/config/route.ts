@@ -11,6 +11,8 @@ export async function GET() {
   // never expose password hash
   return NextResponse.json({
     metaToken: config.metaToken ?? "",
+    metaAppId: config.metaAppId ?? "",
+    metaAppSecret: config.metaAppSecret ?? "",
     anthropicApiKey: config.anthropicApiKey ?? "",
     uazapiServer: config.uazapiServer ?? "",
     uazapiToken: config.uazapiToken ?? "",
@@ -29,6 +31,8 @@ export async function PUT(req: NextRequest) {
   saveConfig({
     ...current,
     metaToken: body.metaToken ?? current.metaToken,
+    metaAppId: body.metaAppId ?? current.metaAppId,
+    metaAppSecret: body.metaAppSecret ?? current.metaAppSecret,
     anthropicApiKey: body.anthropicApiKey ?? current.anthropicApiKey,
     uazapiServer: body.uazapiServer ?? current.uazapiServer,
     uazapiToken: body.uazapiToken ?? current.uazapiToken,

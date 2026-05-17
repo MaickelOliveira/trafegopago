@@ -29,10 +29,12 @@ export type Client = {
 export type AppConfig = {
   manager: { email: string; passwordHash: string };
   metaToken: string;
+  metaAppId?: string;
+  metaAppSecret?: string;
   uazapiServer?: string;
   uazapiToken?: string;
-  uazapiWebhookForward?: string; // URL original (n8n) para repassar
-  appBaseUrl?: string;           // URL pública do servidor (ex: https://app.easypanel.host)
+  uazapiWebhookForward?: string;
+  appBaseUrl?: string;
   anthropicApiKey?: string;
 };
 

@@ -29,6 +29,8 @@ const COLORS = ["#3B82F6","#8B5CF6","#EC4899","#F59E0B","#10B981","#EF4444","#06
 
 type AppConfig = {
   metaToken: string;
+  metaAppId: string;
+  metaAppSecret: string;
   anthropicApiKey: string;
   uazapiServer: string;
   uazapiToken: string;
@@ -50,7 +52,8 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
   // Global config state
   const [showGlobalConfig, setShowGlobalConfig] = useState(false);
   const [globalConfig, setGlobalConfig] = useState<AppConfig>({
-    metaToken: "", anthropicApiKey: "", uazapiServer: "",
+    metaToken: "", metaAppId: "", metaAppSecret: "",
+    anthropicApiKey: "", uazapiServer: "",
     uazapiToken: "", appBaseUrl: "", uazapiWebhookForward: "",
   });
   const [savingConfig, setSavingConfig] = useState(false);
@@ -285,13 +288,41 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
 
               {/* Meta */}
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">📘 Meta Ads</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">📘 Meta Ads</p>
+                  {globalConfig.metaAppId && globalConfig.metaAppSecret && globalConfig.appBaseUrl && (
+                    <a
+                      href="/api/meta/oauth/start"
+                      className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                    >
+                      Conectar com Meta →
+                    </a>
+                  )}
+                </div>
+                <Field
+                  label="App ID"
+                  value={globalConfig.metaAppId}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, metaAppId: v }))}
+                  placeholder="304558836707"
+                />
                 <SecretField
-                  label="Access Token"
+                  label="App Secret"
+                  value={globalConfig.metaAppSecret}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, metaAppSecret: v }))}
+                  placeholder="abc123..."
+                />
+                <SecretField
+                  label="Access Token (preenchido automaticamente pelo OAuth)"
                   value={globalConfig.metaToken}
                   onChange={(v) => setGlobalConfig((c) => ({ ...c, metaToken: v }))}
                   placeholder="EAAxxxxxxx..."
                 />
+                {globalConfig.metaToken && (
+                  <p className="text-xs text-blue-600">Token configurado. Salve e clique em &quot;Conectar com Meta&quot; para renovar.</p>
+                )}
+                {(!globalConfig.metaAppId || !globalConfig.metaAppSecret || !globalConfig.appBaseUrl) && (
+                  <p className="text-xs text-blue-500">Preencha App ID, App Secret e URL da Plataforma (abaixo) para habilitar o botão OAuth.</p>
+                )}
               </div>
 
               {/* Anthropic */}
