@@ -21,11 +21,15 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "manager") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { clientId } = await req.json();
+  const { clientId, funnelId, type = "baileys" } = await req.json();
   if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
-  await fetch(`${WA}/connect/${clientId}`, { method: "POST" });
+  await fetch(`${WA}/connect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connectionId: clientId, funnelId: funnelId ?? "default", clientId, type }),
+  });
   // Aguarda QR
-  await new Promise(r => setTimeout(r, 4000));
+  await new Promise(r => setTimeout(r, 5000));
   const res = await fetch(`${WA}/status/${clientId}`, { cache: "no-store" });
   const data = res.ok ? await res.json() : {};
   let qrImage: string | null = null;
