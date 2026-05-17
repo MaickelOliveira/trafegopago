@@ -339,7 +339,7 @@ export function DashboardView({ client }: { client: Client }) {
                   <div className="rounded-2xl bg-white/5 p-3 text-center">
                     <p className="text-xs text-slate-400">Clique → Resultado</p>
                     <p className="text-lg font-black text-white">
-                      {totalClicks > 0 && resultVal2 > 0 ? ((resultVal2 / totalClicks) * 100).toFixed(2) : "0"}%
+                      {totalClicks > 0 && totalResults > 0 ? ((totalResults / totalClicks) * 100).toFixed(2) : "0"}%
                     </p>
                   </div>
                 </div>
