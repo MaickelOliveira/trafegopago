@@ -249,7 +249,7 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404); res.end(JSON.stringify({ error: "Not found" }));
 });
 
-server.listen(PORT, () => {
-  console.log(`[WA Service] Porta ${PORT} — multi-instância (Baileys + Meta API)`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`[WA Service] Porta ${PORT} (0.0.0.0) — multi-instância (Baileys + Meta API)`);
   loadSavedSessions();
 });
