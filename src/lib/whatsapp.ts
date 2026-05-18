@@ -4,7 +4,7 @@ export async function sendWhatsApp(phone: string, message: string): Promise<void
   const normalized = phone.replace(/\D/g, "");
 
   try {
-    const res = await fetch("http://localhost:3002/send", {
+    const res = await fetch("http://127.0.0.1:3002/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: normalized, message }),
