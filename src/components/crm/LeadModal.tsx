@@ -37,7 +37,7 @@ export function LeadModal({
   onDeleted: (id: string) => void;
 }) {
   const [lead, setLead] = useState(initial);
-  const [tab, setTab] = useState<"details" | "chat">("details");
+  const [tab, setTab] = useState<"details" | "chat">(initial.source === "whatsapp" ? "chat" : "details");
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: initial.name, phone: initial.phone, email: initial.email ?? "", value: initial.value?.toString() ?? "", notes: initial.notes, campaignName: initial.campaignName ?? "" });
   const [saving, setSaving] = useState(false);
