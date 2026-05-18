@@ -29,9 +29,15 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
 
   useEffect(() => {
     fetchInstances();
+    fetchFunnels();
     const t = setInterval(fetchInstances, 8000);
     return () => clearInterval(t);
   }, []);
+
+  // Refetch funis quando painel abre
+  useEffect(() => {
+    if (showPanel) fetchFunnels();
+  }, [showPanel]);
 
   // Sincroniza funnels com prop (quando cliente muda)
   useEffect(() => { setFunnels(funnelsProp); }, [funnelsProp]);
@@ -52,6 +58,16 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
     try {
       const res = await fetch("/api/crm/whatsapp/instances");
       if (res.ok) setInstances(await res.json());
+    } catch { /**/ }
+  }
+
+  async function fetchFunnels() {
+    try {
+      const res = await fetch("/api/crm/funnels");
+      if (res.ok) {
+        const data = await res.json();
+        setFunnels(data.map((f: FunnelInfo) => ({ id: f.id, name: f.name, clientId: f.clientId, connections: f.connections ?? [] })));
+      }
     } catch { /**/ }
   }
 
