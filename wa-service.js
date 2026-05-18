@@ -5,9 +5,23 @@
 const http = require("http");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 
 const PORT = 3002;
-const PLATFORM_WEBHOOK = "http://localhost:3000/api/whatsapp/webhook";
+
+// Detecta o IP interno do container para alcançar o Next.js independente da porta
+function getContainerIP() {
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const iface of ifaces[name]) {
+      if (!iface.internal && iface.family === "IPv4") return iface.address;
+    }
+  }
+  return "localhost";
+}
+const APP_PORT = process.env.PORT || 3000;
+const PLATFORM_WEBHOOK = process.env.PLATFORM_WEBHOOK_URL ||
+  `http://${getContainerIP()}:${APP_PORT}/api/whatsapp/webhook`;
 const SESSIONS_DIR = path.join(__dirname, "data", "wa-sessions");
 const FUNNELS_FILE = path.join(__dirname, "data", "funnels.json");
 
