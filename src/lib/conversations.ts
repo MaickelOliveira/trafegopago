@@ -18,7 +18,9 @@ const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 function load(): ConversationStore {
   try {
     if (!existsSync(FILE)) return {};
-    return JSON.parse(readFileSync(FILE, "utf-8"));
+    const parsed = JSON.parse(readFileSync(FILE, "utf-8"));
+    // garante que seja objeto e não array
+    return Array.isArray(parsed) ? {} : parsed;
   } catch {
     return {};
   }
