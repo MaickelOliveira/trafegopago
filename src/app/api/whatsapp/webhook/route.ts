@@ -74,22 +74,34 @@ export async function POST(req: NextRequest) {
     // Identifica funil e cliente pelo número da instância ou baileysClientId
     const instancePhone = (body.instancePhone as string | undefined)?.replace(/\D/g, "");
     const baileysClientId = body.baileysClientId as string | undefined;
+    const baileysFunnelId = body.funnelId as string | undefined;
 
     let clientId: string | null = null;
     let funnelIdOverride: string | null = null;
 
-    // Baileys: tenta encontrar funil pelo funnelId (instanceKey) ou pelo número conectado
+    // Baileys: tenta encontrar funil pelo funnelId enviado diretamente
     const funnels = getFunnels();
-    if (baileysClientId) {
-      // instanceKey pode ser funnelId ou clientId
-      const matchedFunnel = funnels.find(f => f.id === baileysClientId);
+    if (baileysFunnelId) {
+      const matchedFunnel = funnels.find(f => f.id === baileysFunnelId);
       if (matchedFunnel) {
         funnelIdOverride = matchedFunnel.id;
         clientId = matchedFunnel.clientId ?? null;
-      } else {
-        clientId = baileysClientId; // é um clientId direto
       }
-    } else if (instancePhone) {
+    }
+    if (!clientId && baileysClientId) {
+      // fallback: tenta encontrar funil pelo connectionId ou clientId
+      const matchedFunnel = funnels.find(f =>
+        f.id === baileysClientId ||
+        f.connections?.some(c => c.id === baileysClientId)
+      );
+      if (matchedFunnel) {
+        funnelIdOverride = funnelIdOverride ?? matchedFunnel.id;
+        clientId = matchedFunnel.clientId ?? null;
+      } else {
+        clientId = baileysClientId;
+      }
+    }
+    if (!clientId && instancePhone) {
       // Busca funil pelo whatsappPhone
       const matchedFunnel = funnels.find(f => {
         const fp = (f.whatsappPhone ?? "").replace(/\D/g, "");
