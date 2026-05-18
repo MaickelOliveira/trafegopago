@@ -120,8 +120,8 @@ export async function POST(req: NextRequest) {
         });
         clientId = matched?.id ?? null;
       }
-    } else {
-      // UazAPI: busca pelo número do contato
+    } else if (!clientId) {
+      // UazAPI: busca pelo número do contato (só se clientId ainda não foi encontrado)
       const clients = getClients();
       const matched = clients.find((c) => {
         const cp = (c.whatsappPhone ?? "").replace(/\D/g, "");
