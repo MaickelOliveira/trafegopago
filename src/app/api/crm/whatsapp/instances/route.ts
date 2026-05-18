@@ -28,15 +28,26 @@ export async function POST(req: NextRequest) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connectionId: clientId, funnelId: funnelId ?? "default", clientId, type }),
   });
-  // Aguarda QR
-  await new Promise(r => setTimeout(r, 5000));
-  const res = await fetch(`${WA}/status/${clientId}`, { cache: "no-store" });
-  const data = res.ok ? await res.json() : {};
+
+  // Tenta até 6 vezes com intervalo de 4s (24s total) esperando o QR
   let qrImage: string | null = null;
-  if (data.qr) {
-    try { qrImage = await QRCode.toDataURL(data.qr, { margin: 1, width: 280 }); } catch { /**/ }
+  let status = "connecting";
+  let phone: string | null = null;
+  for (let i = 0; i < 6; i++) {
+    await new Promise(r => setTimeout(r, 4000));
+    try {
+      const res = await fetch(`${WA}/status/${clientId}`, { cache: "no-store" });
+      const data = res.ok ? await res.json() : {};
+      status = data.status ?? "connecting";
+      phone = data.phone ?? null;
+      if (data.qr) {
+        qrImage = await QRCode.toDataURL(data.qr, { margin: 1, width: 280 }).catch(() => null);
+        break;
+      }
+      if (data.status === "connected") break;
+    } catch { /**/ }
   }
-  return NextResponse.json({ status: data.status, phone: data.phone, qr: qrImage });
+  return NextResponse.json({ status, phone, qr: qrImage });
 }
 
 // DELETE — desconecta { clientId }
