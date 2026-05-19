@@ -92,6 +92,17 @@ ${campaignLines.length > 0 ? campaignLines.join("\n") : "  Nenhuma campanha com 
     campaignContext = "\nNenhuma conta de anúncio conectada.";
   }
 
+  // Se o cliente configurou um prompt personalizado, usa ele como base
+  if (client.agentPrompt?.trim()) {
+    return `${client.agentPrompt.trim()}
+
+--- Dados de campanha em tempo real (use se perguntarem sobre resultados) ---
+${campaignContext}
+
+Data atual: ${today}
+Responda sempre em português, mensagens curtas. Nunca invente dados.`;
+  }
+
   return `Você é o assistente de resultados de tráfego pago para ${client.name}.
 Data: ${today}
 Objetivo de negócio: ${funnelLabel[client.funnelType] ?? "leads"}
