@@ -56,11 +56,12 @@ const TOOLS: Anthropic.Tool[] = [
 ];
 
 function buildSystemPrompt(lead: Lead, funnel: Funnel): string {
-  const colunaAtual = funnel.columns.find((c) => c.id === lead.status);
+  const columns = funnel.columns ?? [];
+  const colunaAtual = columns.find((c) => c.id === lead.status);
 
   // Colunas que o agente PODE mover (blockAutoMove !== true)
-  const colunasPermitidas = funnel.columns.filter((c) => !c.blockAutoMove);
-  const colunasBloqueadas = funnel.columns.filter((c) => c.blockAutoMove);
+  const colunasPermitidas = columns.filter((c) => !c.blockAutoMove);
+  const colunasBloqueadas = columns.filter((c) => c.blockAutoMove);
 
   const listaPermitidas = colunasPermitidas
     .map((c) => {
@@ -128,7 +129,7 @@ async function runKanbanAgent(
       if (block.name === "mover_lead") {
         const input = block.input as { coluna_id: string; motivo: string };
         // Valida que a coluna existe, não está bloqueada e é diferente da atual
-        const colunaValida = funnel.columns.find((c) => c.id === input.coluna_id);
+        const colunaValida = (funnel.columns ?? []).find((c) => c.id === input.coluna_id);
         if (colunaValida && !colunaValida.blockAutoMove && input.coluna_id !== lead.status) {
           actions.push({ type: "mover_lead", colunaId: input.coluna_id, motivo: input.motivo });
         }
@@ -174,7 +175,7 @@ export async function processKanbanActions(
 
   for (const action of actions) {
     if (action.type === "mover_lead") {
-      const col = funnel.columns.find((c) => c.id === action.colunaId);
+      const col = (funnel.columns ?? []).find((c) => c.id === action.colunaId);
       if (!col) continue;
 
       updateLead(lead.id, { status: col.id });
