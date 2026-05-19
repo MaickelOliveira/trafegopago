@@ -5,6 +5,7 @@ import { generateResponse } from "@/lib/ai-agent";
 import { sendWhatsApp } from "@/lib/whatsapp";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
+import { processKanbanActions } from "@/lib/kanban-agent";
 
 type Body = Record<string, unknown>;
 
@@ -169,7 +170,14 @@ export async function POST(req: NextRequest) {
     // Histórico da conversa
     const history = getHistory(phone);
 
-    // Gera resposta via Claude
+    // Agente Kanban — analisa conversa e atualiza CRM silenciosamente (fire-and-forget)
+    if (cid !== "sem-cliente") {
+      processKanbanActions(text, history, cid, phone).catch((e) =>
+        console.error("[kanban-agent]", e)
+      );
+    }
+
+    // Gera resposta via Claude (agente de atendimento — não alterado)
     const reply = await generateResponse(text, history, clientId);
 
     if (!reply) return NextResponse.json({ ok: true });
