@@ -188,6 +188,13 @@ export async function POST(req: NextRequest) {
     // Histórico da conversa
     const history = getHistory(phone);
 
+    // Verifica se IA está pausada para esta conversa específica
+    const currentLead = getLeadByPhone(cid, phone);
+    if (currentLead?.aiPaused) {
+      // Especialista assumiu — só salva mensagem, não responde via IA
+      return NextResponse.json({ ok: true });
+    }
+
     // Agente Kanban — analisa conversa e atualiza CRM silenciosamente (fire-and-forget)
     if (cid !== "sem-cliente") {
       processKanbanActions(text, history, cid, phone).catch((e) =>

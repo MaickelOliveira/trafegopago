@@ -196,6 +196,44 @@ export function LeadModal({
               </div>
             </div>
 
+            {/* Toggle IA por conversa */}
+            <div className={clsx(
+              "rounded-xl border p-3 flex items-center justify-between",
+              lead.aiPaused
+                ? "border-amber-200 bg-amber-50"
+                : "border-violet-200 bg-violet-50"
+            )}>
+              <div>
+                <p className={clsx("text-xs font-semibold uppercase tracking-wide", lead.aiPaused ? "text-amber-700" : "text-violet-700")}>
+                  {lead.aiPaused ? "⏸ IA pausada nesta conversa" : "🤖 IA ativa nesta conversa"}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {lead.aiPaused
+                    ? "Especialista assumiu. A IA não vai responder até ser reativada."
+                    : "A IA responde automaticamente. Pause para assumir manualmente."}
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ aiPaused: !lead.aiPaused }),
+                  });
+                  const updated = await res.json();
+                  if (res.ok) { setLead(updated); onUpdated(updated); }
+                }}
+                className={clsx(
+                  "rounded-lg px-3 py-1.5 text-xs font-semibold transition shrink-0",
+                  lead.aiPaused
+                    ? "bg-violet-600 text-white hover:bg-violet-700"
+                    : "bg-amber-500 text-white hover:bg-amber-600"
+                )}
+              >
+                {lead.aiPaused ? "Reativar IA" : "Pausar IA"}
+              </button>
+            </div>
+
             {/* AI Analysis */}
             <div className="rounded-xl border border-purple-200 bg-purple-50 p-3">
               <div className="flex items-center justify-between mb-2">

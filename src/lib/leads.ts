@@ -32,6 +32,7 @@ export type Lead = {
   status: string; // coluna do funil (dinâmica)
   notes: string;
   ai: LeadAI | null;
+  aiPaused?: boolean; // IA pausada para esta conversa (especialista assumiu)
   createdAt: string;
   updatedAt: string;
 };

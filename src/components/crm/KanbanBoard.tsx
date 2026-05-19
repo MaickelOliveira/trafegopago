@@ -778,11 +778,18 @@ export function KanbanBoard({
 
                       <div className="flex items-start justify-between gap-1 mb-1">
                         <p className="font-semibold text-slate-800 text-sm leading-tight line-clamp-1">{lead.name}</p>
-                        {lead.ai && (
-                          <span className={clsx("rounded-full px-1.5 py-0.5 text-xs font-bold shrink-0", SCORE_COLOR(lead.ai.score))}>
-                            {lead.ai.score}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {lead.aiPaused && (
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title="IA pausada — especialista ativo">
+                              ⏸
+                            </span>
+                          )}
+                          {lead.ai && (
+                            <span className={clsx("rounded-full px-1.5 py-0.5 text-xs font-bold", SCORE_COLOR(lead.ai.score))}>
+                              {lead.ai.score}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <p className="text-xs text-slate-500 mb-2 font-mono">{lead.phone}</p>
