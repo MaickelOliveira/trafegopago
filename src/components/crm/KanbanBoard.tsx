@@ -29,6 +29,48 @@ function hexToLight(hex: string): string {
   return hex + "22";
 }
 
+// ── Frases de gatilho por coluna ─────────────────────────────────────────────
+function TriggerPhrases({ phrases, onChange }: { phrases: string[]; onChange: (p: string[]) => void }) {
+  const [input, setInput] = useState("");
+
+  function add() {
+    const v = input.trim();
+    if (!v || phrases.includes(v)) return;
+    onChange([...phrases, v]);
+    setInput("");
+  }
+
+  return (
+    <div className="pl-5 space-y-1">
+      <span className="text-[10px] text-slate-400 uppercase tracking-wide">Frases de gatilho IA</span>
+      <div className="flex flex-wrap gap-1">
+        {phrases.map((p) => (
+          <span key={p} className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] text-violet-700">
+            {p}
+            <button onClick={() => onChange(phrases.filter((x) => x !== p))} className="hover:text-red-500 leading-none">×</button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-1">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
+          placeholder="ex: obrigado pela compra"
+          className="flex-1 text-xs rounded border border-slate-200 px-2 py-1 outline-none focus:border-violet-400"
+        />
+        <button
+          onClick={add}
+          disabled={!input.trim()}
+          className="text-xs rounded bg-violet-600 px-2 py-1 text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          + Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Gestão de Funis ──────────────────────────────────────────────────────────
 const COL_COLORS = ["#3B82F6","#F59E0B","#F97316","#10B981","#8B5CF6","#EC4899","#94A3B8","#EF4444","#14B8A6","#6366F1"];
 
@@ -240,6 +282,16 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                       >+ Meta</button>
                     )}
                   </div>
+                  {/* Frases de gatilho */}
+                  <TriggerPhrases
+                    phrases={col.triggerPhrases ?? []}
+                    onChange={(phrases) =>
+                      setEditCols((prev) =>
+                        prev.map((c, i) => i === idx ? { ...c, triggerPhrases: phrases.length ? phrases : undefined } : c)
+                      )
+                    }
+                  />
+
                   {/* Form inline para criar custom conversion */}
                   {creatingConvIdx === idx && (
                     <div className="pl-5 space-y-1.5 border-t border-blue-100 pt-1.5 mt-1">

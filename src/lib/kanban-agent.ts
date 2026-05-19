@@ -63,7 +63,12 @@ function buildSystemPrompt(lead: Lead, funnel: Funnel): string {
   const colunasBloqueadas = funnel.columns.filter((c) => c.blockAutoMove);
 
   const listaPermitidas = colunasPermitidas
-    .map((c) => `• ${c.id} → ${c.label}${c.id === lead.status ? " (atual)" : ""}`)
+    .map((c) => {
+      const frases = c.triggerPhrases?.length
+        ? ` [gatilhos: ${c.triggerPhrases.map((f) => `"${f}"`).join(", ")}]`
+        : "";
+      return `• ${c.id} → ${c.label}${c.id === lead.status ? " (atual)" : ""}${frases}`;
+    })
     .join("\n");
 
   const listaBloqueadas = colunasBloqueadas.length > 0
@@ -78,7 +83,8 @@ Colunas disponíveis para mover_lead (use o id):
 ${listaPermitidas}${listaBloqueadas}
 
 Regras:
-- Use mover_lead APENAS quando houver mudança CLARA e EXPLÍCITA de estágio
+- Use mover_lead quando a mensagem contiver (ou for semanticamente equivalente a) um dos gatilhos configurados para uma coluna
+- Use mover_lead também quando houver mudança CLARA de estágio, mesmo sem gatilho exato
 - NUNCA mova para colunas bloqueadas — essas são preenchidas manualmente pelo gestor
 - Não mova se o lead já está na coluna correta
 - Use atualizar_lead para capturar nome real ou resumir contexto relevante
