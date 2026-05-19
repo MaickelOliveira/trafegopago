@@ -24,7 +24,8 @@ export type Client = {
   tintimCode?: string;
   tintimToken?: string;
   tintimWebhookForward?: string;
-  pixelId?: string; // ID do pixel Meta para envio de eventos via CAPI
+  pixelId?: string;    // ID do pixel Meta (fbq browser + CAPI)
+  capiToken?: string;  // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
 };
 
 export type AppConfig = {

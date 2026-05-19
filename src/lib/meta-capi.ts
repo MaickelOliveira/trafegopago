@@ -7,6 +7,7 @@ function sha256(value: string): string {
 
 export async function sendCapiEvent(opts: {
   pixelId: string;
+  capiToken?: string; // Token de Conversão da API (por cliente) — prioritário sobre o token global
   eventName: string;
   phone?: string;
   email?: string;
@@ -14,8 +15,9 @@ export async function sendCapiEvent(opts: {
   value?: number;
   currency?: string;
 }): Promise<void> {
-  const { metaToken } = getConfig();
-  if (!metaToken || !opts.pixelId) return;
+  // Usa token de conversão do cliente se disponível, senão o token global
+  const token = opts.capiToken || getConfig().metaToken;
+  if (!token || !opts.pixelId) return;
 
   const userData: Record<string, string> = {};
   if (opts.phone) userData.ph = sha256(opts.phone.replace(/\D/g, ""));
@@ -34,7 +36,7 @@ export async function sendCapiEvent(opts: {
 
   const payload = {
     data: [eventData],
-    access_token: metaToken,
+    access_token: token,
   };
 
   const res = await fetch(

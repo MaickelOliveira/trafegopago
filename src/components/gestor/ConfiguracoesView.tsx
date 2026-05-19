@@ -18,6 +18,7 @@ type Client = {
   tintimToken?: string;
   tintimWebhookForward?: string;
   pixelId?: string;
+  capiToken?: string;
 };
 
 const FUNNEL_OPTIONS: { value: FunnelType; label: string; desc: string; icon: string }[] = [
@@ -134,7 +135,7 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
 
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
-    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "",
+    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "", capiToken: "",
   });
   const [form, setForm] = useState(empty());
 
@@ -674,8 +675,15 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
                   </div>
                 )}
 
-                <p className="text-xs text-blue-500">
-                  Clique em &quot;Buscar pixels&quot; para listar os pixels da conta. O evento é enviado pelo browser (fbq) e também pelo servidor (CAPI) quando um lead muda de etapa.
+                <SecretField
+                  label="Token de Conversão da API"
+                  value={form.capiToken ?? ""}
+                  onChange={(v) => setForm((f) => ({ ...f, capiToken: v }))}
+                  placeholder="EAAxxxxxxx..."
+                />
+                <p className="text-[10px] text-blue-400">
+                  Gerado em Gerenciador de Eventos → Fontes de Dados → seu Pixel → Configurações → Gerar token de acesso.
+                  Se não preenchido, usa o token global de APIs &amp; Tokens.
                 </p>
               </div>
 

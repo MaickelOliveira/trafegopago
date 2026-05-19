@@ -35,6 +35,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       if (client?.pixelId) {
         sendCapiEvent({
           pixelId: client.pixelId,
+          capiToken: client.capiToken, // Token de Conversão da API por cliente
           eventName: col.metaEvent,
           phone: lead.phone,
           email: lead.email ?? undefined,
