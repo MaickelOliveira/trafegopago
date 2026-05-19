@@ -18,6 +18,10 @@ export async function GET() {
     uazapiToken: config.uazapiToken ?? "",
     appBaseUrl: config.appBaseUrl ?? "",
     uazapiWebhookForward: config.uazapiWebhookForward ?? "",
+    geminiApiKey: config.geminiApiKey ?? "",
+    googleClientId: config.googleClientId ?? "",
+    googleClientSecret: config.googleClientSecret ?? "",
+    agentCronSecret: config.agentCronSecret ?? "",
   });
 }
 
@@ -38,6 +42,10 @@ export async function PUT(req: NextRequest) {
     uazapiToken: body.uazapiToken ?? current.uazapiToken,
     appBaseUrl: body.appBaseUrl ?? current.appBaseUrl,
     uazapiWebhookForward: body.uazapiWebhookForward ?? current.uazapiWebhookForward,
+    geminiApiKey: body.geminiApiKey ?? current.geminiApiKey,
+    googleClientId: body.googleClientId ?? current.googleClientId,
+    googleClientSecret: body.googleClientSecret ?? current.googleClientSecret,
+    agentCronSecret: body.agentCronSecret ?? current.agentCronSecret,
   });
   return NextResponse.json({ ok: true });
 }

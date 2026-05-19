@@ -85,6 +85,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [cronUrl, setCronUrl] = useState("");
+  const [cronSecret, setCronSecret] = useState("");
+  const [generatingSecret, setGeneratingSecret] = useState(false);
   const [waConnections, setWaConnections] = useState<WaConnection[]>([]);
   const [loadingWa, setLoadingWa] = useState(false);
   const [qrData, setQrData] = useState<{ connId: string; qr: string } | null>(null);
@@ -94,6 +96,12 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     fetch(`/api/agent?clientId=${clientId}`)
       .then((r) => r.json())
       .then((d) => setCfg(d))
+      .catch(() => {});
+
+    // Busca o secret do cron existente
+    fetch("/api/gestor/config")
+      .then((r) => r.json())
+      .then((d) => { if (d.agentCronSecret) setCronSecret(d.agentCronSecret); })
       .catch(() => {});
 
     if (typeof window !== "undefined") {
@@ -512,18 +520,56 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
       {/* Cron */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">⚙️ Configuração do Cron</p>
-        <p className="text-xs text-slate-500">
-          Configure no EasyPanel uma tarefa cron a cada 15 minutos chamando:
-        </p>
-        <div className="rounded-lg bg-slate-800 px-4 py-3">
-          <code className="text-xs text-green-400 break-all">
-            {cronUrl}<span className="text-yellow-400">SEU_SECRET_AQUI</span>
-          </code>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">⚙️ Configuração do Cron</p>
+          {!cronSecret && (
+            <button
+              onClick={async () => {
+                setGeneratingSecret(true);
+                const secret = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+                  .map((b) => b.toString(16).padStart(2, "0")).join("");
+                const res = await fetch("/api/gestor/config");
+                const cfg = await res.json();
+                await fetch("/api/gestor/config", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ ...cfg, agentCronSecret: secret }),
+                });
+                setCronSecret(secret);
+                setGeneratingSecret(false);
+              }}
+              disabled={generatingSecret}
+              className="rounded-lg bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-600 transition disabled:opacity-50"
+            >
+              {generatingSecret ? "Gerando..." : "Gerar chave secreta"}
+            </button>
+          )}
         </div>
-        <p className="text-xs text-slate-400">
-          Defina <code className="bg-slate-200 px-1 rounded">agentCronSecret</code> em APIs & Tokens para proteger o endpoint.
+
+        <p className="text-xs text-slate-500">
+          Configure no EasyPanel uma tarefa cron a cada 15 minutos chamando esta URL:
         </p>
+
+        {cronSecret ? (
+          <>
+            <div className="relative rounded-lg bg-slate-800 px-4 py-3">
+              <code className="text-xs text-green-400 break-all">
+                {cronUrl}{cronSecret}
+              </code>
+              <button
+                onClick={() => navigator.clipboard.writeText(`${cronUrl}${cronSecret}`)}
+                className="absolute top-2 right-2 rounded bg-slate-600 px-2 py-1 text-xs text-slate-300 hover:bg-slate-500"
+              >
+                Copiar
+              </button>
+            </div>
+            <p className="text-xs text-green-600 font-medium">✓ Chave gerada e salva. Cole essa URL no EasyPanel → Cron Jobs → + Add Cron Job.</p>
+          </>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-300 p-3 text-center">
+            <p className="text-xs text-slate-400">Clique em &quot;Gerar chave secreta&quot; para criar a URL do cron.</p>
+          </div>
+        )}
       </div>
 
       {/* Salvar */}
