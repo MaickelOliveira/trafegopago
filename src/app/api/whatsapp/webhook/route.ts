@@ -41,6 +41,11 @@ function isGroup(phone: string): boolean {
   return phone.includes("@g.us") || phone.endsWith("@broadcast");
 }
 
+// WAIDs do Meta (IDs internos do Facebook) têm 14+ dígitos — não são números de telefone reais
+function isValidPhone(phone: string): boolean {
+  return phone.length >= 7 && phone.length <= 13;
+}
+
 export async function POST(req: NextRequest) {
   let body: Body;
   try {
@@ -64,8 +69,8 @@ export async function POST(req: NextRequest) {
   try {
     const extracted = extractMessage(body);
 
-    // Ignora mensagens inválidas e grupos
-    if (!extracted || isGroup(extracted.phone)) {
+    // Ignora mensagens inválidas, grupos e WAIDs do Meta (IDs internos, não números reais)
+    if (!extracted || isGroup(extracted.phone) || !isValidPhone(extracted.phone)) {
       return NextResponse.json({ ok: true });
     }
 
