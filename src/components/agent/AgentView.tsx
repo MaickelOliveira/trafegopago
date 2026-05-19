@@ -309,27 +309,34 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           </div>
         )}
 
-        {/* Janela de espera de mensagens */}
-        <div className="border-t border-slate-100 pt-3 space-y-2">
-          <label className="block text-sm font-medium text-slate-700">
-            Janela de espera de mensagens
-          </label>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              min={0}
-              max={300}
-              value={cfg.messageWaitSeconds ?? 0}
-              onChange={(e) => setCfg((c) => ({ ...c, messageWaitSeconds: Number(e.target.value) }))}
-              className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-green-400 text-center"
-            />
-            <span className="text-sm text-slate-500">segundos (0 = responde imediatamente)</span>
-          </div>
-          <p className="text-xs text-slate-400">
-            Se o cliente enviar várias mensagens seguidas (ex: "oi" + "tudo bem?" + "quero saber sobre..."),
-            o agente aguarda esse tempo e responde tudo de uma vez. Recomendado: 15–30 segundos.
-          </p>
+      </div>
+
+      {/* Janela de espera de mensagens — bloco separado */}
+      <div className="rounded-2xl border border-orange-200 bg-white p-5 space-y-3 shadow-sm">
+        <p className="text-xs font-semibold text-orange-600 uppercase tracking-wide">⏱ Janela de Espera de Mensagens</p>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            min={0}
+            max={300}
+            value={cfg.messageWaitSeconds ?? 0}
+            onChange={(e) => setCfg((c) => ({ ...c, messageWaitSeconds: Number(e.target.value) }))}
+            className="w-24 rounded-lg border border-orange-200 px-3 py-2 text-sm outline-none focus:border-orange-400 text-center font-semibold"
+          />
+          <span className="text-sm text-slate-600">segundos</span>
+          {(cfg.messageWaitSeconds ?? 0) === 0 && (
+            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">responde imediatamente</span>
+          )}
+          {(cfg.messageWaitSeconds ?? 0) > 0 && (
+            <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-full border border-orange-200">
+              aguarda {cfg.messageWaitSeconds}s antes de responder
+            </span>
+          )}
         </div>
+        <p className="text-xs text-slate-400">
+          Se o cliente enviar várias mensagens seguidas — "oi", "tudo bem?", "quero saber sobre preços" — o agente
+          acumula tudo e responde de uma vez após esse tempo. Recomendado: 15–30 segundos.
+        </p>
       </div>
 
       {/* Instruções do agente */}
