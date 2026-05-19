@@ -41,32 +41,35 @@ function TriggerPhrases({ phrases, onChange }: { phrases: string[]; onChange: (p
   }
 
   return (
-    <div className="pl-5 space-y-1">
-      <span className="text-[10px] text-slate-400 uppercase tracking-wide">Frases de gatilho IA</span>
-      <div className="flex flex-wrap gap-1">
-        {phrases.map((p) => (
-          <span key={p} className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] text-violet-700">
-            {p}
-            <button onClick={() => onChange(phrases.filter((x) => x !== p))} className="hover:text-red-500 leading-none">×</button>
-          </span>
-        ))}
-      </div>
+    <div className="mt-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 space-y-1.5">
+      <p className="text-[11px] font-semibold text-violet-700">🤖 Frases que movem o lead para esta coluna</p>
+      {phrases.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {phrases.map((p) => (
+            <span key={p} className="inline-flex items-center gap-1 rounded-full bg-white border border-violet-300 px-2 py-0.5 text-[11px] text-violet-700 font-medium">
+              &quot;{p}&quot;
+              <button onClick={() => onChange(phrases.filter((x) => x !== p))} className="hover:text-red-500 leading-none ml-0.5">×</button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex gap-1">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
-          placeholder="ex: obrigado pela compra"
-          className="flex-1 text-xs rounded border border-slate-200 px-2 py-1 outline-none focus:border-violet-400"
+          placeholder='ex: "obrigado pela compra", "paguei", "quero fechar"'
+          className="flex-1 text-xs rounded border border-violet-200 bg-white px-2 py-1.5 outline-none focus:border-violet-400 placeholder:text-slate-400"
         />
         <button
           onClick={add}
           disabled={!input.trim()}
-          className="text-xs rounded bg-violet-600 px-2 py-1 text-white hover:bg-violet-700 disabled:opacity-40"
+          className="text-xs rounded bg-violet-600 px-2.5 py-1 text-white font-semibold hover:bg-violet-700 disabled:opacity-40 shrink-0"
         >
           + Add
         </button>
       </div>
+      <p className="text-[10px] text-violet-400">Digite e pressione Enter ou clique + Add. O agente detecta variações da frase.</p>
     </div>
   );
 }
@@ -260,8 +263,18 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                     </label>
                   </div>
 
+                  {/* Frases de gatilho — logo abaixo dos flags para visibilidade */}
+                  <TriggerPhrases
+                    phrases={col.triggerPhrases ?? []}
+                    onChange={(phrases) =>
+                      setEditCols((prev) =>
+                        prev.map((c, i) => i === idx ? { ...c, triggerPhrases: phrases.length ? phrases : undefined } : c)
+                      )
+                    }
+                  />
+
                   {/* Seletor de evento Meta CAPI */}
-                  <div className="flex items-center gap-1.5 pl-5">
+                  <div className="flex items-center gap-1.5 pl-1">
                     <span className="text-[10px] text-slate-400 shrink-0 uppercase tracking-wide">Meta</span>
                     <select
                       value={col.metaEvent ?? ""}
@@ -282,15 +295,6 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                       >+ Meta</button>
                     )}
                   </div>
-                  {/* Frases de gatilho */}
-                  <TriggerPhrases
-                    phrases={col.triggerPhrases ?? []}
-                    onChange={(phrases) =>
-                      setEditCols((prev) =>
-                        prev.map((c, i) => i === idx ? { ...c, triggerPhrases: phrases.length ? phrases : undefined } : c)
-                      )
-                    }
-                  />
 
                   {/* Form inline para criar custom conversion */}
                   {creatingConvIdx === idx && (
