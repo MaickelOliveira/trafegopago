@@ -51,12 +51,14 @@ function ClientSelector({ clients, selected, onSelect }: {
 
 const STORAGE_KEY = "crm_selected_client";
 
-export function CrmClient({ clients, initialLeads, initialFunnels }: {
+export function CrmClient({ clients, initialLeads, initialFunnels, selectedClient: fixedClient }: {
   clients: Client[];
   initialLeads: Lead[];
   initialFunnels: Funnel[];
+  selectedClient?: string; // quando passado, fixa o cliente sem seletor
 }) {
   const [selectedClient, setSelectedClient] = useState<string>(() => {
+    if (fixedClient) return fixedClient;
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved && clients.find(c => c.id === saved)) return saved;
@@ -106,9 +108,11 @@ export function CrmClient({ clients, initialLeads, initialFunnels }: {
         />
       </div>
 
-      <div className="px-6 lg:px-8 pt-3 pb-4 flex-shrink-0 border-b border-slate-100">
-        <ClientSelector clients={clients} selected={selectedClient} onSelect={selectClient} />
-      </div>
+      {!fixedClient && (
+        <div className="px-6 lg:px-8 pt-3 pb-4 flex-shrink-0 border-b border-slate-100">
+          <ClientSelector clients={clients} selected={selectedClient} onSelect={selectClient} />
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 p-6 lg:p-8 pt-4">
         {creating ? (

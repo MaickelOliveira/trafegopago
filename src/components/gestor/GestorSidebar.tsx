@@ -117,6 +117,19 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               </Link>
 
               <Link
+                href={`/gestor/${activeClient.id}/crm`}
+                className={clsx(
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition",
+                  pathname.startsWith(`/gestor/${activeClient.id}/crm`)
+                    ? "bg-violet-50 text-violet-700 font-medium"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <span className="text-base leading-none">🎯</span>
+                CRM
+              </Link>
+
+              <Link
                 href={`/gestor/${activeClient.id}/dashboard`}
                 className={clsx(
                   "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition",
