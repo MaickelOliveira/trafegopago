@@ -23,6 +23,49 @@ function fmtDate(ts: number) {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
+function FollowUpCancelButton({ leadId }: { leadId: string }) {
+  const [count, setCount] = useState<number | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/crm/leads/${leadId}/followups`)
+      .then((r) => r.json())
+      .then((data) => setCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => setCount(0));
+  }, [leadId]);
+
+  if (count === null || count === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 p-3 flex items-center justify-between">
+      <div>
+        <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+          ⏰ {count} follow-up{count !== 1 ? "s" : ""} agendado{count !== 1 ? "s" : ""}
+        </p>
+        <p className="text-xs text-slate-400 mt-0.5">
+          {done ? "Follow-ups cancelados." : "Cancele para este lead não receber mais mensagens automáticas."}
+        </p>
+      </div>
+      {!done && (
+        <button
+          onClick={async () => {
+            setCancelling(true);
+            await fetch(`/api/crm/leads/${leadId}/followups`, { method: "DELETE" });
+            setCancelling(false);
+            setDone(true);
+            setCount(0);
+          }}
+          disabled={cancelling}
+          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50 transition shrink-0"
+        >
+          {cancelling ? "Cancelando..." : "Cancelar follow-ups"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function LeadModal({
   lead: initial,
   funnel,
@@ -195,6 +238,9 @@ export function LeadModal({
                 ))}
               </div>
             </div>
+
+            {/* Cancelar follow-ups */}
+            <FollowUpCancelButton leadId={lead.id} />
 
             {/* Toggle IA por conversa */}
             <div className={clsx(
