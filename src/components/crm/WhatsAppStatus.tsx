@@ -20,6 +20,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newType, setNewType] = useState<ConnectionType>("baileys");
   const [newPhone, setNewPhone] = useState("");
+  const [newInstanceName, setNewInstanceName] = useState("");
   const [newMetaId, setNewMetaId] = useState("");
   const [newMetaToken, setNewMetaToken] = useState("");
   const [newVerifyToken, setNewVerifyToken] = useState("trafegopago");
@@ -103,14 +104,15 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
     const connId = `${funnelId}_${Date.now()}`;
 
     if (newType === "uazapi") {
-      // UazAPI: backend cria instância, configura webhook e retorna QR
+      if (!newInstanceName.trim()) { setSaving(false); return; }
+      const instanceName = newInstanceName.trim().toLowerCase().replace(/\s+/g, "-");
       const res = await fetch("/api/crm/whatsapp/instances", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "uazapi", funnelId, instanceName: connId }),
+        body: JSON.stringify({ type: "uazapi", funnelId, instanceName }),
       });
       const data = await res.json();
-      if (data.qr) setQrData({ connId: data.connId ?? connId, qr: data.qr, funnelName: funnel?.name ?? "" });
-      setAddingTo(null); setSaving(false);
+      if (data.qr) setQrData({ connId: data.connId ?? instanceName, qr: data.qr, funnelName: funnel?.name ?? "" });
+      setAddingTo(null); setNewInstanceName(""); setSaving(false);
       fetchInstances(); fetchFunnels();
       return;
     }
@@ -248,9 +250,15 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
                     </div>
 
                     {newType === "uazapi" && (
-                      <p className="text-xs text-slate-500 mb-2">
-                        Cria uma instância no UazAPI automaticamente e exibe o QR para escanear.
-                      </p>
+                      <div className="mb-2">
+                        <input
+                          value={newInstanceName}
+                          onChange={e => setNewInstanceName(e.target.value)}
+                          placeholder="Nome da instância (ex: sbcie, nexo, telas-jort)"
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Nome curto e único — aparecerá na coluna "Instância" do UazAPI</p>
+                      </div>
                     )}
 
                     {newType === "baileys" && (

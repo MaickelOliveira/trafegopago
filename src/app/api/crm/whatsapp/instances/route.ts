@@ -28,9 +28,10 @@ export async function POST(req: NextRequest) {
 
   if (type === "uazapi") {
     if (!funnelId) return NextResponse.json({ error: "funnelId obrigatório" }, { status: 400 });
+    if (!instanceName) return NextResponse.json({ error: "instanceName obrigatório" }, { status: 400 });
 
     const config = getConfig();
-    const connId = instanceName ?? randomUUID();
+    const connId = instanceName; // ID da conexão = nome da instância (para webhook matching)
 
     const funnels = getFunnels();
     const funnel = funnels.find((f) => f.id === funnelId);
