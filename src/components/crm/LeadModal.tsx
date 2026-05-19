@@ -23,44 +23,75 @@ function fmtDate(ts: number) {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
-function FollowUpCancelButton({ leadId }: { leadId: string }) {
-  const [count, setCount] = useState<number | null>(null);
-  const [cancelling, setCancelling] = useState(false);
-  const [done, setDone] = useState(false);
+type PendingFU = { id: string; scheduledAt: string; message: string; stepIndex?: number };
 
-  useEffect(() => {
+function FollowUpSection({ leadId }: { leadId: string }) {
+  const [items, setItems] = useState<PendingFU[] | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  function load() {
     fetch(`/api/crm/leads/${leadId}/followups`)
       .then((r) => r.json())
-      .then((data) => setCount(Array.isArray(data) ? data.length : 0))
-      .catch(() => setCount(0));
-  }, [leadId]);
+      .then((data) => setItems(Array.isArray(data) ? data : []))
+      .catch(() => setItems([]));
+  }
 
-  if (count === null || count === 0) return null;
+  useEffect(() => { load(); }, [leadId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function fmtDate(iso: string) {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = d.getTime() - now.getTime();
+    if (diff < 0) return "vencido";
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    if (h >= 24) return `em ${Math.floor(h / 24)}d ${h % 24}h`;
+    if (h > 0) return `em ${h}h ${m}min`;
+    return `em ${m}min`;
+  }
 
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-3 flex items-center justify-between">
-      <div>
-        <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
-          ⏰ {count} follow-up{count !== 1 ? "s" : ""} agendado{count !== 1 ? "s" : ""}
+    <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
+          ⏰ Follow-ups agendados
         </p>
-        <p className="text-xs text-slate-400 mt-0.5">
-          {done ? "Follow-ups cancelados." : "Cancele para este lead não receber mais mensagens automáticas."}
-        </p>
+        {items !== null && items.length > 0 && (
+          <button
+            onClick={async () => {
+              setCancelling(true);
+              await fetch(`/api/crm/leads/${leadId}/followups`, { method: "DELETE" });
+              setCancelling(false);
+              setItems([]);
+            }}
+            disabled={cancelling}
+            className="text-xs text-red-600 hover:text-red-800 font-semibold disabled:opacity-50"
+          >
+            {cancelling ? "Cancelando..." : "Cancelar todos"}
+          </button>
+        )}
       </div>
-      {!done && (
-        <button
-          onClick={async () => {
-            setCancelling(true);
-            await fetch(`/api/crm/leads/${leadId}/followups`, { method: "DELETE" });
-            setCancelling(false);
-            setDone(true);
-            setCount(0);
-          }}
-          disabled={cancelling}
-          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50 transition shrink-0"
-        >
-          {cancelling ? "Cancelando..." : "Cancelar follow-ups"}
-        </button>
+
+      {items === null && <p className="text-xs text-slate-400 animate-pulse">Carregando...</p>}
+
+      {items !== null && items.length === 0 && (
+        <p className="text-xs text-slate-400 italic">Nenhum follow-up agendado para este lead.</p>
+      )}
+
+      {items !== null && items.length > 0 && (
+        <div className="space-y-1.5">
+          {items.map((fu, i) => (
+            <div key={fu.id} className="flex items-start gap-2 bg-white rounded-lg border border-orange-100 px-3 py-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-200 text-[10px] font-bold text-orange-700 shrink-0 mt-0.5">
+                {(fu.stepIndex ?? i) + 1}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-slate-700 line-clamp-2">{fu.message}</p>
+                <p className="text-[10px] text-orange-600 mt-0.5 font-medium">{fmtDate(fu.scheduledAt)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -239,8 +270,8 @@ export function LeadModal({
               </div>
             </div>
 
-            {/* Cancelar follow-ups */}
-            <FollowUpCancelButton leadId={lead.id} />
+            {/* Follow-ups agendados */}
+            <FollowUpSection leadId={lead.id} />
 
             {/* Toggle IA por conversa */}
             <div className={clsx(
