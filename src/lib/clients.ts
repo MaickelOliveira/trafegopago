@@ -56,7 +56,8 @@ export type AppConfig = {
   metaAppId?: string;
   metaAppSecret?: string;
   uazapiServer?: string;
-  uazapiToken?: string;
+  uazapiToken?: string;          // token de instância (envio)
+  uazapiAdminToken?: string;     // token de admin (criar/gerenciar instâncias)
   uazapiWebhookForward?: string;
   appBaseUrl?: string;
   anthropicApiKey?: string;

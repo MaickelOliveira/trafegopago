@@ -25,12 +25,16 @@ export async function listInstances(): Promise<unknown[]> {
   }
 }
 
+function adminToken(): string {
+  return process.env.UAZAPI_ADMIN_TOKEN || getConfig().uazapiAdminToken || globalToken();
+}
+
 // Passo 1: cria a instância no servidor UazAPI (retorna token da instância)
 export async function createInstance(name: string): Promise<{ id?: string; token?: string; instanceToken?: string; [key: string]: unknown }> {
   try {
     const res = await fetch(`${base()}/instance/create`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", token: globalToken() },
+      headers: { "Content-Type": "application/json", token: adminToken() },
       body: JSON.stringify({ name }),
     });
     const data = await res.json().catch(() => ({}));

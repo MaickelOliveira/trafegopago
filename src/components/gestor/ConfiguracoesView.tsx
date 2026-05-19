@@ -36,6 +36,7 @@ type AppConfig = {
   anthropicApiKey: string;
   uazapiServer: string;
   uazapiToken: string;
+  uazapiAdminToken: string;
   appBaseUrl: string;
   uazapiWebhookForward: string;
 };
@@ -65,7 +66,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: C
   const [globalConfig, setGlobalConfig] = useState<AppConfig>({
     metaToken: "", metaAppId: "", metaAppSecret: "",
     anthropicApiKey: "", uazapiServer: "",
-    uazapiToken: "", appBaseUrl: "", uazapiWebhookForward: "",
+    uazapiToken: "", uazapiAdminToken: "", appBaseUrl: "", uazapiWebhookForward: "",
   });
   const [savingConfig, setSavingConfig] = useState(false);
   const [configMsg, setConfigMsg] = useState("");
@@ -447,10 +448,16 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: C
                   placeholder="https://nexopro.uazapi.com"
                 />
                 <SecretField
-                  label="Token"
+                  label="Token (instância padrão)"
                   value={globalConfig.uazapiToken}
                   onChange={(v) => setGlobalConfig((c) => ({ ...c, uazapiToken: v }))}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+                <SecretField
+                  label="Token Admin (criar instâncias)"
+                  value={globalConfig.uazapiAdminToken}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, uazapiAdminToken: v }))}
+                  placeholder="Token de administrador do servidor UazAPI"
                 />
                 <Field
                   label="Webhook forward (opcional)"
