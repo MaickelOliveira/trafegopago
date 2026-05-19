@@ -208,7 +208,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
                       <span className={`h-2 w-2 rounded-full flex-shrink-0 ${status === "connected" ? "bg-green-500" : status === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-800">
-                          {conn.type === "meta" ? "🏢 Meta API" : "📱 Baileys"} · {conn.phone || conn.metaPhoneNumberId}
+                          {conn.type === "meta" ? "🏢 Meta API" : conn.type === "uazapi" ? "⚡ UazAPI" : "📱 Baileys"} · {conn.phone || conn.metaPhoneNumberId}
                         </p>
                         <p className="text-xs text-slate-400">
                           {status === "connected" ? (inst?.phone ? `+${inst.phone}` : "Conectado") : status === "connecting" ? "Aguardando scan..." : "Desconectado"}

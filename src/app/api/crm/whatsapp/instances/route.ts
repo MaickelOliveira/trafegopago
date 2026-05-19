@@ -29,57 +29,70 @@ export async function POST(req: NextRequest) {
   if (type === "uazapi") {
     if (!funnelId) return NextResponse.json({ error: "funnelId obrigatório" }, { status: 400 });
 
-    const connId = instanceName ?? randomUUID();
-    const connResult = await connectInstance(connId);
-    const instanceToken = connResult.instanceToken ?? "";
-
     const config = getConfig();
-    const webhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
+    const connId = instanceName ?? randomUUID();
 
-    if (instanceToken) {
-      setWebhook(instanceToken, webhookUrl).catch(() => { });
-      updateFieldsMap(instanceToken).catch(() => { });
-    }
+    // Tenta criar instância no UazAPI multi-instância; se falhar usa o token global (single-instance)
+    const connResult = await connectInstance(connId);
+    const instanceToken = connResult.instanceToken || config.uazapiToken || "";
+
+    const webhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
+    setWebhook(instanceToken, webhookUrl).catch(() => {});
+    updateFieldsMap(instanceToken).catch(() => {});
 
     const funnels = getFunnels();
     const funnel = funnels.find((f) => f.id === funnelId);
     if (!funnel) return NextResponse.json({ error: "Funil não encontrado" }, { status: 404 });
 
-    const newConn = {
-      id: connId,
-      phone: "",
-      type: "uazapi" as const,
-      uazapiToken: instanceToken,
-    };
-    const existing = funnel.connections ?? [];
-    updateFunnel(funnelId, { connections: [...existing, newConn] });
+    // Verifica se já existe conexão UazAPI neste funil para não duplicar
+    const alreadyExists = funnel.connections?.some(c => c.type === "uazapi");
+    if (!alreadyExists) {
+      const existing = funnel.connections ?? [];
+      updateFunnel(funnelId, { connections: [...existing, {
+        id: connId,
+        phone: "",
+        type: "uazapi" as const,
+        uazapiToken: instanceToken,
+      }]});
+    }
 
+    // Busca QR ou status de conexão
     let qrImage: string | null = null;
-    let status = connResult.status ?? "connecting";
+    let status = "connecting";
     let phone: string | null = null;
 
-    for (let i = 0; i < 6; i++) {
-      await new Promise((r) => setTimeout(r, 4000));
-      if (!instanceToken) break;
-      const st = await getInstanceStatus(instanceToken);
-      status = st.status;
-      phone = st.phone ?? null;
-      if (st.qr) {
-        qrImage = await QRCode.toDataURL(st.qr, { margin: 1, width: 280 }).catch(() => null);
-        break;
-      }
-      if (st.status === "connected") {
-        if (st.phone) {
-          const updatedFunnels = getFunnels();
-          const f2 = updatedFunnels.find((f) => f.id === funnelId);
-          if (f2) {
-            const updConns = (f2.connections ?? []).map((c) =>
-              c.id === connId ? { ...c, phone: st.phone! } : c
-            );
-            updateFunnel(funnelId, { connections: updConns });
-          }
+    // Primeiro tenta pegar QR imediatamente
+    const immediateStatus = await getInstanceStatus(instanceToken);
+    if (immediateStatus.qr) {
+      qrImage = await QRCode.toDataURL(immediateStatus.qr, { margin: 1, width: 280 }).catch(() => null);
+      status = immediateStatus.status;
+    } else if (immediateStatus.status === "connected") {
+      status = "connected";
+      phone = immediateStatus.phone ?? null;
+    } else {
+      // Aguarda até 24s pelo QR
+      for (let i = 0; i < 6; i++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const st = await getInstanceStatus(instanceToken);
+        status = st.status;
+        phone = st.phone ?? null;
+        if (st.qr) {
+          qrImage = await QRCode.toDataURL(st.qr, { margin: 1, width: 280 }).catch(() => null);
+          break;
         }
-        break;
+        if (st.status === "connected") break;
+      }
+    }
+
+    // Atualiza phone na conexão se já conectado
+    if (phone) {
+      const f2 = getFunnels().find((f) => f.id === funnelId);
+      if (f2) {
+        updateFunnel(funnelId, {
+          connections: (f2.connections ?? []).map((c) =>
+            c.id === connId ? { ...c, phone: phone! } : c
+          ),
+        });
       }
     }
 
