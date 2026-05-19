@@ -27,7 +27,6 @@ export type Client = {
   pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
   capiToken?: string;           // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
-  agentPrompt?: string;         // Instruções customizadas para o agente de WhatsApp deste cliente
 };
 
 export type AppConfig = {

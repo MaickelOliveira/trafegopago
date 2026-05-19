@@ -19,7 +19,6 @@ type Client = {
   tintimWebhookForward?: string;
   pixelId?: string;
   capiToken?: string;
-  agentPrompt?: string;
 };
 
 const FUNNEL_OPTIONS: { value: FunnelType; label: string; desc: string; icon: string }[] = [
@@ -142,7 +141,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: C
 
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
-    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "", capiToken: "", agentPrompt: "",
+    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "", capiToken: "",
   });
   const [form, setForm] = useState(empty());
 
@@ -652,28 +651,6 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: C
                     )}
                   </div>
                 </div>
-              </div>
-
-              {/* Agente de WhatsApp — prompt customizado */}
-              <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 space-y-3">
-                <div>
-                  <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide mb-0.5">🤖 Agente de WhatsApp</p>
-                  <p className="text-xs text-violet-500">Como o agente deve se apresentar e responder os leads deste cliente.</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Instruções do agente</label>
-                  <textarea
-                    rows={6}
-                    value={form.agentPrompt ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, agentPrompt: e.target.value }))}
-                    placeholder={`Exemplo:\nVocê é a assistente virtual da Clínica Bem Estar.\nSempre se apresente como "Ana".\nResponda de forma simpática e profissional.\nQuando perguntarem sobre preços, diga que a consulta inicial é gratuita e peça o nome e telefone para agendar.\nNunca prometa resultados específicos.`}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition resize-none font-mono"
-                  />
-                </div>
-                <p className="text-xs text-violet-400">
-                  Se deixar vazio, o agente usa o prompt padrão da TráfegoPago com os dados de campanha.
-                  Os dados de performance do Meta Ads são sempre incluídos automaticamente.
-                </p>
               </div>
 
               {/* Tintim */}
