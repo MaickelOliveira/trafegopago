@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClients, getConfig } from "@/lib/clients";
+import { getClients, getConfig, getClientById } from "@/lib/clients";
 import { getHistory, addMessage } from "@/lib/conversations";
 import { generateResponse } from "@/lib/ai-agent";
 import { sendWhatsApp } from "@/lib/whatsapp";
+import { sendMessage as sendMessageUnified } from "@/lib/whatsapp-send";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
 import { processKanbanActions } from "@/lib/kanban-agent";
+import { runGeminiAgent } from "@/lib/gemini-agent";
 
 type Body = Record<string, unknown>;
 
@@ -177,15 +179,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Gera resposta via Claude (agente de atendimento — não alterado)
-    const reply = await generateResponse(text, history, clientId);
+    // Verifica se cliente tem agente Gemini configurado e ativo
+    const activeClient = cid !== "sem-cliente" ? getClientById(cid) : null;
+    const geminiEnabled = activeClient?.agentConfig?.enabled === true;
+
+    let reply: string | null = null;
+
+    if (geminiEnabled && cid !== "sem-cliente") {
+      // Agente Gemini 2.5 Pro — responde, agenda, follow-up
+      const { text: geminiText } = await runGeminiAgent(text, history, cid, phone);
+      reply = geminiText || null;
+    } else {
+      // Comportamento padrão: Claude agent
+      reply = await generateResponse(text, history, clientId);
+    }
 
     if (!reply) return NextResponse.json({ ok: true });
 
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId);
 
-    // Envia resposta
-    await sendWhatsApp(phone, reply);
+    // Envia via Meta Cloud API (se disponível) ou UazAPI
+    if (cid !== "sem-cliente") {
+      await sendMessageUnified(phone, reply, cid);
+    } else {
+      await sendWhatsApp(phone, reply);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -10,6 +10,18 @@ export type AdAccount = {
 
 export type FunnelType = "leads" | "sales" | "traffic";
 
+export type AgentConfig = {
+  enabled: boolean;              // Liga/desliga o agente
+  followUpEnabled: boolean;      // Liga/desliga follow-ups separadamente
+  geminiApiKey?: string;         // Chave Gemini (sobrescreve a global se preenchida)
+  googleCalendarId?: string;     // Calendar ID do cliente (ex: "primary")
+  googleRefreshToken?: string;   // OAuth refresh token do Google Calendar
+  summaryPhone?: string;         // Número para receber resumo de conversa
+  followUpDelayHours: number;    // Horas sem resposta para disparar follow-up (padrão: 24)
+  followUpMessage?: string;      // Mensagem customizada do follow-up
+  systemPrompt?: string;         // Instruções do agente para este cliente
+};
+
 export type Client = {
   id: string;
   name: string;
@@ -27,6 +39,7 @@ export type Client = {
   pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
   capiToken?: string;           // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
+  agentConfig?: AgentConfig;    // Configuração do agente Gemini de WhatsApp
 };
 
 export type AppConfig = {
@@ -39,6 +52,10 @@ export type AppConfig = {
   uazapiWebhookForward?: string;
   appBaseUrl?: string;
   anthropicApiKey?: string;
+  geminiApiKey?: string;         // Chave global do Gemini (usada quando cliente não tem a própria)
+  googleClientId?: string;       // Google OAuth client ID (para Google Calendar)
+  googleClientSecret?: string;   // Google OAuth client secret
+  agentCronSecret?: string;      // Secret para proteger o endpoint de cron
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
