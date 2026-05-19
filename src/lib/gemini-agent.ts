@@ -213,7 +213,7 @@ export async function runGeminiAgent(
 
             else if (call.name === "agendar_followup") {
               if (client.agentConfig?.followUpEnabled) {
-                const horas = (args.horas as number) || client.agentConfig.followUpDelayHours || 24;
+                const horas = (args.horas as number) || 24;
                 const scheduledAt = new Date(Date.now() + horas * 3600000).toISOString();
                 scheduleFollowUp({
                   clientId,

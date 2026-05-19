@@ -4,14 +4,20 @@ import { useState, useEffect } from "react";
 import { clsx } from "clsx";
 import { useSearchParams } from "next/navigation";
 
+type FollowUpStep = {
+  id: string;
+  delayHours: number;
+  message: string;
+  label?: string;
+};
+
 type AgentCfg = {
   enabled: boolean;
   followUpEnabled: boolean;
   geminiApiKey?: string;
   googleCalendarId?: string;
   summaryPhone?: string;
-  followUpDelayHours: number;
-  followUpMessage?: string;
+  followUps: FollowUpStep[];
   systemPrompt?: string;
   calendarConnected?: boolean;
 };
@@ -62,7 +68,7 @@ function Field({ label, value, onChange, placeholder, type = "text", hint }: {
 export function AgentView({ clientId, clientName }: { clientId: string; clientName: string }) {
   const searchParams = useSearchParams();
   const [cfg, setCfg] = useState<AgentCfg>({
-    enabled: false, followUpEnabled: false, followUpDelayHours: 24,
+    enabled: false, followUpEnabled: false, followUps: [],
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -136,7 +142,9 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         <div className="border-t border-slate-100" />
         <Toggle
           label="Follow-up automático"
-          sub={`Envia mensagem após ${cfg.followUpDelayHours}h sem resposta`}
+          sub={(cfg.followUps?.length ?? 0) > 0
+            ? `${cfg.followUps.length} step${cfg.followUps.length !== 1 ? "s" : ""} configurado${cfg.followUps.length !== 1 ? "s" : ""}`
+            : "Nenhum step configurado ainda"}
           checked={cfg.followUpEnabled}
           onChange={(v) => toggleField("followUpEnabled", v)}
           color="green"
@@ -200,33 +208,90 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         )}
       </div>
 
-      {/* Follow-up */}
+      {/* Follow-up sequência */}
       <div className="rounded-2xl border border-emerald-200 bg-white p-5 space-y-4 shadow-sm">
-        <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">⏰ Follow-up Automático</p>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Horas sem resposta para disparar follow-up
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={168}
-            value={cfg.followUpDelayHours}
-            onChange={(e) => setCfg((c) => ({ ...c, followUpDelayHours: Number(e.target.value) }))}
-            className="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-400"
-          />
-          <span className="ml-2 text-sm text-slate-500">horas</span>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">⏰ Sequência de Follow-ups</p>
+          <button
+            onClick={() => {
+              const newStep: FollowUpStep = {
+                id: crypto.randomUUID(),
+                delayHours: 24,
+                message: "",
+                label: `Follow-up ${(cfg.followUps?.length ?? 0) + 1}`,
+              };
+              setCfg((c) => ({ ...c, followUps: [...(c.followUps ?? []), newStep] }));
+            }}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+          >
+            + Adicionar step
+          </button>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">Mensagem padrão do follow-up</label>
-          <textarea
-            rows={3}
-            value={cfg.followUpMessage ?? ""}
-            onChange={(e) => setCfg((c) => ({ ...c, followUpMessage: e.target.value }))}
-            placeholder="Olá! Passando para ver se ainda posso te ajudar. Tem alguma dúvida?"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-400 transition resize-none"
-          />
-          <p className="text-xs text-slate-400 mt-1">O agente pode personalizar esta mensagem com contexto da conversa.</p>
+
+        <p className="text-xs text-slate-400">
+          Cada step é enviado após o prazo configurado. Quando o lead responde, a sequência reinicia do zero.
+        </p>
+
+        {(cfg.followUps ?? []).length === 0 && (
+          <div className="rounded-xl border border-dashed border-emerald-200 p-4 text-center">
+            <p className="text-sm text-slate-400">Nenhum follow-up configurado.</p>
+            <p className="text-xs text-slate-300 mt-1">Clique em "+ Adicionar step" para criar a sequência.</p>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {(cfg.followUps ?? []).map((step, idx) => (
+            <div key={step.id} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white shrink-0">
+                  {idx + 1}
+                </span>
+                <input
+                  value={step.label ?? ""}
+                  onChange={(e) => setCfg((c) => ({
+                    ...c,
+                    followUps: c.followUps.map((s) => s.id === step.id ? { ...s, label: e.target.value } : s),
+                  }))}
+                  placeholder={`Follow-up ${idx + 1}`}
+                  className="flex-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-sm font-medium outline-none focus:border-emerald-400"
+                />
+                <button
+                  onClick={() => setCfg((c) => ({ ...c, followUps: c.followUps.filter((s) => s.id !== step.id) }))}
+                  className="text-slate-300 hover:text-red-500 transition text-sm px-1"
+                >✕</button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 shrink-0">
+                  {idx === 0 ? "Enviar após" : "Depois de"}
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  value={step.delayHours}
+                  onChange={(e) => setCfg((c) => ({
+                    ...c,
+                    followUps: c.followUps.map((s) => s.id === step.id ? { ...s, delayHours: Number(e.target.value) } : s),
+                  }))}
+                  className="w-20 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-sm outline-none focus:border-emerald-400 text-center"
+                />
+                <span className="text-xs text-slate-500">
+                  {idx === 0 ? "horas sem resposta" : `horas do step ${idx}`}
+                </span>
+              </div>
+
+              <textarea
+                rows={2}
+                value={step.message}
+                onChange={(e) => setCfg((c) => ({
+                  ...c,
+                  followUps: c.followUps.map((s) => s.id === step.id ? { ...s, message: e.target.value } : s),
+                }))}
+                placeholder={`Mensagem do follow-up ${idx + 1}...`}
+                className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 resize-none"
+              />
+            </div>
+          ))}
         </div>
       </div>
 

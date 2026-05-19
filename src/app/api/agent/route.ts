@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const cfg = client.agentConfig ?? {
     enabled: false,
     followUpEnabled: false,
-    followUpDelayHours: 24,
+    followUps: [],
   };
 
   // Não expõe tokens sensíveis — retorna booleano se conectado
@@ -43,7 +43,7 @@ export async function PUT(req: NextRequest) {
 
   const body = await req.json().catch(() => ({})) as Partial<AgentConfig>;
 
-  const current = client.agentConfig ?? { enabled: false, followUpEnabled: false, followUpDelayHours: 24 };
+  const current = client.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] };
 
   // Preserva googleRefreshToken existente se não foi alterado
   const updated: AgentConfig = {
@@ -69,7 +69,7 @@ export async function PATCH(req: NextRequest) {
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json().catch(() => ({})) as { field: "enabled" | "followUpEnabled"; value: boolean };
-  const current = client.agentConfig ?? { enabled: false, followUpEnabled: false, followUpDelayHours: 24 };
+  const current = client.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] };
   const updated = { ...current, [body.field]: body.value };
 
   upsertClient({ ...client, agentConfig: updated });

@@ -13,7 +13,9 @@ export type FollowUp = {
   message: string;
   type: FollowUpType;
   status: FollowUpStatus;
-  appointmentEventId?: string; // Google Calendar event ID (para appointment_reminder)
+  stepIndex?: number;           // índice do step na sequência (0, 1, 2...)
+  stepId?: string;              // id do FollowUpStep configurado
+  appointmentEventId?: string;  // Google Calendar event ID (para appointment_reminder)
   createdAt: string;
 };
 
@@ -80,6 +82,26 @@ export function cancelFollowUp(id: string): void {
     items[idx].status = "cancelled";
     save(items);
   }
+}
+
+// Inicia a sequência de follow-ups para um lead (step 0)
+export function startFollowUpSequence(
+  clientId: string,
+  phone: string,
+  steps: { id: string; delayHours: number; message: string }[]
+): void {
+  if (steps.length === 0) return;
+  const first = steps[0];
+  const scheduledAt = new Date(Date.now() + first.delayHours * 3600000).toISOString();
+  scheduleFollowUp({
+    clientId,
+    phone,
+    scheduledAt,
+    message: first.message,
+    type: "followup",
+    stepIndex: 0,
+    stepId: first.id,
+  });
 }
 
 export function cancelFollowUpsForPhone(clientId: string, phone: string): void {

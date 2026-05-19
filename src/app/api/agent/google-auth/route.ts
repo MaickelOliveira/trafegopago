@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       const client = getClientById(clientId);
       if (!client) throw new Error("Client not found");
 
-      const current = client.agentConfig ?? { enabled: false, followUpEnabled: false, followUpDelayHours: 24 };
+      const current = client.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] };
       upsertClient({
         ...client,
         agentConfig: {

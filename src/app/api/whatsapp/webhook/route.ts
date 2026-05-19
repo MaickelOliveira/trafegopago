@@ -8,6 +8,7 @@ import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import { runGeminiAgent } from "@/lib/gemini-agent";
+import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
 
 type Body = Record<string, unknown>;
 
@@ -168,6 +169,21 @@ export async function POST(req: NextRequest) {
 
     // Se foi você quem mandou pelo celular, só salva — não responde via IA
     if (fromMe) return NextResponse.json({ ok: true });
+
+    // Quando lead responde: cancela follow-ups pendentes e inicia sequência se for novo lead
+    if (cid !== "sem-cliente") {
+      const activeClientCfg = getClientById(cid)?.agentConfig;
+      if (activeClientCfg?.followUpEnabled && (activeClientCfg.followUps?.length ?? 0) > 0) {
+        if (isNew) {
+          // Lead novo: inicia sequência de follow-ups
+          startFollowUpSequence(cid, phone, activeClientCfg.followUps);
+        } else {
+          // Lead existente respondeu: cancela follow-ups pendentes (sequência reinicia)
+          cancelFollowUpsForPhone(cid, phone);
+          startFollowUpSequence(cid, phone, activeClientCfg.followUps);
+        }
+      }
+    }
 
     // Histórico da conversa
     const history = getHistory(phone);

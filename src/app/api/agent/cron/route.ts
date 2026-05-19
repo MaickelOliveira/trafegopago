@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDueFollowUps, markSent } from "@/lib/followups";
+import { getDueFollowUps, markSent, scheduleFollowUp } from "@/lib/followups";
 import { getClientById, getConfig } from "@/lib/clients";
 import { sendMessage } from "@/lib/whatsapp-send";
 
@@ -31,6 +31,24 @@ export async function GET(req: NextRequest) {
       markSent(followUp.id);
       processed++;
       console.log(`[agent/cron] Follow-up enviado: ${followUp.id} → ${followUp.phone}`);
+
+      // Agenda o próximo step da sequência, se houver
+      const steps = client?.agentConfig?.followUps ?? [];
+      const nextIdx = (followUp.stepIndex ?? 0) + 1;
+      const nextStep = steps[nextIdx];
+      if (nextStep && client?.agentConfig?.followUpEnabled === true) {
+        const scheduledAt = new Date(Date.now() + nextStep.delayHours * 3600000).toISOString();
+        scheduleFollowUp({
+          clientId: followUp.clientId,
+          phone: followUp.phone,
+          scheduledAt,
+          message: nextStep.message,
+          type: "followup",
+          stepIndex: nextIdx,
+          stepId: nextStep.id,
+        });
+        console.log(`[agent/cron] Próximo step ${nextIdx} agendado para ${scheduledAt}`);
+      }
     } catch (e) {
       console.error(`[agent/cron] Erro ao enviar ${followUp.id}:`, e);
     }

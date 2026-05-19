@@ -10,6 +10,13 @@ export type AdAccount = {
 
 export type FunnelType = "leads" | "sales" | "traffic";
 
+export type FollowUpStep = {
+  id: string;
+  delayHours: number; // horas após o step anterior (ou após o primeiro contato para o step 1)
+  message: string;
+  label?: string;     // nome opcional para identificar o step
+};
+
 export type AgentConfig = {
   enabled: boolean;              // Liga/desliga o agente
   followUpEnabled: boolean;      // Liga/desliga follow-ups separadamente
@@ -17,8 +24,7 @@ export type AgentConfig = {
   googleCalendarId?: string;     // Calendar ID do cliente (ex: "primary")
   googleRefreshToken?: string;   // OAuth refresh token do Google Calendar
   summaryPhone?: string;         // Número para receber resumo de conversa
-  followUpDelayHours: number;    // Horas sem resposta para disparar follow-up (padrão: 24)
-  followUpMessage?: string;      // Mensagem customizada do follow-up
+  followUps: FollowUpStep[];     // Sequência de follow-ups configurados
   systemPrompt?: string;         // Instruções do agente para este cliente
 };
 
