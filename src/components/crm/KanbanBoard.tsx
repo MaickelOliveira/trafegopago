@@ -6,7 +6,7 @@ import { LeadModal } from "./LeadModal";
 import type { Lead } from "@/lib/leads";
 import type { Funnel, FunnelColumn } from "@/lib/funnels";
 
-type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string };
+type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean };
 
 const SCORE_COLOR = (s: number) =>
   s >= 8 ? "text-green-700 bg-green-100" :
@@ -196,6 +196,28 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                     <button onClick={() => moveCol(idx, 1)} disabled={idx === editCols.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs px-1">▼</button>
                     <button onClick={() => removeCol(idx)} className="text-slate-300 hover:text-red-500 text-xs px-1">✕</button>
                   </div>
+                  {/* Flags de comportamento */}
+                  <div className="flex items-center gap-3 pl-5">
+                    <label className="flex items-center gap-1 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={!!col.blockAutoMove}
+                        onChange={(e) => setEditCols((prev) => prev.map((c, i) => i === idx ? { ...c, blockAutoMove: e.target.checked || undefined } : c))}
+                        className="rounded accent-violet-600"
+                      />
+                      <span className="text-[11px] text-slate-500">🔒 Bloqueado p/ IA</span>
+                    </label>
+                    <label className="flex items-center gap-1 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={!!col.askValueOnMove}
+                        onChange={(e) => setEditCols((prev) => prev.map((c, i) => i === idx ? { ...c, askValueOnMove: e.target.checked || undefined } : c))}
+                        className="rounded accent-green-600"
+                      />
+                      <span className="text-[11px] text-slate-500">💰 Pedir valor+data</span>
+                    </label>
+                  </div>
+
                   {/* Seletor de evento Meta CAPI */}
                   <div className="flex items-center gap-1.5 pl-5">
                     <span className="text-[10px] text-slate-400 shrink-0 uppercase tracking-wide">Meta</span>
@@ -296,6 +318,50 @@ export function KanbanBoard({
   const [saving, setSaving]   = useState(false);
   const draggingId = useRef<string | null>(null);
 
+  // Agente Kanban — liga/desliga
+  const [agentEnabled, setAgentEnabled] = useState(
+    clients.find((c) => c.id === (selectedClient ?? clients[0]?.id))?.kanbanAgentEnabled !== false
+  );
+  const [togglingAgent, setTogglingAgent] = useState(false);
+
+  async function toggleAgent() {
+    const cid = selectedClient ?? clients[0]?.id;
+    if (!cid) return;
+    setTogglingAgent(true);
+    const res = await fetch(`/api/crm/kanban-agent?clientId=${cid}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: !agentEnabled }),
+    });
+    if (res.ok) setAgentEnabled((v) => !v);
+    setTogglingAgent(false);
+  }
+
+  // Modal valor + data (para colunas com askValueOnMove)
+  const [valueModal, setValueModal] = useState<{ leadId: string; colId: string } | null>(null);
+  const [valueInput, setValueInput] = useState("");
+  const [dateInput, setDateInput] = useState(() => new Date().toISOString().slice(0, 10));
+
+  async function confirmValueModal() {
+    if (!valueModal) return;
+    await fetch(`/api/crm/leads/${valueModal.leadId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: valueModal.colId,
+        ...(valueInput ? { value: Number(valueInput) } : {}),
+        ...(dateInput ? { notes: `Fechamento: ${dateInput}` } : {}),
+      }),
+    });
+    setLeads((prev) => prev.map((l) =>
+      l.id === valueModal.leadId
+        ? { ...l, status: valueModal.colId, value: valueInput ? Number(valueInput) : l.value }
+        : l
+    ));
+    setValueModal(null);
+    setValueInput("");
+  }
+
   // Meta Ads metrics banner
   const [metricsPeriod, setMetricsPeriod] = useState("last_30d");
   const [metricsOpen, setMetricsOpen] = useState(true);
@@ -363,10 +429,19 @@ export function KanbanBoard({
     draggingId.current = null;
     const lead = leads.find((l) => l.id === id);
     if (!lead || lead.status === colId) return;
+
+    // Se a coluna pede valor+data, abre modal antes de salvar
+    const col = funnel?.columns.find((c) => c.id === colId);
+    if (col?.askValueOnMove) {
+      setValueInput(lead.value != null ? String(lead.value) : "");
+      setDateInput(new Date().toISOString().slice(0, 10));
+      setValueModal({ leadId: id, colId });
+      return;
+    }
+
     setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status: colId } : l));
 
     // Dispara Pixel (browser) se a coluna tiver metaEvent
-    const col = funnel?.columns.find((c) => c.id === colId);
     if (col?.metaEvent && currentClientMeta?.pixelId) {
       try {
         const w = window as typeof window & { fbq?: (...args: unknown[]) => void };
@@ -533,6 +608,22 @@ export function KanbanBoard({
         </div>
 
 
+        {/* Toggle agente Kanban IA */}
+        <button
+          onClick={toggleAgent}
+          disabled={togglingAgent}
+          title={agentEnabled ? "Agente IA ativo — clique para desativar" : "Agente IA desativado — clique para ativar"}
+          className={clsx(
+            "rounded-lg border px-3 py-1.5 text-xs font-semibold transition shrink-0 flex items-center gap-1.5",
+            agentEnabled
+              ? "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+              : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50"
+          )}
+        >
+          <span className={clsx("h-2 w-2 rounded-full", agentEnabled ? "bg-violet-500" : "bg-slate-300")} />
+          {togglingAgent ? "..." : agentEnabled ? "IA ativa" : "IA desligada"}
+        </button>
+
         <button
           onClick={() => setShowNewForm(true)}
           className="ml-auto rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition shrink-0"
@@ -676,7 +767,7 @@ export function KanbanBoard({
         })}
       </div>
 
-      {/* Modal */}
+      {/* Modal lead */}
       {selected && (
         <LeadModal
           lead={selected}
@@ -685,6 +776,54 @@ export function KanbanBoard({
           onUpdated={handleUpdated}
           onDeleted={handleDeleted}
         />
+      )}
+
+      {/* Modal valor + data (ao mover para coluna com askValueOnMove) */}
+      {valueModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-6">
+            <h3 className="font-semibold text-slate-800 mb-1">
+              {funnel.columns.find((c) => c.id === valueModal.colId)?.label ?? "Concluído"}
+            </h3>
+            <p className="text-sm text-slate-500 mb-4">Preencha os dados do fechamento (opcional)</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Valor (R$)</label>
+                <input
+                  type="number"
+                  value={valueInput}
+                  onChange={(e) => setValueInput(e.target.value)}
+                  placeholder="0,00"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Data do fechamento</label>
+                <input
+                  type="date"
+                  value={dateInput}
+                  onChange={(e) => setDateInput(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => { setValueModal(null); }}
+                className="flex-1 rounded-lg border border-slate-200 py-2 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmValueModal}
+                className="flex-1 rounded-lg bg-green-600 py-2 text-sm font-semibold text-white hover:bg-green-700"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

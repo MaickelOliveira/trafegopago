@@ -6,7 +6,7 @@ import { WhatsAppStatus } from "@/components/crm/WhatsAppStatus";
 import type { Lead } from "@/lib/leads";
 import type { Funnel } from "@/lib/funnels";
 
-type Client = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string };
+type Client = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean };
 
 function ClientSelector({ clients, selected, onSelect }: {
   clients: Client[];

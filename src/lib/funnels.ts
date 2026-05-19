@@ -6,7 +6,9 @@ export type FunnelColumn = {
   id: string;
   label: string;
   color: string;
-  metaEvent?: string; // evento da CAPI disparado quando lead entra nesta coluna
+  metaEvent?: string;      // evento CAPI disparado quando lead entra nesta coluna
+  blockAutoMove?: boolean; // bloqueia movimentação automática pelo agente IA
+  askValueOnMove?: boolean; // abre modal pedindo valor + data quando lead entra aqui
 };
 
 export type ConnectionType = "baileys" | "meta";

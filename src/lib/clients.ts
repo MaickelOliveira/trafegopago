@@ -24,8 +24,9 @@ export type Client = {
   tintimCode?: string;
   tintimToken?: string;
   tintimWebhookForward?: string;
-  pixelId?: string;    // ID do pixel Meta (fbq browser + CAPI)
-  capiToken?: string;  // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
+  pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
+  capiToken?: string;           // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
+  kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
 };
 
 export type AppConfig = {

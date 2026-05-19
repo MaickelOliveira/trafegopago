@@ -57,20 +57,30 @@ const TOOLS: Anthropic.Tool[] = [
 
 function buildSystemPrompt(lead: Lead, funnel: Funnel): string {
   const colunaAtual = funnel.columns.find((c) => c.id === lead.status);
-  const colunasDisponiveis = funnel.columns
+
+  // Colunas que o agente PODE mover (blockAutoMove !== true)
+  const colunasPermitidas = funnel.columns.filter((c) => !c.blockAutoMove);
+  const colunasBloqueadas = funnel.columns.filter((c) => c.blockAutoMove);
+
+  const listaPermitidas = colunasPermitidas
     .map((c) => `• ${c.id} → ${c.label}${c.id === lead.status ? " (atual)" : ""}`)
     .join("\n");
+
+  const listaBloqueadas = colunasBloqueadas.length > 0
+    ? `\nColunas BLOQUEADAS para movimentação automática (preenchidas manualmente):\n${colunasBloqueadas.map((c) => `• ${c.label}`).join("\n")}`
+    : "";
 
   return `Você é um agente silencioso de CRM. Analise a última mensagem do lead e decida se deve atualizar o Kanban.
 
 Lead: ${lead.name} | Etapa atual: ${colunaAtual?.label ?? lead.status} | Funil: ${funnel.name}
 
-Colunas disponíveis (use o id em mover_lead):
-${colunasDisponiveis}
+Colunas disponíveis para mover_lead (use o id):
+${listaPermitidas}${listaBloqueadas}
 
 Regras:
 - Use mover_lead APENAS quando houver mudança CLARA e EXPLÍCITA de estágio
-- Não mova se já está na coluna correta
+- NUNCA mova para colunas bloqueadas — essas são preenchidas manualmente pelo gestor
+- Não mova se o lead já está na coluna correta
 - Use atualizar_lead para capturar nome real ou resumir contexto relevante
 - Se não houver nada a fazer, não use nenhuma ferramenta
 - Você NÃO responde ao usuário — apenas executa ações no CRM`;
@@ -111,9 +121,9 @@ async function runKanbanAgent(
 
       if (block.name === "mover_lead") {
         const input = block.input as { coluna_id: string; motivo: string };
-        // Valida que a coluna existe no funil
+        // Valida que a coluna existe, não está bloqueada e é diferente da atual
         const colunaValida = funnel.columns.find((c) => c.id === input.coluna_id);
-        if (colunaValida && input.coluna_id !== lead.status) {
+        if (colunaValida && !colunaValida.blockAutoMove && input.coluna_id !== lead.status) {
           actions.push({ type: "mover_lead", colunaId: input.coluna_id, motivo: input.motivo });
         }
       }
@@ -143,6 +153,10 @@ export async function processKanbanActions(
   clientId: string,
   phone: string
 ): Promise<void> {
+  const client = getClientById(clientId);
+  // Agente desabilitado explicitamente pelo gestor
+  if (client?.kanbanAgentEnabled === false) return;
+
   const lead = getLeadByPhone(clientId, phone);
   if (!lead) return;
 
@@ -151,8 +165,6 @@ export async function processKanbanActions(
 
   const actions = await runKanbanAgent(lastMessage, history, lead, funnel);
   if (actions.length === 0) return;
-
-  const client = getClientById(clientId);
 
   for (const action of actions) {
     if (action.type === "mover_lead") {
