@@ -17,6 +17,7 @@ type Client = {
   tintimCode?: string;
   tintimToken?: string;
   tintimWebhookForward?: string;
+  pixelId?: string;
 };
 
 const FUNNEL_OPTIONS: { value: FunnelType; label: string; desc: string; icon: string }[] = [
@@ -114,7 +115,7 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
 
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
-    tintimCode: "", tintimToken: "", tintimWebhookForward: "",
+    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "",
   });
   const [form, setForm] = useState(empty());
 
@@ -586,6 +587,20 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* Meta CAPI */}
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Meta CAPI (opcional)</p>
+                <Field
+                  label="Pixel ID"
+                  value={form.pixelId ?? ""}
+                  onChange={(v) => setForm((f) => ({ ...f, pixelId: v }))}
+                  placeholder="123456789012345"
+                />
+                <p className="text-xs text-blue-600">
+                  Encontrado no Gerenciador de Eventos → Fontes de Dados. Usado para enviar conversões via API quando um lead muda de etapa no funil.
+                </p>
               </div>
 
               {error && (

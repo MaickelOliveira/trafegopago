@@ -6,6 +6,7 @@ export type FunnelColumn = {
   id: string;
   label: string;
   color: string;
+  metaEvent?: string; // evento da CAPI disparado quando lead entra nesta coluna
 };
 
 export type ConnectionType = "baileys" | "meta";

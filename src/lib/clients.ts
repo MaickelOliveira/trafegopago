@@ -24,6 +24,7 @@ export type Client = {
   tintimCode?: string;
   tintimToken?: string;
   tintimWebhookForward?: string;
+  pixelId?: string; // ID do pixel Meta para envio de eventos via CAPI
 };
 
 export type AppConfig = {

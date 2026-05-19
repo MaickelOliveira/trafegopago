@@ -6,7 +6,7 @@ import { LeadModal } from "./LeadModal";
 import type { Lead } from "@/lib/leads";
 import type { Funnel, FunnelColumn } from "@/lib/funnels";
 
-type ClientOption = { id: string; name: string; color: string };
+type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string };
 
 const SCORE_COLOR = (s: number) =>
   s >= 8 ? "text-green-700 bg-green-100" :
@@ -32,7 +32,32 @@ function hexToLight(hex: string): string {
 // ── Gestão de Funis ──────────────────────────────────────────────────────────
 const COL_COLORS = ["#3B82F6","#F59E0B","#F97316","#10B981","#8B5CF6","#EC4899","#94A3B8","#EF4444","#14B8A6","#6366F1"];
 
-function FunnelManager({ funnels, onUpdated, clientId }: { funnels: Funnel[]; onUpdated: (f: Funnel[]) => void; clientId?: string }) {
+const META_EVENTS = [
+  "Lead", "Purchase", "CompleteRegistration", "InitiateCheckout",
+  "AddToCart", "ViewContent", "Contact", "Schedule", "Subscribe",
+  "AddToWishlist", "AddPaymentInfo", "Search",
+];
+
+const META_CUSTOM_EVENT_TYPES: { value: string; label: string }[] = [
+  { value: "LEAD", label: "Lead" },
+  { value: "COMPLETE_REGISTRATION", label: "Complete Registration" },
+  { value: "PURCHASE", label: "Purchase" },
+  { value: "INITIATE_CHECKOUT", label: "Initiate Checkout" },
+  { value: "ADD_TO_CART", label: "Add to Cart" },
+  { value: "VIEW_CONTENT", label: "View Content" },
+  { value: "CONTACT", label: "Contact" },
+  { value: "SCHEDULE", label: "Schedule" },
+  { value: "SUBSCRIBE", label: "Subscribe" },
+  { value: "OTHER", label: "Other" },
+];
+
+function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }: {
+  funnels: Funnel[];
+  onUpdated: (f: Funnel[]) => void;
+  clientId?: string;
+  metaAccountId?: string;
+  pixelId?: string;
+}) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -40,6 +65,10 @@ function FunnelManager({ funnels, onUpdated, clientId }: { funnels: Funnel[]; on
   const [editCols, setEditCols] = useState<FunnelColumn[]>([]);
   const [newColName, setNewColName] = useState("");
   const [newColColor, setNewColColor] = useState(COL_COLORS[0]);
+  const [creatingConvIdx, setCreatingConvIdx] = useState<number | null>(null);
+  const [convName, setConvName] = useState("");
+  const [convType, setConvType] = useState("LEAD");
+  const [convSaving, setConvSaving] = useState(false);
 
   async function create() {
     if (!newName.trim()) return;
@@ -99,6 +128,26 @@ function FunnelManager({ funnels, onUpdated, clientId }: { funnels: Funnel[]; on
     setEditing(null); setSaving(false);
   }
 
+  async function createMetaConversion(colIdx: number) {
+    if (!convName.trim() || !metaAccountId || !pixelId) return;
+    setConvSaving(true);
+    const res = await fetch("/api/meta/custom-conversions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adAccountId: metaAccountId, name: convName.trim(), customEventType: convType, pixelId }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setEditCols((prev) => prev.map((c, i) => i === colIdx ? { ...c, metaEvent: convName.trim() } : c));
+      setCreatingConvIdx(null);
+      setConvName("");
+      setConvType("LEAD");
+    } else {
+      alert(data.error ?? "Erro ao criar evento no Meta");
+    }
+    setConvSaving(false);
+  }
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
@@ -137,14 +186,63 @@ function FunnelManager({ funnels, onUpdated, clientId }: { funnels: Funnel[]; on
               <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
             </div>
 
-            <div className="space-y-1.5 mb-4 max-h-64 overflow-y-auto">
+            <div className="space-y-2 mb-4 max-h-80 overflow-y-auto pr-1">
               {editCols.map((col, idx) => (
-                <div key={col.id} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: col.color }} />
-                  <span className="flex-1 text-sm font-medium text-slate-700 truncate">{col.label}</span>
-                  <button onClick={() => moveCol(idx, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs px-1">▲</button>
-                  <button onClick={() => moveCol(idx, 1)} disabled={idx === editCols.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs px-1">▼</button>
-                  <button onClick={() => removeCol(idx)} className="text-slate-300 hover:text-red-500 text-xs px-1">✕</button>
+                <div key={col.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: col.color }} />
+                    <span className="flex-1 text-sm font-medium text-slate-700 truncate">{col.label}</span>
+                    <button onClick={() => moveCol(idx, -1)} disabled={idx === 0} className="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs px-1">▲</button>
+                    <button onClick={() => moveCol(idx, 1)} disabled={idx === editCols.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs px-1">▼</button>
+                    <button onClick={() => removeCol(idx)} className="text-slate-300 hover:text-red-500 text-xs px-1">✕</button>
+                  </div>
+                  {/* Seletor de evento Meta CAPI */}
+                  <div className="flex items-center gap-1.5 pl-5">
+                    <span className="text-[10px] text-slate-400 shrink-0 uppercase tracking-wide">Meta</span>
+                    <select
+                      value={col.metaEvent ?? ""}
+                      onChange={(e) => setEditCols((prev) => prev.map((c, i) => i === idx ? { ...c, metaEvent: e.target.value || undefined } : c))}
+                      className="flex-1 text-xs rounded border border-slate-200 px-1 py-0.5 bg-white outline-none focus:border-blue-400"
+                    >
+                      <option value="">— sem evento —</option>
+                      {META_EVENTS.map((ev) => <option key={ev} value={ev}>{ev}</option>)}
+                      {col.metaEvent && !META_EVENTS.includes(col.metaEvent) && (
+                        <option value={col.metaEvent}>{col.metaEvent} (custom)</option>
+                      )}
+                    </select>
+                    {metaAccountId && pixelId && (
+                      <button
+                        onClick={() => { setCreatingConvIdx(idx); setConvName(col.label); }}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold shrink-0 border border-blue-200 rounded px-1 py-0.5 bg-blue-50"
+                        title="Criar custom conversion no Meta Ads"
+                      >+ Meta</button>
+                    )}
+                  </div>
+                  {/* Form inline para criar custom conversion */}
+                  {creatingConvIdx === idx && (
+                    <div className="pl-5 space-y-1.5 border-t border-blue-100 pt-1.5 mt-1">
+                      <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">Criar no Meta Ads</p>
+                      <input
+                        value={convName}
+                        onChange={(e) => setConvName(e.target.value)}
+                        placeholder="Nome do evento"
+                        className="w-full text-xs rounded border border-slate-200 px-2 py-1 outline-none focus:border-blue-400"
+                      />
+                      <select
+                        value={convType}
+                        onChange={(e) => setConvType(e.target.value)}
+                        className="w-full text-xs rounded border border-slate-200 px-1 py-1 bg-white outline-none"
+                      >
+                        {META_CUSTOM_EVENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => setCreatingConvIdx(null)} className="flex-1 text-xs rounded border border-slate-200 py-1 text-slate-500 hover:bg-slate-50">Cancelar</button>
+                        <button onClick={() => createMetaConversion(idx)} disabled={convSaving || !convName.trim()} className="flex-1 text-xs rounded bg-blue-600 py-1 text-white font-semibold hover:bg-blue-700 disabled:opacity-50">
+                          {convSaving ? "..." : "Criar"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -197,6 +295,23 @@ export function KanbanBoard({
   const [newLead, setNewLead] = useState({ name: "", phone: "", email: "", campaignName: "", value: "", clientId: clients[0]?.id ?? "" });
   const [saving, setSaving]   = useState(false);
   const draggingId = useRef<string | null>(null);
+
+  // Meta Ads metrics banner
+  const [metricsPeriod, setMetricsPeriod] = useState("last_30d");
+  const [metricsOpen, setMetricsOpen] = useState(true);
+  const [metricsData, setMetricsData] = useState<Record<string, number> | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const currentClientMeta = clients.find((c) => c.id === filterClient);
+
+  useEffect(() => {
+    const acct = currentClientMeta?.metaAccountId;
+    if (!acct) { setMetricsData(null); return; }
+    setMetricsLoading(true);
+    fetch(`/api/meta/${acct}/insights?datePreset=${metricsPeriod}`)
+      .then((r) => r.json())
+      .then((d) => { setMetricsData(d); setMetricsLoading(false); })
+      .catch(() => setMetricsLoading(false));
+  }, [currentClientMeta?.metaAccountId, metricsPeriod]);
 
   const funnel = funnels.find((f) => f.id === activeFunnel) ?? funnels[0];
 
@@ -295,8 +410,62 @@ export function KanbanBoard({
         ))}
       </div>
 
+      {/* Meta Ads Metrics Banner */}
+      {currentClientMeta?.metaAccountId && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => setMetricsOpen((v) => !v)} className="flex items-center gap-1.5 text-xs font-semibold text-blue-700">
+              <svg className="h-3.5 w-3.5 text-blue-500" viewBox="0 0 24 24" fill="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2" stroke="currentColor" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              Meta Ads
+              <svg className={`h-3.5 w-3.5 transition-transform ${metricsOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            {metricsOpen && (
+              <select
+                value={metricsPeriod}
+                onChange={(e) => setMetricsPeriod(e.target.value)}
+                className="text-xs rounded border border-blue-200 bg-white px-2 py-0.5 outline-none text-blue-700"
+              >
+                <option value="today">Hoje</option>
+                <option value="yesterday">Ontem</option>
+                <option value="last_7d">Últimos 7 dias</option>
+                <option value="last_14d">Últimos 14 dias</option>
+                <option value="last_30d">Últimos 30 dias</option>
+                <option value="this_month">Este mês</option>
+                <option value="last_month">Mês passado</option>
+              </select>
+            )}
+            {metricsLoading && <span className="text-xs text-blue-400 animate-pulse">Carregando...</span>}
+            {metricsOpen && metricsData && !metricsLoading && (() => {
+              const d = metricsData as { spend?: number; leads?: number; costPerLead?: number; purchases?: number; roas?: number; conversations?: number };
+              const chips = [
+                { label: "Investimento", value: `R$${(d.spend ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+                d.leads ? { label: "Leads", value: String(d.leads) } : null,
+                d.conversations ? { label: "Conversas", value: String(d.conversations) } : null,
+                d.purchases ? { label: "Compras", value: String(d.purchases) } : null,
+                d.costPerLead ? { label: "CPL", value: `R$${d.costPerLead.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } : null,
+                d.roas ? { label: "ROAS", value: `${d.roas.toFixed(2)}×` } : null,
+              ].filter(Boolean) as { label: string; value: string }[];
+              return chips.map((chip) => (
+                <div key={chip.label} className="flex items-center gap-1 rounded-full bg-white border border-blue-200 px-2.5 py-0.5">
+                  <span className="text-[10px] text-blue-400 uppercase tracking-wide">{chip.label}</span>
+                  <span className="text-xs font-bold text-blue-700">{chip.value}</span>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Funnel manager */}
-      {showFunnelMgr && <FunnelManager funnels={funnels} onUpdated={setFunnels} clientId={selectedClient} />}
+      {showFunnelMgr && (
+        <FunnelManager
+          funnels={funnels}
+          onUpdated={setFunnels}
+          clientId={selectedClient}
+          metaAccountId={clients.find((c) => c.id === filterClient)?.metaAccountId}
+          pixelId={clients.find((c) => c.id === filterClient)?.pixelId}
+        />
+      )}
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">

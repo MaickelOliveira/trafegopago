@@ -9,7 +9,13 @@ export default async function CrmPage() {
   const session = await getSession();
   if (!session || session.role !== "manager") redirect("/login");
 
-  const clients = getClients().map((c) => ({ id: c.id, name: c.name, color: c.color }));
+  const clients = getClients().map((c) => ({
+    id: c.id,
+    name: c.name,
+    color: c.color,
+    metaAccountId: c.adAccounts.find((a) => a.platform === "meta")?.id,
+    pixelId: c.pixelId,
+  }));
   const leads   = getLeads();
   const funnels = getFunnels();
 
