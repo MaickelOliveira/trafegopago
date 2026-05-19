@@ -208,29 +208,39 @@ export async function POST(req: NextRequest) {
     const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
     const connectionId = agentCfg?.whatsappConnectionId;
 
+    console.log(`[webhook] phone=${phone} cid=${cid} gemini=${geminiEnabled} wait=${waitSeconds}s connId=${connectionId ?? "none"}`);
+
     // ── Batching: acumula mensagens antes de responder ────────────────────────
     if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {
       const pending = upsertPending(cid, phone, text, waitSeconds);
+      const _cid = cid;
+      const _phone = phone;
+      const _clientId = clientId;
+      const _connectionId = connectionId;
+      const _pendingId = pending.id;
 
-      // setTimeout in-process: processa exatamente após waitSeconds
-      setTimeout(async () => {
-        const { getPendingForPhone: getP, markProcessing: mProc, markDone: mDone } = await import("@/lib/pending-responses");
-        const batch = getP(cid, phone);
-        if (!batch || batch.id !== pending.id || batch.status !== "pending") return;
-        try {
-          mProc(batch.id);
-          const combined = batch.messages.join("\n");
-          const h = getHistory(phone);
-          const { text: geminiText } = await runGeminiAgent(combined, h, cid, phone);
-          mDone(batch.id);
-          if (geminiText) {
-            addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
-            await sendMessageUnified(phone, geminiText, cid, connectionId);
-          }
-        } catch (e) {
-          console.error("[webhook] Erro ao processar batch:", e);
-          mDone(batch.id);
-        }
+      // setTimeout in-process: responde após waitSeconds usando imports do topo do arquivo
+      setTimeout(() => {
+        const batch = getPendingForPhone(_cid, _phone);
+        if (!batch || batch.id !== _pendingId || batch.status !== "pending") return;
+        markProcessing(batch.id);
+        const combined = batch.messages.join("\n");
+        const h = getHistory(_phone);
+        console.log(`[webhook] Processando batch ${batch.id} (${batch.messages.length} msg) para ${_phone}`);
+        runGeminiAgent(combined, h, _cid, _phone)
+          .then(async ({ text: geminiText }) => {
+            markDone(batch.id);
+            console.log(`[webhook] Gemini respondeu (${geminiText?.length ?? 0} chars): ${geminiText?.slice(0, 80)}`);
+            if (geminiText) {
+              addMessage(_phone, { role: "assistant", content: geminiText, ts: Date.now() }, _clientId);
+              await sendMessageUnified(_phone, geminiText, _cid, _connectionId);
+              console.log(`[webhook] Mensagem enviada para ${_phone}`);
+            }
+          })
+          .catch((e) => {
+            console.error("[webhook] Erro ao processar batch:", e);
+            markDone(batch.id);
+          });
       }, waitSeconds * 1000);
 
       return NextResponse.json({ ok: true });
