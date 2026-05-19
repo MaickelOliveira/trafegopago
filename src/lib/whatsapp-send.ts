@@ -25,8 +25,8 @@ export async function sendMessage(
         const ok = await sendMessageDirect(phone, message, preferred.metaPhoneNumberId, preferred.metaToken);
         if (ok) return;
       }
-      // Baileys — via wa-service local
-      if (preferred.type === "baileys") {
+      // Baileys — via wa-service local (PSIDs não funcionam via Baileys, deixa cair para UazAPI)
+      if (preferred.type === "baileys" && phone.replace(/\D/g, "").length <= 13) {
         try {
           const res = await fetch("http://127.0.0.1:3002/send", {
             method: "POST",
