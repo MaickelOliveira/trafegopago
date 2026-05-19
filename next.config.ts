@@ -2,12 +2,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // instrumentationHook habilitado por padrão no Next.js 15+
   serverExternalPackages: [
     "@whiskeysockets/baileys",
     "jimp",
     "sharp",
     "@hapi/boom",
     "pino",
+    "node-cron",
   ],
   images: {
     remotePatterns: [

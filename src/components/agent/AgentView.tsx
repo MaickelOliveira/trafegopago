@@ -521,7 +521,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       {/* Cron */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">⚙️ Configuração do Cron</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">⚙️ Agendador Interno</p>
           {!cronSecret && (
             <button
               onClick={async () => {
@@ -546,29 +546,28 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           )}
         </div>
 
-        <p className="text-xs text-slate-500">
-          Configure no EasyPanel uma tarefa cron a cada 15 minutos chamando esta URL:
+        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+          <p className="text-sm font-semibold text-green-700">✓ Cron automático ativo</p>
+          <p className="text-xs text-green-600 mt-0.5">
+            O agendador roda internamente a cada minuto — sem configuração no EasyPanel.
+            Follow-ups e mensagens em espera são processados automaticamente.
+          </p>
+        </div>
+        <p className="text-xs text-slate-400">
+          Caso queira acionar manualmente ou monitorar externamente, use a URL abaixo:
         </p>
-
         {cronSecret ? (
-          <>
-            <div className="relative rounded-lg bg-slate-800 px-4 py-3">
-              <code className="text-xs text-green-400 break-all">
-                {cronUrl}{cronSecret}
-              </code>
-              <button
-                onClick={() => navigator.clipboard.writeText(`${cronUrl}${cronSecret}`)}
-                className="absolute top-2 right-2 rounded bg-slate-600 px-2 py-1 text-xs text-slate-300 hover:bg-slate-500"
-              >
-                Copiar
-              </button>
-            </div>
-            <p className="text-xs text-green-600 font-medium">✓ Chave gerada e salva. Cole essa URL no EasyPanel → Cron Jobs → + Add Cron Job.</p>
-          </>
-        ) : (
-          <div className="rounded-lg border border-dashed border-slate-300 p-3 text-center">
-            <p className="text-xs text-slate-400">Clique em &quot;Gerar chave secreta&quot; para criar a URL do cron.</p>
+          <div className="relative rounded-lg bg-slate-800 px-4 py-3">
+            <code className="text-xs text-green-400 break-all">{cronUrl}{cronSecret}</code>
+            <button
+              onClick={() => navigator.clipboard.writeText(`${cronUrl}${cronSecret}`)}
+              className="absolute top-2 right-2 rounded bg-slate-600 px-2 py-1 text-xs text-slate-300 hover:bg-slate-500"
+            >
+              Copiar
+            </button>
           </div>
+        ) : (
+          <p className="text-xs text-slate-400 italic">Gere uma chave acima para ter a URL de acionamento manual.</p>
         )}
       </div>
 
