@@ -9,7 +9,6 @@ const nextConfig: NextConfig = {
     "sharp",
     "@hapi/boom",
     "pino",
-    "node-cron",
   ],
   images: {
     remotePatterns: [

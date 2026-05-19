@@ -2,9 +2,7 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
 
-  // Aguarda módulos estarem disponíveis antes de registrar o cron
   try {
-    const cron = await import("node-cron");
     const { getDueFollowUps, markSent, scheduleFollowUp } = await import("./lib/followups");
     const { getDuePending, markProcessing, markDone } = await import("./lib/pending-responses");
     const { sendMessage } = await import("./lib/whatsapp-send");
@@ -12,9 +10,9 @@ export async function register() {
     const { addMessage, getHistory } = await import("./lib/conversations");
     const { getClientById } = await import("./lib/clients");
 
-    console.log("[cron] Agendador interno iniciado — verificação a cada minuto");
+    console.log("[cron] Agendador interno iniciado — verificação a cada 60s");
 
-    cron.default.schedule("* * * * *", async () => {
+    const tick = async () => {
       try {
         // ── Follow-ups vencidos ────────────────────────────────────────────
         const due = getDueFollowUps();
@@ -70,7 +68,14 @@ export async function register() {
       } catch (e) {
         console.error("[cron] Erro geral:", e);
       }
-    });
+    };
+
+    // Aguarda 5s após iniciar (servidor estabilizar) e depois roda a cada 60s
+    setTimeout(() => {
+      tick();
+      setInterval(tick, 60_000);
+    }, 5000);
+
   } catch (e) {
     console.error("[cron] Falha ao iniciar agendador:", e);
   }
