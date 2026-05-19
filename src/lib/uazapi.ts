@@ -1,7 +1,7 @@
 import { getConfig } from "./clients";
 
 function base(): string {
-  return (getConfig().uazapiServer ?? "").replace(/\/$/, "");
+  return (getConfig().uazapiServer ?? "https://nexopro.uazapi.com").replace(/\/$/, "");
 }
 
 function globalToken(): string {
