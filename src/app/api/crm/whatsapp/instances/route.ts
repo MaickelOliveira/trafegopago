@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getConfig } from "@/lib/clients";
 import { getFunnels, updateFunnel } from "@/lib/funnels";
-import { listInstances, connectInstance, disconnectInstance, getInstanceStatus, setWebhook, updateFieldsMap } from "@/lib/uazapi";
+import { listInstances, createInstance, connectInstance, disconnectInstance, getInstanceStatus, getQrCode, setWebhook, updateFieldsMap } from "@/lib/uazapi";
 import QRCode from "qrcode";
 import { randomUUID } from "crypto";
 
@@ -32,68 +32,82 @@ export async function POST(req: NextRequest) {
     const config = getConfig();
     const connId = instanceName ?? randomUUID();
 
-    // Tenta criar instância no UazAPI multi-instância; se falhar usa o token global (single-instance)
-    const connResult = await connectInstance(connId);
-    const instanceToken = connResult.instanceToken || config.uazapiToken || "";
+    const funnels = getFunnels();
+    const funnel = funnels.find((f) => f.id === funnelId);
+    if (!funnel) return NextResponse.json({ error: "Funil não encontrado" }, { status: 404 });
+
+    // Passo 1: cria a instância no UazAPI
+    const created = await createInstance(connId);
+    // O token da instância pode estar em vários campos dependendo da versão do UazAPI
+    const instanceToken: string =
+      (created.token as string) ??
+      (created.instanceToken as string) ??
+      (created.accessToken as string) ??
+      config.uazapiToken ?? "";
+
+    console.log("[UazAPI] instanceToken obtido:", instanceToken ? "sim" : "não", "| keys:", Object.keys(created).join(", "));
+
+    // Passo 2: conecta a instância (gera QR)
+    const connResult = await connectInstance(instanceToken);
 
     const webhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
     setWebhook(instanceToken, webhookUrl).catch(() => {});
     updateFieldsMap(instanceToken).catch(() => {});
 
-    const funnels = getFunnels();
-    const funnel = funnels.find((f) => f.id === funnelId);
-    if (!funnel) return NextResponse.json({ error: "Funil não encontrado" }, { status: 404 });
-
-    // Verifica se já existe conexão UazAPI neste funil para não duplicar
-    const alreadyExists = funnel.connections?.some(c => c.type === "uazapi");
+    // Salva conexão no funil
+    const alreadyExists = funnel.connections?.some(c => c.id === connId);
     if (!alreadyExists) {
-      const existing = funnel.connections ?? [];
-      updateFunnel(funnelId, { connections: [...existing, {
-        id: connId,
-        phone: "",
-        type: "uazapi" as const,
-        uazapiToken: instanceToken,
-      }]});
+      updateFunnel(funnelId, {
+        connections: [...(funnel.connections ?? []), {
+          id: connId,
+          phone: "",
+          type: "uazapi" as const,
+          uazapiToken: instanceToken,
+        }],
+      });
     }
 
-    // Busca QR ou status de conexão
+    // Extrai QR da resposta do connectInstance (tenta vários campos)
+    const rawQr: string | undefined =
+      (connResult.qr as string) ??
+      (connResult.qrcode as string) ??
+      (connResult.qr_code as string) ??
+      (connResult.base64 as string) ??
+      undefined;
+
+    if (rawQr) {
+      const qrImage = rawQr.startsWith("data:")
+        ? rawQr
+        : await QRCode.toDataURL(rawQr, { margin: 1, width: 280 }).catch(() => null);
+      return NextResponse.json({ status: "connecting", phone: null, qr: qrImage, connId });
+    }
+
+    // Se connectInstance não retornou QR, tenta endpoint dedicado /instance/qrcode
+    const dedicatedQr = await getQrCode(instanceToken);
+    if (dedicatedQr) {
+      const qrImage = dedicatedQr.startsWith("data:")
+        ? dedicatedQr
+        : await QRCode.toDataURL(dedicatedQr, { margin: 1, width: 280 }).catch(() => null);
+      return NextResponse.json({ status: "connecting", phone: null, qr: qrImage, connId });
+    }
+
+    // Última tentativa: poll do status
     let qrImage: string | null = null;
     let status = "connecting";
     let phone: string | null = null;
 
-    // Verifica se o connectInstance já retornou QR diretamente
-    const connectQr = connResult.qr ?? (connResult as Record<string, unknown>).qrCode ?? (connResult as Record<string, unknown>).qr_code;
-    if (connectQr && typeof connectQr === "string") {
-      const raw = connectQr.startsWith("data:") ? connectQr : null;
-      qrImage = raw ?? await QRCode.toDataURL(connectQr, { margin: 1, width: 280 }).catch(() => null);
-      status = "connecting";
-      return NextResponse.json({ status, phone, qr: qrImage, connId });
-    }
-
-    // Primeiro tenta pegar QR imediatamente
-    const immediateStatus = await getInstanceStatus(instanceToken);
-    if (immediateStatus.qr) {
-      qrImage = await QRCode.toDataURL(immediateStatus.qr, { margin: 1, width: 280 }).catch(() => null);
-      status = immediateStatus.status;
-    } else if (immediateStatus.status === "connected") {
-      status = "connected";
-      phone = immediateStatus.phone ?? null;
-    } else {
-      // Aguarda até 24s pelo QR
-      for (let i = 0; i < 6; i++) {
-        await new Promise((r) => setTimeout(r, 4000));
-        const st = await getInstanceStatus(instanceToken);
-        status = st.status;
-        phone = st.phone ?? null;
-        if (st.qr) {
-          qrImage = await QRCode.toDataURL(st.qr, { margin: 1, width: 280 }).catch(() => null);
-          break;
-        }
-        if (st.status === "connected") break;
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 4000));
+      const st = await getInstanceStatus(instanceToken);
+      status = st.status;
+      phone = st.phone ?? null;
+      if (st.qr) {
+        qrImage = await QRCode.toDataURL(st.qr, { margin: 1, width: 280 }).catch(() => null);
+        break;
       }
+      if (st.status === "connected") break;
     }
 
-    // Atualiza phone na conexão se já conectado
     if (phone) {
       const f2 = getFunnels().find((f) => f.id === funnelId);
       if (f2) {

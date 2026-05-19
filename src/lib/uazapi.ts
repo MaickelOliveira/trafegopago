@@ -22,12 +22,30 @@ export async function listInstances(): Promise<unknown[]> {
   }
 }
 
-export async function connectInstance(instanceName: string): Promise<{ qr?: string; instanceToken?: string; status?: string }> {
+// Passo 1: cria a instância no servidor UazAPI (retorna token da instância)
+export async function createInstance(name: string): Promise<{ id?: string; token?: string; instanceToken?: string; [key: string]: unknown }> {
+  try {
+    const res = await fetch(`${base()}/instance/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token: globalToken() },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    console.log("[UazAPI] createInstance response:", JSON.stringify(data).slice(0, 500));
+    return data ?? {};
+  } catch (e) {
+    console.log("[UazAPI] createInstance error:", e);
+    return {};
+  }
+}
+
+// Passo 2: conecta a instância e retorna o QR code (usa o token da instância)
+export async function connectInstance(instanceToken: string): Promise<{ qr?: string; qrcode?: string; status?: string; [key: string]: unknown }> {
   try {
     const res = await fetch(`${base()}/instance/connect`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", token: globalToken() },
-      body: JSON.stringify({ instanceName }),
+      headers: { "Content-Type": "application/json", token: instanceToken },
+      body: JSON.stringify({}),
     });
     const data = await res.json().catch(() => ({}));
     console.log("[UazAPI] connectInstance response:", JSON.stringify(data).slice(0, 500));
@@ -35,6 +53,22 @@ export async function connectInstance(instanceName: string): Promise<{ qr?: stri
   } catch (e) {
     console.log("[UazAPI] connectInstance error:", e);
     return {};
+  }
+}
+
+// QR code dedicado (alguns UazAPI expõem em endpoint separado)
+export async function getQrCode(instanceToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${base()}/instance/qrcode`, {
+      headers: { token: instanceToken },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    console.log("[UazAPI] getQrCode response:", JSON.stringify(data).slice(0, 200));
+    return data.qrcode ?? data.qr ?? data.base64 ?? data.qr_code ?? null;
+  } catch {
+    return null;
   }
 }
 
