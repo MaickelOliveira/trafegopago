@@ -12,7 +12,7 @@ export type FunnelColumn = {
   triggerPhrases?: string[];    // frases que indicam que o lead deve ser movido para esta coluna
 };
 
-export type ConnectionType = "baileys" | "meta";
+export type ConnectionType = "baileys" | "meta" | "uazapi";
 
 export type FunnelConnection = {
   id: string;
@@ -22,6 +22,8 @@ export type FunnelConnection = {
   metaPhoneNumberId?: string;
   metaToken?: string;
   metaVerifyToken?: string;
+  // UazAPI
+  uazapiToken?: string;
 };
 
 export type Funnel = {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { getFunnels } from "@/lib/funnels";
+import { getInstanceStatus } from "@/lib/uazapi";
 import QRCode from "qrcode";
 
 const WA_SERVICE = "http://localhost:3002";
@@ -10,22 +12,46 @@ export async function GET(req: NextRequest) {
 
   const clientId = req.nextUrl.searchParams.get("clientId");
 
-  try {
-    const url = clientId ? `${WA_SERVICE}/status/${clientId}` : `${WA_SERVICE}/status`;
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error("WA service indisponível");
-    const data = await res.json();
+  if (clientId) {
+    const funnels = getFunnels();
+    for (const funnel of funnels) {
+      const conn = funnel.connections?.find((c) => c.id === clientId);
+      if (conn?.type === "uazapi" && conn.uazapiToken) {
+        const st = await getInstanceStatus(conn.uazapiToken);
+        let qrImage: string | null = null;
+        if (st.qr) {
+          try { qrImage = await QRCode.toDataURL(st.qr, { margin: 1, width: 280 }); } catch { /**/ }
+        }
+        return NextResponse.json({
+          connected: st.status === "connected",
+          phone: st.phone ?? null,
+          name: st.name ?? null,
+          qr: qrImage,
+          status: st.status,
+        });
+      }
+    }
 
-    // Resposta de uma instância específica
-    if (clientId) {
+    // Baileys fallback
+    try {
+      const res = await fetch(`${WA_SERVICE}/status/${clientId}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("WA service indisponível");
+      const data = await res.json();
       let qrImage: string | null = null;
       if (data.qr) {
         try { qrImage = await QRCode.toDataURL(data.qr, { margin: 1, width: 280 }); } catch { /**/ }
       }
       return NextResponse.json({ connected: data.status === "connected", phone: data.phone, name: data.name, qr: qrImage, status: data.status });
+    } catch {
+      return NextResponse.json({ connected: false, qr: null, error: "wa-service offline" });
     }
+  }
 
-    // Resposta com todas as instâncias — pega a primeira conectada para o header
+  // No clientId: try baileys global status
+  try {
+    const res = await fetch(`${WA_SERVICE}/status`, { cache: "no-store" });
+    if (!res.ok) throw new Error("WA service indisponível");
+    const data = await res.json();
     const entries = Object.entries(data as Record<string, { status: string; phone: string | null; name: string | null }>);
     const connected = entries.find(([, v]) => v.status === "connected");
     if (connected) {

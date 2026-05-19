@@ -113,6 +113,30 @@ export async function POST(req: NextRequest) {
         clientId = baileysClientId;
       }
     }
+    // UazAPI: match by instanceId or instancePhone in connections
+    const uazInstanceId = body.instanceId as string | undefined;
+    if (!clientId && uazInstanceId) {
+      const matchedFunnel = funnels.find(f =>
+        f.connections?.some(c => c.id === uazInstanceId)
+      );
+      if (matchedFunnel) {
+        funnelIdOverride = funnelIdOverride ?? matchedFunnel.id;
+        clientId = matchedFunnel.clientId ?? null;
+      }
+    }
+    if (!clientId && instancePhone) {
+      // UazAPI: match by instancePhone in connections
+      const matchedFunnelByConn = funnels.find(f =>
+        f.connections?.some(c => {
+          const cp = (c.phone ?? "").replace(/\D/g, "");
+          return cp.length > 0 && (cp === instancePhone || instancePhone.endsWith(cp.slice(-9)));
+        })
+      );
+      if (matchedFunnelByConn) {
+        funnelIdOverride = funnelIdOverride ?? matchedFunnelByConn.id;
+        clientId = matchedFunnelByConn.clientId ?? null;
+      }
+    }
     if (!clientId && instancePhone) {
       // Busca funil pelo whatsappPhone
       const matchedFunnel = funnels.find(f => {

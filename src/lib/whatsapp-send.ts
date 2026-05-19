@@ -6,6 +6,7 @@
 import { getFunnels } from "./funnels";
 import { sendWhatsApp } from "./whatsapp";
 import { getConfig } from "./clients";
+import { sendText } from "./uazapi";
 
 export async function sendMessage(
   phone: string,
@@ -23,6 +24,11 @@ export async function sendMessage(
       // Meta Cloud API
       if (preferred.type === "meta" && preferred.metaPhoneNumberId && preferred.metaToken) {
         const ok = await sendMessageDirect(phone, message, preferred.metaPhoneNumberId, preferred.metaToken);
+        if (ok) return;
+      }
+      // UazAPI
+      if (preferred.type === "uazapi" && preferred.uazapiToken) {
+        const ok = await sendText(preferred.uazapiToken, phone, message);
         if (ok) return;
       }
       // Baileys — via wa-service local (PSIDs não funcionam via Baileys, deixa cair para UazAPI)

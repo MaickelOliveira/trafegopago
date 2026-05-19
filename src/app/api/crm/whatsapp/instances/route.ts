@@ -1,40 +1,106 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { getConfig } from "@/lib/clients";
+import { getFunnels, updateFunnel } from "@/lib/funnels";
+import { listInstances, connectInstance, disconnectInstance, getInstanceStatus, setWebhook, updateFieldsMap } from "@/lib/uazapi";
 import QRCode from "qrcode";
+import { randomUUID } from "crypto";
 
 const WA = "http://localhost:3002";
 
-// GET — lista todas instâncias com status
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const res = await fetch(`${WA}/status`, { cache: "no-store" });
-    const data = res.ok ? await res.json() : {};
-    return NextResponse.json(data);
+    const instances = await listInstances();
+    return NextResponse.json(instances);
   } catch {
-    return NextResponse.json({});
+    return NextResponse.json([]);
   }
 }
 
-// POST — conecta uma instância { clientId }
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "manager") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { clientId, funnelId, type = "baileys" } = await req.json();
+
+  const body = await req.json();
+  const { type = "baileys", funnelId, instanceName, clientId: baileysClientId } = body;
+
+  if (type === "uazapi") {
+    if (!funnelId) return NextResponse.json({ error: "funnelId obrigatório" }, { status: 400 });
+
+    const connId = instanceName ?? randomUUID();
+    const connResult = await connectInstance(connId);
+    const instanceToken = connResult.instanceToken ?? "";
+
+    const config = getConfig();
+    const webhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
+
+    if (instanceToken) {
+      setWebhook(instanceToken, webhookUrl).catch(() => { });
+      updateFieldsMap(instanceToken).catch(() => { });
+    }
+
+    const funnels = getFunnels();
+    const funnel = funnels.find((f) => f.id === funnelId);
+    if (!funnel) return NextResponse.json({ error: "Funil não encontrado" }, { status: 404 });
+
+    const newConn = {
+      id: connId,
+      phone: "",
+      type: "uazapi" as const,
+      uazapiToken: instanceToken,
+    };
+    const existing = funnel.connections ?? [];
+    updateFunnel(funnelId, { connections: [...existing, newConn] });
+
+    let qrImage: string | null = null;
+    let status = connResult.status ?? "connecting";
+    let phone: string | null = null;
+
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 4000));
+      if (!instanceToken) break;
+      const st = await getInstanceStatus(instanceToken);
+      status = st.status;
+      phone = st.phone ?? null;
+      if (st.qr) {
+        qrImage = await QRCode.toDataURL(st.qr, { margin: 1, width: 280 }).catch(() => null);
+        break;
+      }
+      if (st.status === "connected") {
+        if (st.phone) {
+          const updatedFunnels = getFunnels();
+          const f2 = updatedFunnels.find((f) => f.id === funnelId);
+          if (f2) {
+            const updConns = (f2.connections ?? []).map((c) =>
+              c.id === connId ? { ...c, phone: st.phone! } : c
+            );
+            updateFunnel(funnelId, { connections: updConns });
+          }
+        }
+        break;
+      }
+    }
+
+    return NextResponse.json({ status, phone, qr: qrImage });
+  }
+
+  // Baileys
+  const clientId = baileysClientId;
   if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
+
   await fetch(`${WA}/connect`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connectionId: clientId, funnelId: funnelId ?? "default", clientId, type }),
   });
 
-  // Tenta até 6 vezes com intervalo de 4s (24s total) esperando o QR
   let qrImage: string | null = null;
   let status = "connecting";
   let phone: string | null = null;
   for (let i = 0; i < 6; i++) {
-    await new Promise(r => setTimeout(r, 4000));
+    await new Promise((r) => setTimeout(r, 4000));
     try {
       const res = await fetch(`${WA}/status/${clientId}`, { cache: "no-store" });
       const data = res.ok ? await res.json() : {};
@@ -50,11 +116,27 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ status, phone, qr: qrImage });
 }
 
-// DELETE — desconecta { clientId }
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "manager") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { clientId } = await req.json();
-  await fetch(`${WA}/logout/${clientId}`, { method: "DELETE" });
+  if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
+
+  const funnels = getFunnels();
+  for (const funnel of funnels) {
+    const conn = funnel.connections?.find((c) => c.id === clientId);
+    if (conn) {
+      if (conn.type === "uazapi" && conn.uazapiToken) {
+        await disconnectInstance(conn.uazapiToken);
+      } else {
+        await fetch(`${WA}/logout/${clientId}`, { method: "DELETE" }).catch(() => { });
+      }
+      return NextResponse.json({ ok: true });
+    }
+  }
+
+  // Fallback: assume baileys if not found in funnels
+  await fetch(`${WA}/logout/${clientId}`, { method: "DELETE" }).catch(() => { });
   return NextResponse.json({ ok: true });
 }
