@@ -1,11 +1,11 @@
 import { getConfig } from "./clients";
 
 function base(): string {
-  return (getConfig().uazapiServer ?? "https://nexopro.uazapi.com").replace(/\/$/, "");
+  return (getConfig().uazapiServer || "https://nexopro.uazapi.com").replace(/\/$/, "");
 }
 
 function globalToken(): string {
-  return getConfig().uazapiToken ?? "";
+  return getConfig().uazapiToken || "";
 }
 
 export async function listInstances(): Promise<unknown[]> {
