@@ -138,13 +138,17 @@ export async function POST(req: NextRequest) {
       phone;
 
     const cid = clientId ?? "sem-cliente";
-    const isNew = !getLeadByPhone(cid, phone);
+    const existingLead = getLeadByPhone(cid, phone);
+    const isNew = !existingLead;
+
+    // Só atualiza o nome se for lead novo ou se o nome atual ainda é apenas o número
+    const shouldUpdateName = isNew || (existingLead?.name === existingLead?.phone || existingLead?.name === phone);
 
     upsertLeadByPhone(cid, phone, {
       clientId: cid,
       funnelId: funnelIdOverride ?? "default",
       source: "whatsapp",
-      name: contactName,
+      ...(shouldUpdateName ? { name: contactName } : {}),
       ...(isNew ? { status: "entrada" } : {}),
     });
 
