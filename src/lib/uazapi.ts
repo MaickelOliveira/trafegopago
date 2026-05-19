@@ -85,7 +85,7 @@ export async function disconnectInstance(token: string): Promise<void> {
   } catch { }
 }
 
-export async function getInstanceStatus(token: string): Promise<{ status: string; phone?: string; qr?: string; name?: string }> {
+export async function getInstanceStatus(token: string): Promise<{ status: string; phone?: string; qr?: string; name?: string; instanceToken?: string }> {
   try {
     const res = await fetch(`${base()}/instance/status`, {
       headers: { token },
@@ -93,16 +93,18 @@ export async function getInstanceStatus(token: string): Promise<{ status: string
     });
     if (!res.ok) return { status: "disconnected" };
     const data = await res.json();
-    console.log("[UazAPI] getInstanceStatus response:", JSON.stringify(data).slice(0, 500));
-    // Suporta vários formatos de campo QR e status usados por diferentes versões do UazAPI
-    const qr = data.qr ?? data.qrCode ?? data.qr_code ?? data.base64 ?? data.qrcode ?? undefined;
-    const phone = (data.phone ?? data.number ?? data.jid ?? data.phoneNumber ?? "").replace(/\D/g, "") || undefined;
-    const connected = data.connected === true || data.status === "connected" || data.state === "open";
+    console.log("[UazAPI] getInstanceStatus response:", JSON.stringify(data).slice(0, 300));
+    // UazAPI v2 aninha os dados em data.instance
+    const inst = (data.instance ?? data) as Record<string, unknown>;
+    const qr = (inst.qrcode ?? inst.qr ?? inst.qr_code ?? inst.base64 ?? data.qrcode ?? data.qr) as string | undefined;
+    const phone = ((inst.owner ?? inst.phone ?? inst.number ?? inst.jid ?? "") as string).replace(/\D/g, "") || undefined;
+    const connected = data.connected === true || inst.status === "connected" || inst.state === "open";
     return {
-      status: connected ? "connected" : (data.status ?? data.state ?? "disconnected"),
+      status: connected ? "connected" : ((inst.status ?? inst.state ?? "disconnected") as string),
       phone,
       qr,
-      name: data.name ?? data.pushName ?? undefined,
+      name: (inst.name ?? inst.pushName ?? inst.profileName) as string | undefined,
+      instanceToken: (inst.token) as string | undefined,
     };
   } catch {
     return { status: "disconnected" };

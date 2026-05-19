@@ -64,12 +64,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Extrai QR da resposta do connectInstance (tenta vários campos)
+    // UazAPI v2 aninha os dados em connResult.instance
+    const connInst = (connResult.instance ?? connResult) as Record<string, unknown>;
     const rawQr: string | undefined =
-      (connResult.qr as string) ??
-      (connResult.qrcode as string) ??
-      (connResult.qr_code as string) ??
-      (connResult.base64 as string) ??
+      (connInst.qrcode as string) ||
+      (connInst.qr as string) ||
+      (connResult.qrcode as string) ||
+      (connResult.qr as string) ||
       undefined;
 
     if (rawQr) {
