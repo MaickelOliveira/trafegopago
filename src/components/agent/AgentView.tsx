@@ -84,6 +84,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; model?: string; response?: string; error?: string } | null>(null);
   const [cronUrl, setCronUrl] = useState("");
   const [cronSecret, setCronSecret] = useState("");
   const [generatingSecret, setGeneratingSecret] = useState(false);
@@ -226,6 +228,40 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           msg.startsWith("✓") ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-600 border-red-200"
         )}>{msg}</div>
       )}
+
+      {/* Teste de conexão */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center justify-between shadow-sm">
+        <div>
+          <p className="text-sm font-semibold text-slate-700">Testar conexão com Gemini</p>
+          {testResult && (
+            <p className={clsx("text-xs mt-0.5", testResult.ok ? "text-green-600" : "text-red-600")}>
+              {testResult.ok
+                ? `✓ Funcionando! Modelo: ${testResult.model}`
+                : `✗ ${testResult.error}`}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={async () => {
+            setTesting(true);
+            setTestResult(null);
+            // Salva primeiro para garantir que a chave está salva
+            await fetch(`/api/agent?clientId=${clientId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(cfg),
+            });
+            const res = await fetch(`/api/agent/test?clientId=${clientId}`, { method: "POST" });
+            const data = await res.json();
+            setTestResult(data);
+            setTesting(false);
+          }}
+          disabled={testing}
+          className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50 transition shrink-0"
+        >
+          {testing ? "Testando..." : "Testar agora"}
+        </button>
+      </div>
 
       {/* Toggles principais */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-sm">

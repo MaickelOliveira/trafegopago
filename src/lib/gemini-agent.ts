@@ -116,11 +116,49 @@ export async function runGeminiAgent(
   if (!apiKey) return { text: "", actions: [] };
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-pro",
-    systemInstruction: buildSystemPrompt(client.name, client.agentConfig.systemPrompt),
-    tools: TOOLS,
-  });
+
+  // Tenta modelos em ordem de preferência
+  const modelsToTry = [
+    "gemini-2.5-pro-preview-05-06",
+    "gemini-2.5-pro",
+    "gemini-2.5-pro-exp-03-25",
+    "gemini-1.5-pro",
+  ];
+
+  let model;
+  let usedModel = modelsToTry[0];
+  for (const modelId of modelsToTry) {
+    try {
+      const m = genAI.getGenerativeModel({
+        model: modelId,
+        systemInstruction: buildSystemPrompt(client.name, client.agentConfig.systemPrompt),
+        tools: TOOLS,
+      });
+      // Teste rápido para verificar se o modelo existe
+      await m.generateContent("test");
+      model = m;
+      usedModel = modelId;
+      break;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("not found") || msg.includes("404")) continue;
+      // Outro erro — usa este modelo mesmo assim
+      model = genAI.getGenerativeModel({
+        model: modelId,
+        systemInstruction: buildSystemPrompt(client.name, client.agentConfig.systemPrompt),
+        tools: TOOLS,
+      });
+      usedModel = modelId;
+      break;
+    }
+  }
+
+  if (!model) {
+    console.error("[gemini-agent] Nenhum modelo disponível para a chave fornecida");
+    return { text: "", actions: [] };
+  }
+
+  console.log(`[gemini-agent] Usando modelo: ${usedModel}`);
 
   // Converte histórico para formato Gemini
   const geminiHistory = history.slice(-10).map((m) => ({

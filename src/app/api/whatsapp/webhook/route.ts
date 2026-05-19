@@ -210,23 +210,29 @@ export async function POST(req: NextRequest) {
 
     // ── Batching: acumula mensagens antes de responder ────────────────────────
     if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {
-      // Processa qualquer batch vencido deste telefone antes de acumular
-      const existing = getPendingForPhone(cid, phone);
-      const now = new Date();
-      if (existing && new Date(existing.respondAfter) <= now) {
-        // Batch vencido — processa imediatamente com as mensagens antigas + nova
-        markProcessing(existing.id);
-        const combined = [...existing.messages, text].join("\n");
-        const { text: geminiText } = await runGeminiAgent(combined, history, cid, phone);
-        markDone(existing.id);
-        if (geminiText) {
-          addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
-          await sendMessageUnified(phone, geminiText, cid, connectionId);
+      const pending = upsertPending(cid, phone, text, waitSeconds);
+
+      // setTimeout in-process: processa exatamente após waitSeconds
+      setTimeout(async () => {
+        const { getPendingForPhone: getP, markProcessing: mProc, markDone: mDone } = await import("@/lib/pending-responses");
+        const batch = getP(cid, phone);
+        if (!batch || batch.id !== pending.id || batch.status !== "pending") return;
+        try {
+          mProc(batch.id);
+          const combined = batch.messages.join("\n");
+          const h = getHistory(phone);
+          const { text: geminiText } = await runGeminiAgent(combined, h, cid, phone);
+          mDone(batch.id);
+          if (geminiText) {
+            addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
+            await sendMessageUnified(phone, geminiText, cid, connectionId);
+          }
+        } catch (e) {
+          console.error("[webhook] Erro ao processar batch:", e);
+          mDone(batch.id);
         }
-      } else {
-        // Acumula a mensagem e adia a resposta
-        upsertPending(cid, phone, text, waitSeconds);
-      }
+      }, waitSeconds * 1000);
+
       return NextResponse.json({ ok: true });
     }
 
