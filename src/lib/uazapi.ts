@@ -29,9 +29,11 @@ export async function connectInstance(instanceName: string): Promise<{ qr?: stri
       headers: { "Content-Type": "application/json", token: globalToken() },
       body: JSON.stringify({ instanceName }),
     });
-    if (!res.ok) return {};
-    return await res.json();
-  } catch {
+    const data = await res.json().catch(() => ({}));
+    console.log("[UazAPI] connectInstance response:", JSON.stringify(data).slice(0, 500));
+    return data ?? {};
+  } catch (e) {
+    console.log("[UazAPI] connectInstance error:", e);
     return {};
   }
 }
@@ -54,10 +56,15 @@ export async function getInstanceStatus(token: string): Promise<{ status: string
     });
     if (!res.ok) return { status: "disconnected" };
     const data = await res.json();
+    console.log("[UazAPI] getInstanceStatus response:", JSON.stringify(data).slice(0, 500));
+    // Suporta vários formatos de campo QR e status usados por diferentes versões do UazAPI
+    const qr = data.qr ?? data.qrCode ?? data.qr_code ?? data.base64 ?? data.qrcode ?? undefined;
+    const phone = (data.phone ?? data.number ?? data.jid ?? data.phoneNumber ?? "").replace(/\D/g, "") || undefined;
+    const connected = data.connected === true || data.status === "connected" || data.state === "open";
     return {
-      status: data.connected === true ? "connected" : (data.status ?? "disconnected"),
-      phone: data.phone ?? data.number ?? data.jid ?? undefined,
-      qr: data.qr ?? undefined,
+      status: connected ? "connected" : (data.status ?? data.state ?? "disconnected"),
+      phone,
+      qr,
       name: data.name ?? data.pushName ?? undefined,
     };
   } catch {

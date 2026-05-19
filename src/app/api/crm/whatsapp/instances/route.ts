@@ -61,6 +61,15 @@ export async function POST(req: NextRequest) {
     let status = "connecting";
     let phone: string | null = null;
 
+    // Verifica se o connectInstance já retornou QR diretamente
+    const connectQr = connResult.qr ?? (connResult as Record<string, unknown>).qrCode ?? (connResult as Record<string, unknown>).qr_code;
+    if (connectQr && typeof connectQr === "string") {
+      const raw = connectQr.startsWith("data:") ? connectQr : null;
+      qrImage = raw ?? await QRCode.toDataURL(connectQr, { margin: 1, width: 280 }).catch(() => null);
+      status = "connecting";
+      return NextResponse.json({ status, phone, qr: qrImage, connId });
+    }
+
     // Primeiro tenta pegar QR imediatamente
     const immediateStatus = await getInstanceStatus(instanceToken);
     if (immediateStatus.qr) {
