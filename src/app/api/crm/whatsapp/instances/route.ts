@@ -36,18 +36,15 @@ export async function POST(req: NextRequest) {
     const funnel = funnels.find((f) => f.id === funnelId);
     if (!funnel) return NextResponse.json({ error: "Funil não encontrado" }, { status: 404 });
 
-    // Passo 1: cria a instância no UazAPI
+    // Passo 1: tenta criar instância (multi-instance UazAPI)
+    // Se falhar (single-instance ou sem permissão), usa o token global
     const created = await createInstance(connId);
-    // O token da instância pode estar em vários campos dependendo da versão do UazAPI
-    const instanceToken: string =
-      (created.token as string) ??
-      (created.instanceToken as string) ??
-      (created.accessToken as string) ??
-      config.uazapiToken ?? "";
+    const createdToken = (created.token as string) || (created.instanceToken as string) || (created.accessToken as string) || "";
+    const instanceToken: string = createdToken || (process.env.UAZAPI_TOKEN || config.uazapiToken || "");
 
-    console.log("[UazAPI] instanceToken obtido:", instanceToken ? "sim" : "não", "| keys:", Object.keys(created).join(", "));
+    console.log("[UazAPI] instanceToken obtido:", instanceToken ? "sim" : "não", "| createInstance keys:", Object.keys(created).join(", "));
 
-    // Passo 2: conecta a instância (gera QR)
+    // Passo 2: conecta a instância com o token disponível (gera QR)
     const connResult = await connectInstance(instanceToken);
 
     const webhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
