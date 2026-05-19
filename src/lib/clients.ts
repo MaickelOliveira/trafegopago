@@ -26,6 +26,8 @@ export type AgentConfig = {
   summaryPhone?: string;         // Número para receber resumo de conversa
   followUps: FollowUpStep[];     // Sequência de follow-ups configurados
   systemPrompt?: string;         // Instruções do agente para este cliente
+  whatsappConnectionId?: string; // ID da conexão WhatsApp que o agente usa
+  messageWaitSeconds?: number;   // Segundos de espera para acumular mensagens (0 = desabilitado)
 };
 
 export type Client = {

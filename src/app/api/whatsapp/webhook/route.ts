@@ -9,6 +9,7 @@ import { getFunnels } from "@/lib/funnels";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
+import { upsertPending, getPendingForPhone, getDuePending, markDone, markProcessing, cancelPendingForPhone } from "@/lib/pending-responses";
 
 type Body = Record<string, unknown>;
 
@@ -191,29 +192,54 @@ export async function POST(req: NextRequest) {
     // Verifica se IA está pausada para esta conversa específica
     const currentLead = getLeadByPhone(cid, phone);
     if (currentLead?.aiPaused) {
-      // Especialista assumiu — só salva mensagem, não responde via IA
       return NextResponse.json({ ok: true });
     }
 
-    // Agente Kanban — analisa conversa e atualiza CRM silenciosamente (fire-and-forget)
+    // Agente Kanban — analisa conversa e atualiza CRM (fire-and-forget)
     if (cid !== "sem-cliente") {
       processKanbanActions(text, history, cid, phone).catch((e) =>
         console.error("[kanban-agent]", e)
       );
     }
 
-    // Verifica se cliente tem agente Gemini configurado e ativo
     const activeClient = cid !== "sem-cliente" ? getClientById(cid) : null;
-    const geminiEnabled = activeClient?.agentConfig?.enabled === true;
+    const agentCfg = activeClient?.agentConfig;
+    const geminiEnabled = agentCfg?.enabled === true;
+    const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
+    const connectionId = agentCfg?.whatsappConnectionId;
+
+    // ── Batching: acumula mensagens antes de responder ────────────────────────
+    if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {
+      // Processa qualquer batch vencido deste telefone antes de acumular
+      const existing = getPendingForPhone(cid, phone);
+      const now = new Date();
+      if (existing && new Date(existing.respondAfter) <= now) {
+        // Batch vencido — processa imediatamente com as mensagens antigas + nova
+        markProcessing(existing.id);
+        const combined = [...existing.messages, text].join("\n");
+        const { text: geminiText } = await runGeminiAgent(combined, history, cid, phone);
+        markDone(existing.id);
+        if (geminiText) {
+          addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
+          await sendMessageUnified(phone, geminiText, cid, connectionId);
+        }
+      } else {
+        // Acumula a mensagem e adia a resposta
+        upsertPending(cid, phone, text, waitSeconds);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── Resposta imediata (sem batching) ─────────────────────────────────────
+    // Cancela qualquer batch pendente (lead mandou mais mensagens fora do modo batch)
+    if (cid !== "sem-cliente") cancelPendingForPhone(cid, phone);
 
     let reply: string | null = null;
 
     if (geminiEnabled && cid !== "sem-cliente") {
-      // Agente Gemini 2.5 Pro — responde, agenda, follow-up
       const { text: geminiText } = await runGeminiAgent(text, history, cid, phone);
       reply = geminiText || null;
     } else {
-      // Comportamento padrão: Claude agent
       reply = await generateResponse(text, history, clientId);
     }
 
@@ -221,9 +247,8 @@ export async function POST(req: NextRequest) {
 
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId);
 
-    // Envia via Meta Cloud API (se disponível) ou UazAPI
     if (cid !== "sem-cliente") {
-      await sendMessageUnified(phone, reply, cid);
+      await sendMessageUnified(phone, reply, cid, connectionId);
     } else {
       await sendWhatsApp(phone, reply);
     }

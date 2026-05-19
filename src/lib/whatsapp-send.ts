@@ -10,40 +10,46 @@ import { getConfig } from "./clients";
 export async function sendMessage(
   phone: string,
   message: string,
-  clientId: string
+  clientId: string,
+  preferredConnectionId?: string
 ): Promise<void> {
-  // Tenta encontrar uma conexão Meta Cloud API para este cliente
   const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  for (const funnel of funnels) {
-    const metaConn = funnel.connections?.find((c) => c.type === "meta" && c.metaPhoneNumberId && c.metaToken);
-    if (metaConn) {
-      try {
-        const res = await fetch(
-          `https://graph.facebook.com/v19.0/${metaConn.metaPhoneNumberId}/messages`,
-          {
+  const allConns = funnels.flatMap((f) => (f.connections ?? []).map((c) => ({ ...c, funnelId: f.id })));
+
+  // Se tem connectionId preferido, usa ele primeiro
+  if (preferredConnectionId) {
+    const preferred = allConns.find((c) => c.id === preferredConnectionId);
+    if (preferred) {
+      // Meta Cloud API
+      if (preferred.type === "meta" && preferred.metaPhoneNumberId && preferred.metaToken) {
+        const ok = await sendMessageDirect(phone, message, preferred.metaPhoneNumberId, preferred.metaToken);
+        if (ok) return;
+      }
+      // Baileys — via wa-service local
+      if (preferred.type === "baileys") {
+        try {
+          const res = await fetch("http://127.0.0.1:3002/send", {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${metaConn.metaToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              messaging_product: "whatsapp",
-              to: phone,
-              type: "text",
-              text: { body: message },
-            }),
-          }
-        );
-        if (res.ok) return;
-        const err = await res.json().catch(() => ({}));
-        console.error("[whatsapp-send] Meta API error:", err);
-      } catch (e) {
-        console.error("[whatsapp-send] Meta API exception:", e);
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone, message, connectionId: preferred.id }),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (res.ok) return;
+        } catch { /* fallthrough */ }
       }
     }
   }
 
-  // Fallback: UazAPI
+  // Fallback: tenta qualquer Meta da conta
+  for (const funnel of funnels) {
+    const metaConn = funnel.connections?.find((c) => c.type === "meta" && c.metaPhoneNumberId && c.metaToken);
+    if (metaConn) {
+      const ok = await sendMessageDirect(phone, message, metaConn.metaPhoneNumberId!, metaConn.metaToken!);
+      if (ok) return;
+    }
+  }
+
+  // Fallback final: UazAPI
   await sendWhatsApp(phone, message);
 }
 

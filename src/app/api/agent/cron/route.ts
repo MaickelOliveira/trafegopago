@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDueFollowUps, markSent, scheduleFollowUp } from "@/lib/followups";
+import { getDuePending, markProcessing, markDone } from "@/lib/pending-responses";
 import { getClientById, getConfig } from "@/lib/clients";
 import { sendMessage } from "@/lib/whatsapp-send";
+import { runGeminiAgent } from "@/lib/gemini-agent";
+import { addMessage, getHistory } from "@/lib/conversations";
 
 // GET /api/agent/cron?secret=xxx
 // Chamado pelo EasyPanel a cada 15 min para processar follow-ups vencidos
@@ -54,5 +57,34 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, processed, skipped, total: due.length });
+  // ── Processa batches de mensagens vencidos ───────────────────────────────
+  const pendingBatches = getDuePending();
+  let batchesProcessed = 0;
+
+  for (const batch of pendingBatches) {
+    const client = getClientById(batch.clientId);
+    if (!client?.agentConfig?.enabled) continue;
+
+    try {
+      markProcessing(batch.id);
+      const combined = batch.messages.join("\n");
+      const history = getHistory(batch.phone);
+      const { text: reply } = await runGeminiAgent(combined, history, batch.clientId, batch.phone);
+      markDone(batch.id);
+
+      if (reply) {
+        addMessage(batch.phone, { role: "assistant", content: reply, ts: Date.now() }, batch.clientId);
+        await sendMessage(
+          batch.phone, reply, batch.clientId,
+          client.agentConfig.whatsappConnectionId
+        );
+        batchesProcessed++;
+      }
+    } catch (e) {
+      console.error(`[agent/cron] Erro ao processar batch ${batch.id}:`, e);
+      markDone(batch.id);
+    }
+  }
+
+  return NextResponse.json({ ok: true, processed, skipped, total: due.length, batchesProcessed });
 }
