@@ -161,10 +161,13 @@ export async function runGeminiAgent(
   console.log(`[gemini-agent] Usando modelo: ${usedModel}`);
 
   // Converte histórico para formato Gemini
-  const geminiHistory = history.slice(-10).map((m) => ({
+  // Gemini exige que o histórico comece com 'user' — remove mensagens iniciais do assistente
+  const rawHistory = history.slice(-10).map((m) => ({
     role: m.role === "user" ? "user" : "model",
     parts: [{ text: m.content }],
   }));
+  const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
+  const geminiHistory = firstUserIdx > 0 ? rawHistory.slice(firstUserIdx) : rawHistory;
 
   const chat = model.startChat({ history: geminiHistory });
 
