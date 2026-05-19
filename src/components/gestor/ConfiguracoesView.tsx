@@ -49,6 +49,9 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
   const [metaAccounts, setMetaAccounts] = useState<AdAccount[]>([]);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [metaError, setMetaError] = useState("");
+  const [metaPixels, setMetaPixels] = useState<{ id: string; name: string }[]>([]);
+  const [loadingPixels, setLoadingPixels] = useState(false);
+  const [pixelError, setPixelError] = useState("");
 
   // Global config state
   const [showGlobalConfig, setShowGlobalConfig] = useState(false);
@@ -98,6 +101,22 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
       setMetaError("Erro de conexão");
     } finally {
       setLoadingMeta(false);
+    }
+  }, []);
+
+  const fetchMetaPixels = useCallback(async (adAccountId?: string) => {
+    setLoadingPixels(true);
+    setPixelError("");
+    try {
+      const qs = adAccountId ? `?adAccountId=${adAccountId}` : "";
+      const res = await fetch(`/api/meta/pixels${qs}`);
+      const data = await res.json();
+      if (!res.ok) { setPixelError(data.error || "Erro ao buscar pixels"); return; }
+      setMetaPixels(data);
+    } catch {
+      setPixelError("Erro de conexão");
+    } finally {
+      setLoadingPixels(false);
     }
   }, []);
 
@@ -589,17 +608,74 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
                 )}
               </div>
 
-              {/* Meta CAPI */}
+              {/* Meta Pixel + CAPI */}
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Meta CAPI (opcional)</p>
-                <Field
-                  label="Pixel ID"
-                  value={form.pixelId ?? ""}
-                  onChange={(v) => setForm((f) => ({ ...f, pixelId: v }))}
-                  placeholder="123456789012345"
-                />
-                <p className="text-xs text-blue-600">
-                  Encontrado no Gerenciador de Eventos → Fontes de Dados. Usado para enviar conversões via API quando um lead muda de etapa no funil.
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">📊 Meta Pixel + CAPI</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstMeta = form.adAccounts.find((a) => a.platform === "meta")?.id;
+                      fetchMetaPixels(firstMeta);
+                    }}
+                    disabled={loadingPixels}
+                    className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition"
+                  >
+                    {loadingPixels ? "Buscando..." : metaPixels.length > 0 ? "Atualizar" : "Buscar pixels"}
+                  </button>
+                </div>
+
+                {pixelError && <p className="text-xs text-red-600">{pixelError}</p>}
+
+                {metaPixels.length > 0 && (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {metaPixels.map((px) => {
+                      const selected = form.pixelId === px.id;
+                      return (
+                        <button
+                          key={px.id}
+                          type="button"
+                          onClick={() => setForm((f) => ({ ...f, pixelId: px.id }))}
+                          className={clsx(
+                            "w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition",
+                            selected
+                              ? "border-blue-500 bg-white text-blue-700 font-semibold"
+                              : "border-blue-200 bg-white/60 text-slate-600 hover:bg-white"
+                          )}
+                        >
+                          <span className={clsx("h-4 w-4 rounded flex items-center justify-center border text-white shrink-0", selected ? "bg-blue-600 border-blue-600" : "border-slate-300")}>
+                            {selected && <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                          </span>
+                          <span className="truncate flex-1">{px.name}</span>
+                          <span className="text-slate-400 font-mono shrink-0">{px.id}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {metaPixels.length === 0 && !loadingPixels && (
+                  <Field
+                    label="Pixel ID (manual)"
+                    value={form.pixelId ?? ""}
+                    onChange={(v) => setForm((f) => ({ ...f, pixelId: v }))}
+                    placeholder="123456789012345"
+                  />
+                )}
+
+                {form.pixelId && (
+                  <div className="flex items-center gap-2 rounded-lg bg-white border border-blue-200 px-3 py-2">
+                    <svg className="h-4 w-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    <div>
+                      <p className="text-xs font-medium text-blue-700">Pixel selecionado: {form.pixelId}</p>
+                      <p className="text-[10px] text-slate-400">Eventos disparados via Pixel (browser) + CAPI (servidor)</p>
+                    </div>
+                    <button onClick={() => setForm((f) => ({ ...f, pixelId: "" }))} className="ml-auto text-slate-300 hover:text-red-500 text-xs">✕</button>
+                  </div>
+                )}
+
+                <p className="text-xs text-blue-500">
+                  Clique em &quot;Buscar pixels&quot; para listar os pixels da conta. O evento é enviado pelo browser (fbq) e também pelo servidor (CAPI) quando um lead muda de etapa.
                 </p>
               </div>
 

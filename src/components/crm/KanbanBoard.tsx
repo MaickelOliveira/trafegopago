@@ -303,6 +303,25 @@ export function KanbanBoard({
   const [metricsLoading, setMetricsLoading] = useState(false);
   const currentClientMeta = clients.find((c) => c.id === filterClient);
 
+  // Inicializa Meta Pixel quando o cliente muda
+  useEffect(() => {
+    const pixelId = currentClientMeta?.pixelId;
+    if (!pixelId || typeof window === "undefined") return;
+    const w = window as typeof window & { fbq?: (...args: unknown[]) => void; _fbq?: unknown };
+    if (!w.fbq) {
+      const fn = ((...args: unknown[]) => {
+        (fn as { queue?: unknown[] }).queue?.push(args);
+      }) as { (...a: unknown[]): void; queue: unknown[]; loaded: boolean; version: string };
+      fn.queue = []; fn.loaded = true; fn.version = "2.0";
+      w.fbq = fn; w._fbq = fn;
+      const s = document.createElement("script");
+      s.async = true; s.src = "https://connect.facebook.net/en_US/fbevents.js";
+      document.head.appendChild(s);
+    }
+    w.fbq("init", pixelId);
+    w.fbq("track", "PageView");
+  }, [currentClientMeta?.pixelId]);
+
   useEffect(() => {
     const acct = currentClientMeta?.metaAccountId;
     if (!acct) { setMetricsData(null); return; }
@@ -345,6 +364,19 @@ export function KanbanBoard({
     const lead = leads.find((l) => l.id === id);
     if (!lead || lead.status === colId) return;
     setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status: colId } : l));
+
+    // Dispara Pixel (browser) se a coluna tiver metaEvent
+    const col = funnel?.columns.find((c) => c.id === colId);
+    if (col?.metaEvent && currentClientMeta?.pixelId) {
+      try {
+        const w = window as typeof window & { fbq?: (...args: unknown[]) => void };
+        const eventData: Record<string, unknown> = {};
+        if (lead.value != null) { eventData.value = lead.value; eventData.currency = "BRL"; }
+        w.fbq?.("track", col.metaEvent, eventData);
+      } catch { /* fbq não disponível */ }
+    }
+
+    // CAPI dispara no servidor via route handler
     await fetch(`/api/crm/leads/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
