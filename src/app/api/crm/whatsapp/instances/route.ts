@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ status, phone, qr: qrImage });
+    return NextResponse.json({ status, phone, qr: qrImage, connId });
   }
 
   // Baileys

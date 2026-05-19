@@ -99,7 +99,22 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
     if ((!newMetaId || !newMetaToken) && newType === "meta") return;
     setSaving(true);
 
+    const funnel = funnels.find(f => f.id === funnelId);
     const connId = `${funnelId}_${Date.now()}`;
+
+    if (newType === "uazapi") {
+      // UazAPI: backend cria instância, configura webhook e retorna QR
+      const res = await fetch("/api/crm/whatsapp/instances", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "uazapi", funnelId, instanceName: connId }),
+      });
+      const data = await res.json();
+      if (data.qr) setQrData({ connId: data.connId ?? connId, qr: data.qr, funnelName: funnel?.name ?? "" });
+      setAddingTo(null); setSaving(false);
+      fetchInstances(); fetchFunnels();
+      return;
+    }
+
     const conn: FunnelConnection = {
       id: connId,
       phone: newType === "meta" ? newMetaId : newPhone.replace(/\D/g, ""),
@@ -108,7 +123,6 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
     };
 
     // Salva no funil via API
-    const funnel = funnels.find(f => f.id === funnelId);
     const connections = [...(funnel?.connections ?? []), conn];
     await fetch(`/api/crm/funnels/${funnelId}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
@@ -225,13 +239,19 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
                   <div className="px-4 pb-3 pt-1 bg-blue-50/50 border-t border-blue-100">
                     <p className="text-xs font-semibold text-slate-600 mb-2">Tipo de conexão</p>
                     <div className="flex gap-2 mb-3">
-                      {(["baileys", "meta"] as ConnectionType[]).map(t => (
+                      {(["uazapi", "baileys", "meta"] as ConnectionType[]).map(t => (
                         <button key={t} onClick={() => setNewType(t)}
                           className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition ${newType === t ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                          {t === "baileys" ? "📱 QR Code (Baileys)" : "🏢 Meta API Oficial"}
+                          {t === "uazapi" ? "⚡ UazAPI" : t === "baileys" ? "📱 Baileys" : "🏢 Meta API"}
                         </button>
                       ))}
                     </div>
+
+                    {newType === "uazapi" && (
+                      <p className="text-xs text-slate-500 mb-2">
+                        Cria uma instância no UazAPI automaticamente e exibe o QR para escanear.
+                      </p>
+                    )}
 
                     {newType === "baileys" && (
                       <input value={newPhone} onChange={e => setNewPhone(e.target.value)}
@@ -263,7 +283,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
                       <button onClick={() => setAddingTo(null)} className="flex-1 rounded-lg border border-slate-200 py-1.5 text-xs text-slate-600">Cancelar</button>
                       <button onClick={() => addConnection(f.id)} disabled={saving}
                         className="flex-1 rounded-lg bg-blue-600 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                        {saving ? "Salvando..." : newType === "baileys" ? "Gerar QR" : "Conectar"}
+                        {saving ? "Conectando..." : newType === "uazapi" ? "Gerar QR (UazAPI)" : newType === "baileys" ? "Gerar QR" : "Conectar"}
                       </button>
                     </div>
                   </div>
