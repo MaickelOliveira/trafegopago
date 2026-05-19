@@ -264,11 +264,21 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                   name="waConnection"
                   value={conn.id}
                   checked={cfg.whatsappConnectionId === conn.id}
-                  onChange={() => setCfg((c) => ({ ...c, whatsappConnectionId: conn.id }))}
+                  onChange={async () => {
+                    setCfg((c) => ({ ...c, whatsappConnectionId: conn.id }));
+                    // Auto-save imediatamente ao selecionar
+                    await fetch(`/api/agent?clientId=${clientId}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ ...cfg, whatsappConnectionId: conn.id }),
+                    });
+                    setMsg("✓ Número selecionado e salvo!");
+                    setTimeout(() => setMsg(""), 3000);
+                  }}
                   className="accent-green-600"
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-slate-800">
                       {conn.phone ? `+${conn.phone}` : conn.id}
                     </span>
@@ -278,6 +288,11 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                     )}>
                       {conn.status === "connected" ? "● conectado" : "○ desconectado"}
                     </span>
+                    {cfg.whatsappConnectionId === conn.id && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-semibold">
+                        ✓ Agente ativo aqui
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {conn.type === "meta" ? "📘 Meta Cloud API" : "📱 Baileys"} · Funil: {conn.funnelName}
