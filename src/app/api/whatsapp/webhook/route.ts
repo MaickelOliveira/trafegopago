@@ -46,9 +46,11 @@ function isGroup(phone: string): boolean {
   return phone.includes("@g.us") || phone.endsWith("@broadcast");
 }
 
-// WAIDs do Meta (IDs internos do Facebook) têm 14+ dígitos — não são números de telefone reais
+// Aceita PSIDs do Meta (códigos internos gerados quando WhatsApp Business recebe
+// mensagens de WhatsApp pessoal vinculado ao Meta) — o Baileys consegue responder
+// para esses IDs normalmente. Filtra apenas strings claramente inválidas.
 function isValidPhone(phone: string): boolean {
-  return phone.length >= 7 && phone.length <= 13;
+  return phone.length >= 7 && phone.length <= 20;
 }
 
 export async function POST(req: NextRequest) {
