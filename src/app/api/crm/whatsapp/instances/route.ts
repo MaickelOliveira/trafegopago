@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     setWebhook(instanceToken, webhookUrl).catch(() => {});
     updateFieldsMap(instanceToken).catch(() => {});
 
-    // Salva conexão no funil
+    // Salva conexão no funil (token será atualizado abaixo se vier token real na resposta)
     const alreadyExists = funnel.connections?.some(c => c.id === connId);
     if (!alreadyExists) {
       updateFunnel(funnelId, {
@@ -66,6 +66,24 @@ export async function POST(req: NextRequest) {
 
     // UazAPI v2 aninha os dados em connResult.instance
     const connInst = (connResult.instance ?? connResult) as Record<string, unknown>;
+
+    // Extrai e salva o token real da instância (pode ser diferente do token global)
+    const realInstanceToken = (connInst.token as string) || instanceToken;
+    if (realInstanceToken !== instanceToken) {
+      console.log("[UazAPI] Atualizando token da instância:", realInstanceToken.slice(0, 8) + "...");
+      const f2 = getFunnels().find((f) => f.id === funnelId);
+      if (f2) {
+        updateFunnel(funnelId, {
+          connections: (f2.connections ?? []).map((c) =>
+            c.id === connId ? { ...c, uazapiToken: realInstanceToken } : c
+          ),
+        });
+      }
+      // Reconfigura webhook com o token correto da instância
+      setWebhook(realInstanceToken, `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`).catch(() => {});
+      updateFieldsMap(realInstanceToken).catch(() => {});
+    }
+
     const rawQr: string | undefined =
       (connInst.qrcode as string) ||
       (connInst.qr as string) ||
