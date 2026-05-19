@@ -40,11 +40,17 @@ type AppConfig = {
   uazapiWebhookForward: string;
 };
 
-export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
+export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: Client[]; appBaseUrl?: string }) {
   const router = useRouter();
   const [clients, setClients] = useState(initial);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
+  const [pixelClient, setPixelClient] = useState<Client | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  function copyPixelCode(code: string) {
+    navigator.clipboard.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [metaAccounts, setMetaAccounts] = useState<AdAccount[]>([]);
@@ -282,6 +288,9 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
               </div>
             </div>
             <div className="flex gap-2 shrink-0">
+              <button onClick={() => setPixelClient(c)} className="rounded-lg border border-purple-200 px-3 py-1.5 text-sm text-purple-600 hover:bg-purple-50 transition" title="Código do pixel de rastreamento">
+                📊 Pixel
+              </button>
               <button onClick={() => openEdit(c)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 transition">
                 Editar
               </button>
@@ -292,6 +301,77 @@ export function ConfiguracoesView({ clients: initial }: { clients: Client[] }) {
           </div>
         ))}
       </div>
+
+      {/* Modal Pixel de Rastreamento */}
+      {pixelClient && (() => {
+        const base = appBaseUrl || (typeof window !== "undefined" ? window.location.origin : "");
+        const scriptUrl = `${base}/api/pixel/${pixelClient.id}`;
+        const embedCode = `<script src="${scriptUrl}" async></script>`;
+        const manualExample = `<script>\n  // Identificar lead manualmente após submit de form\n  _tp.identify("5544999991234", { name: "Nome", email: "email@ex.com" });\n\n  // Evento personalizado\n  _tp.track("Agendamento", { value: 150 });\n</script>`;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPixelClient(null)}>
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl overflow-y-auto max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+              <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h2 className="font-semibold text-slate-900">📊 Pixel de Rastreamento — {pixelClient.name}</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">Cole no site do cliente para rastrear leads e UTMs</p>
+                </div>
+                <button onClick={() => setPixelClient(null)} className="text-slate-400 hover:text-slate-600">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="p-6 space-y-5">
+
+                {/* Código de instalação */}
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-700">1. Cole logo após o início da tag <code className="text-purple-600 bg-purple-50 px-1 rounded">&lt;body&gt;</code></p>
+                  <div className="relative rounded-xl bg-slate-900 p-4">
+                    <pre className="text-xs text-green-400 font-mono overflow-x-auto whitespace-pre-wrap break-all">{embedCode}</pre>
+                    <button
+                      onClick={() => copyPixelCode(embedCode)}
+                      className="absolute top-2 right-2 rounded-lg bg-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-600 transition"
+                    >
+                      {copied ? "✓ Copiado" : "Copiar"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* O que rastreia */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">O que é rastreado automaticamente</p>
+                  {[
+                    ["📄 Page View", "Cada visita ao site, com URL e UTMs"],
+                    ["💬 Click no WhatsApp", "Qualquer link wa.me — cria lead no CRM com UTMs"],
+                    ["📝 Formulários", "Forms com campo de telefone — cria lead com dados e UTMs"],
+                    ["🔗 UTMs / fbclid / gclid", "Capturados da URL e vinculados ao lead"],
+                  ].map(([icon, desc]) => (
+                    <div key={icon} className="flex items-start gap-2">
+                      <span className="text-sm shrink-0">{icon}</span>
+                      <p className="text-xs text-slate-600">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* API manual */}
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-700">2. API manual (opcional)</p>
+                  <div className="rounded-xl bg-slate-900 p-4">
+                    <pre className="text-xs text-blue-300 font-mono overflow-x-auto whitespace-pre-wrap">{manualExample}</pre>
+                  </div>
+                </div>
+
+                {/* URL do script */}
+                <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+                  <p className="text-xs text-blue-500 font-mono break-all">{scriptUrl}</p>
+                </div>
+              </div>
+              <div className="border-t border-slate-100 px-6 py-4 flex justify-end">
+                <button onClick={() => setPixelClient(null)} className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 transition">Fechar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Global config modal */}
       {showGlobalConfig && (
