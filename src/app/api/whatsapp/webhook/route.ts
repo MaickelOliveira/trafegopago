@@ -46,10 +46,9 @@ function isGroup(phone: string): boolean {
   return phone.includes("@g.us") || phone.endsWith("@broadcast");
 }
 
-// Filtra apenas JIDs claramente inválidos — Baileys pode receber WAIDs do Meta com 14-16 dígitos
-// e ainda assim consegue enviar mensagens de volta para eles
+// WAIDs do Meta (IDs internos do Facebook) têm 14+ dígitos — não são números de telefone reais
 function isValidPhone(phone: string): boolean {
-  return phone.length >= 7 && phone.length <= 20;
+  return phone.length >= 7 && phone.length <= 13;
 }
 
 export async function POST(req: NextRequest) {
