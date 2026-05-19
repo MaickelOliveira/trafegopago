@@ -96,29 +96,6 @@ async function startBaileys(connectionId, funnelId, clientId) {
                        msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || "";
           if (!text.trim()) continue;
 
-          // Diagnóstico: quando phone tem mais de 13 dígitos (PSID), loga tudo para encontrar número real
-          if (phone.length > 13) {
-            console.log(`[WA:PSID-DIAG] JID: ${jid}`);
-            console.log(`[WA:PSID-DIAG] key:`, JSON.stringify(msg.key));
-            console.log(`[WA:PSID-DIAG] pushName: ${pushName}`);
-            console.log(`[WA:PSID-DIAG] verifiedBizName: ${msg.verifiedBizName ?? "N/A"}`);
-            console.log(`[WA:PSID-DIAG] broadcast: ${msg.broadcast ?? "N/A"}`);
-            console.log(`[WA:PSID-DIAG] participant: ${msg.participant ?? "N/A"}`);
-            console.log(`[WA:PSID-DIAG] agent: ${msg.agent ?? "N/A"}`);
-            console.log(`[WA:PSID-DIAG] device: ${msg.device ?? "N/A"}`);
-            // Chaves do msg.message
-            const msgKeys = msg.message ? Object.keys(msg.message) : [];
-            console.log(`[WA:PSID-DIAG] message.keys: ${msgKeys.join(", ")}`);
-            // Chaves do msg completo
-            console.log(`[WA:PSID-DIAG] msg.keys: ${Object.keys(msg).join(", ")}`);
-            // Tenta extrair número real de campos adicionais
-            const lidJid = msg.key?.id ?? "";
-            console.log(`[WA:PSID-DIAG] key.id: ${lidJid}`);
-            // Verifica se tem número nos campos de status/receipt
-            if (msg.userReceipt) console.log(`[WA:PSID-DIAG] userReceipt:`, JSON.stringify(msg.userReceipt));
-            if (msg.reactions) console.log(`[WA:PSID-DIAG] reactions:`, JSON.stringify(msg.reactions));
-          }
-
           console.log(`[WA:${connectionId}] ${fromMe ? "→" : "←"} ${phone}: ${text.slice(0, 50)}`);
           await fetch(PLATFORM_WEBHOOK, {
             method: "POST", headers: { "Content-Type": "application/json" },
