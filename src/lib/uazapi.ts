@@ -31,15 +31,21 @@ function adminToken(): string {
 
 // Passo 1: cria a instância no servidor UazAPI (retorna token da instância)
 export async function createInstance(name: string): Promise<{ id?: string; token?: string; instanceToken?: string; [key: string]: unknown }> {
+  const url = `${base()}/instance/create`;
+  const tok = adminToken();
+  console.log("[UazAPI] createInstance URL:", url, "| adminToken:", tok ? tok.slice(0, 8) + "..." : "VAZIO");
   try {
-    const res = await fetch(`${base()}/instance/create`, {
+    const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", token: adminToken() },
+      headers: { "Content-Type": "application/json", token: tok },
       body: JSON.stringify({ name }),
     });
-    const data = await res.json().catch(() => ({}));
-    console.log("[UazAPI] createInstance response:", JSON.stringify(data).slice(0, 500));
-    return data ?? {};
+    const text = await res.text();
+    console.log("[UazAPI] createInstance status:", res.status, "| body:", text.slice(0, 500));
+    const data = JSON.parse(text || "{}");
+    // Suporta token aninhado em data.instance.token
+    const inst = (data.instance ?? data) as Record<string, unknown>;
+    return { ...data, token: (inst.token as string) || (data.token as string), id: (inst.id as string) || (data.id as string) };
   } catch (e) {
     console.log("[UazAPI] createInstance error:", e);
     return {};
@@ -48,14 +54,16 @@ export async function createInstance(name: string): Promise<{ id?: string; token
 
 // Passo 2: conecta a instância e retorna o QR code (usa o token da instância)
 export async function connectInstance(instanceToken: string): Promise<{ qr?: string; qrcode?: string; status?: string; [key: string]: unknown }> {
+  console.log("[UazAPI] connectInstance token:", instanceToken ? instanceToken.slice(0, 8) + "..." : "VAZIO");
   try {
     const res = await fetch(`${base()}/instance/connect`, {
       method: "POST",
       headers: { "Content-Type": "application/json", token: instanceToken },
       body: JSON.stringify({}),
     });
-    const data = await res.json().catch(() => ({}));
-    console.log("[UazAPI] connectInstance response:", JSON.stringify(data).slice(0, 500));
+    const text = await res.text();
+    console.log("[UazAPI] connectInstance status:", res.status, "| body:", text.slice(0, 500));
+    const data = JSON.parse(text || "{}");
     return data ?? {};
   } catch (e) {
     console.log("[UazAPI] connectInstance error:", e);

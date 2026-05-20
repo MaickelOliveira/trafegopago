@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
 
-  console.log("[WhatsApp webhook]", JSON.stringify(body).slice(0, 300));
+  console.log("[WhatsApp webhook FULL]", JSON.stringify(body).slice(0, 2000));
 
   // Repassa para n8n ou URL original (fire-and-forget)
   const config = getConfig();
