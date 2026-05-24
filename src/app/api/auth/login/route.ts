@@ -12,8 +12,14 @@ export async function POST(req: NextRequest) {
 
   const config = getConfig();
 
-  if (email.toLowerCase() === config.manager.email.toLowerCase()) {
-    const valid = bcrypt.compareSync(password, config.manager.passwordHash);
+  // Env var overrides — úteis para redefinir senha no EasyPanel sem editar volume
+  const managerEmail = process.env.MANAGER_EMAIL || config.manager.email;
+  const managerPasswordOverride = process.env.MANAGER_PASSWORD; // senha em texto puro (override)
+
+  if (email.toLowerCase() === managerEmail.toLowerCase()) {
+    const valid = managerPasswordOverride
+      ? password === managerPasswordOverride
+      : bcrypt.compareSync(password, config.manager.passwordHash);
     if (!valid) return NextResponse.json({ error: "Credenciais inválidas" }, { status: 401 });
 
     const token = await signToken({ sub: "manager", role: "manager", name: "Gestor" });
