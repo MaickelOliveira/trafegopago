@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getConfig, getClients } from "@/lib/clients";
 import { getFunnels, updateFunnel } from "@/lib/funnels";
-import { listInstances, createInstance, setWebhook, updateFieldsMap } from "@/lib/uazapi";
+import { listInstances, createInstance, setWebhook, updateFieldsMap, getGlobalToken } from "@/lib/uazapi";
 
 export type EnrichedInstance = {
   token: string;
@@ -126,10 +126,19 @@ export async function POST(req: NextRequest) {
   const appWebhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
 
   const created = await createInstance(instanceName);
-  const token = (created.token as string) || (created.instanceToken as string) || (config.uazapiToken ?? "");
+
+  // Usa o token retornado pelo UazAPI, ou o token global como fallback
+  // (UazAPI single-instance não retorna token por instância — usa o global)
+  const globalTok = getGlobalToken();
+  const token = (created.token as string) || (created.instanceToken as string) || globalTok;
+
+  // Captura erro do UazAPI para exibir na UI
+  const uazError = (created.error as string) || (created.message as string) || null;
 
   if (!token) {
-    return NextResponse.json({ error: "Falha ao criar instância no UazAPI" }, { status: 500 });
+    return NextResponse.json({
+      error: `Sem token UazAPI disponível. Configure UAZAPI_TOKEN nas variáveis de ambiente do EasyPanel.${uazError ? ` Detalhe: ${uazError}` : ""}`,
+    }, { status: 500 });
   }
 
   // Configure webhook and field map immediately

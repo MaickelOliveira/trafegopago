@@ -11,6 +11,11 @@ function globalToken(): string {
   return process.env.UAZAPI_TOKEN || getConfig().uazapiToken || "";
 }
 
+// Expõe o token global para uso nas rotas
+export function getGlobalToken(): string {
+  return globalToken();
+}
+
 export async function listInstances(): Promise<unknown[]> {
   try {
     const res = await fetch(`${base()}/instance/all`, {
