@@ -10,15 +10,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
   }
 
-  const config = getConfig();
+  // Env var overrides têm prioridade — funcionam mesmo sem data/config.json no volume
+  const managerEmailEnv = process.env.MANAGER_EMAIL;
+  const managerPasswordEnv = process.env.MANAGER_PASSWORD;
 
-  // Env var overrides — úteis para redefinir senha no EasyPanel sem editar volume
-  const managerEmail = process.env.MANAGER_EMAIL || config.manager.email;
-  const managerPasswordOverride = process.env.MANAGER_PASSWORD; // senha em texto puro (override)
+  // Se ambas as env vars estão definidas, autentica sem precisar do config.json
+  if (managerEmailEnv && managerPasswordEnv) {
+    if (email.toLowerCase() === managerEmailEnv.toLowerCase()) {
+      if (password !== managerPasswordEnv) {
+        return NextResponse.json({ error: "Credenciais inválidas" }, { status: 401 });
+      }
+      const token = await signToken({ sub: "manager", role: "manager", name: "Gestor" });
+      await setSessionCookie(token);
+      return NextResponse.json({ role: "manager", redirect: "/gestor" });
+    }
+  }
+
+  let config;
+  try {
+    config = getConfig();
+  } catch {
+    return NextResponse.json({ error: "Configuração não encontrada. Defina MANAGER_EMAIL e MANAGER_PASSWORD nas variáveis de ambiente." }, { status: 500 });
+  }
+
+  const managerEmail = managerEmailEnv || config.manager.email;
 
   if (email.toLowerCase() === managerEmail.toLowerCase()) {
-    const valid = managerPasswordOverride
-      ? password === managerPasswordOverride
+    const valid = managerPasswordEnv
+      ? password === managerPasswordEnv
       : bcrypt.compareSync(password, config.manager.passwordHash);
     if (!valid) return NextResponse.json({ error: "Credenciais inválidas" }, { status: 401 });
 
