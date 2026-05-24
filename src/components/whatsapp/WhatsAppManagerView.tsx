@@ -93,15 +93,37 @@ export function WhatsAppManagerView({
 
     const token = modal.token;
     connectTokenRef.current = token;
+    let qrWasShown = false; // só fecha automaticamente se QR foi exibido
 
-    // Trigger initial connect to get QR
-    fetch(`/api/whatsapp/manager/${token}/connect`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "qr" }),
-    }).then(r => r.json()).then(d => {
-      if (d.qr) setQrImage(d.qr);
-    }).catch(() => {});
+    // Verifica status atual antes de tentar conectar
+    fetch(`/api/whatsapp/manager/${token}/status`)
+      .then(r => r.json())
+      .then(d => {
+        setConnectStatus(d.status);
+        if (d.connected) {
+          // Instância já conectada — mostra isso, não fecha o modal
+          setConnectStatus("already_connected");
+          if (d.phone) setQrImage(null); // limpa QR anterior
+        } else {
+          // Não conectada — dispara o connect para gerar QR
+          fetch(`/api/whatsapp/manager/${token}/connect`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "qr" }),
+          }).then(r => r.json()).then(d2 => {
+            if (d2.qr) { setQrImage(d2.qr); qrWasShown = true; }
+          }).catch(() => {});
+        }
+      }).catch(() => {
+        // Erro no status — tenta conectar direto
+        fetch(`/api/whatsapp/manager/${token}/connect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "qr" }),
+        }).then(r => r.json()).then(d => {
+          if (d.qr) { setQrImage(d.qr); qrWasShown = true; }
+        }).catch(() => {});
+      });
 
     // Poll status every 3s
     const poll = setInterval(async () => {
@@ -110,8 +132,9 @@ export function WhatsAppManagerView({
         const res = await fetch(`/api/whatsapp/manager/${token}/status`);
         const d = await res.json();
         setConnectStatus(d.status);
-        if (d.qr) setQrImage(d.qr);
-        if (d.connected) {
+        if (d.qr) { setQrImage(d.qr); qrWasShown = true; }
+        // Só fecha automaticamente se o QR foi mostrado (usuário scaneou)
+        if (d.connected && qrWasShown) {
           clearInterval(poll);
           clearInterval(qrRefresh);
           setModal({ type: "none" });
@@ -128,7 +151,7 @@ export function WhatsAppManagerView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "qr" }),
       }).then(r => r.json()).then(d => {
-        if (d.qr) setQrImage(d.qr);
+        if (d.qr) { setQrImage(d.qr); qrWasShown = true; }
       }).catch(() => {});
     }, 30000);
 
@@ -395,7 +418,27 @@ export function WhatsAppManagerView({
 
           {connectTab === "qr" ? (
             <div className="text-center">
-              {qrImage ? (
+              {connectStatus === "already_connected" ? (
+                <div className="py-6">
+                  <div className="text-5xl mb-3">✅</div>
+                  <p className="font-semibold text-green-700 mb-1">Esta instância já está conectada!</p>
+                  <p className="text-xs text-slate-500 mb-4">Para reconectar com outro número, gere um novo QR abaixo.</p>
+                  <button
+                    onClick={() => {
+                      fetch(`/api/whatsapp/manager/${modal.type === "connect" ? modal.token : ""}/connect`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ mode: "qr" }),
+                      }).then(r => r.json()).then(d => {
+                        if (d.qr) { setQrImage(d.qr); setConnectStatus("connecting"); }
+                      });
+                    }}
+                    className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-5 py-2.5 transition"
+                  >
+                    🔄 Gerar novo QR (trocar número)
+                  </button>
+                </div>
+              ) : qrImage ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={qrImage} alt="QR Code WhatsApp" className="w-64 h-64 mx-auto rounded-2xl border-4 border-green-100 shadow-md mb-3" />
@@ -410,12 +453,14 @@ export function WhatsAppManagerView({
                   </div>
                 </div>
               )}
-              <div className="flex items-center justify-center gap-2 mt-3">
-                <span className={`h-2 w-2 rounded-full ${connectStatus === "connected" ? "bg-green-500" : connectStatus === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
-                <span className="text-xs text-slate-500">
-                  {connectStatus === "connected" ? "Conectado!" : connectStatus === "connecting" ? "Aguardando scan..." : connectStatus}
-                </span>
-              </div>
+              {connectStatus !== "already_connected" && (
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <span className={`h-2 w-2 rounded-full ${connectStatus === "connected" ? "bg-green-500" : connectStatus === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
+                  <span className="text-xs text-slate-500">
+                    {connectStatus === "connected" ? "✅ Conectado!" : connectStatus === "connecting" ? "Aguardando scan..." : connectStatus}
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
             <div>
