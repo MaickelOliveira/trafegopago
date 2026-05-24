@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import path from "path";
 import type { AutomationsConfig } from "./automations";
 
@@ -69,9 +69,21 @@ export type AppConfig = {
 
 const DATA_DIR = path.join(process.cwd(), "data");
 
+function ensureDataDir() {
+  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function readJsonFile<T>(file: string, fallback: T): T {
+  try {
+    const raw = readFileSync(path.join(DATA_DIR, file), "utf-8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export function getClients(): Client[] {
-  const raw = readFileSync(path.join(DATA_DIR, "clients.json"), "utf-8");
-  return JSON.parse(raw).clients as Client[];
+  return readJsonFile<{ clients: Client[] }>("clients.json", { clients: [] }).clients;
 }
 
 export function getClientById(id: string): Client | undefined {
@@ -83,6 +95,7 @@ export function getClientByEmail(email: string): Client | undefined {
 }
 
 export function saveClients(clients: Client[]) {
+  ensureDataDir();
   writeFileSync(
     path.join(DATA_DIR, "clients.json"),
     JSON.stringify({ clients }, null, 2)
@@ -101,11 +114,19 @@ export function deleteClient(id: string) {
   saveClients(getClients().filter((c) => c.id !== id));
 }
 
+const DEFAULT_CONFIG: AppConfig = {
+  manager: { email: process.env.MANAGER_EMAIL ?? "admin@trafegopago.com", passwordHash: "" },
+  metaToken: "",
+};
+
 export function getConfig(): AppConfig {
-  const raw = readFileSync(path.join(DATA_DIR, "config.json"), "utf-8");
-  return JSON.parse(raw) as AppConfig;
+  const cfg = readJsonFile<AppConfig>("config.json", DEFAULT_CONFIG);
+  // Garante que manager sempre existe (volume vazio ou config corrompida)
+  if (!cfg.manager) cfg.manager = DEFAULT_CONFIG.manager;
+  return cfg;
 }
 
 export function saveConfig(config: AppConfig) {
+  ensureDataDir();
   writeFileSync(path.join(DATA_DIR, "config.json"), JSON.stringify(config, null, 2));
 }
