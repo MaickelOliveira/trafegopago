@@ -1,7 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { connectInstance, getQrCode, getPairingCode } from "@/lib/uazapi";
+import { connectInstance, getQrCode, getPairingCode, disconnectInstance } from "@/lib/uazapi";
 import QRCode from "qrcode";
+
+async function extractQr(connResult: Record<string, unknown>): Promise<string | null> {
+  const connInst = (connResult.instance ?? connResult) as Record<string, unknown>;
+  const rawQr: string | undefined =
+    (connInst.qrcode as string) ||
+    (connInst.qr as string) ||
+    (connInst.base64 as string) ||
+    (connResult.qrcode as string) ||
+    (connResult.qr as string) ||
+    (connResult.base64 as string) ||
+    undefined;
+
+  if (rawQr) {
+    return rawQr.startsWith("data:")
+      ? rawQr
+      : await QRCode.toDataURL(rawQr, { margin: 1, width: 300 }).catch(() => null);
+  }
+  return null;
+}
 
 export async function POST(
   req: NextRequest,
@@ -13,45 +32,58 @@ export async function POST(
   }
 
   const { token } = await params;
-  const body = await req.json() as { mode: "qr" | "code"; phone?: string };
-  const { mode, phone } = body;
+  const body = await req.json() as { mode: "qr" | "code"; phone?: string; force?: boolean };
+  const { mode, phone, force } = body;
 
   if (mode === "code") {
     if (!phone) {
       return NextResponse.json({ error: "Telefone obrigatório para código de pareamento" }, { status: 400 });
     }
+    // Desconecta primeiro se necessário (pairing code requer instância desconectada)
+    if (force) {
+      await disconnectInstance(token).catch(() => {});
+      await new Promise(r => setTimeout(r, 1500));
+    }
     const code = await getPairingCode(token, phone.replace(/\D/g, ""));
     if (!code) {
-      return NextResponse.json({ error: "Não foi possível gerar o código. Certifique-se de que a instância existe e está desconectada." }, { status: 500 });
+      return NextResponse.json({ error: "Não foi possível gerar o código. Tente forçar desconexão primeiro." }, { status: 500 });
     }
     return NextResponse.json({ mode: "code", code });
   }
 
   // QR mode
+  // Se force=true, desconecta primeiro para forçar geração de novo QR
+  if (force) {
+    await disconnectInstance(token).catch(() => {});
+    await new Promise(r => setTimeout(r, 2000)); // aguarda desconectar
+  }
+
   const connResult = await connectInstance(token);
-  const connInst = (connResult.instance ?? connResult) as Record<string, unknown>;
+  let qrImage = await extractQr(connResult);
 
-  const rawQr: string | undefined =
-    (connInst.qrcode as string) ||
-    (connInst.qr as string) ||
-    (connResult.qrcode as string) ||
-    (connResult.qr as string) ||
-    undefined;
-
-  if (rawQr) {
-    const qrImage = rawQr.startsWith("data:")
-      ? rawQr
-      : await QRCode.toDataURL(rawQr, { margin: 1, width: 300 }).catch(() => null);
+  if (qrImage) {
     return NextResponse.json({ mode: "qr", status: "connecting", qr: qrImage });
   }
 
-  // Fallback: try dedicated qrcode endpoint
+  // Fallback: endpoint dedicado /instance/qrcode
   const dedicatedQr = await getQrCode(token);
   if (dedicatedQr) {
-    const qrImage = dedicatedQr.startsWith("data:")
+    qrImage = dedicatedQr.startsWith("data:")
       ? dedicatedQr
       : await QRCode.toDataURL(dedicatedQr, { margin: 1, width: 300 }).catch(() => null);
     return NextResponse.json({ mode: "qr", status: "connecting", qr: qrImage });
+  }
+
+  // Poll até QR aparecer (alguns servidores demoram ~2s para gerar)
+  for (let i = 0; i < 5; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const retryQr = await getQrCode(token);
+    if (retryQr) {
+      qrImage = retryQr.startsWith("data:")
+        ? retryQr
+        : await QRCode.toDataURL(retryQr, { margin: 1, width: 300 }).catch(() => null);
+      return NextResponse.json({ mode: "qr", status: "connecting", qr: qrImage });
+    }
   }
 
   return NextResponse.json({ mode: "qr", status: "connecting", qr: null });

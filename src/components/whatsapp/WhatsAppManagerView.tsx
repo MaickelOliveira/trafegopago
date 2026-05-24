@@ -9,7 +9,7 @@ type ClientOption = { id: string; name: string; color: string; agentEnabled: boo
 type ModalState =
   | { type: "none" }
   | { type: "create" }
-  | { type: "connect"; token: string; instanceName: string }
+  | { type: "connect"; token: string; instanceName: string; forceConnect?: boolean }
   | { type: "webhook"; token: string; instanceName: string }
   | { type: "send"; token?: string }
   | { type: "link"; token: string; instanceName: string; instancePhone: string };
@@ -92,38 +92,37 @@ export function WhatsAppManagerView({
     }
 
     const token = modal.token;
+    const forceConnect = modal.forceConnect ?? false;
     connectTokenRef.current = token;
     let qrWasShown = false; // só fecha automaticamente se QR foi exibido
 
-    // Verifica status atual antes de tentar conectar
-    fetch(`/api/whatsapp/manager/${token}/status`)
-      .then(r => r.json())
-      .then(d => {
-        setConnectStatus(d.status);
-        if (d.connected) {
-          // Instância já conectada — mostra isso, não fecha o modal
-          setConnectStatus("already_connected");
-          if (d.phone) setQrImage(null); // limpa QR anterior
-        } else {
-          // Não conectada — dispara o connect para gerar QR
-          fetch(`/api/whatsapp/manager/${token}/connect`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: "qr" }),
-          }).then(r => r.json()).then(d2 => {
-            if (d2.qr) { setQrImage(d2.qr); qrWasShown = true; }
-          }).catch(() => {});
-        }
-      }).catch(() => {
-        // Erro no status — tenta conectar direto
-        fetch(`/api/whatsapp/manager/${token}/connect`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "qr" }),
-        }).then(r => r.json()).then(d => {
-          if (d.qr) { setQrImage(d.qr); qrWasShown = true; }
-        }).catch(() => {});
-      });
+    const triggerConnect = (force: boolean) => {
+      fetch(`/api/whatsapp/manager/${token}/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "qr", force }),
+      }).then(r => r.json()).then(d => {
+        if (d.qr) { setQrImage(d.qr); qrWasShown = true; setConnectStatus("connecting"); }
+      }).catch(() => {});
+    };
+
+    if (forceConnect) {
+      // Nova instância: desconecta e gera QR direto, sem checar status
+      setConnectStatus("forcing");
+      triggerConnect(true);
+    } else {
+      // Reconexão: verifica status primeiro
+      fetch(`/api/whatsapp/manager/${token}/status`)
+        .then(r => r.json())
+        .then(d => {
+          setConnectStatus(d.status);
+          if (d.connected) {
+            setConnectStatus("already_connected");
+          } else {
+            triggerConnect(false);
+          }
+        }).catch(() => triggerConnect(false));
+    }
 
     // Poll status every 3s
     const poll = setInterval(async () => {
@@ -180,7 +179,8 @@ export function WhatsAppManagerView({
         return;
       }
       setNewName("");
-      setModal({ type: "connect", token: data.token, instanceName: data.name });
+      // Instância recém criada: força desconexão e gera QR imediatamente
+      setModal({ type: "connect", token: data.token, instanceName: data.name, forceConnect: true });
       fetchInstances();
     } catch {
       setCreateError("Erro de conexão");
@@ -418,25 +418,40 @@ export function WhatsAppManagerView({
 
           {connectTab === "qr" ? (
             <div className="text-center">
-              {connectStatus === "already_connected" ? (
-                <div className="py-6">
-                  <div className="text-5xl mb-3">✅</div>
-                  <p className="font-semibold text-green-700 mb-1">Esta instância já está conectada!</p>
-                  <p className="text-xs text-slate-500 mb-4">Para reconectar com outro número, gere um novo QR abaixo.</p>
-                  <button
-                    onClick={() => {
-                      fetch(`/api/whatsapp/manager/${modal.type === "connect" ? modal.token : ""}/connect`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ mode: "qr" }),
-                      }).then(r => r.json()).then(d => {
-                        if (d.qr) { setQrImage(d.qr); setConnectStatus("connecting"); }
-                      });
-                    }}
-                    className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-5 py-2.5 transition"
-                  >
-                    🔄 Gerar novo QR (trocar número)
-                  </button>
+              {connectStatus === "already_connected" || connectStatus === "forcing" ? (
+                <div className="py-6 text-center">
+                  {connectStatus === "forcing" ? (
+                    <>
+                      <div className="animate-spin h-10 w-10 border-2 border-slate-200 border-t-amber-500 rounded-full mx-auto mb-3" />
+                      <p className="font-semibold text-amber-600 mb-1">Desconectando e gerando QR...</p>
+                      <p className="text-xs text-slate-400">Aguarde alguns segundos</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-5xl mb-3">✅</div>
+                      <p className="font-semibold text-green-700 mb-1">Esta instância já está conectada!</p>
+                      <p className="text-xs text-slate-500 mb-4">Para conectar outro número, clique abaixo.<br/>
+                        <span className="text-amber-600 font-medium">⚠️ Isso vai desconectar o número atual.</span>
+                      </p>
+                      <button
+                        onClick={() => {
+                          if (!modal || modal.type !== "connect") return;
+                          setConnectStatus("forcing");
+                          fetch(`/api/whatsapp/manager/${modal.token}/connect`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ mode: "qr", force: true }),
+                          }).then(r => r.json()).then(d => {
+                            if (d.qr) { setQrImage(d.qr); setConnectStatus("connecting"); }
+                            else setConnectStatus("connecting"); // inicia polling
+                          }).catch(() => setConnectStatus("connecting"));
+                        }}
+                        className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-5 py-2.5 transition"
+                      >
+                        🔄 Trocar número (desconectar atual)
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : qrImage ? (
                 <>
@@ -448,8 +463,8 @@ export function WhatsAppManagerView({
               ) : (
                 <div className="w-64 h-64 mx-auto rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center mb-3">
                   <div className="text-center text-slate-400">
-                    <div className="animate-spin h-8 w-8 border-2 border-slate-200 border-t-green-500 rounded-full mx-auto mb-2" />
-                    <p className="text-xs">Gerando QR Code...</p>
+                    <div className={`animate-spin h-8 w-8 border-2 rounded-full mx-auto mb-2 ${connectStatus === "forcing" ? "border-amber-200 border-t-amber-500" : "border-slate-200 border-t-green-500"}`} />
+                    <p className="text-xs">{connectStatus === "forcing" ? "Desconectando para gerar QR..." : "Gerando QR Code..."}</p>
                   </div>
                 </div>
               )}
