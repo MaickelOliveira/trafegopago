@@ -160,3 +160,56 @@ export async function sendText(token: string, phone: string, message: string): P
     return false;
   }
 }
+
+export async function sendMedia(
+  token: string,
+  phone: string,
+  type: "image" | "audio" | "video",
+  urlOrBase64: string,
+  caption?: string,
+): Promise<boolean> {
+  const endpoint = type === "image" ? "image" : type === "audio" ? "audio" : "video";
+  try {
+    const isBase64 = urlOrBase64.startsWith("data:") || !urlOrBase64.startsWith("http");
+    const body: Record<string, unknown> = { phone, caption };
+    if (isBase64) {
+      body.base64 = urlOrBase64;
+    } else {
+      body.url = urlOrBase64;
+    }
+    const res = await fetch(`${base()}/send/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify(body),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function getPairingCode(token: string, phone: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${base()}/instance/pairingCode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify({ phone }),
+    });
+    const text = await res.text();
+    console.log("[UazAPI] getPairingCode status:", res.status, "| body:", text.slice(0, 300));
+    const data = JSON.parse(text || "{}");
+    return (data.code ?? data.pairingCode ?? data.pairing_code ?? null) as string | null;
+  } catch (e) {
+    console.log("[UazAPI] getPairingCode error:", e);
+    return null;
+  }
+}
+
+export async function deleteInstance(token: string): Promise<void> {
+  try {
+    await fetch(`${base()}/instance`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", token },
+    });
+  } catch { }
+}

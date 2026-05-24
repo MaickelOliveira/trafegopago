@@ -24,7 +24,8 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
   // Detecta se está dentro de um cliente específico
   const clientMatch = pathname.match(/^\/gestor\/([^/]+)/);
   const activeClientId = clientMatch?.[1];
-  const isInsideClient = !!activeClientId && activeClientId !== "configuracoes";
+  const staticRoutes = ["configuracoes", "crm", "financeiro", "social", "whatsapp"];
+  const isInsideClient = !!activeClientId && !staticRoutes.includes(activeClientId);
   const activeClient = isInsideClient ? clients.find((c) => c.id === activeClientId) : null;
 
   const criativosActive  = pathname.startsWith(`/gestor/${activeClientId}/criativos`);
@@ -231,6 +232,18 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               >
                 <span className="text-base leading-none">🎯</span>
                 CRM
+              </Link>
+              <Link
+                href="/gestor/whatsapp"
+                className={clsx(
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition",
+                  pathname.startsWith("/gestor/whatsapp")
+                    ? "bg-green-50 text-green-700"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <span className="text-base leading-none">📱</span>
+                WhatsApp
               </Link>
               <Link
                 href="/gestor/financeiro"
