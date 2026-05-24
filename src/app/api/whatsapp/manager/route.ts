@@ -127,21 +127,27 @@ export async function POST(req: NextRequest) {
 
   const created = await createInstance(instanceName);
 
-  // Usa o token retornado pelo UazAPI, ou o token global como fallback
-  // (UazAPI single-instance não retorna token por instância — usa o global)
-  const globalTok = getGlobalToken();
-  const token = (created.token as string) || (created.instanceToken as string) || globalTok;
-
-  // Captura erro do UazAPI para exibir na UI
+  // Token retornado pela criação (instância nova) ou token global (single-instance fallback)
+  const instanceToken = (created.token as string) || (created.instanceToken as string);
   const uazError = (created.error as string) || (created.message as string) || null;
 
-  if (!token) {
+  // Se o UazAPI retornou erro → falhou de verdade, não mascarar com token global
+  if (uazError && !instanceToken) {
     return NextResponse.json({
-      error: `Sem token UazAPI disponível. Configure UAZAPI_TOKEN nas variáveis de ambiente do EasyPanel.${uazError ? ` Detalhe: ${uazError}` : ""}`,
+      error: `UazAPI não criou a instância: ${uazError}. Para UazapiGO multi-instância, configure UAZAPI_ADMIN_TOKEN nas variáveis de ambiente com o token master do seu servidor.`,
     }, { status: 500 });
   }
 
-  // Configure webhook and field map immediately
+  // Sem token algum (sem instance token E sem global)
+  const globalTok = getGlobalToken();
+  const token = instanceToken || globalTok;
+  if (!token) {
+    return NextResponse.json({
+      error: "Sem token UazAPI disponível. Configure UAZAPI_TOKEN nas variáveis de ambiente do EasyPanel.",
+    }, { status: 500 });
+  }
+
+  // Configura webhook e fieldMap imediatamente (fire-and-forget)
   setWebhook(token, appWebhookUrl).catch(() => {});
   updateFieldsMap(token).catch(() => {});
 

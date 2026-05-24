@@ -90,12 +90,16 @@ export function WhatsAppManagerView({
   }, [fetchInstances]);
 
   // ── QR polling ────────────────────────────────────────────────
+  // qrShownRef: rastreia se QR chegou a ser exibido (para fechar só após escanear)
+  const qrShownRef = useRef(false);
+
   useEffect(() => {
     if (modal.type !== "qr") return;
 
     const token = modal.token;
     const forceLogout = modal.forceLogout;
     qrTokenRef.current = token;
+    qrShownRef.current = false;
     setQrImage(null);
     setQrStage(forceLogout ? "logout" : "generating");
     setPairingCode(null);
@@ -103,48 +107,57 @@ export function WhatsAppManagerView({
     setConnectTab("qr");
 
     let poll: ReturnType<typeof setInterval>;
-    let qrRefresh: ReturnType<typeof setInterval>;
+    let alive = true;
 
     const startPolling = () => {
+      // Polling de status a cada 3s — atualiza QR se o servidor retornar um novo
+      // NÃO chama /connect novamente (isso reiniciaria a sessão e quebraria o sync)
       poll = setInterval(async () => {
-        if (qrTokenRef.current !== token) return;
+        if (!alive || qrTokenRef.current !== token) return;
         try {
           const res = await fetch(`/api/whatsapp/manager/${token}/status`);
-          const d = await res.json();
-          if (d.qr && !qrImage) { setQrImage(d.qr); setQrStage("scanning"); }
-          if (d.connected && qrImage) {
+          const d = await res.json() as { connected?: boolean; qr?: string | null };
+          // Sempre atualiza o QR se o servidor trouxer um (pode ser refresh natural do UazAPI)
+          if (d.qr) {
+            setQrImage(d.qr);
+            setQrStage("scanning");
+            qrShownRef.current = true;
+          }
+          // Fecha modal apenas se QR foi exibido E agora conectado (usuário escaneou de verdade)
+          if (d.connected && qrShownRef.current) {
             setQrStage("done");
             clearInterval(poll);
-            clearInterval(qrRefresh);
+            alive = false;
             setTimeout(() => { setModal({ type: "none" }); fetchInstances(); }, 1500);
           }
         } catch { /**/ }
       }, 3000);
-
-      qrRefresh = setInterval(() => {
-        if (connectTab === "code") return;
-        fetch(`/api/whatsapp/manager/${token}/connect`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "qr", force: false }),
-        }).then(r => r.json()).then(d => {
-          if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); }
-        }).catch(() => {});
-      }, 25000);
     };
 
-    // Chama /connect (com ou sem logout) e inicia polling
+    // Chama /connect UMA VEZ (com logout se solicitado) para gerar o QR inicial
+    // Depois o status poll mantém o QR atualizado — sem novas chamadas a /connect
     fetch(`/api/whatsapp/manager/${token}/connect`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "qr", force: forceLogout }),
-    }).then(r => r.json()).then(d => {
-      if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); }
-      else setQrStage("generating");
+    }).then(r => r.json()).then((d: { qr?: string | null }) => {
+      if (!alive) return;
+      if (d.qr) {
+        setQrImage(d.qr);
+        setQrStage("scanning");
+        qrShownRef.current = true;
+      } else {
+        setQrStage("generating");
+      }
       startPolling();
-    }).catch(() => { setQrStage("generating"); startPolling(); });
+    }).catch(() => {
+      if (!alive) return;
+      setQrStage("generating");
+      startPolling();
+    });
 
     return () => {
+      alive = false;
       clearInterval(poll);
-      clearInterval(qrRefresh);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modal.type === "qr" ? `${modal.token}-${modal.forceLogout}` : null]);

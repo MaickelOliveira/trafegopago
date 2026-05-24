@@ -17,14 +17,59 @@ export function getGlobalToken(): string {
 }
 
 export async function listInstances(): Promise<unknown[]> {
+  // UazapiGO multi-instance: precisa do token admin/master do servidor
+  // para listar todas as instâncias. Fallback para token global se não configurado.
+  const tok = adminToken(); // usa adminToken (não globalToken) para ter acesso a todas as instâncias
   try {
     const res = await fetch(`${base()}/instance/all`, {
-      headers: { token: globalToken() },
+      headers: { token: tok },
+      cache: "no-store",
+    });
+    const text = await res.text();
+    console.log("[UazAPI] listInstances status:", res.status, "| body:", text.slice(0, 600));
+
+    let data: unknown;
+    try { data = JSON.parse(text || "[]"); } catch { data = []; }
+
+    // Array direto → retorna
+    if (Array.isArray(data) && (data as unknown[]).length > 0) return data as unknown[];
+
+    // Objeto com campo "instances", "data" ou "Instances"
+    const obj = data as Record<string, unknown>;
+    if (obj?.instances && Array.isArray(obj.instances)) return obj.instances as unknown[];
+    if (obj?.Instances && Array.isArray(obj.Instances)) return obj.Instances as unknown[];
+    if (obj?.data && Array.isArray(obj.data)) return obj.data as unknown[];
+
+    // Se a resposta tem status não-ok mas retornou dados parciais, tenta outra rota
+    if (!res.ok) return await listFallbackSingleInstance();
+
+    // Objeto único (single-instance)
+    if (obj && typeof obj === "object" && (obj.token || obj.status || obj.name || obj.id)) {
+      return [{ ...obj, token: (obj.token as string) || tok }];
+    }
+
+    // Fallback: modo single-instance via /instance/status
+    return await listFallbackSingleInstance();
+  } catch {
+    return await listFallbackSingleInstance();
+  }
+}
+
+async function listFallbackSingleInstance(): Promise<unknown[]> {
+  const tok = globalToken();
+  if (!tok) return [];
+  try {
+    const res = await fetch(`${base()}/instance/status`, {
+      headers: { token: tok },
       cache: "no-store",
     });
     if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    const raw = await res.json() as Record<string, unknown>;
+    const inst = (raw.instance ?? raw) as Record<string, unknown>;
+    if (inst.status || inst.state || inst.name) {
+      return [{ ...raw, token: (inst.token as string) || tok }];
+    }
+    return [];
   } catch {
     return [];
   }
