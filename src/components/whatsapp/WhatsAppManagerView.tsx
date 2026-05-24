@@ -6,12 +6,20 @@ import type { EnrichedInstance } from "@/app/api/whatsapp/manager/route";
 type FunnelOption = { id: string; name: string; clientId: string | null };
 type ClientOption = { id: string; name: string; color: string; agentEnabled: boolean; agentConnectionId: string | null };
 
+// ── Modal states ─────────────────────────────────────────────────
 type ModalState =
   | { type: "none" }
-  | { type: "create" }
-  | { type: "connect"; token: string; instanceName: string; forceConnect?: boolean }
+  // Criar: stepper em 3 fases dentro do mesmo modal
+  | { type: "create"; stage: "name" }
+  | { type: "create"; stage: "creating" }
+  | { type: "create"; stage: "created"; token: string; instanceName: string; webhookSaved: boolean }
+  // QR: abre depois de "created" ou pelo botão do card
+  | { type: "qr"; token: string; instanceName: string; forceLogout: boolean }
+  // Webhook
   | { type: "webhook"; token: string; instanceName: string }
+  // Enviar
   | { type: "send"; token?: string }
+  // Vincular
   | { type: "link"; token: string; instanceName: string; instancePhone: string };
 
 export function WhatsAppManagerView({
@@ -27,27 +35,28 @@ export function WhatsAppManagerView({
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<ModalState>({ type: "none" });
 
-  // Create modal
+  // Create
   const [newName, setNewName] = useState("");
-  const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
 
-  // Connect modal
-  const [connectTab, setConnectTab] = useState<"qr" | "code">("qr");
+  // QR
+  const [qrStage, setQrStage] = useState<"logout" | "generating" | "scanning" | "done">("generating");
   const [qrImage, setQrImage] = useState<string | null>(null);
-  const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [pairingPhone, setPairingPhone] = useState("");
-  const [generatingCode, setGeneratingCode] = useState(false);
-  const [connectStatus, setConnectStatus] = useState<string>("connecting");
-  const connectTokenRef = useRef<string>("");
+  const qrTokenRef = useRef<string>("");
 
-  // Webhook modal
+  // Pairing code
+  const [connectTab, setConnectTab] = useState<"qr" | "code">("qr");
+  const [pairingPhone, setPairingPhone] = useState("");
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [generatingCode, setGeneratingCode] = useState(false);
+
+  // Webhook
   const [webhookUrl, setWebhookUrl] = useState(appWebhookUrl);
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [webhookCopied, setWebhookCopied] = useState(false);
   const [webhookSaved, setWebhookSaved] = useState(false);
 
-  // Send modal
+  // Send
   const [sendToken, setSendToken] = useState("");
   const [sendPhone, setSendPhone] = useState("");
   const [sendType, setSendType] = useState<"text" | "image" | "audio" | "video">("text");
@@ -56,13 +65,13 @@ export function WhatsAppManagerView({
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<boolean | null>(null);
 
-  // Link modal
+  // Link
   const [linkFunnelId, setLinkFunnelId] = useState<string>("");
   const [linkClientId, setLinkClientId] = useState<string>("");
   const [linkAgent, setLinkAgent] = useState(false);
   const [savingLink, setSavingLink] = useState(false);
 
-  // Confirm delete
+  // Delete confirm
   const [deletingToken, setDeletingToken] = useState<string | null>(null);
 
   const fetchInstances = useCallback(async () => {
@@ -80,195 +89,143 @@ export function WhatsAppManagerView({
     return () => clearInterval(t);
   }, [fetchInstances]);
 
-  // QR polling when connect modal is open
+  // ── QR polling ────────────────────────────────────────────────
   useEffect(() => {
-    if (modal.type !== "connect") {
-      setQrImage(null);
-      setPairingCode(null);
-      setPairingPhone("");
-      setConnectStatus("connecting");
-      setConnectTab("qr");
-      return;
-    }
+    if (modal.type !== "qr") return;
 
     const token = modal.token;
-    const forceConnect = modal.forceConnect ?? false;
-    connectTokenRef.current = token;
-    let qrWasShown = false; // só fecha automaticamente se QR foi exibido
+    const forceLogout = modal.forceLogout;
+    qrTokenRef.current = token;
+    setQrImage(null);
+    setQrStage(forceLogout ? "logout" : "generating");
+    setPairingCode(null);
+    setPairingPhone("");
+    setConnectTab("qr");
 
-    const triggerConnect = (force: boolean) => {
-      fetch(`/api/whatsapp/manager/${token}/connect`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "qr", force }),
-      }).then(r => r.json()).then(d => {
-        if (d.qr) { setQrImage(d.qr); qrWasShown = true; setConnectStatus("connecting"); }
-      }).catch(() => {});
+    let poll: ReturnType<typeof setInterval>;
+    let qrRefresh: ReturnType<typeof setInterval>;
+
+    const startPolling = () => {
+      poll = setInterval(async () => {
+        if (qrTokenRef.current !== token) return;
+        try {
+          const res = await fetch(`/api/whatsapp/manager/${token}/status`);
+          const d = await res.json();
+          if (d.qr && !qrImage) { setQrImage(d.qr); setQrStage("scanning"); }
+          if (d.connected && qrImage) {
+            setQrStage("done");
+            clearInterval(poll);
+            clearInterval(qrRefresh);
+            setTimeout(() => { setModal({ type: "none" }); fetchInstances(); }, 1500);
+          }
+        } catch { /**/ }
+      }, 3000);
+
+      qrRefresh = setInterval(() => {
+        if (connectTab === "code") return;
+        fetch(`/api/whatsapp/manager/${token}/connect`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "qr", force: false }),
+        }).then(r => r.json()).then(d => {
+          if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); }
+        }).catch(() => {});
+      }, 25000);
     };
 
-    if (forceConnect) {
-      // Nova instância: desconecta e gera QR direto, sem checar status
-      setConnectStatus("forcing");
-      triggerConnect(true);
-    } else {
-      // Reconexão: verifica status primeiro
-      fetch(`/api/whatsapp/manager/${token}/status`)
-        .then(r => r.json())
-        .then(d => {
-          setConnectStatus(d.status);
-          if (d.connected) {
-            setConnectStatus("already_connected");
-          } else {
-            triggerConnect(false);
-          }
-        }).catch(() => triggerConnect(false));
-    }
-
-    // Poll status every 3s
-    const poll = setInterval(async () => {
-      if (connectTokenRef.current !== token) return;
-      try {
-        const res = await fetch(`/api/whatsapp/manager/${token}/status`);
-        const d = await res.json();
-        setConnectStatus(d.status);
-        if (d.qr) { setQrImage(d.qr); qrWasShown = true; }
-        // Só fecha automaticamente se o QR foi mostrado (usuário scaneou)
-        if (d.connected && qrWasShown) {
-          clearInterval(poll);
-          clearInterval(qrRefresh);
-          setModal({ type: "none" });
-          fetchInstances();
-        }
-      } catch { /**/ }
-    }, 3000);
-
-    // Refresh QR every 30s
-    const qrRefresh = setInterval(() => {
-      if (connectTab !== "qr") return;
-      fetch(`/api/whatsapp/manager/${token}/connect`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "qr" }),
-      }).then(r => r.json()).then(d => {
-        if (d.qr) { setQrImage(d.qr); qrWasShown = true; }
-      }).catch(() => {});
-    }, 30000);
+    // Chama /connect (com ou sem logout) e inicia polling
+    fetch(`/api/whatsapp/manager/${token}/connect`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "qr", force: forceLogout }),
+    }).then(r => r.json()).then(d => {
+      if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); }
+      else setQrStage("generating");
+      startPolling();
+    }).catch(() => { setQrStage("generating"); startPolling(); });
 
     return () => {
       clearInterval(poll);
       clearInterval(qrRefresh);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modal.type === "connect" ? modal.token : null]);
+  }, [modal.type === "qr" ? `${modal.token}-${modal.forceLogout}` : null]);
 
   // ── Handlers ──────────────────────────────────────────────────
 
   async function handleCreate() {
     if (!newName.trim()) { setCreateError("Informe um nome"); return; }
-    setCreating(true);
     setCreateError("");
-    try {
-      const res = await fetch("/api/whatsapp/manager", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.token) {
-        setCreateError(data.error ?? "Erro ao criar instância");
-        return;
-      }
-      setNewName("");
-      // Instância recém criada: força desconexão e gera QR imediatamente
-      setModal({ type: "connect", token: data.token, instanceName: data.name, forceConnect: true });
-      fetchInstances();
-    } catch {
-      setCreateError("Erro de conexão");
-    } finally {
-      setCreating(false);
+    setModal({ type: "create", stage: "creating" });
+
+    const res = await fetch("/api/whatsapp/manager", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName.trim() }),
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.token) {
+      setModal({ type: "create", stage: "name" });
+      setCreateError(data.error ?? "Erro ao criar instância no UazAPI");
+      return;
     }
+
+    setModal({ type: "create", stage: "created", token: data.token, instanceName: data.name, webhookSaved: false });
+    fetchInstances();
   }
 
-  async function handleGenerateCode() {
-    if (!pairingPhone.trim() || modal.type !== "connect") return;
-    setGeneratingCode(true);
-    setPairingCode(null);
-    try {
-      const res = await fetch(`/api/whatsapp/manager/${modal.token}/connect`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "code", phone: pairingPhone }),
-      });
-      const data = await res.json();
-      if (data.code) setPairingCode(data.code);
-      else setPairingCode("ERRO");
-    } catch {
-      setPairingCode("ERRO");
-    } finally {
-      setGeneratingCode(false);
-    }
+  async function handleSaveWebhookInCreate(token: string, instanceName: string) {
+    setSavingWebhook(true);
+    await fetch(`/api/whatsapp/manager/${token}/webhook`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: appWebhookUrl }),
+    }).catch(() => {});
+    setSavingWebhook(false);
+    setModal({ type: "create", stage: "created", token, instanceName, webhookSaved: true });
   }
 
   async function handleSaveWebhook() {
     if (modal.type !== "webhook") return;
-    setSavingWebhook(true);
-    setWebhookSaved(false);
-    try {
-      await fetch(`/api/whatsapp/manager/${modal.token}/webhook`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: webhookUrl }),
-      });
-      setWebhookSaved(true);
-      setTimeout(() => setWebhookSaved(false), 2500);
-    } finally {
-      setSavingWebhook(false);
-    }
+    setSavingWebhook(true); setWebhookSaved(false);
+    await fetch(`/api/whatsapp/manager/${modal.token}/webhook`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: webhookUrl }),
+    });
+    setSavingWebhook(false); setWebhookSaved(true);
+    setTimeout(() => setWebhookSaved(false), 2500);
+  }
+
+  async function handleGenerateCode() {
+    if (modal.type !== "qr" || !pairingPhone.trim()) return;
+    setGeneratingCode(true); setPairingCode(null);
+    const res = await fetch(`/api/whatsapp/manager/${modal.token}/connect`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "code", phone: pairingPhone, force: true }),
+    });
+    const data = await res.json();
+    setPairingCode(data.code ?? "ERRO");
+    setGeneratingCode(false);
   }
 
   async function handleSend() {
     if (!sendToken || !sendPhone || !sendContent) return;
-    setSending(true);
-    setSendResult(null);
-    try {
-      const res = await fetch("/api/whatsapp/manager/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: sendToken, phone: sendPhone, type: sendType, content: sendContent, caption: sendCaption }),
-      });
-      const data = await res.json();
-      setSendResult(data.ok === true);
-      if (data.ok) {
-        setSendPhone(""); setSendContent(""); setSendCaption("");
-      }
-    } catch {
-      setSendResult(false);
-    } finally {
-      setSending(false);
-    }
+    setSending(true); setSendResult(null);
+    const res = await fetch("/api/whatsapp/manager/send", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: sendToken, phone: sendPhone, type: sendType, content: sendContent, caption: sendCaption }),
+    });
+    const data = await res.json();
+    setSendResult(data.ok === true);
+    if (data.ok) { setSendPhone(""); setSendContent(""); setSendCaption(""); }
+    setSending(false);
   }
 
   async function handleLink() {
     if (modal.type !== "link") return;
     setSavingLink(true);
-    try {
-      await fetch("/api/whatsapp/manager/link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instanceToken: modal.token,
-          instanceName: modal.instanceName,
-          instancePhone: modal.instancePhone,
-          funnelId: linkFunnelId || null,
-          clientId: linkClientId || null,
-          linkAgent,
-        }),
-      });
-      setModal({ type: "none" });
-      fetchInstances();
-    } finally {
-      setSavingLink(false);
-    }
+    await fetch("/api/whatsapp/manager/link", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instanceToken: modal.token, instanceName: modal.instanceName, instancePhone: modal.instancePhone, funnelId: linkFunnelId || null, clientId: linkClientId || null, linkAgent }),
+    });
+    setSavingLink(false); setModal({ type: "none" }); fetchInstances();
   }
 
   async function handleDelete(token: string) {
@@ -277,29 +234,7 @@ export function WhatsAppManagerView({
     fetchInstances();
   }
 
-  function openLink(inst: EnrichedInstance) {
-    setLinkFunnelId(inst.linkedFunnelId ?? "");
-    setLinkClientId(inst.linkedClientId ?? "");
-    setLinkAgent(inst.hasAgentLinked);
-    setModal({ type: "link", token: inst.token, instanceName: inst.name, instancePhone: inst.phone ?? "" });
-  }
-
-  function openWebhook(inst: EnrichedInstance) {
-    setWebhookUrl(appWebhookUrl);
-    setWebhookSaved(false);
-    setModal({ type: "webhook", token: inst.token, instanceName: inst.name });
-  }
-
-  function openSend(inst?: EnrichedInstance) {
-    setSendToken(inst?.token ?? (instances[0]?.token ?? ""));
-    setSendPhone(""); setSendContent(""); setSendCaption("");
-    setSendType("text"); setSendResult(null);
-    setModal({ type: "send", token: inst?.token });
-  }
-
   const connectedCount = instances.filter(i => i.status === "connected").length;
-
-  // ── Render ─────────────────────────────────────────────────────
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -312,206 +247,197 @@ export function WhatsAppManagerView({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm">
             <span className={`h-2.5 w-2.5 rounded-full ${connectedCount > 0 ? "bg-green-500 animate-pulse" : "bg-slate-300"}`} />
-            <span className="text-sm font-medium text-slate-700">
-              {connectedCount} / {instances.length} conectada{instances.length !== 1 ? "s" : ""}
-            </span>
+            <span className="text-sm font-medium text-slate-700">{connectedCount} / {instances.length} conectada{instances.length !== 1 ? "s" : ""}</span>
           </div>
           <button
-            onClick={() => { setNewName(""); setCreateError(""); setModal({ type: "create" }); }}
+            onClick={() => { setNewName(""); setCreateError(""); setModal({ type: "create", stage: "name" }); }}
             className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition shadow-sm"
           >
-            <span className="text-base leading-none">+</span>
-            Nova Instância
+            <span className="text-lg leading-none">+</span> Nova Instância
           </button>
         </div>
       </div>
 
-      {/* Instances grid */}
+      {/* Instances */}
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-slate-400">
-          <div className="text-center">
-            <div className="animate-spin h-8 w-8 border-2 border-slate-200 border-t-green-500 rounded-full mx-auto mb-3" />
-            <p className="text-sm">Carregando instâncias...</p>
-          </div>
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin h-8 w-8 border-2 border-slate-200 border-t-green-500 rounded-full" />
         </div>
       ) : instances.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
           <span className="text-5xl mb-4">📱</span>
           <p className="text-lg font-semibold text-slate-600 mb-1">Nenhuma instância encontrada</p>
           <p className="text-sm mb-6">Crie uma nova instância UazAPI para começar</p>
-          <button
-            onClick={() => { setNewName(""); setCreateError(""); setModal({ type: "create" }); }}
-            className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl px-5 py-2.5 transition"
-          >
+          <button onClick={() => { setNewName(""); setCreateError(""); setModal({ type: "create", stage: "name" }); }}
+            className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl px-5 py-2.5 transition">
             + Nova Instância
           </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {instances.map(inst => (
-            <InstanceCard
-              key={inst.token}
-              inst={inst}
-              deletingToken={deletingToken}
-              setDeletingToken={setDeletingToken}
-              onConnect={() => setModal({ type: "connect", token: inst.token, instanceName: inst.name })}
-              onWebhook={() => openWebhook(inst)}
-              onSend={() => openSend(inst)}
-              onLink={() => openLink(inst)}
+            <InstanceCard key={inst.token} inst={inst}
+              deletingToken={deletingToken} setDeletingToken={setDeletingToken}
+              onConnect={() => setModal({ type: "qr", token: inst.token, instanceName: inst.name, forceLogout: false })}
+              onForceConnect={() => setModal({ type: "qr", token: inst.token, instanceName: inst.name, forceLogout: true })}
+              onWebhook={() => { setWebhookUrl(appWebhookUrl); setWebhookSaved(false); setModal({ type: "webhook", token: inst.token, instanceName: inst.name }); }}
+              onSend={() => { setSendToken(inst.token); setSendPhone(""); setSendContent(""); setSendCaption(""); setSendType("text"); setSendResult(null); setModal({ type: "send", token: inst.token }); }}
+              onLink={() => { setLinkFunnelId(inst.linkedFunnelId ?? ""); setLinkClientId(inst.linkedClientId ?? ""); setLinkAgent(inst.hasAgentLinked); setModal({ type: "link", token: inst.token, instanceName: inst.name, instancePhone: inst.phone ?? "" }); }}
               onDelete={() => handleDelete(inst.token)}
             />
           ))}
         </div>
       )}
 
-      {/* ── MODAIS ────────────────────────────────────────── */}
-
-      {/* Backdrop */}
+      {/* ── MODAIS ───────────────────────────────────────────────── */}
       {modal.type !== "none" && (
-        <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
-          onClick={() => setModal({ type: "none" })}
-        />
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" onClick={() => setModal({ type: "none" })} />
       )}
 
-      {/* Nova Instância */}
+      {/* CRIAR — stepper */}
       {modal.type === "create" && (
         <Modal title="Nova Instância UazAPI" onClose={() => setModal({ type: "none" })}>
-          <p className="text-sm text-slate-500 mb-4">
-            Digite um nome curto e único. Ele será usado como identificador da instância no UazAPI.
-          </p>
-          <input
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleCreate()}
-            placeholder="ex: nexo-pro, sbcie, clinica-norte"
-            className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 mb-1"
-            autoFocus
-          />
-          {createError && <p className="text-xs text-red-500 mb-3">{createError}</p>}
-          <p className="text-xs text-slate-400 mb-4">Letras minúsculas, números e hífens apenas.</p>
-          <div className="flex gap-2">
-            <button onClick={() => setModal({ type: "none" })}
-              className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
-              Cancelar
-            </button>
-            <button onClick={handleCreate} disabled={creating || !newName.trim()}
-              className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition">
-              {creating ? "Criando..." : "Criar e Conectar"}
-            </button>
-          </div>
+          {modal.stage === "name" && (
+            <>
+              <p className="text-sm text-slate-500 mb-4">
+                Digite um nome para identificar esta instância no UazAPI. Use letras minúsculas, números e hífens.
+              </p>
+              <input autoFocus
+                value={newName}
+                onChange={e => setNewName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                onKeyDown={e => e.key === "Enter" && handleCreate()}
+                placeholder="ex: nexo-pro, vendas, suporte"
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 mb-1"
+              />
+              {createError && <p className="text-xs text-red-500 mb-3 mt-1">{createError}</p>}
+              <p className="text-xs text-slate-400 mb-4">Só letras minúsculas, números e hífens.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setModal({ type: "none" })} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600 hover:bg-slate-50">Cancelar</button>
+                <button onClick={handleCreate} disabled={!newName.trim()} className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition">
+                  Criar Instância →
+                </button>
+              </div>
+            </>
+          )}
+
+          {modal.stage === "creating" && (
+            <div className="py-8 text-center">
+              <div className="animate-spin h-10 w-10 border-2 border-slate-200 border-t-green-500 rounded-full mx-auto mb-4" />
+              <p className="font-semibold text-slate-700">Criando instância no UazAPI...</p>
+              <p className="text-xs text-slate-400 mt-1">Aguarde</p>
+            </div>
+          )}
+
+          {modal.stage === "created" && (
+            <>
+              <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-5 text-center">
+                <div className="text-3xl mb-2">✅</div>
+                <p className="font-bold text-green-800">Instância <span className="font-mono">{modal.instanceName}</span> criada!</p>
+                <p className="text-xs text-green-600 mt-1">Agora configure o webhook e conecte um número.</p>
+              </div>
+
+              {/* Passo 1: Webhook */}
+              <div className="rounded-xl border border-slate-200 p-4 mb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-slate-700">🔗 1. Configurar Webhook</p>
+                  {modal.webhookSaved && <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Salvo</span>}
+                </div>
+                <p className="text-xs text-slate-400 font-mono mb-3 break-all">{appWebhookUrl}</p>
+                <button
+                  onClick={() => handleSaveWebhookInCreate(modal.token, modal.instanceName)}
+                  disabled={savingWebhook || modal.webhookSaved}
+                  className={`w-full rounded-xl py-2 text-sm font-semibold transition ${modal.webhookSaved ? "bg-green-100 text-green-700 cursor-default" : "bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"}`}
+                >
+                  {savingWebhook ? "Salvando..." : modal.webhookSaved ? "✓ Webhook configurado" : "Salvar Webhook no UazAPI"}
+                </button>
+              </div>
+
+              {/* Passo 2: Conectar */}
+              <div className="rounded-xl border border-slate-200 p-4">
+                <p className="text-sm font-semibold text-slate-700 mb-2">📱 2. Conectar WhatsApp</p>
+                <p className="text-xs text-slate-400 mb-3">Escaneie o QR Code com o WhatsApp para vincular um número.</p>
+                <button
+                  onClick={() => setModal({ type: "qr", token: modal.token, instanceName: modal.instanceName, forceLogout: true })}
+                  className="w-full rounded-xl bg-green-600 hover:bg-green-700 py-2.5 text-sm font-semibold text-white transition"
+                >
+                  📷 Gerar QR Code e Conectar
+                </button>
+              </div>
+            </>
+          )}
         </Modal>
       )}
 
-      {/* Conectar (QR ou Código) */}
-      {modal.type === "connect" && (
+      {/* QR / Código de pareamento */}
+      {modal.type === "qr" && (
         <Modal title={`Conectar — ${modal.instanceName}`} onClose={() => setModal({ type: "none" })} wide>
           {/* Tabs */}
           <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-5">
             {(["qr", "code"] as const).map(tab => (
               <button key={tab} onClick={() => setConnectTab(tab)}
-                className={`flex-1 py-2 text-sm font-semibold rounded-lg transition ${connectTab === tab ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>
+                className={`flex-1 py-2 text-sm font-semibold rounded-lg transition ${connectTab === tab ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>
                 {tab === "qr" ? "📷 QR Code" : "🔢 Código de Pareamento"}
               </button>
             ))}
           </div>
 
-          {connectTab === "qr" ? (
+          {connectTab === "qr" && (
             <div className="text-center">
-              {connectStatus === "already_connected" || connectStatus === "forcing" ? (
-                <div className="py-6 text-center">
-                  {connectStatus === "forcing" ? (
-                    <>
-                      <div className="animate-spin h-10 w-10 border-2 border-slate-200 border-t-amber-500 rounded-full mx-auto mb-3" />
-                      <p className="font-semibold text-amber-600 mb-1">Desconectando e gerando QR...</p>
-                      <p className="text-xs text-slate-400">Aguarde alguns segundos</p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-5xl mb-3">✅</div>
-                      <p className="font-semibold text-green-700 mb-1">Esta instância já está conectada!</p>
-                      <p className="text-xs text-slate-500 mb-4">Para conectar outro número, clique abaixo.<br/>
-                        <span className="text-amber-600 font-medium">⚠️ Isso vai desconectar o número atual.</span>
-                      </p>
-                      <button
-                        onClick={() => {
-                          if (!modal || modal.type !== "connect") return;
-                          setConnectStatus("forcing");
-                          fetch(`/api/whatsapp/manager/${modal.token}/connect`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ mode: "qr", force: true }),
-                          }).then(r => r.json()).then(d => {
-                            if (d.qr) { setQrImage(d.qr); setConnectStatus("connecting"); }
-                            else setConnectStatus("connecting"); // inicia polling
-                          }).catch(() => setConnectStatus("connecting"));
-                        }}
-                        className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-5 py-2.5 transition"
-                      >
-                        🔄 Trocar número (desconectar atual)
-                      </button>
-                    </>
-                  )}
+              {qrStage === "done" ? (
+                <div className="py-6">
+                  <div className="text-5xl mb-2">✅</div>
+                  <p className="font-bold text-green-700 text-lg">Conectado com sucesso!</p>
                 </div>
               ) : qrImage ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={qrImage} alt="QR Code WhatsApp" className="w-64 h-64 mx-auto rounded-2xl border-4 border-green-100 shadow-md mb-3" />
-                  <p className="text-xs text-slate-500 mb-1">Abra o WhatsApp → <strong>Aparelhos Conectados</strong> → <strong>Vincular</strong></p>
-                  <p className="text-xs text-slate-400">Atualiza automaticamente a cada 30s</p>
+                  <img src={qrImage} alt="QR Code" className="w-64 h-64 mx-auto rounded-2xl border-4 border-green-100 shadow-md mb-3" />
+                  <p className="text-sm font-medium text-slate-700 mb-1">Abra o WhatsApp → <strong>Aparelhos Conectados</strong> → <strong>Vincular</strong></p>
+                  <p className="text-xs text-slate-400">Atualiza automaticamente a cada 25s</p>
                 </>
               ) : (
-                <div className="w-64 h-64 mx-auto rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center mb-3">
-                  <div className="text-center text-slate-400">
-                    <div className={`animate-spin h-8 w-8 border-2 rounded-full mx-auto mb-2 ${connectStatus === "forcing" ? "border-amber-200 border-t-amber-500" : "border-slate-200 border-t-green-500"}`} />
-                    <p className="text-xs">{connectStatus === "forcing" ? "Desconectando para gerar QR..." : "Gerando QR Code..."}</p>
-                  </div>
+                <div className="w-64 h-64 mx-auto rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center mb-3 gap-3">
+                  <div className={`animate-spin h-8 w-8 border-2 rounded-full ${qrStage === "logout" ? "border-amber-200 border-t-amber-500" : "border-slate-200 border-t-green-500"}`} />
+                  <p className="text-xs text-slate-400 px-4">
+                    {qrStage === "logout" ? "Fazendo logout para gerar novo QR..." : "Gerando QR Code..."}
+                  </p>
                 </div>
               )}
-              {connectStatus !== "already_connected" && (
+              {qrStage !== "done" && (
                 <div className="flex items-center justify-center gap-2 mt-3">
-                  <span className={`h-2 w-2 rounded-full ${connectStatus === "connected" ? "bg-green-500" : connectStatus === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
+                  <span className={`h-2 w-2 rounded-full ${qrImage ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
                   <span className="text-xs text-slate-500">
-                    {connectStatus === "connected" ? "✅ Conectado!" : connectStatus === "connecting" ? "Aguardando scan..." : connectStatus}
+                    {qrImage ? "Aguardando scan..." : qrStage === "logout" ? "Fazendo logout..." : "Gerando QR..."}
                   </span>
                 </div>
               )}
             </div>
-          ) : (
+          )}
+
+          {connectTab === "code" && (
             <div>
-              <p className="text-sm text-slate-600 mb-3">
-                Insira o número do WhatsApp que será conectado a esta instância. Um código de 8 dígitos será gerado.
-              </p>
+              <p className="text-sm text-slate-600 mb-3">Insira o número que será conectado. Um código de 8 dígitos será enviado.</p>
               <div className="flex gap-2 mb-4">
-                <input
-                  value={pairingPhone}
-                  onChange={e => setPairingPhone(e.target.value)}
+                <input value={pairingPhone} onChange={e => setPairingPhone(e.target.value)}
                   placeholder="5544999999999 (com DDI)"
-                  className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100"
-                />
+                  className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-green-400" />
                 <button onClick={handleGenerateCode} disabled={generatingCode || !pairingPhone.trim()}
-                  className="rounded-xl bg-green-600 hover:bg-green-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition whitespace-nowrap">
-                  {generatingCode ? "..." : "Gerar Código"}
+                  className="rounded-xl bg-green-600 hover:bg-green-700 px-4 text-sm font-semibold text-white disabled:opacity-50 transition whitespace-nowrap">
+                  {generatingCode ? "..." : "Gerar"}
                 </button>
               </div>
               {pairingCode && pairingCode !== "ERRO" && (
-                <div className="bg-green-50 border border-green-200 rounded-2xl p-5 text-center mb-3">
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-5 text-center">
                   <p className="text-xs text-green-600 font-semibold mb-2 uppercase tracking-wide">Código de Pareamento</p>
                   <p className="font-mono text-4xl font-bold tracking-[0.3em] text-green-700">{pairingCode}</p>
-                  <p className="text-xs text-green-600 mt-2">WhatsApp → Aparelhos Conectados → Vincular com número de telefone</p>
+                  <p className="text-xs text-green-600 mt-2">WhatsApp → Aparelhos Conectados → Vincular com número</p>
                 </div>
               )}
               {pairingCode === "ERRO" && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-600">
-                  Não foi possível gerar o código. Verifique se a instância existe e está desconectada.
+                  Não foi possível gerar o código. Tente o QR Code.
                 </div>
               )}
-              <div className="flex items-center justify-center gap-2 mt-2">
-                <span className={`h-2 w-2 rounded-full ${connectStatus === "connected" ? "bg-green-500" : "bg-yellow-400 animate-pulse"}`} />
-                <span className="text-xs text-slate-500">
-                  {connectStatus === "connected" ? "✅ Conectado!" : "Aguardando pareamento..."}
-                </span>
-              </div>
             </div>
           )}
         </Modal>
@@ -520,145 +446,75 @@ export function WhatsAppManagerView({
       {/* Webhook */}
       {modal.type === "webhook" && (
         <Modal title={`Webhook — ${modal.instanceName}`} onClose={() => setModal({ type: "none" })}>
-          <p className="text-sm text-slate-500 mb-3">
-            Configure a URL de webhook desta instância no UazAPI. As mensagens recebidas serão enviadas para este endereço.
-          </p>
+          <p className="text-sm text-slate-500 mb-3">Configure a URL de webhook desta instância no UazAPI.</p>
           <div className="relative mb-2">
-            <input
-              value={webhookUrl}
-              onChange={e => setWebhookUrl(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-mono outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 pr-20"
-            />
-            <button
-              onClick={async () => {
-                await navigator.clipboard.writeText(webhookUrl).catch(() => {});
-                setWebhookCopied(true);
-                setTimeout(() => setWebhookCopied(false), 2000);
-              }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-600 hover:text-blue-800 px-2 py-1 rounded"
-            >
-              {webhookCopied ? "✓ Copiado" : "Copiar"}
+            <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-mono outline-none focus:border-green-400 pr-20" />
+            <button onClick={async () => { await navigator.clipboard.writeText(webhookUrl).catch(() => {}); setWebhookCopied(true); setTimeout(() => setWebhookCopied(false), 2000); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-600 px-2 py-1 rounded">
+              {webhookCopied ? "✓" : "Copiar"}
             </button>
           </div>
-          <p className="text-xs text-slate-400 mb-4">
-            Esta é a URL padrão da plataforma. Altere apenas se souber o que está fazendo.
-          </p>
+          <p className="text-xs text-slate-400 mb-4">Salva a URL e configura os eventos de mensagem no UazAPI.</p>
           <div className="flex gap-2">
-            <button onClick={() => setModal({ type: "none" })}
-              className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
-              Fechar
-            </button>
+            <button onClick={() => setModal({ type: "none" })} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600">Fechar</button>
             <button onClick={handleSaveWebhook} disabled={savingWebhook}
-              className={`flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${webhookSaved ? "bg-green-500" : "bg-blue-600 hover:bg-blue-700"}`}>
+              className={`flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition ${webhookSaved ? "bg-green-500" : "bg-blue-600 hover:bg-blue-700"} disabled:opacity-50`}>
               {savingWebhook ? "Salvando..." : webhookSaved ? "✓ Salvo!" : "Salvar no UazAPI"}
             </button>
           </div>
         </Modal>
       )}
 
-      {/* Enviar Mensagem */}
+      {/* Enviar */}
       {modal.type === "send" && (
         <Modal title="Enviar Mensagem" onClose={() => setModal({ type: "none" })} wide>
           <div className="space-y-3">
-            {/* Instância */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Instância</label>
-              <select
-                value={sendToken}
-                onChange={e => setSendToken(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400"
-              >
+              <select value={sendToken} onChange={e => setSendToken(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400">
                 {instances.filter(i => i.status === "connected").map(i => (
-                  <option key={i.token} value={i.token}>
-                    {i.name}{i.phone ? ` (+${i.phone})` : ""}
-                  </option>
+                  <option key={i.token} value={i.token}>{i.name}{i.phone ? ` (+${i.phone})` : ""}</option>
                 ))}
-                {instances.filter(i => i.status !== "connected").length > 0 && (
-                  <optgroup label="Desconectadas">
-                    {instances.filter(i => i.status !== "connected").map(i => (
-                      <option key={i.token} value={i.token}>{i.name} (desconectada)</option>
-                    ))}
-                  </optgroup>
-                )}
+                {instances.filter(i => i.status !== "connected").map(i => (
+                  <option key={i.token} value={i.token}>{i.name} (desconectada)</option>
+                ))}
               </select>
             </div>
-
-            {/* Telefone */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Destinatário</label>
-              <input
-                value={sendPhone}
-                onChange={e => setSendPhone(e.target.value)}
-                placeholder="5544999999999 (com DDI, sem + ou espaços)"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400"
-              />
+              <input value={sendPhone} onChange={e => setSendPhone(e.target.value)}
+                placeholder="5544999999999" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400" />
             </div>
-
-            {/* Tipo */}
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Tipo de mensagem</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Tipo</label>
               <div className="flex gap-2">
                 {(["text", "image", "audio", "video"] as const).map(t => (
                   <button key={t} onClick={() => setSendType(t)}
-                    className={`flex-1 py-2 text-xs font-semibold rounded-xl border transition ${sendType === t ? "border-green-500 bg-green-600 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                    {t === "text" ? "💬 Texto" : t === "image" ? "🖼️ Imagem" : t === "audio" ? "🎵 Áudio" : "🎬 Vídeo"}
+                    className={`flex-1 py-2 text-xs font-semibold rounded-xl border transition ${sendType === t ? "border-green-500 bg-green-600 text-white" : "border-slate-200 text-slate-600"}`}>
+                    {t === "text" ? "💬 Texto" : t === "image" ? "🖼️" : t === "audio" ? "🎵" : "🎬"}
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Conteúdo */}
             {sendType === "text" ? (
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Mensagem</label>
-                <textarea
-                  value={sendContent}
-                  onChange={e => setSendContent(e.target.value)}
-                  placeholder="Digite sua mensagem..."
-                  rows={4}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400 resize-none"
-                />
-              </div>
+              <textarea value={sendContent} onChange={e => setSendContent(e.target.value)}
+                placeholder="Mensagem..." rows={4}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400 resize-none" />
             ) : (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    URL do arquivo {sendType === "image" ? "(imagem)" : sendType === "audio" ? "(áudio)" : "(vídeo)"}
-                  </label>
-                  <input
-                    value={sendContent}
-                    onChange={e => setSendContent(e.target.value)}
-                    placeholder="https://exemplo.com/arquivo.mp4"
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400"
-                  />
-                </div>
-                {(sendType === "image" || sendType === "video") && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Legenda (opcional)</label>
-                    <input
-                      value={sendCaption}
-                      onChange={e => setSendCaption(e.target.value)}
-                      placeholder="Legenda da mídia"
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400"
-                    />
-                  </div>
-                )}
-              </>
+              <input value={sendContent} onChange={e => setSendContent(e.target.value)}
+                placeholder="URL do arquivo" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400" />
             )}
-
             {sendResult !== null && (
               <div className={`rounded-xl px-4 py-2.5 text-sm font-medium ${sendResult ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
-                {sendResult ? "✅ Mensagem enviada com sucesso!" : "❌ Falha ao enviar. Verifique se a instância está conectada."}
+                {sendResult ? "✅ Enviado!" : "❌ Falha ao enviar."}
               </div>
             )}
-
             <div className="flex gap-2 pt-1">
-              <button onClick={() => setModal({ type: "none" })}
-                className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
-                Fechar
-              </button>
+              <button onClick={() => setModal({ type: "none" })} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600">Fechar</button>
               <button onClick={handleSend} disabled={sending || !sendToken || !sendPhone || !sendContent}
-                className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition">
+                className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
                 {sending ? "Enviando..." : "Enviar"}
               </button>
             </div>
@@ -666,72 +522,40 @@ export function WhatsAppManagerView({
         </Modal>
       )}
 
-      {/* Vincular CRM / Agente */}
+      {/* Vincular */}
       {modal.type === "link" && (
         <Modal title={`Vincular — ${modal.instanceName}`} onClose={() => setModal({ type: "none" })}>
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
-              <select
-                value={linkFunnelId}
-                onChange={e => setLinkFunnelId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400"
-              >
-                <option value="">— Sem vínculo com funil —</option>
+              <select value={linkFunnelId} onChange={e => setLinkFunnelId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400">
+                <option value="">— Sem vínculo —</option>
                 {funnels.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}{f.clientId ? ` (${clients.find(c => c.id === f.clientId)?.name ?? f.clientId})` : ""}
-                  </option>
+                  <option key={f.id} value={f.id}>{f.name}{f.clientId ? ` (${clients.find(c => c.id === f.clientId)?.name ?? f.clientId})` : ""}</option>
                 ))}
               </select>
-              <p className="text-xs text-slate-400 mt-1">Mensagens recebidas nessa instância criarão leads neste funil.</p>
+              <p className="text-xs text-slate-400 mt-1">Mensagens recebidas criarão leads neste funil.</p>
             </div>
-
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
-              <select
-                value={linkClientId}
-                onChange={e => setLinkClientId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400 mb-2"
-              >
+              <select value={linkClientId} onChange={e => setLinkClientId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400 mb-2">
                 <option value="">— Sem cliente —</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               {linkClientId && (
-                <label className="flex items-center gap-2.5 cursor-pointer">
-                  <div
-                    onClick={() => setLinkAgent(v => !v)}
-                    className={`relative w-10 h-5.5 rounded-full transition-colors cursor-pointer flex-shrink-0 ${linkAgent ? "bg-green-500" : "bg-slate-300"}`}
-                    style={{ height: "22px" }}
-                  >
-                    <span className={`absolute top-0.5 h-4.5 w-4.5 rounded-full bg-white shadow transition-transform ${linkAgent ? "translate-x-5" : "translate-x-0.5"}`}
-                      style={{ height: "18px", width: "18px", top: "2px", left: "2px", transform: linkAgent ? "translateX(18px)" : "translateX(0)" }} />
+                <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setLinkAgent(v => !v)}>
+                  <div className={`relative w-10 rounded-full transition-colors ${linkAgent ? "bg-green-500" : "bg-slate-300"}`} style={{ height: "22px" }}>
+                    <span className="absolute top-[2px] bg-white shadow rounded-full transition-transform" style={{ width: 18, height: 18, left: 2, transform: linkAgent ? "translateX(18px)" : "translateX(0)" }} />
                   </div>
                   <span className="text-sm text-slate-700">Ativar Agente IA nesta instância</span>
                 </label>
               )}
-              {linkAgent && linkClientId && linkFunnelId && (() => {
-                const selectedFunnel = funnels.find(f => f.id === linkFunnelId);
-                if (selectedFunnel?.clientId && selectedFunnel.clientId !== linkClientId) {
-                  return (
-                    <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mt-2 border border-amber-200">
-                      ⚠️ O cliente do agente é diferente do cliente do funil. O roteamento pode não funcionar corretamente.
-                    </p>
-                  );
-                }
-                return null;
-              })()}
             </div>
-
-            <div className="flex gap-2 pt-1">
-              <button onClick={() => setModal({ type: "none" })}
-                className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
-                Cancelar
-              </button>
-              <button onClick={handleLink} disabled={savingLink}
-                className="flex-1 rounded-xl bg-blue-600 hover:bg-blue-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition">
+            <div className="flex gap-2">
+              <button onClick={() => setModal({ type: "none" })} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600">Cancelar</button>
+              <button onClick={handleLink} disabled={savingLink} className="flex-1 rounded-xl bg-blue-600 hover:bg-blue-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
                 {savingLink ? "Salvando..." : "Salvar Vínculo"}
               </button>
             </div>
@@ -742,20 +566,11 @@ export function WhatsAppManagerView({
   );
 }
 
-// ── InstanceCard ────────────────────────────────────────────────
-
-function InstanceCard({
-  inst, deletingToken, setDeletingToken,
-  onConnect, onWebhook, onSend, onLink, onDelete,
-}: {
-  inst: EnrichedInstance;
-  deletingToken: string | null;
-  setDeletingToken: (t: string | null) => void;
-  onConnect: () => void;
-  onWebhook: () => void;
-  onSend: () => void;
-  onLink: () => void;
-  onDelete: () => void;
+// ── InstanceCard ──────────────────────────────────────────────────
+function InstanceCard({ inst, deletingToken, setDeletingToken, onConnect, onForceConnect, onWebhook, onSend, onLink, onDelete }: {
+  inst: EnrichedInstance; deletingToken: string | null; setDeletingToken: (t: string | null) => void;
+  onConnect: () => void; onForceConnect: () => void; onWebhook: () => void;
+  onSend: () => void; onLink: () => void; onDelete: () => void;
 }) {
   const isConnected = inst.status === "connected";
   const isConnecting = inst.status === "connecting";
@@ -763,36 +578,20 @@ function InstanceCard({
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition p-5">
       <div className="flex items-start justify-between gap-4">
-        {/* Left: status + info */}
         <div className="flex items-start gap-4 min-w-0">
-          <div className="flex-shrink-0 mt-0.5">
-            <span className={`flex h-3 w-3 rounded-full ${isConnected ? "bg-green-500" : isConnecting ? "bg-yellow-400" : "bg-slate-300"} ${(isConnected || isConnecting) ? "animate-pulse" : ""}`} />
-          </div>
+          <span className={`mt-1.5 flex-shrink-0 h-3 w-3 rounded-full ${isConnected ? "bg-green-500 animate-pulse" : isConnecting ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-semibold text-slate-900">{inst.name}</h3>
-              {isConnected && inst.phone && (
-                <span className="text-xs font-mono text-slate-500 bg-slate-100 rounded-lg px-2 py-0.5">
-                  +{inst.phone}
-                </span>
-              )}
+              {isConnected && inst.phone && <span className="text-xs font-mono text-slate-500 bg-slate-100 rounded-lg px-2 py-0.5">+{inst.phone}</span>}
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isConnected ? "bg-green-100 text-green-700" : isConnecting ? "bg-yellow-100 text-yellow-700" : "bg-slate-100 text-slate-500"}`}>
                 {isConnected ? "Conectado" : isConnecting ? "Conectando..." : "Desconectado"}
               </span>
             </div>
-
-            {/* Badges CRM / Agente */}
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              {inst.linkedFunnelName ? (
-                <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2.5 py-0.5 font-medium">
-                  🎯 {inst.linkedFunnelName}
-                  {inst.linkedClientName && ` · ${inst.linkedClientName}`}
-                </span>
-              ) : (
-                <span className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-0.5">
-                  Sem funil
-                </span>
-              )}
+              {inst.linkedFunnelName
+                ? <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2.5 py-0.5 font-medium">🎯 {inst.linkedFunnelName}{inst.linkedClientName ? ` · ${inst.linkedClientName}` : ""}</span>
+                : <span className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-0.5">Sem funil</span>}
               {inst.hasAgentLinked && (
                 <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${inst.agentEnabled ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-slate-500 bg-slate-50 border-slate-200"}`}>
                   🤖 Agente {inst.agentEnabled ? "ativo" : "inativo"}
@@ -802,44 +601,28 @@ function InstanceCard({
           </div>
         </div>
 
-        {/* Right: actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <ActionBtn onClick={onConnect} title={isConnected ? "Reconectar" : "Conectar"}
-            className={isConnected ? "border-slate-200 text-slate-600 hover:text-green-700" : "border-green-200 text-green-700 bg-green-50 hover:bg-green-100"}>
-            {isConnected ? "↺" : "⚡"}
-          </ActionBtn>
-
-          <ActionBtn onClick={onWebhook} title="Configurar webhook"
-            className="border-slate-200 text-slate-600 hover:text-blue-700 hover:bg-blue-50">
-            🔗
-          </ActionBtn>
-
-          <ActionBtn onClick={onSend} title="Enviar mensagem"
-            className="border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50">
-            💬
-          </ActionBtn>
-
-          <ActionBtn onClick={onLink} title="Vincular ao CRM / Agente"
-            className="border-slate-200 text-slate-600 hover:text-violet-700 hover:bg-violet-50">
-            🔀
-          </ActionBtn>
-
+        <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+          {isConnected ? (
+            <button onClick={onForceConnect} title="Trocar número (reconectar)"
+              className="text-xs font-semibold border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-xl px-3 py-1.5 transition">
+              🔄 Trocar
+            </button>
+          ) : (
+            <button onClick={onConnect} title="Conectar"
+              className="text-xs font-semibold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100 rounded-xl px-3 py-1.5 transition">
+              ⚡ Conectar
+            </button>
+          )}
+          <ActionBtn onClick={onWebhook} title="Webhook" className="border-slate-200 text-slate-600 hover:text-blue-700 hover:bg-blue-50">🔗</ActionBtn>
+          <ActionBtn onClick={onSend} title="Enviar mensagem" className="border-slate-200 text-slate-600 hover:bg-slate-50">💬</ActionBtn>
+          <ActionBtn onClick={onLink} title="Vincular CRM/Agente" className="border-slate-200 text-slate-600 hover:text-violet-700 hover:bg-violet-50">🔀</ActionBtn>
           {deletingToken === inst.token ? (
             <div className="flex items-center gap-1">
-              <button onClick={onDelete}
-                className="text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg px-2.5 py-1.5 transition">
-                Confirmar
-              </button>
-              <button onClick={() => setDeletingToken(null)}
-                className="text-xs text-slate-500 hover:text-slate-700 px-1.5 py-1.5">
-                ✕
-              </button>
+              <button onClick={onDelete} className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">Confirmar</button>
+              <button onClick={() => setDeletingToken(null)} className="text-xs text-slate-400 px-1.5">✕</button>
             </div>
           ) : (
-            <ActionBtn onClick={() => setDeletingToken(inst.token)} title="Excluir instância"
-              className="border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200">
-              🗑️
-            </ActionBtn>
+            <ActionBtn onClick={() => setDeletingToken(inst.token)} title="Excluir" className="border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50">🗑️</ActionBtn>
           )}
         </div>
       </div>
@@ -847,31 +630,20 @@ function InstanceCard({
   );
 }
 
-function ActionBtn({ onClick, title, className, children }: {
-  onClick: () => void;
-  title: string;
-  className: string;
-  children: React.ReactNode;
-}) {
+function ActionBtn({ onClick, title, className, children }: { onClick: () => void; title: string; className: string; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} title={title}
-      className={`h-9 w-9 flex items-center justify-center rounded-xl border text-base transition ${className}`}>
+    <button onClick={onClick} title={title} className={`h-9 w-9 flex items-center justify-center rounded-xl border text-base transition ${className}`}>
       {children}
     </button>
   );
 }
 
-function Modal({ title, onClose, wide, children }: {
-  title: string;
-  onClose: () => void;
-  wide?: boolean;
-  children: React.ReactNode;
-}) {
+function Modal({ title, onClose, wide, children }: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
   return (
-    <div className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 ${wide ? "w-[520px]" : "w-[420px]"} max-w-[95vw] max-h-[90vh] overflow-y-auto`}>
+    <div className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 ${wide ? "w-[520px]" : "w-[440px]"} max-w-[95vw] max-h-[90vh] overflow-y-auto`}>
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-bold text-slate-900 text-lg">{title}</h2>
-        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl">✕</button>
       </div>
       {children}
     </div>

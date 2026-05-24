@@ -102,6 +102,26 @@ export async function disconnectInstance(token: string): Promise<void> {
   } catch { }
 }
 
+// Logout completo — apaga a sessão salva, próximo /connect mostra QR
+export async function logoutInstance(token: string): Promise<void> {
+  try {
+    // Tenta endpoint de logout (apaga sessão)
+    await fetch(`${base()}/instance/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify({}),
+    });
+  } catch { }
+  // Desconecta também por segurança
+  try {
+    await fetch(`${base()}/instance/disconnect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify({}),
+    });
+  } catch { }
+}
+
 export async function getInstanceStatus(token: string): Promise<{ status: string; phone?: string; qr?: string; name?: string; instanceToken?: string }> {
   try {
     const res = await fetch(`${base()}/instance/status`, {

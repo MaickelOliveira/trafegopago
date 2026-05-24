@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { connectInstance, getQrCode, getPairingCode, disconnectInstance } from "@/lib/uazapi";
+import { connectInstance, getQrCode, getPairingCode, logoutInstance } from "@/lib/uazapi";
 import QRCode from "qrcode";
 
 async function extractQr(connResult: Record<string, unknown>): Promise<string | null> {
@@ -41,7 +41,7 @@ export async function POST(
     }
     // Desconecta primeiro se necessário (pairing code requer instância desconectada)
     if (force) {
-      await disconnectInstance(token).catch(() => {});
+      await logoutInstance(token).catch(() => {});
       await new Promise(r => setTimeout(r, 1500));
     }
     const code = await getPairingCode(token, phone.replace(/\D/g, ""));
@@ -52,10 +52,10 @@ export async function POST(
   }
 
   // QR mode
-  // Se force=true, desconecta primeiro para forçar geração de novo QR
+  // Se force=true, faz LOGOUT completo (apaga sessão) para forçar novo QR
   if (force) {
-    await disconnectInstance(token).catch(() => {});
-    await new Promise(r => setTimeout(r, 2000)); // aguarda desconectar
+    await logoutInstance(token).catch(() => {});
+    await new Promise(r => setTimeout(r, 3000)); // aguarda sessão ser limpa
   }
 
   const connResult = await connectInstance(token);
