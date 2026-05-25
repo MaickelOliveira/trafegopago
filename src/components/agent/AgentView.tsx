@@ -109,11 +109,28 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     type: "image", url: "", caption: "", filename: "", sendOnFirstContact: true, name: "",
   });
   const [uploading, setUploading] = useState(false);
+  const [calendars, setCalendars] = useState<{ id: string; name: string; primary: boolean }[]>([]);
+  const [loadingCalendars, setLoadingCalendars] = useState(false);
+
+  async function loadCalendars() {
+    setLoadingCalendars(true);
+    try {
+      const res = await fetch(`/api/agent/calendars?clientId=${clientId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCalendars(data.calendars ?? []);
+      }
+    } catch {}
+    setLoadingCalendars(false);
+  }
 
   useEffect(() => {
     fetch(`/api/agent?clientId=${clientId}`)
       .then((r) => r.json())
-      .then((d) => setCfg(d))
+      .then((d) => {
+        setCfg(d);
+        if (d.calendarConnected) loadCalendars();
+      })
       .catch(() => {});
 
     // Busca o secret do cron existente
@@ -186,8 +203,12 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   useEffect(() => {
-    if (searchParams.get("calendar") === "connected") setMsg("✓ Google Calendar conectado com sucesso!");
+    if (searchParams.get("calendar") === "connected") {
+      setMsg("✓ Google Calendar conectado com sucesso!");
+      loadCalendars();
+    }
     if (searchParams.get("error") === "oauth_failed") setMsg("✗ Falha ao conectar Google Calendar.");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   async function toggleField(field: "enabled" | "followUpEnabled", value: boolean) {
@@ -436,13 +457,34 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           </button>
         </div>
         {cfg.calendarConnected && (
-          <Field
-            label="Calendar ID"
-            value={cfg.googleCalendarId ?? "primary"}
-            onChange={(v) => setCfg((c) => ({ ...c, googleCalendarId: v }))}
-            placeholder="primary"
-            hint='Use "primary" para o calendário principal ou o e-mail da agenda específica.'
-          />
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-600">Agenda</label>
+            {loadingCalendars ? (
+              <p className="text-xs text-slate-400">Carregando agendas...</p>
+            ) : calendars.length > 0 ? (
+              <select
+                value={cfg.googleCalendarId ?? "primary"}
+                onChange={(e) => setCfg((c) => ({ ...c, googleCalendarId: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {calendars.map((cal) => (
+                  <option key={cal.id} value={cal.id}>
+                    {cal.name}{cal.primary ? " (principal)" : ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <input
+                  value={cfg.googleCalendarId ?? "primary"}
+                  onChange={(e) => setCfg((c) => ({ ...c, googleCalendarId: e.target.value }))}
+                  placeholder="primary"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button onClick={loadCalendars} className="text-xs text-blue-600 underline">Carregar agendas</button>
+              </>
+            )}
+          </div>
         )}
       </div>
 

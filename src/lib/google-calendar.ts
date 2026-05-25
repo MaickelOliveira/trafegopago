@@ -122,3 +122,15 @@ export async function isCalendarConnected(refreshToken: string, calendarId: stri
     return false;
   }
 }
+
+export type CalendarItem = { id: string; name: string; primary: boolean };
+
+export async function listCalendars(refreshToken: string): Promise<CalendarItem[]> {
+  const calendar = await getCalendar(refreshToken);
+  const { data } = await calendar.calendarList.list({ minAccessRole: "writer" });
+  return (data.items ?? []).map((c) => ({
+    id: c.id ?? "",
+    name: c.summary ?? c.id ?? "",
+    primary: c.primary === true,
+  })).filter((c) => c.id);
+}
