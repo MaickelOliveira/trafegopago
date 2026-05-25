@@ -35,14 +35,16 @@ async function generateSummaryText(
   const history = getHistory(phone);
   if (history.length === 0) return "Sem histórico de conversa.";
 
-  const transcript = history
+  // Limita às últimas 20 mensagens e 3000 chars para evitar token limit
+  const recent = history.slice(-20);
+  let transcript = recent
     .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
     .join("\n");
+  if (transcript.length > 3000) transcript = transcript.slice(-3000);
 
   const apiKey = getGeminiApiKey(agCfg.geminiApiKey ?? undefined);
   if (!apiKey) return "Chave Gemini não configurada — resumo indisponível.";
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const prompt =
     `Você é um assistente que resume conversas de WhatsApp para o gestor.\n\n` +
@@ -53,12 +55,17 @@ async function generateSummaryText(
     `o que o lead quer, o estágio da conversa, dúvidas ou objeções levantadas, e próximo passo sugerido. ` +
     `Não use marcadores ou listas, escreva em parágrafos curtos.`;
 
-  try {
-    const result = await model.generateContent(prompt);
-    return result.response.text().trim();
-  } catch {
-    return "Não foi possível gerar o resumo automaticamente.";
+  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
+  for (const modelId of modelsToTry) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelId });
+      const result = await model.generateContent(prompt);
+      return result.response.text().trim();
+    } catch (err) {
+      console.warn(`[generateSummaryText] Falha com modelo ${modelId}:`, err);
+    }
   }
+  return "Não foi possível gerar o resumo automaticamente.";
 }
 
 /**
