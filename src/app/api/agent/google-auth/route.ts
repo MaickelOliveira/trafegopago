@@ -3,6 +3,19 @@ import { getSession } from "@/lib/auth";
 import { getAuthUrl, exchangeCode } from "@/lib/google-calendar";
 import { getClientById, upsertClient, getConfig } from "@/lib/clients";
 
+/** Retorna a URL base pública correta mesmo dentro de Docker/EasyPanel */
+function getPublicBase(req: NextRequest): string {
+  const config = getConfig();
+  // 1. Configuração explícita do admin (mais confiável)
+  if (config.appBaseUrl) return config.appBaseUrl.replace(/\/$/, "");
+  // 2. Headers do reverse proxy (EasyPanel/Traefik)
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (host) return `${proto}://${host}`;
+  // 3. Fallback (pode ser localhost em Docker)
+  return req.nextUrl.origin;
+}
+
 // GET /api/agent/google-auth/start?clientId=xxx — inicia OAuth
 export async function GET(req: NextRequest) {
   const path = req.nextUrl.pathname;
@@ -47,7 +60,7 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const baseUrl = req.nextUrl.origin; // sempre correto — vem da requisição real
+  const baseUrl = getPublicBase(req);
   const url = getAuthUrl(clientId, baseUrl);
   return NextResponse.redirect(url);
 }
