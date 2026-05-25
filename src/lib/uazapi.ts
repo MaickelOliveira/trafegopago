@@ -238,6 +238,27 @@ export async function updateFieldsMap(token: string): Promise<void> {
   } catch { }
 }
 
+/**
+ * Envia indicador de digitação (pontinhos) para o contato.
+ * É best-effort — se falhar, não afeta o envio da mensagem.
+ * @param action "composing" = digitando | "paused" = parou | "recording" = gravando áudio
+ */
+export async function sendPresence(
+  token: string,
+  phone: string,
+  action: "composing" | "paused" | "recording" = "composing",
+): Promise<void> {
+  try {
+    await fetch(`${base()}/send/presence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify({ phone, action }),
+    });
+  } catch {
+    // indicador é best-effort, ignora erros silenciosamente
+  }
+}
+
 export async function sendText(token: string, phone: string, message: string): Promise<boolean> {
   const url = `${base()}/send/text`;
   // Formato correto da uazapi: { number, text } — demais são fallback por compatibilidade

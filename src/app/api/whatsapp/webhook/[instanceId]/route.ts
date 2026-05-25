@@ -17,7 +17,7 @@ import { getClientById, getConfig } from "@/lib/clients";
 import { getHistory, addMessage } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
-import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
+import { sendText, sendMedia, sendPresence, splitMessage } from "@/lib/uazapi";
 import {
   startFollowUpSequence,
   cancelFollowUpsForPhone,
@@ -304,6 +304,7 @@ export async function POST(
         const combined = batch.messages.join("\n");
         const h = getHistory(phone);
         console.log(`[webhook/${instanceId}] Gemini batch iniciando para phone=${phone} cid=${cid} msgs=${batch.messages.length}`);
+        sendPresence(instanceUazToken, phone, "composing").catch(() => {});
         runGeminiAgent(combined, h, cid, phone)
           .then(async ({ text: geminiText }) => {
             markDone(batch.id);
@@ -334,6 +335,7 @@ export async function POST(
     if (!geminiEnabled || cid === "sem-cliente") return NextResponse.json({ ok: true });
 
     console.log(`[webhook/${instanceId}] Gemini imediato iniciando para phone=${phone}`);
+    sendPresence(instanceUazToken, phone, "composing").catch(() => {});
     const { text: geminiText } = await runGeminiAgent(text, history, cid, phone);
     console.log(`[webhook/${instanceId}] Gemini imediato respondeu (${geminiText?.length ?? 0} chars)`);
     if (!geminiText) return NextResponse.json({ ok: true });
