@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 
 export type CreativeStatus = "pending" | "approved" | "rejected" | "published";
@@ -38,8 +38,13 @@ export type Creative = {
 const DATA_PATH = path.join(process.cwd(), "data", "creatives.json");
 
 export function getCreatives(): Creative[] {
-  const raw = readFileSync(DATA_PATH, "utf-8");
-  return JSON.parse(raw).items as Creative[];
+  if (!existsSync(DATA_PATH)) return [];
+  try {
+    const raw = readFileSync(DATA_PATH, "utf-8");
+    return JSON.parse(raw).items as Creative[];
+  } catch {
+    return [];
+  }
 }
 
 export function getCreativesByClient(clientId: string): Creative[] {
