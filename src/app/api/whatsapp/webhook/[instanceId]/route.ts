@@ -34,42 +34,65 @@ type Body = Record<string, unknown>;
 
 // ── Extrai mensagem em diferentes formatos ──────────────────────────────────
 function extractMessage(body: Body): { phone: string; text: string; fromMe: boolean } | null {
-  // ── Formato UazapiGO novo: { EventType:"messages", messages:[{phone,body,fromMe,type}], chat:{} } ──
-  // É o formato real enviado por nexopro.uazapi.com
+  // ── Formato UazapiGO: { EventType:"messages", chat:{phone}, messages:[{body,fromMe}] } ──
   const eventType = (body.EventType ?? body.eventType) as string | undefined;
-  if (eventType === "messages" || eventType === "message") {
+  const chat = body.chat as Record<string, unknown> | undefined;
+  const msgObj = body.message as Record<string, unknown> | undefined;
+
+  if (eventType === "messages" || eventType === "message" || chat?.phone) {
+    // Tenta extrair do array messages[]
     const msgs = body.messages as Record<string, unknown>[] | undefined;
     if (Array.isArray(msgs) && msgs.length > 0) {
       const msg = msgs[0];
-      const raw = String(msg.phone ?? msg.sender ?? msg.from ?? "");
-      const phone = raw.replace("@s.whatsapp.net", "").replace(/\D/g, "");
+      const rawPhone = String(msg.phone ?? msg.sender ?? msg.from ?? chat?.phone ?? "");
+      const phone = rawPhone.replace("@s.whatsapp.net", "").replace(/\D/g, "");
 
-      // body pode ser string (texto) ou objeto (imagem/áudio/video)
-      // Se for objeto, extrai caption ou trata como vazio
-      const rawBody = msg.body ?? msg.message ?? msg.text ?? msg.content ?? "";
+      const rawBody = msg.body ?? msg.message ?? msg.text ?? msg.content ?? msg.conversation ?? "";
       let text: string;
       if (typeof rawBody === "string") {
         text = rawBody;
       } else if (rawBody && typeof rawBody === "object") {
         const obj = rawBody as Record<string, unknown>;
-        text = String(obj.text ?? obj.caption ?? obj.body ?? "");
+        text = String(obj.text ?? obj.caption ?? obj.body ?? obj.conversation ?? "");
       } else {
-        text = String(rawBody);
+        text = "";
       }
-
-      // Para mensagens de mídia sem legenda, usa caption no nível do msg
       if (!text && msg.caption) text = String(msg.caption);
 
       const fromMe = msg.fromMe === true || msg.from_me === true;
       if (phone) return { phone, text, fromMe };
     }
-    // Fallback: chat.phone + body de um campo genérico
-    const chat = body.chat as Record<string, unknown> | undefined;
+
+    // Tenta extrair de body.message (objeto singular com o texto)
     const chatPhone = String(chat?.phone ?? "").replace(/\D/g, "");
     if (chatPhone) {
-      const rawFallback = body.body ?? body.message ?? body.text ?? "";
-      const text = typeof rawFallback === "string" ? rawFallback : "";
-      return { phone: chatPhone, text, fromMe: false };
+      let text = "";
+      let fromMe = false;
+
+      if (msgObj) {
+        // message é objeto: { body, text, conversation, fromMe, ... }
+        text =
+          (typeof msgObj.body === "string" ? msgObj.body : "") ||
+          (typeof msgObj.text === "string" ? msgObj.text : "") ||
+          (typeof msgObj.conversation === "string" ? msgObj.conversation : "") ||
+          (typeof msgObj.caption === "string" ? msgObj.caption : "") ||
+          ((msgObj.extendedTextMessage as Record<string, string> | undefined)?.text ?? "") ||
+          "";
+        fromMe = msgObj.fromMe === true || msgObj.fromMe === "true";
+      } else if (typeof body.message === "string") {
+        text = body.message;
+        fromMe = body.fromMe === true;
+      }
+
+      // Fallback: body na raiz
+      if (!text) {
+        text =
+          (typeof body.body === "string" ? body.body : "") ||
+          (typeof body.text === "string" ? body.text : "") ||
+          "";
+      }
+
+      return { phone: chatPhone, text, fromMe };
     }
   }
 
@@ -121,7 +144,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
 
-  console.log(`[webhook/${instanceId}] body=`, JSON.stringify(body).slice(0, 1200));
+  console.log(`[webhook/${instanceId}] body=`, JSON.stringify(body).slice(0, 4000));
 
   // Forward para URL configurada (fire-and-forget)
   const config = getConfig();
@@ -135,6 +158,7 @@ export async function POST(
 
   try {
     const extracted = extractMessage(body);
+    console.log(`[webhook/${instanceId}] extracted=`, JSON.stringify(extracted));
     if (!extracted || isGroup(extracted.phone) || !isValidPhone(extracted.phone)) {
       return NextResponse.json({ ok: true });
     }
