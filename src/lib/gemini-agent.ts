@@ -252,8 +252,11 @@ export async function runGeminiAgent(
                 const data = args.data as string;
                 const horaInicio = args.hora_inicio as string;
                 const duracao = (args.duracao_minutos as number) || 60;
-                const startISO = new Date(`${data}T${horaInicio}:00`).toISOString();
-                const endISO = new Date(new Date(`${data}T${horaInicio}:00`).getTime() + duracao * 60000).toISOString();
+                // Use -03:00 offset so Docker/UTC server preserves São Paulo time
+                const startISO = `${data}T${horaInicio}:00-03:00`;
+                const endMs = new Date(startISO).getTime() + duracao * 60000;
+                const endSP = new Date(endMs).toLocaleString("sv", { timeZone: "America/Sao_Paulo" }).replace(" ", "T").substring(0, 19);
+                const endISO = `${endSP}-03:00`;
 
                 const { eventId, link } = await createEvent(
                   client.agentConfig.googleRefreshToken,
@@ -282,10 +285,10 @@ export async function runGeminiAgent(
               if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
                 const dataInicio = args.data_inicio as string;
                 const dataFim = (args.data_fim as string | undefined);
-                const timeMin = new Date(`${dataInicio}T00:00:00`).toISOString();
+                const timeMin = new Date(`${dataInicio}T00:00:00-03:00`).toISOString();
                 const timeMax = dataFim
-                  ? new Date(`${dataFim}T23:59:59`).toISOString()
-                  : new Date(new Date(`${dataInicio}T00:00:00`).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+                  ? new Date(`${dataFim}T23:59:59-03:00`).toISOString()
+                  : new Date(new Date(`${dataInicio}T00:00:00-03:00`).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
                 const events = await listEvents(
                   client.agentConfig.googleRefreshToken,
                   client.agentConfig.googleCalendarId,
@@ -319,8 +322,11 @@ export async function runGeminiAgent(
                 const data = args.data as string;
                 const horaInicio = args.hora_inicio as string;
                 const duracao = (args.duracao_minutos as number) || 60;
-                const startISO = new Date(`${data}T${horaInicio}:00`).toISOString();
-                const endISO = new Date(new Date(`${data}T${horaInicio}:00`).getTime() + duracao * 60000).toISOString();
+                // Use -03:00 offset so Docker/UTC server preserves São Paulo time
+                const startISO = `${data}T${horaInicio}:00-03:00`;
+                const endMs = new Date(startISO).getTime() + duracao * 60000;
+                const endSP = new Date(endMs).toLocaleString("sv", { timeZone: "America/Sao_Paulo" }).replace(" ", "T").substring(0, 19);
+                const endISO = `${endSP}-03:00`;
                 await updateEvent(
                   client.agentConfig.googleRefreshToken,
                   client.agentConfig.googleCalendarId,

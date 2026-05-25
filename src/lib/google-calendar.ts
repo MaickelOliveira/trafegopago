@@ -41,8 +41,9 @@ export async function listFreeSlots(
   date: string // YYYY-MM-DD
 ): Promise<TimeSlot[]> {
   const calendar = await getCalendar(refreshToken);
-  const dayStart = new Date(`${date}T08:00:00`);
-  const dayEnd = new Date(`${date}T18:00:00`);
+  // Explicitly use São Paulo offset (-03:00) so Docker/UTC server interprets times correctly
+  const dayStart = new Date(`${date}T10:00:00-03:00`); // 10h SP = início do expediente
+  const dayEnd   = new Date(`${date}T19:00:00-03:00`); // 19h SP = fim do expediente
 
   const { data } = await calendar.freebusy.query({
     requestBody: {
@@ -66,8 +67,8 @@ export async function listFreeSlots(
     });
     if (!isBusy) {
       slots.push({
-        start: current.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-        end: slotEnd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+        start: current.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }),
+        end: slotEnd.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }),
       });
     }
     current = slotEnd;
