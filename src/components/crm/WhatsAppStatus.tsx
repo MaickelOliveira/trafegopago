@@ -160,17 +160,13 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
             {funnels.map(f => (
               <div key={f.id} className="border-b border-slate-50 last:border-0">
                 {/* Header do funil */}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
+                <div className="px-4 py-2.5 bg-slate-50">
                   <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">{f.name}</p>
-                  <button onClick={() => setAddingTo(addingTo === f.id ? null : f.id)}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-                    + Adicionar número
-                  </button>
                 </div>
 
                 {/* Conexões do funil */}
                 {(f.connections ?? []).length === 0 && (
-                  <p className="text-xs text-slate-400 px-4 py-2 italic">Nenhum número conectado</p>
+                  <p className="text-xs text-slate-400 px-4 py-2 italic">Sem número vinculado</p>
                 )}
                 {(f.connections ?? []).map(conn => {
                   const inst = instances[conn.id];
@@ -186,88 +182,12 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
                           {status === "connected" ? (inst?.phone ? `+${inst.phone}` : "Conectado") : status === "connecting" ? "Aguardando scan..." : "Desconectado"}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        {status === "connected" && (
-                          <button onClick={() => disconnect(conn.id)}
-                            className="text-xs text-slate-400 hover:text-red-500 border border-slate-200 rounded-lg px-2 py-1">
-                            Pausar
-                          </button>
-                        )}
-                        <button onClick={() => removeConnection(f.id, conn.id)}
-                          className="text-xs text-slate-300 hover:text-red-500 px-1">✕</button>
-                      </div>
                     </div>
                   );
                 })}
-
-                {/* Form adicionar número */}
-                {addingTo === f.id && (
-                  <div className="px-4 pb-3 pt-1 bg-blue-50/50 border-t border-blue-100">
-                    <p className="text-xs font-semibold text-slate-600 mb-2">Tipo de conexão</p>
-                    <div className="flex gap-2 mb-3">
-                      {(["uazapi", "meta"] as ConnectionType[]).map(t => (
-                        <button key={t} onClick={() => setNewType(t)}
-                          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition ${newType === t ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                          {t === "uazapi" ? "⚡ UazAPI" : "🏢 Meta API"}
-                        </button>
-                      ))}
-                    </div>
-
-                    {newType === "uazapi" && (
-                      <div className="mb-2">
-                        <input
-                          value={newInstanceName}
-                          onChange={e => setNewInstanceName(e.target.value)}
-                          placeholder="Nome da instância (ex: sbcie, nexo, telas-jort)"
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1">Nome curto e único — aparecerá na coluna "Instância" do UazAPI</p>
-                      </div>
-                    )}
-
-                    {newType === "meta" && (
-                      <div className="space-y-2 mb-2">
-                        <input value={newMetaId} onChange={e => setNewMetaId(e.target.value)}
-                          placeholder="Phone Number ID (do Meta Business)"
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
-                        <input value={newMetaToken} onChange={e => setNewMetaToken(e.target.value)}
-                          placeholder="Token permanente (System User Token)"
-                          type="password"
-                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
-                        <div>
-                          <input value={newVerifyToken} onChange={e => setNewVerifyToken(e.target.value)}
-                            placeholder="Verify Token (para o webhook Meta)"
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
-                          <p className="text-[10px] text-slate-400 mt-1">
-                            URL do webhook Meta: <span className="font-mono">{typeof window !== "undefined" ? window.location.origin : ""}/api/whatsapp/meta</span>
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2">
-                      <button onClick={() => setAddingTo(null)} className="flex-1 rounded-lg border border-slate-200 py-1.5 text-xs text-slate-600">Cancelar</button>
-                      <button onClick={() => addConnection(f.id)} disabled={saving}
-                        className="flex-1 rounded-lg bg-blue-600 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                        {saving ? "Conectando..." : newType === "uazapi" ? "Gerar QR (UazAPI)" : "Conectar"}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
           </div>
-
-          {/* QR Code */}
-          {qrData && (
-            <div className="border-t border-slate-100 p-4 bg-slate-50">
-              <p className="text-xs font-semibold text-slate-700 mb-1">Escanear — {qrData.funnelName}</p>
-              <p className="text-xs text-slate-500 mb-3">WhatsApp Business → <strong>Aparelhos conectados</strong> → <strong>Vincular</strong></p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={qrData.qr} alt="QR" className="w-full max-w-[240px] mx-auto rounded-xl border border-slate-100" />
-              <p className="text-[10px] text-slate-400 text-center mt-2">Atualiza automaticamente a cada 30s</p>
-            </div>
-          )}
         </div>
       )}
     </div>
