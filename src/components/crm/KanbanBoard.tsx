@@ -780,8 +780,8 @@ export function KanbanBoard({
                         <p className="font-semibold text-slate-800 text-sm leading-tight line-clamp-1">{lead.name}</p>
                         <div className="flex items-center gap-1 shrink-0">
                           {lead.aiPaused && (
-                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title="IA pausada — especialista ativo">
-                              ⏸
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 flex items-center gap-0.5" title="IA pausada — especialista ativo">
+                              ⏸ <span>IA pausada</span>
                             </span>
                           )}
                           {lead.ai && (

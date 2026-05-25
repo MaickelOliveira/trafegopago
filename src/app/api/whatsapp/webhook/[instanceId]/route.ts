@@ -158,7 +158,12 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
     const msgs = body.messages as Record<string, unknown>[] | undefined;
     if (Array.isArray(msgs) && msgs.length > 0) {
       const msg = msgs[0];
-      const rawPhone = String(msg.phone ?? msg.sender ?? msg.from ?? chat?.phone ?? "");
+      const fromMe = msg.fromMe === true || msg.from_me === true;
+      // Para mensagens fromMe, msg.phone é o remetente (número da empresa).
+      // O número do CONTATO está em chat.phone — priorizamos ele quando fromMe=true.
+      const rawPhone = fromMe
+        ? String(chat?.phone ?? msg.phone ?? msg.sender ?? msg.from ?? "")
+        : String(msg.phone ?? msg.sender ?? msg.from ?? chat?.phone ?? "");
       const phone = rawPhone.replace("@s.whatsapp.net", "").replace(/\D/g, "");
 
       const rawBody = msg.body ?? msg.message ?? msg.text ?? msg.content ?? msg.conversation ?? "";
@@ -173,7 +178,6 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
       }
       if (!text && msg.caption) text = String(msg.caption);
 
-      const fromMe = msg.fromMe === true || msg.from_me === true;
       if (phone) return { phone, text, fromMe };
     }
 
