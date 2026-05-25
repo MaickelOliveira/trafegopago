@@ -241,10 +241,11 @@ export async function updateFieldsMap(token: string): Promise<void> {
 export async function sendText(token: string, phone: string, message: string): Promise<boolean> {
   try {
     const url = `${base()}/send/text`;
+    // UazapiGO usa "body" para o texto, não "message"
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", token },
-      body: JSON.stringify({ phone, message }),
+      body: JSON.stringify({ phone, body: message }),
     });
     const resText = await res.text();
     if (!res.ok) {
