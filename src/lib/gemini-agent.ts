@@ -222,7 +222,22 @@ export async function runGeminiAgent(
       const toolCalls = parts.filter((p) => p.functionCall);
 
       if (toolCalls.length === 0) {
-        finalText = candidate.text();
+        finalText = (candidate.text() ?? "").trim();
+
+        // Gemini 2.5 Pro às vezes retorna texto vazio após tool calls —
+        // pede explicitamente uma resposta de texto ao usuário.
+        if (!finalText) {
+          try {
+            console.log("[gemini-agent] Texto vazio após tools — solicitando resposta ao modelo");
+            const retryResp = await chat.sendMessage(
+              "Responda ao usuário em português com base nas ações que acabou de executar."
+            );
+            finalText = (retryResp.response.text() ?? "").trim();
+          } catch (retryErr) {
+            console.warn("[gemini-agent] Retry de texto falhou:", retryErr);
+          }
+        }
+
         break;
       }
 
