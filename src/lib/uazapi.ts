@@ -16,39 +16,44 @@ export function getGlobalToken(): string {
   return globalToken();
 }
 
+// ── UazapiGO usa dois headers diferentes ─────────────────────────────────────
+// • token      → token da instância (enviar msgs, status da instância)
+// • AdminToken → token master do servidor (listar todas, criar, deletar)
+
+function adminHeaders(): Record<string, string> {
+  const aTok = adminToken();
+  return { "AdminToken": aTok, "token": aTok };
+}
+
 export async function listInstances(): Promise<unknown[]> {
-  // UazapiGO multi-instance: precisa do token admin/master do servidor
-  // para listar todas as instâncias. Fallback para token global se não configurado.
-  const tok = adminToken(); // usa adminToken (não globalToken) para ter acesso a todas as instâncias
   try {
+    // UazapiGO: GET /instance/all requer header "AdminToken" (A maiúsculo)
     const res = await fetch(`${base()}/instance/all`, {
-      headers: { token: tok },
+      headers: adminHeaders(),
       cache: "no-store",
     });
     const text = await res.text();
-    console.log("[UazAPI] listInstances status:", res.status, "| body:", text.slice(0, 600));
+    console.log("[UazAPI] listInstances status:", res.status, "| body:", text.slice(0, 800));
+
+    if (!res.ok) return await listFallbackSingleInstance();
 
     let data: unknown;
     try { data = JSON.parse(text || "[]"); } catch { data = []; }
 
-    // Array direto → retorna
+    // Array direto (formato mais comum)
     if (Array.isArray(data) && (data as unknown[]).length > 0) return data as unknown[];
 
-    // Objeto com campo "instances", "data" ou "Instances"
+    // Objeto com campo "instances", "data" ou variantes
     const obj = data as Record<string, unknown>;
     if (obj?.instances && Array.isArray(obj.instances)) return obj.instances as unknown[];
     if (obj?.Instances && Array.isArray(obj.Instances)) return obj.Instances as unknown[];
     if (obj?.data && Array.isArray(obj.data)) return obj.data as unknown[];
 
-    // Se a resposta tem status não-ok mas retornou dados parciais, tenta outra rota
-    if (!res.ok) return await listFallbackSingleInstance();
-
     // Objeto único (single-instance)
     if (obj && typeof obj === "object" && (obj.token || obj.status || obj.name || obj.id)) {
-      return [{ ...obj, token: (obj.token as string) || tok }];
+      return [obj];
     }
 
-    // Fallback: modo single-instance via /instance/status
     return await listFallbackSingleInstance();
   } catch {
     return await listFallbackSingleInstance();
@@ -65,8 +70,10 @@ async function listFallbackSingleInstance(): Promise<unknown[]> {
     });
     if (!res.ok) return [];
     const raw = await res.json() as Record<string, unknown>;
+    // UazapiGO retorna { instance: {...}, status: {...} }
     const inst = (raw.instance ?? raw) as Record<string, unknown>;
-    if (inst.status || inst.state || inst.name) {
+    const st   = (raw.status   ?? {})  as Record<string, unknown>;
+    if (inst.name || inst.id || st.jid) {
       return [{ ...raw, token: (inst.token as string) || tok }];
     }
     return [];
@@ -80,20 +87,21 @@ function adminToken(): string {
 }
 
 // Passo 1: cria a instância no servidor UazAPI (retorna token da instância)
+// UazapiGO requer header "AdminToken" para criar instâncias
 export async function createInstance(name: string): Promise<{ id?: string; token?: string; instanceToken?: string; [key: string]: unknown }> {
   const url = `${base()}/instance/create`;
-  const tok = adminToken();
-  console.log("[UazAPI] createInstance URL:", url, "| adminToken:", tok ? tok.slice(0, 8) + "..." : "VAZIO");
+  const aTok = adminToken();
+  console.log("[UazAPI] createInstance URL:", url, "| adminToken:", aTok ? aTok.slice(0, 8) + "..." : "VAZIO");
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", token: tok },
+      headers: { "Content-Type": "application/json", ...adminHeaders() },
       body: JSON.stringify({ name }),
     });
     const text = await res.text();
     console.log("[UazAPI] createInstance status:", res.status, "| body:", text.slice(0, 500));
     const data = JSON.parse(text || "{}");
-    // Suporta token aninhado em data.instance.token
+    // UazapiGO retorna { instance: { token, id, ... } }
     const inst = (data.instance ?? data) as Record<string, unknown>;
     return { ...data, token: (inst.token as string) || (data.token as string), id: (inst.id as string) || (data.id as string) };
   } catch (e) {
@@ -174,15 +182,27 @@ export async function getInstanceStatus(token: string): Promise<{ status: string
       cache: "no-store",
     });
     if (!res.ok) return { status: "disconnected" };
-    const data = await res.json();
+    const data = await res.json() as Record<string, unknown>;
     console.log("[UazAPI] getInstanceStatus response:", JSON.stringify(data).slice(0, 300));
-    // UazAPI v2 aninha os dados em data.instance
+
+    // UazapiGO retorna { instance: {...}, status: { connected, jid, loggedIn } }
     const inst = (data.instance ?? data) as Record<string, unknown>;
+    const st   = (data.status   ?? {})  as Record<string, unknown>;
+
     const qr = (inst.qrcode ?? inst.qr ?? inst.qr_code ?? inst.base64 ?? data.qrcode ?? data.qr) as string | undefined;
-    const phone = ((inst.owner ?? inst.phone ?? inst.number ?? inst.jid ?? "") as string).replace(/\D/g, "") || undefined;
-    const connected = data.connected === true || inst.status === "connected" || inst.state === "open";
+
+    // Telefone: prefer inst.owner (UazapiGO), fallback para jid do status
+    const rawPhone = (inst.owner ?? inst.phone ?? inst.number ?? st.jid ?? "") as string;
+    const phone = rawPhone.replace(/\D/g, "").replace(/@.*/, "") || undefined;
+
+    // Conectado: UazapiGO usa status.connected=true OU inst.status="connected"
+    const connected = st.connected === true
+      || data.connected === true
+      || String(inst.status).toLowerCase() === "connected"
+      || String(inst.state).toLowerCase() === "open";
+
     return {
-      status: connected ? "connected" : ((inst.status ?? inst.state ?? "disconnected") as string),
+      status: connected ? "connected" : (String(inst.status ?? inst.state ?? "disconnected")),
       phone,
       qr,
       name: (inst.name ?? inst.pushName ?? inst.profileName) as string | undefined,
@@ -275,11 +295,12 @@ export async function getPairingCode(token: string, phone: string): Promise<stri
   }
 }
 
-export async function deleteInstance(token: string): Promise<void> {
+// UazapiGO: deletar instância requer AdminToken
+export async function deleteInstance(instanceToken: string): Promise<void> {
   try {
     await fetch(`${base()}/instance`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json", token },
+      headers: { "Content-Type": "application/json", ...adminHeaders(), token: instanceToken },
     });
   } catch { }
 }

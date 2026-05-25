@@ -65,12 +65,26 @@ export async function GET() {
 
   // 4. Enrich instances
   const enriched: EnrichedInstance[] = rawInstances.map((raw) => {
+    // UazapiGO retorna { instance: {...}, status: { connected, jid } }
+    // Outros UazAPI retornam o objeto flat diretamente
     const inst = (raw.instance ?? raw) as Record<string, unknown>;
+    const st   = (raw.status   ?? {})  as Record<string, unknown>;
+
     const token = (inst.token ?? raw.token ?? "") as string;
-    const name = (inst.name ?? raw.name ?? "") as string;
-    const connected = raw.connected === true || inst.status === "connected" || inst.state === "open";
-    const status = connected ? "connected" : ((inst.status ?? inst.state ?? "disconnected") as string);
-    const phone = ((inst.owner ?? inst.phone ?? inst.number ?? inst.jid ?? "") as string).replace(/\D/g, "") || null;
+    const name  = (inst.name  ?? raw.name  ?? "") as string;
+
+    // Detecta conexão: UazapiGO usa st.connected, outros usam inst.status
+    const connected =
+      st.connected === true ||
+      raw.connected === true ||
+      String(inst.status).toLowerCase() === "connected" ||
+      String(inst.state).toLowerCase() === "open";
+
+    const status = connected ? "connected" : String(inst.status ?? inst.state ?? "disconnected");
+
+    // Telefone: UazapiGO usa inst.owner; fallback para jid (remove @s.whatsapp.net)
+    const rawPhone = (inst.owner ?? inst.phone ?? inst.number ?? st.jid ?? "") as string;
+    const phone = rawPhone.replace(/\D/g, "").replace(/@.*/, "") || null;
 
     const funnelInfo = tokenToFunnel.get(token) ?? null;
     const clientInfo = funnelInfo?.connId ? connIdToClient.get(funnelInfo.connId) ?? null : null;

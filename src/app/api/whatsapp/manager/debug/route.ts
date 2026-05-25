@@ -23,10 +23,10 @@ export async function GET() {
     adminTokenSameAsGlobal: adminToken === globalToken,
   };
 
-  // Testa /instance/all com admin token
+  // Testa /instance/all com AdminToken header (UazapiGO exige camelCase)
   try {
     const res = await fetch(`${baseUrl}/instance/all`, {
-      headers: { token: adminToken },
+      headers: { AdminToken: adminToken, token: adminToken },
       cache: "no-store",
     });
     const text = await res.text();
