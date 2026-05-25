@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const url = getAuthUrl(clientId);
+  const baseUrl = req.nextUrl.origin; // sempre correto — vem da requisição real
+  const url = getAuthUrl(clientId, baseUrl);
   return NextResponse.redirect(url);
 }

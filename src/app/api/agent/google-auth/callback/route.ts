@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const refreshToken = await exchangeCode(code);
+    const refreshToken = await exchangeCode(code, req.nextUrl.origin);
     const client = getClientById(clientId);
     if (!client) throw new Error("Client not found");
 

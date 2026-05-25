@@ -1,16 +1,17 @@
 import { google } from "googleapis";
 import { getConfig } from "./clients";
 
-function getOAuth2Client() {
+function getOAuth2Client(baseUrl?: string) {
   const config = getConfig();
   const clientId = process.env.GOOGLE_CLIENT_ID || config.googleClientId;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || config.googleClientSecret;
-  const redirectUri = `${config.appBaseUrl}/api/agent/google-auth/callback`;
+  const base = baseUrl || config.appBaseUrl || "";
+  const redirectUri = `${base}/api/agent/google-auth/callback`;
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
-export function getAuthUrl(clientId: string): string {
-  const oauth2 = getOAuth2Client();
+export function getAuthUrl(clientId: string, baseUrl?: string): string {
+  const oauth2 = getOAuth2Client(baseUrl);
   return oauth2.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
@@ -19,8 +20,8 @@ export function getAuthUrl(clientId: string): string {
   });
 }
 
-export async function exchangeCode(code: string): Promise<string> {
-  const oauth2 = getOAuth2Client();
+export async function exchangeCode(code: string, baseUrl?: string): Promise<string> {
+  const oauth2 = getOAuth2Client(baseUrl);
   const { tokens } = await oauth2.getToken(code);
   if (!tokens.refresh_token) throw new Error("No refresh token received");
   return tokens.refresh_token;
