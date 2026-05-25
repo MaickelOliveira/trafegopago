@@ -187,9 +187,11 @@ export function WhatsAppManagerView({
 
   async function handleSaveWebhookInCreate(token: string, instanceName: string) {
     setSavingWebhook(true);
+    // URL exclusiva desta instância → UazapiGO sabe exatamente para qual cliente encaminhar
+    const instanceWh = `${appWebhookUrl.replace(/\/api\/whatsapp\/webhook$/, "")}/api/whatsapp/webhook/${instanceName}`;
     await fetch(`/api/whatsapp/manager/${token}/webhook`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: appWebhookUrl }),
+      body: JSON.stringify({ url: instanceWh }),
     }).catch(() => {});
     setSavingWebhook(false);
     setModal({ type: "create", stage: "created", token, instanceName, webhookSaved: true });
@@ -293,7 +295,7 @@ export function WhatsAppManagerView({
               deletingToken={deletingToken} setDeletingToken={setDeletingToken}
               onConnect={() => setModal({ type: "qr", token: inst.token, instanceName: inst.name, forceLogout: false })}
               onForceConnect={() => setModal({ type: "qr", token: inst.token, instanceName: inst.name, forceLogout: true })}
-              onWebhook={() => { setWebhookUrl(appWebhookUrl); setWebhookSaved(false); setModal({ type: "webhook", token: inst.token, instanceName: inst.name }); }}
+              onWebhook={() => { setWebhookUrl(inst.instanceWebhookUrl || appWebhookUrl); setWebhookSaved(false); setModal({ type: "webhook", token: inst.token, instanceName: inst.name }); }}
               onSend={() => { setSendToken(inst.token); setSendPhone(""); setSendContent(""); setSendCaption(""); setSendType("text"); setSendResult(null); setModal({ type: "send", token: inst.token }); }}
               onLink={() => { setLinkFunnelId(inst.linkedFunnelId ?? ""); setLinkClientId(inst.linkedClientId ?? ""); setLinkAgent(inst.hasAgentLinked); setModal({ type: "link", token: inst.token, instanceName: inst.name, instancePhone: inst.phone ?? "" }); }}
               onDelete={() => handleDelete(inst.token)}
@@ -350,20 +352,29 @@ export function WhatsAppManagerView({
               </div>
 
               {/* Passo 1: Webhook */}
-              <div className="rounded-xl border border-slate-200 p-4 mb-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold text-slate-700">🔗 1. Configurar Webhook</p>
-                  {modal.webhookSaved && <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Salvo</span>}
-                </div>
-                <p className="text-xs text-slate-400 font-mono mb-3 break-all">{appWebhookUrl}</p>
-                <button
-                  onClick={() => handleSaveWebhookInCreate(modal.token, modal.instanceName)}
-                  disabled={savingWebhook || modal.webhookSaved}
-                  className={`w-full rounded-xl py-2 text-sm font-semibold transition ${modal.webhookSaved ? "bg-green-100 text-green-700 cursor-default" : "bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"}`}
-                >
-                  {savingWebhook ? "Salvando..." : modal.webhookSaved ? "✓ Webhook configurado" : "Salvar Webhook no UazAPI"}
-                </button>
-              </div>
+              {(() => {
+                const instanceWh = `${appWebhookUrl.replace(/\/api\/whatsapp\/webhook$/, "")}/api/whatsapp/webhook/${modal.instanceName}`;
+                return (
+                  <div className="rounded-xl border border-slate-200 p-4 mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-slate-700">🔗 1. Configurar Webhook</p>
+                      {modal.webhookSaved && <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Salvo</span>}
+                    </div>
+                    <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2 mb-3">
+                      <p className="text-xs text-slate-600 font-mono flex-1 break-all">{instanceWh}</p>
+                      <button onClick={() => navigator.clipboard.writeText(instanceWh).catch(() => {})}
+                        className="text-xs text-blue-600 font-semibold whitespace-nowrap hover:text-blue-800">Copiar</button>
+                    </div>
+                    <button
+                      onClick={() => handleSaveWebhookInCreate(modal.token, modal.instanceName)}
+                      disabled={savingWebhook || modal.webhookSaved}
+                      className={`w-full rounded-xl py-2 text-sm font-semibold transition ${modal.webhookSaved ? "bg-green-100 text-green-700 cursor-default" : "bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"}`}
+                    >
+                      {savingWebhook ? "Salvando..." : modal.webhookSaved ? "✓ Webhook configurado" : "Salvar Webhook no UazAPI"}
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* Passo 2: Conectar */}
               <div className="rounded-xl border border-slate-200 p-4">
@@ -459,16 +470,19 @@ export function WhatsAppManagerView({
       {/* Webhook */}
       {modal.type === "webhook" && (
         <Modal title={`Webhook — ${modal.instanceName}`} onClose={() => setModal({ type: "none" })}>
-          <p className="text-sm text-slate-500 mb-3">Configure a URL de webhook desta instância no UazAPI.</p>
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4">
+            <p className="text-xs font-semibold text-blue-700 mb-1">📌 URL exclusiva desta instância</p>
+            <p className="text-xs text-blue-600">Configure esta URL no UazapiGO para que as mensagens desta instância criem leads no CRM e ativem o Agente IA do cliente vinculado.</p>
+          </div>
           <div className="relative mb-2">
             <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
               className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-mono outline-none focus:border-green-400 pr-20" />
             <button onClick={async () => { await navigator.clipboard.writeText(webhookUrl).catch(() => {}); setWebhookCopied(true); setTimeout(() => setWebhookCopied(false), 2000); }}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-600 px-2 py-1 rounded">
-              {webhookCopied ? "✓" : "Copiar"}
+              {webhookCopied ? "✓ Copiado!" : "Copiar"}
             </button>
           </div>
-          <p className="text-xs text-slate-400 mb-4">Salva a URL e configura os eventos de mensagem no UazAPI.</p>
+          <p className="text-xs text-slate-400 mb-4">Salva esta URL no UazapiGO e habilita eventos de mensagem.</p>
           <div className="flex gap-2">
             <button onClick={() => setModal({ type: "none" })} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600">Fechar</button>
             <button onClick={handleSaveWebhook} disabled={savingWebhook}
@@ -611,6 +625,19 @@ function InstanceCard({ inst, deletingToken, setDeletingToken, onConnect, onForc
                 </span>
               )}
             </div>
+            {/* URL de webhook desta instância */}
+            {inst.instanceWebhookUrl && (
+              <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-lg px-2.5 py-1.5 max-w-lg">
+                <span className="text-xs text-slate-400">🔗</span>
+                <span className="text-xs font-mono text-slate-500 truncate flex-1">{inst.instanceWebhookUrl}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(inst.instanceWebhookUrl).catch(() => {}); }}
+                  className="text-xs text-blue-600 font-semibold hover:text-blue-800 whitespace-nowrap"
+                  title="Copiar URL de webhook">
+                  Copiar
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

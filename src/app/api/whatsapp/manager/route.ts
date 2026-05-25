@@ -19,7 +19,8 @@ export type EnrichedInstance = {
   agentEnabled: boolean;
   // Webhook
   webhookConfigured: boolean;
-  appWebhookUrl: string;
+  appWebhookUrl: string;        // URL genérica (fallback)
+  instanceWebhookUrl: string;   // URL exclusiva desta instância ← usar esta no UazapiGO
 };
 
 export async function GET() {
@@ -118,6 +119,8 @@ export async function GET() {
       agentEnabled: effectiveClient?.agentEnabled ?? false,
       webhookConfigured: !!effectiveFunnel,
       appWebhookUrl,
+      // URL exclusiva desta instância — configurar esta no UazapiGO
+      instanceWebhookUrl: name ? `${config.appBaseUrl ?? ""}/api/whatsapp/webhook/${name}` : appWebhookUrl,
     };
   });
 
@@ -161,8 +164,11 @@ export async function POST(req: NextRequest) {
     }, { status: 500 });
   }
 
+  // URL de webhook exclusiva desta instância: /api/whatsapp/webhook/{instanceName}
+  const instanceWebhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook/${instanceName}`;
+
   // Configura webhook e fieldMap imediatamente (fire-and-forget)
-  setWebhook(token, appWebhookUrl).catch(() => {});
+  setWebhook(token, instanceWebhookUrl).catch(() => {});
   updateFieldsMap(token).catch(() => {});
 
   return NextResponse.json({ token, name: instanceName, ok: true });
