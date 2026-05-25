@@ -240,12 +240,12 @@ export async function updateFieldsMap(token: string): Promise<void> {
 
 export async function sendText(token: string, phone: string, message: string): Promise<boolean> {
   const url = `${base()}/send/text`;
-  // Tenta os dois formatos que UazapiGO pode aceitar: { phone, message } e { phone, body }
+  // Formato correto da uazapi: { number, text } — demais são fallback por compatibilidade
   const payloads = [
+    { number: phone, text: message },
     { phone, message },
     { phone, body: message },
     { phone: `${phone}@s.whatsapp.net`, message },
-    { phone: `${phone}@s.whatsapp.net`, body: message },
   ];
 
   for (const payload of payloads) {
