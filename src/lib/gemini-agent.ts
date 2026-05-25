@@ -2,7 +2,7 @@ import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration } f
 import { getClientById, type AgentMedia } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp, cancelFollowUpsForPhone } from "./followups";
-import { createEvent, listFreeSlots, cancelEvent } from "./google-calendar";
+import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
 import { getHistory } from "./conversations";
 import type { ChatMessage } from "./conversations";
 
@@ -41,14 +41,40 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
-    name: "cancelar_agendamento",
-    description: "Cancela um compromisso do Google Calendar pelo ID do evento.",
+    name: "listar_agendamentos",
+    description: "Lista os compromissos agendados no Google Calendar em um período. Use SEMPRE antes de cancelar ou reagendar para obter o ID do evento.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        event_id: { type: SchemaType.STRING, description: "ID do evento no Google Calendar" },
+        data_inicio: { type: SchemaType.STRING, description: "Data de início da busca no formato YYYY-MM-DD" },
+        data_fim:    { type: SchemaType.STRING, description: "Data de fim da busca no formato YYYY-MM-DD (opcional, padrão: 30 dias à frente)" },
+      },
+      required: ["data_inicio"],
+    },
+  },
+  {
+    name: "cancelar_agendamento",
+    description: "Cancela um compromisso do Google Calendar pelo ID do evento. Use listar_agendamentos primeiro para obter o event_id.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        event_id: { type: SchemaType.STRING, description: "ID do evento no Google Calendar (obtido via listar_agendamentos)" },
       },
       required: ["event_id"],
+    },
+  },
+  {
+    name: "reagendar_agendamento",
+    description: "Reagenda (atualiza data/hora) de um compromisso existente. Use listar_agendamentos primeiro para obter o event_id.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        event_id:        { type: SchemaType.STRING, description: "ID do evento no Google Calendar (obtido via listar_agendamentos)" },
+        data:            { type: SchemaType.STRING, description: "Nova data no formato YYYY-MM-DD" },
+        hora_inicio:     { type: SchemaType.STRING, description: "Novo horário de início no formato HH:MM" },
+        duracao_minutos: { type: SchemaType.NUMBER, description: "Duração em minutos (padrão 60)" },
+      },
+      required: ["event_id", "data", "hora_inicio"],
     },
   },
   {
@@ -252,6 +278,28 @@ export async function runGeminiAgent(
               }
             }
 
+            else if (call.name === "listar_agendamentos") {
+              if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
+                const dataInicio = args.data_inicio as string;
+                const dataFim = (args.data_fim as string | undefined);
+                const timeMin = new Date(`${dataInicio}T00:00:00`).toISOString();
+                const timeMax = dataFim
+                  ? new Date(`${dataFim}T23:59:59`).toISOString()
+                  : new Date(new Date(`${dataInicio}T00:00:00`).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+                const events = await listEvents(
+                  client.agentConfig.googleRefreshToken,
+                  client.agentConfig.googleCalendarId,
+                  timeMin,
+                  timeMax
+                );
+                result = events.length > 0
+                  ? { agendamentos: events.map((e) => ({ id: e.id, titulo: e.title, inicio: e.start, fim: e.end })) }
+                  : { agendamentos: [], mensagem: "Nenhum agendamento encontrado no período" };
+              } else {
+                result = { error: "Google Calendar não conectado" };
+              }
+            }
+
             else if (call.name === "cancelar_agendamento") {
               if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
                 await cancelEvent(
@@ -261,6 +309,28 @@ export async function runGeminiAgent(
                 );
                 result = { ok: true };
                 actions.push({ type: "agendamento_cancelado", eventId: args.event_id as string });
+              } else {
+                result = { error: "Google Calendar não conectado" };
+              }
+            }
+
+            else if (call.name === "reagendar_agendamento") {
+              if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
+                const data = args.data as string;
+                const horaInicio = args.hora_inicio as string;
+                const duracao = (args.duracao_minutos as number) || 60;
+                const startISO = new Date(`${data}T${horaInicio}:00`).toISOString();
+                const endISO = new Date(new Date(`${data}T${horaInicio}:00`).getTime() + duracao * 60000).toISOString();
+                await updateEvent(
+                  client.agentConfig.googleRefreshToken,
+                  client.agentConfig.googleCalendarId,
+                  args.event_id as string,
+                  { startDateTime: startISO, endDateTime: endISO }
+                );
+                result = { ok: true };
+                actions.push({ type: "agendamento_criado", eventId: args.event_id as string, link: "", titulo: "", dataHora: `${data} às ${horaInicio}` });
+              } else {
+                result = { error: "Google Calendar não conectado" };
               }
             }
 

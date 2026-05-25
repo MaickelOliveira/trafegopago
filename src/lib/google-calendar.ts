@@ -113,6 +113,61 @@ export async function cancelEvent(
   await calendar.events.delete({ calendarId, eventId });
 }
 
+export type EventItem = {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  description?: string;
+};
+
+export async function listEvents(
+  refreshToken: string,
+  calendarId: string,
+  timeMin?: string,
+  timeMax?: string
+): Promise<EventItem[]> {
+  const calendar = await getCalendar(refreshToken);
+  const now = timeMin ?? new Date().toISOString();
+  const until = timeMax ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await calendar.events.list({
+    calendarId,
+    timeMin: now,
+    timeMax: until,
+    singleEvents: true,
+    orderBy: "startTime",
+    maxResults: 20,
+  });
+  return (data.items ?? []).map((e) => ({
+    id: e.id ?? "",
+    title: e.summary ?? "",
+    start: e.start?.dateTime ?? e.start?.date ?? "",
+    end: e.end?.dateTime ?? e.end?.date ?? "",
+    description: e.description ?? undefined,
+  })).filter((e) => e.id);
+}
+
+export async function updateEvent(
+  refreshToken: string,
+  calendarId: string,
+  eventId: string,
+  opts: { startDateTime: string; endDateTime: string; title?: string; description?: string }
+): Promise<void> {
+  const calendar = await getCalendar(refreshToken);
+  const { data: existing } = await calendar.events.get({ calendarId, eventId });
+  await calendar.events.update({
+    calendarId,
+    eventId,
+    requestBody: {
+      ...existing,
+      summary: opts.title ?? existing.summary,
+      description: opts.description ?? existing.description,
+      start: { dateTime: opts.startDateTime, timeZone: "America/Sao_Paulo" },
+      end: { dateTime: opts.endDateTime, timeZone: "America/Sao_Paulo" },
+    },
+  });
+}
+
 export async function isCalendarConnected(refreshToken: string, calendarId: string): Promise<boolean> {
   try {
     const calendar = await getCalendar(refreshToken);
