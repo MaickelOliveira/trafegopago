@@ -45,6 +45,7 @@ type AgentCfg = {
   mediaLibrary?: AgentMedia[];
   splitMessages?: boolean;
   maxMessageLength?: number;
+  aiResumeKeyword?: string;
 };
 
 function Toggle({ label, sub, checked, onChange, color = "violet" }: {
@@ -408,6 +409,30 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           Se o cliente enviar várias mensagens seguidas — "oi", "tudo bem?", "quero saber sobre preços" — o agente
           acumula tudo e responde de uma vez após esse tempo. Recomendado: 15–30 segundos.
         </p>
+      </div>
+
+      {/* Pausa e retomada automática da IA */}
+      <div className="rounded-2xl border border-amber-200 bg-white p-5 space-y-3 shadow-sm">
+        <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">⏸ Pausa Automática da IA</p>
+        <p className="text-xs text-slate-500">
+          Quando você enviar uma mensagem para o lead, a IA é pausada automaticamente naquela conversa.
+          Quando quiser que a IA retome o atendimento, envie a palavra-chave abaixo para o lead — a IA volta a responder.
+        </p>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Palavra-chave para reativar a IA
+          </label>
+          <input
+            type="text"
+            value={cfg.aiResumeKeyword ?? ""}
+            onChange={(e) => setCfg((c) => ({ ...c, aiResumeKeyword: e.target.value }))}
+            placeholder="Ex: atendimento finalizado"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 transition"
+          />
+          <p className="text-xs text-slate-400 mt-1.5">
+            Deixe em branco para desativar a retomada automática por palavra-chave (use o sistema para reativar).
+          </p>
+        </div>
       </div>
 
       {/* Instruções do agente */}

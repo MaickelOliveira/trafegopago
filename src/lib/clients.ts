@@ -41,6 +41,7 @@ export type AgentConfig = {
   mediaLibrary?: AgentMedia[];   // Fotos, vídeos e documentos que o agente pode disparar
   splitMessages?: boolean;       // Divide respostas longas em múltiplas mensagens
   maxMessageLength?: number;     // Máx. de caracteres por mensagem (padrão: 300)
+  aiResumeKeyword?: string;      // Palavra-chave enviada pelo gestor para reativar a IA (ex: "atendimento finalizado")
 };
 
 export type Client = {

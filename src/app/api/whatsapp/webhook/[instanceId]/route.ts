@@ -361,8 +361,23 @@ export async function POST(
     const ts = Date.now();
     addMessage(phone, { role: fromMe ? "assistant" : "user", content: text, ts }, clientId);
 
-    // Mensagem enviada por você → só salva, não responde
-    if (fromMe) return NextResponse.json({ ok: true });
+    // Mensagem enviada por você (gestor)
+    if (fromMe) {
+      if (cid !== "sem-cliente") {
+        const agCfg = getClientById(cid)?.agentConfig;
+        const resumeKeyword = agCfg?.aiResumeKeyword?.trim();
+        // Palavra-chave de retomada: reativa a IA sem pausar
+        if (resumeKeyword && text.trim().toLowerCase() === resumeKeyword.toLowerCase()) {
+          upsertLeadByPhone(cid, phone, { aiPaused: false });
+          console.log(`[webhook/${instanceId}] IA REATIVADA para phone=${phone} via keyword`);
+        } else {
+          // Qualquer outra mensagem do gestor pausa a IA automaticamente
+          upsertLeadByPhone(cid, phone, { aiPaused: true });
+          console.log(`[webhook/${instanceId}] IA PAUSADA para phone=${phone} (mensagem do gestor)`);
+        }
+      }
+      return NextResponse.json({ ok: true });
+    }
 
     // ── Envia mídia na primeira interação do lead ─────────────────────────
     if (isNew && cid !== "sem-cliente") {
