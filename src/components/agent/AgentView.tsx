@@ -11,6 +11,15 @@ type FollowUpStep = {
   label?: string;
 };
 
+type AgentMedia = {
+  id: string;
+  type: "image" | "video" | "document";
+  url: string;
+  caption?: string;
+  filename?: string;
+  sendOnFirstContact: boolean;
+};
+
 type WaConnection = {
   id: string;
   phone?: string;
@@ -32,6 +41,9 @@ type AgentCfg = {
   messageWaitSeconds?: number;
   systemPrompt?: string;
   calendarConnected?: boolean;
+  mediaLibrary?: AgentMedia[];
+  splitMessages?: boolean;
+  maxMessageLength?: number;
 };
 
 function Toggle({ label, sub, checked, onChange, color = "violet" }: {
@@ -91,6 +103,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [generatingSecret, setGeneratingSecret] = useState(false);
   const [waConnections, setWaConnections] = useState<WaConnection[]>([]);
   const [loadingWa, setLoadingWa] = useState(false);
+  const [addingMedia, setAddingMedia] = useState(false);
+  const [newMedia, setNewMedia] = useState<{ type: AgentMedia["type"]; url: string; caption: string; filename: string; sendOnFirstContact: boolean }>({
+    type: "image", url: "", caption: "", filename: "", sendOnFirstContact: true,
+  });
 
   useEffect(() => {
     fetch(`/api/agent?clientId=${clientId}`)
@@ -578,6 +594,158 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         ) : (
           <p className="text-xs text-slate-400 italic">Gere uma chave acima para ter a URL de acionamento manual.</p>
         )}
+      </div>
+
+      {/* Divisão inteligente de mensagens */}
+      <div className="rounded-2xl border border-purple-200 bg-white p-5 space-y-4 shadow-sm">
+        <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide">✂️ Divisão de Mensagens</p>
+        <Toggle
+          label="Dividir respostas longas"
+          sub="O agente quebra a resposta em várias mensagens curtas, simulando digitação humana"
+          checked={cfg.splitMessages ?? false}
+          onChange={(v) => setCfg((c) => ({ ...c, splitMessages: v }))}
+          color="violet"
+        />
+        {cfg.splitMessages && (
+          <div className="flex items-center gap-3 pt-1">
+            <span className="text-sm text-slate-600 shrink-0">Máx. por mensagem</span>
+            <input
+              type="number"
+              min={100}
+              max={1000}
+              step={50}
+              value={cfg.maxMessageLength ?? 300}
+              onChange={(e) => setCfg((c) => ({ ...c, maxMessageLength: Number(e.target.value) }))}
+              className="w-24 rounded-lg border border-purple-200 px-3 py-2 text-sm outline-none focus:border-purple-400 text-center font-semibold"
+            />
+            <span className="text-sm text-slate-600">caracteres</span>
+          </div>
+        )}
+        <p className="text-xs text-slate-400">
+          Divide parágrafos, depois frases — nunca corta palavras ao meio. Recomendado: 250–400 caracteres.
+        </p>
+      </div>
+
+      {/* Biblioteca de Mídia */}
+      <div className="rounded-2xl border border-rose-200 bg-white p-5 space-y-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-rose-600 uppercase tracking-wide">📎 Mídia do Agente</p>
+          <button
+            onClick={() => setAddingMedia((v) => !v)}
+            className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 transition"
+          >
+            {addingMedia ? "Cancelar" : "+ Adicionar"}
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-400">
+          Fotos, vídeos e documentos que o agente dispara automaticamente quando um novo lead entra em contato.
+        </p>
+
+        {/* Formulário para adicionar mídia */}
+        {addingMedia && (
+          <div className="rounded-xl border border-rose-100 bg-rose-50 p-4 space-y-3">
+            <div className="flex gap-2">
+              {(["image", "video", "document"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setNewMedia((m) => ({ ...m, type: t }))}
+                  className={clsx(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                    newMedia.type === t ? "bg-rose-600 text-white" : "bg-white border border-rose-200 text-slate-600 hover:border-rose-400"
+                  )}
+                >
+                  {t === "image" ? "🖼 Imagem" : t === "video" ? "🎬 Vídeo" : "📄 Documento"}
+                </button>
+              ))}
+            </div>
+            <input
+              type="url"
+              value={newMedia.url}
+              onChange={(e) => setNewMedia((m) => ({ ...m, url: e.target.value }))}
+              placeholder="https://... URL pública do arquivo"
+              className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400"
+            />
+            <input
+              type="text"
+              value={newMedia.caption}
+              onChange={(e) => setNewMedia((m) => ({ ...m, caption: e.target.value }))}
+              placeholder="Legenda (opcional)"
+              className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400"
+            />
+            {newMedia.type === "document" && (
+              <input
+                type="text"
+                value={newMedia.filename}
+                onChange={(e) => setNewMedia((m) => ({ ...m, filename: e.target.value }))}
+                placeholder="Nome do arquivo (ex: catalogo.pdf)"
+                className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400"
+              />
+            )}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={newMedia.sendOnFirstContact}
+                  onChange={(e) => setNewMedia((m) => ({ ...m, sendOnFirstContact: e.target.checked }))}
+                  className="accent-rose-600"
+                />
+                <span className="text-sm text-slate-700">Enviar no primeiro contato do lead</span>
+              </label>
+              <button
+                onClick={() => {
+                  if (!newMedia.url) return;
+                  const item: AgentMedia = {
+                    id: crypto.randomUUID(),
+                    type: newMedia.type,
+                    url: newMedia.url,
+                    caption: newMedia.caption || undefined,
+                    filename: newMedia.filename || undefined,
+                    sendOnFirstContact: newMedia.sendOnFirstContact,
+                  };
+                  setCfg((c) => ({ ...c, mediaLibrary: [...(c.mediaLibrary ?? []), item] }));
+                  setNewMedia({ type: "image", url: "", caption: "", filename: "", sendOnFirstContact: true });
+                  setAddingMedia(false);
+                }}
+                disabled={!newMedia.url}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40 transition"
+              >
+                Salvar mídia
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Lista de mídias */}
+        {(cfg.mediaLibrary ?? []).length === 0 && !addingMedia && (
+          <div className="rounded-xl border border-dashed border-rose-200 p-4 text-center">
+            <p className="text-sm text-slate-400">Nenhuma mídia configurada.</p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {(cfg.mediaLibrary ?? []).map((m) => (
+            <div key={m.id} className="flex items-start gap-3 rounded-xl border border-rose-100 bg-rose-50 p-3">
+              <span className="text-lg shrink-0">
+                {m.type === "image" ? "🖼" : m.type === "video" ? "🎬" : "📄"}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-slate-700 truncate">{m.url}</p>
+                {m.caption && <p className="text-xs text-slate-500 mt-0.5">{m.caption}</p>}
+                {m.filename && <p className="text-xs text-slate-400 italic">{m.filename}</p>}
+                {m.sendOnFirstContact && (
+                  <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 font-semibold">
+                    ● dispara no 1º contato
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setCfg((c) => ({ ...c, mediaLibrary: (c.mediaLibrary ?? []).filter((x) => x.id !== m.id) }))}
+                className="text-slate-300 hover:text-red-500 transition text-sm px-1 shrink-0"
+              >✕</button>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Salvar */}

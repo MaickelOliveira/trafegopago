@@ -273,14 +273,16 @@ export async function sendText(token: string, phone: string, message: string): P
 export async function sendMedia(
   token: string,
   phone: string,
-  type: "image" | "audio" | "video",
+  type: "image" | "audio" | "video" | "document",
   urlOrBase64: string,
   caption?: string,
+  filename?: string,
 ): Promise<boolean> {
-  const endpoint = type === "image" ? "image" : type === "audio" ? "audio" : "video";
+  const endpoint = type === "image" ? "image" : type === "audio" ? "audio" : type === "video" ? "video" : "document";
   try {
     const isBase64 = urlOrBase64.startsWith("data:") || !urlOrBase64.startsWith("http");
     const body: Record<string, unknown> = { phone, caption };
+    if (type === "document" && filename) body.filename = filename;
     if (isBase64) {
       body.base64 = urlOrBase64;
     } else {
@@ -295,6 +297,66 @@ export async function sendMedia(
   } catch {
     return false;
   }
+}
+
+/**
+ * Divide uma resposta longa em partes menores respeitando parágrafos e frases.
+ * Prioridade: dupla quebra → quebra simples → ponto/exclamação/interrogação → tamanho máximo.
+ */
+export function splitMessage(text: string, maxLen = 300): string[] {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return [trimmed];
+
+  const chunks: string[] = [];
+
+  // 1ª tentativa: dividir por parágrafo (linha em branco)
+  const paragraphs = trimmed.split(/\n\s*\n/);
+  let current = "";
+
+  for (const para of paragraphs) {
+    const piece = para.trim();
+    if (!piece) continue;
+
+    if ((current + (current ? "\n\n" : "") + piece).length <= maxLen) {
+      current += (current ? "\n\n" : "") + piece;
+    } else {
+      if (current) chunks.push(current);
+      // Se o parágrafo sozinho já é maior que maxLen, divide por frase
+      if (piece.length > maxLen) {
+        const sentences = piece.split(/(?<=[.!?])\s+/);
+        let sentBuf = "";
+        for (const s of sentences) {
+          if ((sentBuf + (sentBuf ? " " : "") + s).length <= maxLen) {
+            sentBuf += (sentBuf ? " " : "") + s;
+          } else {
+            if (sentBuf) chunks.push(sentBuf);
+            // Frase única maior que maxLen: divide por palavras
+            if (s.length > maxLen) {
+              const words = s.split(" ");
+              let wordBuf = "";
+              for (const w of words) {
+                if ((wordBuf + " " + w).length > maxLen) {
+                  if (wordBuf) chunks.push(wordBuf);
+                  wordBuf = w;
+                } else {
+                  wordBuf += (wordBuf ? " " : "") + w;
+                }
+              }
+              sentBuf = wordBuf;
+            } else {
+              sentBuf = s;
+            }
+          }
+        }
+        current = sentBuf;
+      } else {
+        current = piece;
+      }
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks.filter(Boolean);
 }
 
 export async function getPairingCode(token: string, phone: string): Promise<string | null> {

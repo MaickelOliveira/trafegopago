@@ -17,6 +17,15 @@ export type FollowUpStep = {
   label?: string;     // nome opcional para identificar o step
 };
 
+export type AgentMedia = {
+  id: string;
+  type: "image" | "video" | "document";
+  url: string;
+  caption?: string;
+  filename?: string;           // nome exibido para documentos
+  sendOnFirstContact: boolean; // dispara quando o lead entra em contato pela primeira vez
+};
+
 export type AgentConfig = {
   enabled: boolean;              // Liga/desliga o agente
   followUpEnabled: boolean;      // Liga/desliga follow-ups separadamente
@@ -28,6 +37,9 @@ export type AgentConfig = {
   systemPrompt?: string;         // Instruções do agente para este cliente
   whatsappConnectionId?: string; // ID da conexão WhatsApp que o agente usa
   messageWaitSeconds?: number;   // Segundos de espera para acumular mensagens (0 = desabilitado)
+  mediaLibrary?: AgentMedia[];   // Fotos, vídeos e documentos que o agente pode disparar
+  splitMessages?: boolean;       // Divide respostas longas em múltiplas mensagens
+  maxMessageLength?: number;     // Máx. de caracteres por mensagem (padrão: 300)
 };
 
 export type Client = {

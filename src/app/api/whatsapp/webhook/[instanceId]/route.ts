@@ -17,7 +17,7 @@ import { getClientById, getConfig } from "@/lib/clients";
 import { getHistory, addMessage } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
-import { sendText } from "@/lib/uazapi";
+import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
 import {
   startFollowUpSequence,
   cancelFollowUpsForPhone,
@@ -250,6 +250,15 @@ export async function POST(
     // Mensagem enviada por você → só salva, não responde
     if (fromMe) return NextResponse.json({ ok: true });
 
+    // ── Envia mídia na primeira interação do lead ─────────────────────────
+    if (isNew && cid !== "sem-cliente") {
+      const mediaItems = getClientById(cid)?.agentConfig?.mediaLibrary?.filter((m) => m.sendOnFirstContact) ?? [];
+      for (const media of mediaItems) {
+        await sendMedia(instanceUazToken, phone, media.type, media.url, media.caption, media.filename);
+        await new Promise<void>((r) => setTimeout(r, 800));
+      }
+    }
+
     // ── Follow-ups ───────────────────────────────────────────────────────
     if (cid !== "sem-cliente") {
       const agentCfg = getClientById(cid)?.agentConfig;
@@ -301,8 +310,15 @@ export async function POST(
             console.log(`[webhook/${instanceId}] Gemini respondeu (${geminiText?.length ?? 0} chars) para ${phone}`);
             if (geminiText) {
               addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
-              const sent = await sendText(instanceUazToken, phone, geminiText);
-              console.log(`[webhook/${instanceId}] sendText result=${sent} token=${instanceUazToken.slice(0,8)}... phone=${phone}`);
+              const agCfg = getClientById(cid)?.agentConfig;
+              const chunks = agCfg?.splitMessages
+                ? splitMessage(geminiText, agCfg.maxMessageLength ?? 300)
+                : [geminiText];
+              for (let i = 0; i < chunks.length; i++) {
+                const sent = await sendText(instanceUazToken, phone, chunks[i]);
+                console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent} token=${instanceUazToken.slice(0, 8)}... phone=${phone}`);
+                if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, 700));
+              }
             }
           })
           .catch((e) => {
@@ -323,8 +339,14 @@ export async function POST(
     if (!geminiText) return NextResponse.json({ ok: true });
 
     addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
-    const sent = await sendText(instanceUazToken, phone, geminiText);
-    console.log(`[webhook/${instanceId}] sendText result=${sent}`);
+    const chunks = agentCfg?.splitMessages
+      ? splitMessage(geminiText, agentCfg.maxMessageLength ?? 300)
+      : [geminiText];
+    for (let i = 0; i < chunks.length; i++) {
+      const sent = await sendText(instanceUazToken, phone, chunks[i]);
+      console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent}`);
+      if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, 700));
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
