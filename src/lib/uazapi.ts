@@ -239,31 +239,20 @@ export async function updateFieldsMap(token: string): Promise<void> {
 }
 
 /**
- * Envia indicador de digitação (pontinhos) para o contato.
- * É best-effort — se falhar, não afeta o envio da mensagem.
- * @param action "composing" = digitando | "paused" = parou | "recording" = gravando áudio
+ * Calcula delay de digitação (ms) proporcional ao tamanho da mensagem.
+ * Simula o tempo que um humano levaria para digitar — mostra "Digitando..." no WhatsApp.
  */
-export async function sendPresence(
-  token: string,
-  phone: string,
-  action: "composing" | "paused" | "recording" = "composing",
-): Promise<void> {
-  try {
-    await fetch(`${base()}/send/presence`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", token },
-      body: JSON.stringify({ phone, action }),
-    });
-  } catch {
-    // indicador é best-effort, ignora erros silenciosamente
-  }
+function typingDelay(text: string): number {
+  // ~30ms por caractere, mínimo 800ms, máximo 4000ms
+  return Math.min(Math.max(text.length * 30, 800), 4000);
 }
 
-export async function sendText(token: string, phone: string, message: string): Promise<boolean> {
+export async function sendText(token: string, phone: string, message: string, delay?: number): Promise<boolean> {
   const url = `${base()}/send/text`;
+  const ms = delay !== undefined ? delay : typingDelay(message);
   // Formato correto da uazapi: { number, text } — demais são fallback por compatibilidade
   const payloads = [
-    { number: phone, text: message },
+    { number: phone, text: message, delay: ms },
     { phone, message },
     { phone, body: message },
     { phone: `${phone}@s.whatsapp.net`, message },
