@@ -82,7 +82,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
 
-  console.log(`[webhook/${instanceId}]`, JSON.stringify(body).slice(0, 800));
+  console.log(`[webhook/${instanceId}] body=`, JSON.stringify(body).slice(0, 600));
 
   // Forward para URL configurada (fire-and-forget)
   const config = getConfig();
@@ -107,34 +107,44 @@ export async function POST(
     // Isso serve como autenticação: impossível de adivinhar
     const funnels = getFunnels();
 
-    // Busca primária: connection.uazapiToken === instanceId (token na URL)
+    // Busca primária: connection.uazapiToken === instanceId (token UUID na URL)
     const matchedFunnel = funnels.find((f) =>
       f.connections?.some((c) => c.type === "uazapi" && c.uazapiToken === instanceId)
     );
 
-    // Fallback 1: connection.id === instanceId (nome da instância — legado)
-    const fallbackByName = !matchedFunnel
-      ? funnels.find((f) =>
-          f.connections?.some((c) => c.type === "uazapi" && c.id === instanceId)
-        )
-      : undefined;
-
-    // Fallback 2: token enviado no body pelo UazapiGO
+    // Fallback 1: token enviado no body pelo UazapiGO (instanceToken ou token)
     const bodyToken = (body.instanceToken ?? body.token) as string | undefined;
-    const fallbackByBodyToken = !matchedFunnel && !fallbackByName && bodyToken
+    const fallbackByBodyToken = !matchedFunnel && bodyToken
       ? funnels.find((f) =>
           f.connections?.some((c) => c.uazapiToken === bodyToken)
         )
       : undefined;
 
-    const funnel = matchedFunnel ?? fallbackByName ?? fallbackByBodyToken ?? null;
+    // Fallback 2: body.instanceId ou body.instance = nome da instância enviado pelo UazapiGO
+    // (UazapiGO envia o nome da instância no body, ex: "nexo")
+    const bodyInstanceName = (body.instanceId ?? body.instance) as string | undefined;
+    const fallbackByBodyName = !matchedFunnel && !fallbackByBodyToken && bodyInstanceName
+      ? funnels.find((f) =>
+          f.connections?.some((c) => c.type === "uazapi" && c.id === bodyInstanceName)
+        )
+      : undefined;
+
+    // Fallback 3: connection.id === instanceId (caso raro onde URL contém o nome)
+    const fallbackByUrlName = !matchedFunnel && !fallbackByBodyToken && !fallbackByBodyName
+      ? funnels.find((f) =>
+          f.connections?.some((c) => c.type === "uazapi" && c.id === instanceId)
+        )
+      : undefined;
+
+    const funnel = matchedFunnel ?? fallbackByBodyToken ?? fallbackByBodyName ?? fallbackByUrlName ?? null;
     const clientId = funnel?.clientId ?? null;
 
-    // Token para enviar a resposta: usa o instanceId da URL (que É o token UazapiGO)
-    // ou o token da conexão do funil, ou o global como último recurso
-    const uazConn = funnel?.connections?.find(
-      (c) => c.type === "uazapi" && (c.uazapiToken === instanceId || c.uazapiToken === bodyToken || c.id === instanceId)
-    );
+    // Token para enviar a resposta:
+    // 1. instanceId na URL se for UUID (contém "-") → é o próprio token UazapiGO
+    // 2. token da conexão do funil encontrada
+    // 3. bodyToken enviado pelo UazapiGO
+    // 4. token global como último recurso
+    const uazConn = funnel?.connections?.find((c) => c.type === "uazapi");
     const instanceUazToken = instanceId.includes("-")
       ? instanceId  // UUID → é o próprio token UazapiGO
       : (uazConn?.uazapiToken ?? bodyToken ?? config.uazapiToken ?? "");
@@ -202,7 +212,8 @@ export async function POST(
     const geminiEnabled = agentCfg?.enabled === true;
     const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
 
-    console.log(`[webhook/${instanceId}] phone=${phone} cid=${cid} gemini=${geminiEnabled} uazToken=${instanceUazToken.slice(0, 8)}...`);
+    const matchSource = matchedFunnel ? "token-url" : fallbackByBodyToken ? "body-token" : fallbackByBodyName ? "body-name" : fallbackByUrlName ? "url-name" : "sem-funil";
+    console.log(`[webhook/${instanceId}] phone=${phone} cid=${cid} funnel=${funnel?.id ?? "none"}(${matchSource}) gemini=${geminiEnabled} uazToken=${instanceUazToken.slice(0, 8)}...`);
 
     // Batching: acumula mensagens antes de responder
     if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {

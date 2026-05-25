@@ -31,19 +31,8 @@ export async function sendMessage(
         const ok = await sendText(preferred.uazapiToken, phone, message);
         if (ok) return;
       }
-      // Baileys — via wa-service local (PSIDs não funcionam via Baileys, deixa cair para UazAPI)
-      if (preferred.type === "baileys" && phone.replace(/\D/g, "").length <= 13) {
-        try {
-          const res = await fetch("http://127.0.0.1:3002/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ phone, message, connectionId: preferred.id }),
-            signal: AbortSignal.timeout(10000),
-          });
-          if (res.ok) return;
-        } catch { /* fallthrough */ }
-      }
     }
+
   }
 
   // Fallback: tenta qualquer Meta da conta

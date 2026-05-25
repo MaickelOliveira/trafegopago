@@ -16,7 +16,7 @@ type WaConnection = {
   phone?: string;
   name?: string;
   status: string; // "connected" | "connecting" | "disconnected"
-  type: "baileys" | "meta";
+  type: "uazapi" | "meta";
   funnelId: string;
   funnelName: string;
 };
@@ -91,8 +91,6 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [generatingSecret, setGeneratingSecret] = useState(false);
   const [waConnections, setWaConnections] = useState<WaConnection[]>([]);
   const [loadingWa, setLoadingWa] = useState(false);
-  const [qrData, setQrData] = useState<{ connId: string; qr: string } | null>(null);
-  const [connectingWa, setConnectingWa] = useState(false);
 
   useEffect(() => {
     fetch(`/api/agent?clientId=${clientId}`)
@@ -117,29 +115,45 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   async function loadWaConnections() {
     setLoadingWa(true);
     try {
-      // Busca funis do cliente + status das instâncias
-      const [funnelsRes, instancesRes] = await Promise.all([
+      // Busca funis do cliente + instâncias enriquecidas do WhatsApp Manager
+      const [funnelsRes, managerRes] = await Promise.all([
         fetch(`/api/crm/funnels?clientId=${clientId}`),
-        fetch("/api/crm/whatsapp/instances"),
+        fetch("/api/whatsapp/manager"),
       ]);
-      const funnels: { id: string; name: string; connections?: { id: string; phone?: string; type: string }[] }[] =
+      const funnels: { id: string; name: string; connections?: { id: string; phone?: string; type: string; uazapiToken?: string; metaPhoneNumberId?: string }[] }[] =
         funnelsRes.ok ? await funnelsRes.json() : [];
-      const instances: Record<string, { status: string; phone?: string; name?: string; type?: string }> =
-        instancesRes.ok ? await instancesRes.json() : {};
+      // EnrichedInstance array from /api/whatsapp/manager
+      type EnrichedInst = { token: string; name: string; status: string; phone: string | null };
+      const enrichedList: EnrichedInst[] = managerRes.ok ? await managerRes.json() : [];
+
+      // Lookup by token or name
+      const byToken = new Map(enrichedList.map(e => [e.token, e]));
+      const byName  = new Map(enrichedList.map(e => [e.name,  e]));
 
       const conns: WaConnection[] = [];
       for (const funnel of funnels) {
         for (const conn of funnel.connections ?? []) {
-          const inst = instances[conn.id] ?? {};
-          conns.push({
-            id: conn.id,
-            phone: inst.phone || conn.phone,
-            name: inst.name,
-            status: inst.status ?? "disconnected",
-            type: (conn.type as "baileys" | "meta") ?? "baileys",
-            funnelId: funnel.id,
-            funnelName: funnel.name,
-          });
+          if (conn.type === "uazapi") {
+            const inst = byToken.get(conn.uazapiToken ?? "") ?? byName.get(conn.id);
+            conns.push({
+              id: conn.id,
+              phone: inst?.phone ?? conn.phone,
+              name: inst?.name,
+              status: inst?.status ?? "disconnected",
+              type: "uazapi",
+              funnelId: funnel.id,
+              funnelName: funnel.name,
+            });
+          } else if (conn.type === "meta") {
+            conns.push({
+              id: conn.id,
+              phone: conn.metaPhoneNumberId,
+              status: "connected",
+              type: "meta",
+              funnelId: funnel.id,
+              funnelName: funnel.name,
+            });
+          }
         }
       }
       setWaConnections(conns);
@@ -149,40 +163,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   async function connectNewNumber() {
-    setConnectingWa(true);
-    setQrData(null);
-    try {
-      // Busca ou cria o funil principal deste cliente
-      const funnelsRes = await fetch(`/api/crm/funnels?clientId=${clientId}`);
-      const funnels: { id: string; name: string }[] = funnelsRes.ok ? await funnelsRes.json() : [];
-      const mainFunnel = funnels[0];
-      if (!mainFunnel) { alert("Nenhum funil encontrado. Crie um funil primeiro no CRM."); setConnectingWa(false); return; }
-
-      const connId = `${mainFunnel.id}_${Date.now()}`;
-      const res = await fetch("/api/crm/whatsapp/instances", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: connId, funnelId: mainFunnel.id, clientOwnerId: clientId }),
-      });
-      const data = await res.json();
-      if (data.qr) {
-        setQrData({ connId, qr: data.qr });
-        // Polling para detectar conexão
-        const poll = setInterval(async () => {
-          const s = await fetch(`/api/crm/whatsapp/status?clientId=${connId}`).then((r) => r.json()).catch(() => ({}));
-          if (s.connected) {
-            clearInterval(poll);
-            setQrData(null);
-            await loadWaConnections();
-          } else if (s.qr) {
-            setQrData({ connId, qr: s.qr });
-          }
-        }, 5000);
-        setTimeout(() => clearInterval(poll), 120000); // timeout 2min
-      }
-    } catch { /* ignore */ } finally {
-      setConnectingWa(false);
-    }
+    // Redireciona para o painel WhatsApp Manager para conectar novas instâncias
+    window.location.href = "/gestor/whatsapp";
   }
 
   useEffect(() => {
@@ -339,7 +321,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                     )}
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    {conn.type === "meta" ? "📘 Meta Cloud API" : "📱 Baileys"} · Funil: {conn.funnelName}
+                    {conn.type === "meta" ? "📘 Meta Cloud API" : "⚡ UazAPI"} · Funil: {conn.funnelName}
                   </p>
                 </div>
               </label>
@@ -354,19 +336,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
         <button
           onClick={connectNewNumber}
-          disabled={connectingWa}
-          className="w-full rounded-xl border-2 border-dashed border-green-300 py-2.5 text-sm font-semibold text-green-600 hover:bg-green-50 transition disabled:opacity-50"
+          className="w-full rounded-xl border-2 border-dashed border-green-300 py-2.5 text-sm font-semibold text-green-600 hover:bg-green-50 transition"
         >
-          {connectingWa ? "Gerando QR..." : "+ Conectar novo número"}
+          + Gerenciar instâncias WhatsApp →
         </button>
-
-        {qrData && (
-          <div className="rounded-xl border border-green-300 bg-green-50 p-4 text-center">
-            <p className="text-sm font-semibold text-green-700 mb-2">Escaneie o QR Code com o WhatsApp</p>
-            <img src={qrData.qr} alt="QR Code" className="mx-auto rounded-lg" style={{ width: 220 }} />
-            <p className="text-xs text-slate-400 mt-2 animate-pulse">Aguardando conexão...</p>
-          </div>
-        )}
 
       </div>
 

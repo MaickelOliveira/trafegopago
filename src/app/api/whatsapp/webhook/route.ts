@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClients, getConfig, getClientById } from "@/lib/clients";
+import { getConfig, getClientById } from "@/lib/clients";
 import { getHistory, addMessage } from "@/lib/conversations";
 import { generateResponse } from "@/lib/ai-agent";
 import { sendWhatsApp } from "@/lib/whatsapp";
@@ -24,7 +24,7 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
     };
   }
 
-  // Formato Evolution API / Baileys
+  // Formato Evolution API / UazapiGO alternativo
   const data = body.data as Body | undefined;
   if (data) {
     const key = data.key as Record<string, unknown> | undefined;
@@ -46,9 +46,6 @@ function isGroup(phone: string): boolean {
   return phone.includes("@g.us") || phone.endsWith("@broadcast");
 }
 
-// Aceita PSIDs do Meta (códigos internos gerados quando WhatsApp Business recebe
-// mensagens de WhatsApp pessoal vinculado ao Meta) — o Baileys consegue responder
-// para esses IDs normalmente. Filtra apenas strings claramente inválidas.
 function isValidPhone(phone: string): boolean {
   return phone.length >= 7 && phone.length <= 20;
 }
@@ -83,87 +80,48 @@ export async function POST(req: NextRequest) {
 
     const { phone, text, fromMe } = extracted;
 
-    // Identifica funil e cliente pelo número da instância ou baileysClientId
+    // Identifica funil e cliente pelo instanceId ou instancePhone enviados pelo UazapiGO
     const instancePhone = (body.instancePhone as string | undefined)?.replace(/\D/g, "");
-    const baileysClientId = body.baileysClientId as string | undefined;
-    const baileysFunnelId = body.funnelId as string | undefined;
+    const uazInstanceId = (body.instanceId ?? body.instance) as string | undefined;
+    const uazInstanceToken = (body.instanceToken ?? body.token) as string | undefined;
 
     let clientId: string | null = null;
     let funnelIdOverride: string | null = null;
 
-    // Baileys: tenta encontrar funil pelo funnelId enviado diretamente
     const funnels = getFunnels();
-    if (baileysFunnelId) {
-      const matchedFunnel = funnels.find(f => f.id === baileysFunnelId);
+
+    // Busca por token UUID da instância (mais confiável)
+    if (!clientId && uazInstanceToken) {
+      const matchedFunnel = funnels.find(f =>
+        f.connections?.some(c => c.type === "uazapi" && c.uazapiToken === uazInstanceToken)
+      );
       if (matchedFunnel) {
         funnelIdOverride = matchedFunnel.id;
         clientId = matchedFunnel.clientId ?? null;
       }
     }
-    if (!clientId && baileysClientId) {
-      // fallback: tenta encontrar funil pelo connectionId ou clientId
-      const matchedFunnel = funnels.find(f =>
-        f.id === baileysClientId ||
-        f.connections?.some(c => c.id === baileysClientId)
-      );
-      if (matchedFunnel) {
-        funnelIdOverride = funnelIdOverride ?? matchedFunnel.id;
-        clientId = matchedFunnel.clientId ?? null;
-      } else {
-        clientId = baileysClientId;
-      }
-    }
-    // UazAPI: match by instanceId or instancePhone in connections
-    const uazInstanceId = body.instanceId as string | undefined;
+    // Busca pelo nome da instância (instanceId no body)
     if (!clientId && uazInstanceId) {
       const matchedFunnel = funnels.find(f =>
-        f.connections?.some(c => c.id === uazInstanceId)
+        f.connections?.some(c => c.type === "uazapi" && c.id === uazInstanceId)
       );
       if (matchedFunnel) {
         funnelIdOverride = funnelIdOverride ?? matchedFunnel.id;
         clientId = matchedFunnel.clientId ?? null;
       }
     }
+    // Busca pelo telefone da instância
     if (!clientId && instancePhone) {
-      // UazAPI: match by instancePhone in connections
-      const matchedFunnelByConn = funnels.find(f =>
+      const matchedFunnel = funnels.find(f =>
         f.connections?.some(c => {
           const cp = (c.phone ?? "").replace(/\D/g, "");
           return cp.length > 0 && (cp === instancePhone || instancePhone.endsWith(cp.slice(-9)));
         })
       );
-      if (matchedFunnelByConn) {
-        funnelIdOverride = funnelIdOverride ?? matchedFunnelByConn.id;
-        clientId = matchedFunnelByConn.clientId ?? null;
-      }
-    }
-    if (!clientId && instancePhone) {
-      // Busca funil pelo whatsappPhone
-      const matchedFunnel = funnels.find(f => {
-        const fp = (f.whatsappPhone ?? "").replace(/\D/g, "");
-        return fp.length > 0 && (fp === instancePhone || instancePhone.endsWith(fp.slice(-9)));
-      });
       if (matchedFunnel) {
-        funnelIdOverride = matchedFunnel.id;
+        funnelIdOverride = funnelIdOverride ?? matchedFunnel.id;
         clientId = matchedFunnel.clientId ?? null;
       }
-      // Fallback: busca por cliente
-      if (!clientId) {
-        const clients = getClients();
-        const matched = clients.find((c) => {
-          const cp = (c.whatsappPhone ?? "").replace(/\D/g, "");
-          return cp.length > 0 && (cp === instancePhone || instancePhone.endsWith(cp.slice(-9)));
-        });
-        clientId = matched?.id ?? null;
-      }
-    } else if (!clientId) {
-      // UazAPI: busca pelo número do contato (só se clientId ainda não foi encontrado)
-      const clients = getClients();
-      const matched = clients.find((c) => {
-        const cp = (c.whatsappPhone ?? "").replace(/\D/g, "");
-        return cp.length > 0 && phone.endsWith(cp.slice(-9));
-      });
-      clientId = matched?.id ?? null;
     }
 
     // Auto-captura lead no CRM — qualquer conversa (iniciada por você ou pelo lead)
