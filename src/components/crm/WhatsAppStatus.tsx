@@ -169,19 +169,11 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
                   <p className="text-xs text-slate-400 px-4 py-2 italic">Sem número vinculado</p>
                 )}
                 {(f.connections ?? []).map(conn => {
-                  const inst = instances[conn.id];
-                  const status = inst?.status ?? "disconnected";
                   return (
-                    <div key={conn.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <span className={`h-2 w-2 rounded-full flex-shrink-0 ${status === "connected" ? "bg-green-500" : status === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800">
-                          {conn.type === "meta" ? "🏢 Meta API" : "⚡ UazAPI"} · {conn.phone || conn.metaPhoneNumberId}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {status === "connected" ? (inst?.phone ? `+${inst.phone}` : "Conectado") : status === "connecting" ? "Aguardando scan..." : "Desconectado"}
-                        </p>
-                      </div>
+                    <div key={conn.id} className="px-4 py-2.5">
+                      <p className="text-sm font-medium text-slate-800">
+                        {conn.type === "meta" ? "🏢 Meta API" : "⚡ UazAPI"} · {conn.phone || conn.metaPhoneNumberId}
+                      </p>
                     </div>
                   );
                 })}
