@@ -32,9 +32,31 @@ import { processKanbanActions } from "@/lib/kanban-agent";
 
 type Body = Record<string, unknown>;
 
-// ── Extrai mensagem em diferentes formatos do UazapiGO ──────────────────────
+// ── Extrai mensagem em diferentes formatos ──────────────────────────────────
 function extractMessage(body: Body): { phone: string; text: string; fromMe: boolean } | null {
-  // Formato UazapiGO padrão
+  // ── Formato UazapiGO novo: { EventType:"messages", messages:[{phone,body,fromMe}], chat:{} } ──
+  // É o formato real enviado por nexopro.uazapi.com
+  const eventType = (body.EventType ?? body.eventType) as string | undefined;
+  if (eventType === "messages" || eventType === "message") {
+    const msgs = body.messages as Record<string, unknown>[] | undefined;
+    if (Array.isArray(msgs) && msgs.length > 0) {
+      const msg = msgs[0];
+      const raw = String(msg.phone ?? msg.sender ?? msg.from ?? "");
+      const phone = raw.replace("@s.whatsapp.net", "").replace(/\D/g, "");
+      const text = String(msg.body ?? msg.message ?? msg.text ?? msg.content ?? "");
+      const fromMe = msg.fromMe === true || msg.from_me === true;
+      if (phone) return { phone, text, fromMe };
+    }
+    // Fallback: chat.phone + body de um campo genérico
+    const chat = body.chat as Record<string, unknown> | undefined;
+    const chatPhone = String(chat?.phone ?? "").replace(/\D/g, "");
+    if (chatPhone) {
+      const text = String(body.body ?? body.message ?? body.text ?? "");
+      return { phone: chatPhone, text, fromMe: false };
+    }
+  }
+
+  // ── Formato UazAPI legado: { phone, message } ──
   if (typeof body.phone === "string" && typeof body.message === "string") {
     return {
       phone: body.phone.replace(/\D/g, ""),
@@ -43,7 +65,7 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
     };
   }
 
-  // Formato Evolution API / alternativo
+  // ── Formato Evolution API / alternativo: { data: { key, message } } ──
   const data = body.data as Body | undefined;
   if (data) {
     const key = data.key as Record<string, unknown> | undefined;
@@ -82,7 +104,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
 
-  console.log(`[webhook/${instanceId}] body=`, JSON.stringify(body).slice(0, 600));
+  console.log(`[webhook/${instanceId}] body=`, JSON.stringify(body).slice(0, 1200));
 
   // Forward para URL configurada (fire-and-forget)
   const config = getConfig();
@@ -150,7 +172,12 @@ export async function POST(
       : (uazConn?.uazapiToken ?? bodyToken ?? config.uazapiToken ?? "");
 
     // ── Upsert lead no CRM ────────────────────────────────────────────────
+    // Nome do contato: UazapiGO envia em messages[0].pushName ou chat.name
+    const firstMsg = (Array.isArray(body.messages) ? (body.messages as Record<string, unknown>[])[0] : null);
+    const chatObj  = body.chat as Record<string, unknown> | undefined;
     const contactName =
+      (firstMsg?.pushName as string) ||
+      (chatObj?.name as string) ||
       (body.chatName as string) ||
       (body.senderName as string) ||
       (body.pushName as string) ||
