@@ -372,11 +372,11 @@ export async function POST(
         const resumeKeyword = agCfg?.aiResumeKeyword?.trim();
         // Palavra-chave de retomada: reativa a IA sem pausar
         if (resumeKeyword && text.trim().toLowerCase() === resumeKeyword.toLowerCase()) {
-          upsertLeadByPhone(cid, phone, { aiPaused: false });
+          upsertLeadByPhone(cid, phone, { funnelId, aiPaused: false });
           console.log(`[webhook/${instanceId}] IA REATIVADA para phone=${phone} via keyword`);
         } else {
           // Qualquer outra mensagem do gestor pausa a IA automaticamente
-          upsertLeadByPhone(cid, phone, { aiPaused: true });
+          upsertLeadByPhone(cid, phone, { funnelId, aiPaused: true });
           console.log(`[webhook/${instanceId}] IA PAUSADA para phone=${phone} (mensagem do gestor)`);
         }
       }
