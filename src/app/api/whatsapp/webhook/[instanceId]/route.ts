@@ -18,7 +18,55 @@ import { getHistory, addMessage } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
-import type { AgentMedia } from "@/lib/clients";
+import type { AgentMedia, AgentConfig } from "@/lib/clients";
+import type { GeminiAction } from "@/lib/gemini-agent";
+
+/**
+ * Envia resumo de conversa para o summaryPhone do cliente, com link wa.me para o lead.
+ */
+async function sendConversationSummary(
+  token: string,
+  clientName: string,
+  agCfg: AgentConfig,
+  phone: string,
+  motivo: string,
+): Promise<void> {
+  const summaryPhone = agCfg.summaryPhone;
+  if (!summaryPhone) return;
+
+  const history = getHistory(phone);
+  const lines = history.slice(-20)
+    .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
+    .join("\n");
+
+  // Link direto para o lead — a atendente clica e já abre o WhatsApp
+  const waLink = `https://wa.me/${phone.replace(/\D/g, "")}`;
+
+  const msg =
+    `📋 *Resumo de conversa — ${clientName}*\n\n` +
+    `📞 *Lead:* ${waLink}\n` +
+    `📝 *Motivo:* ${motivo}\n\n` +
+    `*Últimas mensagens:*\n${lines}`;
+
+  await sendText(token, summaryPhone, msg);
+}
+
+/**
+ * Processa as actions retornadas pelo Gemini (exceto follow-ups, já tratados no agente).
+ */
+async function processGeminiActions(
+  actions: GeminiAction[],
+  token: string,
+  clientName: string,
+  agCfg: AgentConfig,
+  phone: string,
+): Promise<void> {
+  for (const action of actions) {
+    if (action.type === "resumo_solicitado") {
+      await sendConversationSummary(token, clientName, agCfg, phone, action.motivo);
+    }
+  }
+}
 
 /**
  * Remove marcadores [MIDIA:nome] do texto e retorna os nomes encontrados + texto limpo.
@@ -336,12 +384,13 @@ export async function POST(
         const h = getHistory(phone);
         console.log(`[webhook/${instanceId}] Gemini batch iniciando para phone=${phone} cid=${cid} msgs=${batch.messages.length}`);
         runGeminiAgent(combined, h, cid, phone)
-          .then(async ({ text: geminiText }) => {
+          .then(async ({ text: geminiText, actions }) => {
             markDone(batch.id);
             console.log(`[webhook/${instanceId}] Gemini respondeu (${geminiText?.length ?? 0} chars) para ${phone}`);
+            const agCfg = getClientById(cid)?.agentConfig;
+            const clientName = getClientById(cid)?.name ?? cid;
             if (geminiText) {
               addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
-              const agCfg = getClientById(cid)?.agentConfig;
               const { clean, names } = extractMediaMarkers(geminiText);
               const textToSend = clean || geminiText;
               const chunks = agCfg?.splitMessages
@@ -355,6 +404,9 @@ export async function POST(
               if (names.length > 0 && agCfg?.mediaLibrary?.length) {
                 await sendMarkedMedia(instanceUazToken, phone, names, agCfg.mediaLibrary);
               }
+            }
+            if (agCfg && actions.length > 0) {
+              await processGeminiActions(actions, instanceUazToken, clientName, agCfg, phone);
             }
           })
           .catch((e) => {
@@ -370,23 +422,29 @@ export async function POST(
     if (!geminiEnabled || cid === "sem-cliente") return NextResponse.json({ ok: true });
 
     console.log(`[webhook/${instanceId}] Gemini imediato iniciando para phone=${phone}`);
-    const { text: geminiText } = await runGeminiAgent(text, history, cid, phone);
+    const { text: geminiText, actions: geminiActions } = await runGeminiAgent(text, history, cid, phone);
     console.log(`[webhook/${instanceId}] Gemini imediato respondeu (${geminiText?.length ?? 0} chars)`);
-    if (!geminiText) return NextResponse.json({ ok: true });
+    if (!geminiText && geminiActions.length === 0) return NextResponse.json({ ok: true });
 
-    addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
-    const { clean, names } = extractMediaMarkers(geminiText);
-    const textToSend = clean || geminiText;
-    const chunks = agentCfg?.splitMessages
-      ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
-      : [textToSend];
-    for (let i = 0; i < chunks.length; i++) {
-      const sent = await sendText(instanceUazToken, phone, chunks[i]);
-      console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent}`);
-      if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, 700));
+    if (geminiText) {
+      addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
+      const { clean, names } = extractMediaMarkers(geminiText);
+      const textToSend = clean || geminiText;
+      const chunks = agentCfg?.splitMessages
+        ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
+        : [textToSend];
+      for (let i = 0; i < chunks.length; i++) {
+        const sent = await sendText(instanceUazToken, phone, chunks[i]);
+        console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent}`);
+        if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, 700));
+      }
+      if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
+        await sendMarkedMedia(instanceUazToken, phone, names, agentCfg.mediaLibrary);
+      }
     }
-    if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
-      await sendMarkedMedia(instanceUazToken, phone, names, agentCfg.mediaLibrary);
+    if (agentCfg && geminiActions.length > 0) {
+      const clientName = getClientById(cid)?.name ?? cid;
+      await processGeminiActions(geminiActions, instanceUazToken, clientName, agentCfg, phone);
     }
 
     return NextResponse.json({ ok: true });

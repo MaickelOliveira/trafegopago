@@ -10,7 +10,7 @@ export type GeminiAction =
   | { type: "agendamento_criado"; eventId: string; link: string; titulo: string; dataHora: string }
   | { type: "followup_agendado"; horas: number; mensagem: string }
   | { type: "lembrete_agendado"; dataHora: string; mensagem: string }
-  | { type: "resumo_solicitado" }
+  | { type: "resumo_solicitado"; motivo: string; phone: string }
   | { type: "agendamento_cancelado"; eventId: string };
 
 const TOOL_DECLARATIONS: FunctionDeclaration[] = [
@@ -283,7 +283,8 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "enviar_resumo") {
-              actions.push({ type: "resumo_solicitado" });
+              const motivo = (args.motivo as string) || "Solicitado pela IA";
+              actions.push({ type: "resumo_solicitado", motivo, phone });
               result = { ok: true };
             }
           } catch (e) {
