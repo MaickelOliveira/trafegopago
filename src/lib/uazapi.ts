@@ -240,13 +240,19 @@ export async function updateFieldsMap(token: string): Promise<void> {
 
 export async function sendText(token: string, phone: string, message: string): Promise<boolean> {
   try {
-    const res = await fetch(`${base()}/send/text`, {
+    const url = `${base()}/send/text`;
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", token },
       body: JSON.stringify({ phone, message }),
     });
+    const resText = await res.text();
+    if (!res.ok) {
+      console.error(`[sendText] ERRO ${res.status} → ${url} phone=${phone} token=${token.slice(0,8)}... resp=${resText.slice(0, 300)}`);
+    }
     return res.ok;
-  } catch {
+  } catch (e) {
+    console.error("[sendText] EXCEPTION:", e);
     return false;
   }
 }
