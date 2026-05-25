@@ -20,6 +20,45 @@ import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
 import type { AgentMedia, AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getGeminiApiKey } from "@/lib/whatsapp-send";
+
+/**
+ * Usa o Gemini para gerar um resumo em texto corrido da conversa.
+ */
+async function generateSummaryText(
+  clientName: string,
+  agCfg: AgentConfig,
+  phone: string,
+  motivo: string,
+): Promise<string> {
+  const history = getHistory(phone);
+  if (history.length === 0) return "Sem histórico de conversa.";
+
+  const transcript = history
+    .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
+    .join("\n");
+
+  const apiKey = getGeminiApiKey(agCfg.geminiApiKey ?? undefined);
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+  const prompt =
+    `Você é um assistente que resume conversas de WhatsApp para o gestor.\n\n` +
+    `Cliente/empresa: ${clientName}\n` +
+    `Motivo do resumo: ${motivo}\n\n` +
+    `Conversa:\n${transcript}\n\n` +
+    `Faça um resumo objetivo em texto corrido (máximo 5 linhas) destacando: ` +
+    `o que o lead quer, o estágio da conversa, dúvidas ou objeções levantadas, e próximo passo sugerido. ` +
+    `Não use marcadores ou listas, escreva em parágrafos curtos.`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim();
+  } catch {
+    return "Não foi possível gerar o resumo automaticamente.";
+  }
+}
 
 /**
  * Envia resumo de conversa para o summaryPhone do cliente, com link wa.me para o lead.
@@ -34,19 +73,14 @@ async function sendConversationSummary(
   const summaryPhone = agCfg.summaryPhone;
   if (!summaryPhone) return;
 
-  const history = getHistory(phone);
-  const lines = history.slice(-20)
-    .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
-    .join("\n");
-
-  // Link direto para o lead — a atendente clica e já abre o WhatsApp
+  const resumo = await generateSummaryText(clientName, agCfg, phone, motivo);
   const waLink = `https://wa.me/${phone.replace(/\D/g, "")}`;
 
   const msg =
     `📋 *Resumo de conversa — ${clientName}*\n\n` +
     `📞 *Lead:* ${waLink}\n` +
     `📝 *Motivo:* ${motivo}\n\n` +
-    `*Últimas mensagens:*\n${lines}`;
+    `${resumo}`;
 
   await sendText(token, summaryPhone, msg);
 }
