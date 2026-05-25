@@ -102,29 +102,42 @@ export async function POST(
 
     const { phone, text, fromMe } = extracted;
 
-    // ── Encontra funil + cliente pelo instanceId (nome da instância na URL) ──
+    // ── Encontra funil + cliente pelo instanceId (token UUID na URL) ──────────
+    // O instanceId na URL É o token UazapiGO da instância (UUID opaco)
+    // Isso serve como autenticação: impossível de adivinhar
     const funnels = getFunnels();
 
+    // Busca primária: connection.uazapiToken === instanceId (token na URL)
     const matchedFunnel = funnels.find((f) =>
-      f.connections?.some((c) => c.id === instanceId && c.type === "uazapi")
+      f.connections?.some((c) => c.type === "uazapi" && c.uazapiToken === instanceId)
     );
 
-    // Fallback: tenta match pelo token da instância (campo uazapiToken)
+    // Fallback 1: connection.id === instanceId (nome da instância — legado)
+    const fallbackByName = !matchedFunnel
+      ? funnels.find((f) =>
+          f.connections?.some((c) => c.type === "uazapi" && c.id === instanceId)
+        )
+      : undefined;
+
+    // Fallback 2: token enviado no body pelo UazapiGO
     const bodyToken = (body.instanceToken ?? body.token) as string | undefined;
-    const fallbackFunnel = !matchedFunnel && bodyToken
+    const fallbackByBodyToken = !matchedFunnel && !fallbackByName && bodyToken
       ? funnels.find((f) =>
           f.connections?.some((c) => c.uazapiToken === bodyToken)
         )
       : undefined;
 
-    const funnel = matchedFunnel ?? fallbackFunnel ?? null;
+    const funnel = matchedFunnel ?? fallbackByName ?? fallbackByBodyToken ?? null;
     const clientId = funnel?.clientId ?? null;
 
-    // Pega o token da instância UazapiGO para enviar resposta
+    // Token para enviar a resposta: usa o instanceId da URL (que É o token UazapiGO)
+    // ou o token da conexão do funil, ou o global como último recurso
     const uazConn = funnel?.connections?.find(
-      (c) => c.id === instanceId || (bodyToken && c.uazapiToken === bodyToken)
+      (c) => c.type === "uazapi" && (c.uazapiToken === instanceId || c.uazapiToken === bodyToken || c.id === instanceId)
     );
-    const instanceUazToken = uazConn?.uazapiToken ?? bodyToken ?? config.uazapiToken ?? "";
+    const instanceUazToken = instanceId.includes("-")
+      ? instanceId  // UUID → é o próprio token UazapiGO
+      : (uazConn?.uazapiToken ?? bodyToken ?? config.uazapiToken ?? "");
 
     // ── Upsert lead no CRM ────────────────────────────────────────────────
     const contactName =

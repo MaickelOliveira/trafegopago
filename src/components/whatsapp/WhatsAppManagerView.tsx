@@ -187,8 +187,9 @@ export function WhatsAppManagerView({
 
   async function handleSaveWebhookInCreate(token: string, instanceName: string) {
     setSavingWebhook(true);
-    // URL exclusiva desta instância → UazapiGO sabe exatamente para qual cliente encaminhar
-    const instanceWh = `${appWebhookUrl.replace(/\/api\/whatsapp\/webhook$/, "")}/api/whatsapp/webhook/${instanceName}`;
+    // URL usa o TOKEN UUID como identificador seguro (não o nome)
+    const base = appWebhookUrl.replace(/\/api\/whatsapp\/webhook$/, "");
+    const instanceWh = `${base}/api/whatsapp/webhook/${token}`;
     await fetch(`/api/whatsapp/manager/${token}/webhook`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: instanceWh }),
@@ -351,20 +352,23 @@ export function WhatsAppManagerView({
                 <p className="text-xs text-green-600 mt-1">Agora configure o webhook e conecte um número.</p>
               </div>
 
-              {/* Passo 1: Webhook */}
+              {/* Passo 1: Webhook — usa o token como identificador seguro */}
               {(() => {
-                const instanceWh = `${appWebhookUrl.replace(/\/api\/whatsapp\/webhook$/, "")}/api/whatsapp/webhook/${modal.instanceName}`;
+                // O TOKEN é o UUID da instância UazapiGO → seguro e único
+                const base = appWebhookUrl.replace(/\/api\/whatsapp\/webhook$/, "");
+                const instanceWh = `${base}/api/whatsapp/webhook/${modal.token}`;
                 return (
                   <div className="rounded-xl border border-slate-200 p-4 mb-3">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-semibold text-slate-700">🔗 1. Configurar Webhook</p>
                       {modal.webhookSaved && <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">✓ Salvo</span>}
                     </div>
-                    <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2 mb-3">
+                    <div className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2 mb-1">
                       <p className="text-xs text-slate-600 font-mono flex-1 break-all">{instanceWh}</p>
                       <button onClick={() => navigator.clipboard.writeText(instanceWh).catch(() => {})}
                         className="text-xs text-blue-600 font-semibold whitespace-nowrap hover:text-blue-800">Copiar</button>
                     </div>
+                    <p className="text-xs text-slate-400 mb-3">🔒 O token UUID é a autenticação — impossível de adivinhar</p>
                     <button
                       onClick={() => handleSaveWebhookInCreate(modal.token, modal.instanceName)}
                       disabled={savingWebhook || modal.webhookSaved}

@@ -119,8 +119,9 @@ export async function GET() {
       agentEnabled: effectiveClient?.agentEnabled ?? false,
       webhookConfigured: !!effectiveFunnel,
       appWebhookUrl,
-      // URL exclusiva desta instância — configurar esta no UazapiGO
-      instanceWebhookUrl: name ? `${config.appBaseUrl ?? ""}/api/whatsapp/webhook/${name}` : appWebhookUrl,
+      // URL exclusiva desta instância — usa o TOKEN (UUID) como identificador seguro
+      // Impossível de adivinhar → serve como autenticação + identificação
+      instanceWebhookUrl: token ? `${config.appBaseUrl ?? ""}/api/whatsapp/webhook/${token}` : appWebhookUrl,
     };
   });
 
@@ -164,8 +165,9 @@ export async function POST(req: NextRequest) {
     }, { status: 500 });
   }
 
-  // URL de webhook exclusiva desta instância: /api/whatsapp/webhook/{instanceName}
-  const instanceWebhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook/${instanceName}`;
+  // URL exclusiva: usa o TOKEN como identificador (UUID seguro, impossível de adivinhar)
+  // Format: /api/whatsapp/webhook/{instanceToken}
+  const instanceWebhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook/${token}`;
 
   // Configura webhook e fieldMap imediatamente (fire-and-forget)
   setWebhook(token, instanceWebhookUrl).catch(() => {});
