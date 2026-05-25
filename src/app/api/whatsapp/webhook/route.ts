@@ -15,13 +15,33 @@ type Body = Record<string, unknown>;
 
 // Extrai phone + text de diferentes formatos de webhook (UazAPI / Evolution API)
 function extractMessage(body: Body): { phone: string; text: string; fromMe: boolean } | null {
-  // Formato UazAPI padrão
+  // Formato UazAPI padrão legado (phone + message strings na raiz)
   if (typeof body.phone === "string" && typeof body.message === "string") {
     return {
       phone: body.phone.replace(/\D/g, ""),
       text: body.message,
       fromMe: body.fromMe === true,
     };
+  }
+
+  // Formato UazapiGO / nexopro: { EventType: "messages", chat: { phone }, message: { body/conversation, fromMe } }
+  const eventType = (body.EventType ?? body.eventType) as string | undefined;
+  const chat = body.chat as Record<string, unknown> | undefined;
+  const msgObj = body.message as Record<string, unknown> | undefined;
+  if ((eventType === "messages" || chat?.phone) && chat) {
+    const rawPhone = (chat.phone ?? chat.wa_chatId ?? "") as string;
+    const phone = rawPhone.replace("@s.whatsapp.net", "").replace(/\D/g, "");
+    if (phone) {
+      const text =
+        (msgObj?.body as string) ||
+        (msgObj?.conversation as string) ||
+        ((msgObj?.extendedTextMessage as Record<string, string> | undefined)?.text ?? "") ||
+        (msgObj?.caption as string) ||
+        (typeof body.message === "string" ? body.message : "") ||
+        "";
+      const fromMe = msgObj?.fromMe === true || msgObj?.fromMe === "true";
+      return { phone, text, fromMe };
+    }
   }
 
   // Formato Evolution API / UazapiGO alternativo
@@ -81,8 +101,12 @@ export async function POST(req: NextRequest) {
     const { phone, text, fromMe } = extracted;
 
     // Identifica funil e cliente pelo instanceId ou instancePhone enviados pelo UazapiGO
-    const instancePhone = (body.instancePhone as string | undefined)?.replace(/\D/g, "");
-    const uazInstanceId = (body.instanceId ?? body.instance) as string | undefined;
+    const chatObj = body.chat as Record<string, unknown> | undefined;
+    const instancePhone = (
+      (body.instancePhone as string | undefined) ||
+      (chatObj?.owner as string | undefined)      // uazapiGO: "owner" = telefone da instância
+    )?.replace(/\D/g, "");
+    const uazInstanceId = (body.instanceId ?? body.instance ?? chatObj?.systemName) as string | undefined;
     const uazInstanceToken = (body.instanceToken ?? body.token) as string | undefined;
 
     let clientId: string | null = null;
@@ -129,6 +153,8 @@ export async function POST(req: NextRequest) {
       (body.chatName as string) ||
       (body.senderName as string) ||
       (body.pushName as string) ||
+      (chatObj?.wa_contactName as string) ||
+      (chatObj?.name as string) ||
       phone;
 
     const cid = clientId ?? "sem-cliente";
