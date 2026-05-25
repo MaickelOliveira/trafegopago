@@ -30,12 +30,22 @@ export async function GET(req: NextRequest) {
   }
 
   const config = getConfig();
-  // Auto-detecta a URL base: config > env > origem da requisição
-  const baseUrl =
+
+  // Auto-detecta URL base — ordem de prioridade:
+  // 1. config.appBaseUrl (Configurações)
+  // 2. APP_BASE_URL / NEXTAUTH_URL (env vars EasyPanel)
+  // 3. x-forwarded-host + x-forwarded-proto (proxy reverso EasyPanel/Traefik) ← mais confiável em produção
+  // 4. req.nextUrl como último recurso (pode ser localhost em produção)
+  const fwdHost  = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? "https";
+  const detectedBase = fwdHost ? `${fwdProto}://${fwdHost}` : `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+
+  const baseUrl = (
     config.appBaseUrl?.replace(/\/$/, "") ||
     process.env.APP_BASE_URL?.replace(/\/$/, "") ||
     process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
-    `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+    detectedBase
+  );
 
   const appWebhookUrl = `${baseUrl}/api/whatsapp/webhook`;
 
@@ -126,9 +136,8 @@ export async function GET(req: NextRequest) {
       agentEnabled: effectiveClient?.agentEnabled ?? false,
       webhookConfigured: !!effectiveFunnel,
       appWebhookUrl,
-      // URL exclusiva desta instância — usa o TOKEN (UUID) como identificador seguro
-      // Impossível de adivinhar → serve como autenticação + identificação
-      instanceWebhookUrl: token ? `${config.appBaseUrl ?? ""}/api/whatsapp/webhook/${token}` : appWebhookUrl,
+      // URL exclusiva desta instância — usa baseUrl (detectado da requisição)
+      instanceWebhookUrl: token ? `${baseUrl}/api/whatsapp/webhook/${token}` : appWebhookUrl,
     };
   });
 
@@ -148,12 +157,16 @@ export async function POST(req: NextRequest) {
 
   const instanceName = name.trim().toLowerCase().replace(/\s+/g, "-");
   const config = getConfig();
-  const baseUrl =
+  const fwdHost2  = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const fwdProto2 = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? "https";
+  const detectedBase2 = fwdHost2 ? `${fwdProto2}://${fwdHost2}` : `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+  const baseUrl2 = (
     config.appBaseUrl?.replace(/\/$/, "") ||
     process.env.APP_BASE_URL?.replace(/\/$/, "") ||
     process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
-    `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-  const appWebhookUrl = `${baseUrl}/api/whatsapp/webhook`;
+    detectedBase2
+  );
+  const appWebhookUrl = `${baseUrl2}/api/whatsapp/webhook`;
 
   const created = await createInstance(instanceName);
 
@@ -177,9 +190,8 @@ export async function POST(req: NextRequest) {
     }, { status: 500 });
   }
 
-  // URL exclusiva: usa o TOKEN como identificador (UUID seguro, impossível de adivinhar)
-  // Format: /api/whatsapp/webhook/{instanceToken}
-  const instanceWebhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook/${token}`;
+  // URL exclusiva: usa baseUrl2 (detectado da requisição via x-forwarded-host)
+  const instanceWebhookUrl = `${baseUrl2}/api/whatsapp/webhook/${token}`;
 
   // Configura webhook e fieldMap imediatamente (fire-and-forget)
   setWebhook(token, instanceWebhookUrl).catch(() => {});
