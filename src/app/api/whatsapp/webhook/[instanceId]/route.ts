@@ -18,6 +18,37 @@ import { getHistory, addMessage } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
+import type { AgentMedia } from "@/lib/clients";
+
+/**
+ * Remove marcadores [MIDIA:nome] do texto e retorna os nomes encontrados + texto limpo.
+ */
+function extractMediaMarkers(text: string): { clean: string; names: string[] } {
+  const pattern = /\[MIDIA:([^\]]+)\]/gi;
+  const names: string[] = [];
+  const clean = text.replace(pattern, (_, name: string) => {
+    names.push(name.trim().toLowerCase());
+    return "";
+  }).replace(/\s{2,}/g, " ").trim();
+  return { clean, names };
+}
+
+/**
+ * Envia mídias referenciadas pelo agente após enviar o texto principal.
+ */
+async function sendMarkedMedia(
+  token: string,
+  phone: string,
+  names: string[],
+  library: AgentMedia[],
+): Promise<void> {
+  for (const name of names) {
+    const media = library.find((m) => m.name?.toLowerCase() === name);
+    if (!media) continue;
+    await sendMedia(token, phone, media.type, media.url, media.caption, media.filename);
+    await new Promise<void>((r) => setTimeout(r, 700));
+  }
+}
 import {
   startFollowUpSequence,
   cancelFollowUpsForPhone,
@@ -311,13 +342,18 @@ export async function POST(
             if (geminiText) {
               addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
               const agCfg = getClientById(cid)?.agentConfig;
+              const { clean, names } = extractMediaMarkers(geminiText);
+              const textToSend = clean || geminiText;
               const chunks = agCfg?.splitMessages
-                ? splitMessage(geminiText, agCfg.maxMessageLength ?? 300)
-                : [geminiText];
+                ? splitMessage(textToSend, agCfg.maxMessageLength ?? 300)
+                : [textToSend];
               for (let i = 0; i < chunks.length; i++) {
                 const sent = await sendText(instanceUazToken, phone, chunks[i]);
                 console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent} token=${instanceUazToken.slice(0, 8)}... phone=${phone}`);
                 if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, 700));
+              }
+              if (names.length > 0 && agCfg?.mediaLibrary?.length) {
+                await sendMarkedMedia(instanceUazToken, phone, names, agCfg.mediaLibrary);
               }
             }
           })
@@ -339,13 +375,18 @@ export async function POST(
     if (!geminiText) return NextResponse.json({ ok: true });
 
     addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
+    const { clean, names } = extractMediaMarkers(geminiText);
+    const textToSend = clean || geminiText;
     const chunks = agentCfg?.splitMessages
-      ? splitMessage(geminiText, agentCfg.maxMessageLength ?? 300)
-      : [geminiText];
+      ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
+      : [textToSend];
     for (let i = 0; i < chunks.length; i++) {
       const sent = await sendText(instanceUazToken, phone, chunks[i]);
       console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent}`);
       if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, 700));
+    }
+    if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
+      await sendMarkedMedia(instanceUazToken, phone, names, agentCfg.mediaLibrary);
     }
 
     return NextResponse.json({ ok: true });

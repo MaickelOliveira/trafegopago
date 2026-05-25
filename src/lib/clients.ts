@@ -19,6 +19,7 @@ export type FollowUpStep = {
 
 export type AgentMedia = {
   id: string;
+  name: string;                // nome curto para referenciar (ex: "tabela-precos")
   type: "image" | "video" | "document";
   url: string;
   caption?: string;

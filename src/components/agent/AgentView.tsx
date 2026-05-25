@@ -13,6 +13,7 @@ type FollowUpStep = {
 
 type AgentMedia = {
   id: string;
+  name: string;
   type: "image" | "video" | "document";
   url: string;
   caption?: string;
@@ -104,9 +105,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [waConnections, setWaConnections] = useState<WaConnection[]>([]);
   const [loadingWa, setLoadingWa] = useState(false);
   const [addingMedia, setAddingMedia] = useState(false);
-  const [newMedia, setNewMedia] = useState<{ type: AgentMedia["type"]; url: string; caption: string; filename: string; sendOnFirstContact: boolean }>({
-    type: "image", url: "", caption: "", filename: "", sendOnFirstContact: true,
+  const [newMedia, setNewMedia] = useState<{ type: AgentMedia["type"]; url: string; caption: string; filename: string; sendOnFirstContact: boolean; name: string }>({
+    type: "image", url: "", caption: "", filename: "", sendOnFirstContact: true, name: "",
   });
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     fetch(`/api/agent?clientId=${clientId}`)
@@ -645,6 +647,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         {/* Formulário para adicionar mídia */}
         {addingMedia && (
           <div className="rounded-xl border border-rose-100 bg-rose-50 p-4 space-y-3">
+            {/* Tipo */}
             <div className="flex gap-2">
               {(["image", "video", "document"] as const).map((t) => (
                 <button
@@ -659,13 +662,79 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                 </button>
               ))}
             </div>
+
+            {/* Nome de referência */}
             <input
-              type="url"
-              value={newMedia.url}
-              onChange={(e) => setNewMedia((m) => ({ ...m, url: e.target.value }))}
-              placeholder="https://... URL pública do arquivo"
-              className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400"
+              type="text"
+              value={newMedia.name}
+              onChange={(e) => setNewMedia((m) => ({ ...m, name: e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") }))}
+              placeholder="Nome de referência (ex: catalogo-produtos)"
+              className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400 font-mono"
             />
+            <p className="text-[11px] text-slate-400 -mt-2">
+              A IA usará este nome para enviar a mídia: <span className="font-mono text-rose-600">[MIDIA:{newMedia.name || "nome"}]</span>
+            </p>
+
+            {/* Upload de arquivo OU URL */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer w-fit">
+                <div
+                  className={clsx("relative flex items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-3 transition cursor-pointer w-full",
+                    uploading ? "border-rose-300 bg-rose-50" : "border-rose-200 hover:border-rose-400 bg-white"
+                  )}
+                >
+                  <input
+                    type="file"
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    accept={newMedia.type === "image" ? "image/*" : newMedia.type === "video" ? "video/mp4" : ".pdf,.doc,.docx,.xlsx"}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploading(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        const res = await fetch("/api/upload", { method: "POST", body: fd });
+                        const data = await res.json() as { url?: string; error?: string };
+                        if (data.url) {
+                          setNewMedia((m) => ({
+                            ...m,
+                            url: data.url!,
+                            filename: m.filename || file.name,
+                            name: m.name || file.name.split(".")[0].toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
+                          }));
+                        }
+                      } finally {
+                        setUploading(false);
+                      }
+                    }}
+                  />
+                  <span className="text-sm text-slate-500">
+                    {uploading ? "⏳ Enviando..." : "📁 Subir do computador"}
+                  </span>
+                </div>
+              </label>
+
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span className="h-px flex-1 bg-rose-100" />
+                ou cole a URL
+                <span className="h-px flex-1 bg-rose-100" />
+              </div>
+
+              <input
+                type="url"
+                value={newMedia.url}
+                onChange={(e) => setNewMedia((m) => ({ ...m, url: e.target.value }))}
+                placeholder="https://... URL pública do arquivo"
+                className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400"
+              />
+            </div>
+
+            {newMedia.url && (
+              <p className="text-[11px] text-green-600 font-mono break-all">✓ {newMedia.url}</p>
+            )}
+
+            {/* Legenda */}
             <input
               type="text"
               value={newMedia.caption}
@@ -673,15 +742,18 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               placeholder="Legenda (opcional)"
               className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400"
             />
+
+            {/* Nome do arquivo para documento */}
             {newMedia.type === "document" && (
               <input
                 type="text"
                 value={newMedia.filename}
                 onChange={(e) => setNewMedia((m) => ({ ...m, filename: e.target.value }))}
-                placeholder="Nome do arquivo (ex: catalogo.pdf)"
+                placeholder="Nome exibido (ex: catalogo.pdf)"
                 className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400"
               />
             )}
+
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -694,9 +766,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               </label>
               <button
                 onClick={() => {
-                  if (!newMedia.url) return;
+                  if (!newMedia.url || !newMedia.name) return;
                   const item: AgentMedia = {
                     id: crypto.randomUUID(),
+                    name: newMedia.name,
                     type: newMedia.type,
                     url: newMedia.url,
                     caption: newMedia.caption || undefined,
@@ -704,10 +777,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                     sendOnFirstContact: newMedia.sendOnFirstContact,
                   };
                   setCfg((c) => ({ ...c, mediaLibrary: [...(c.mediaLibrary ?? []), item] }));
-                  setNewMedia({ type: "image", url: "", caption: "", filename: "", sendOnFirstContact: true });
+                  setNewMedia({ type: "image", url: "", caption: "", filename: "", sendOnFirstContact: true, name: "" });
                   setAddingMedia(false);
                 }}
-                disabled={!newMedia.url}
+                disabled={!newMedia.url || !newMedia.name}
                 className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40 transition"
               >
                 Salvar mídia
@@ -730,9 +803,15 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                 {m.type === "image" ? "🖼" : m.type === "video" ? "🎬" : "📄"}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-slate-700 truncate">{m.url}</p>
-                {m.caption && <p className="text-xs text-slate-500 mt-0.5">{m.caption}</p>}
-                {m.filename && <p className="text-xs text-slate-400 italic">{m.filename}</p>}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-800 font-mono">[MIDIA:{m.name}]</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                    {m.type === "image" ? "imagem" : m.type === "video" ? "vídeo" : "documento"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 truncate mt-0.5">{m.url}</p>
+                {m.caption && <p className="text-xs text-slate-500 italic">{m.caption}</p>}
+                {m.filename && <p className="text-xs text-slate-400">{m.filename}</p>}
                 {m.sendOnFirstContact && (
                   <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 font-semibold">
                     ● dispara no 1º contato

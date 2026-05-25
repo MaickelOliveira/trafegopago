@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration } from "@google/generative-ai";
-import { getClientById } from "./clients";
+import { getClientById, type AgentMedia } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp, cancelFollowUpsForPhone } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent } from "./google-calendar";
@@ -78,7 +78,7 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
 
 const TOOLS: Tool[] = [{ functionDeclarations: TOOL_DECLARATIONS }];
 
-function buildSystemPrompt(clientName: string, customPrompt?: string): string {
+function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[]): string {
   const today = new Date().toLocaleDateString("pt-BR", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
@@ -97,10 +97,20 @@ Regras:
 - Use listar_horarios_disponiveis antes de agendar para verificar disponibilidade
 - Ao receber mensagem nova, cancele follow-ups pendentes deste contato`;
 
+  // Instrução de mídias — só aparece se houver mídias com nome configuradas
+  const namedMedia = (mediaLibrary ?? []).filter((m) => m.name?.trim());
+  const mediaPart = namedMedia.length > 0
+    ? `\n\nMídias disponíveis para enviar ao lead:\n${namedMedia.map((m) => {
+        const tipo = m.type === "image" ? "imagem" : m.type === "video" ? "vídeo" : "documento";
+        const desc = m.caption ? ` — "${m.caption}"` : "";
+        return `• [${m.name}]: ${tipo}${desc}`;
+      }).join("\n")}\n\nPara enviar uma mídia, inclua o marcador no texto da resposta:\n  [MIDIA:nome-da-midia]\nExemplo: "Aqui está nosso catálogo! [MIDIA:catalogo-produtos]"\nO arquivo será enviado automaticamente no lugar do marcador. Só envie mídia quando fizer sentido no contexto da conversa.`
+    : "";
+
   if (customPrompt?.trim()) {
-    return `${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}`;
+    return `${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}`;
   }
-  return base;
+  return `${base}${mediaPart}`;
 }
 
 export async function runGeminiAgent(
@@ -116,6 +126,8 @@ export async function runGeminiAgent(
   if (!apiKey) return { text: "", actions: [] };
 
   const genAI = new GoogleGenerativeAI(apiKey);
+  const mediaLibrary = client.agentConfig.mediaLibrary;
+  const sysPrompt = buildSystemPrompt(client.name, client.agentConfig.systemPrompt, mediaLibrary);
 
   // Tenta modelos em ordem de preferência
   const modelsToTry = [
@@ -131,7 +143,7 @@ export async function runGeminiAgent(
     try {
       const m = genAI.getGenerativeModel({
         model: modelId,
-        systemInstruction: buildSystemPrompt(client.name, client.agentConfig.systemPrompt),
+        systemInstruction: sysPrompt,
         tools: TOOLS,
       });
       // Teste rápido para verificar se o modelo existe
@@ -145,7 +157,7 @@ export async function runGeminiAgent(
       // Outro erro — usa este modelo mesmo assim
       model = genAI.getGenerativeModel({
         model: modelId,
-        systemInstruction: buildSystemPrompt(client.name, client.agentConfig.systemPrompt),
+        systemInstruction: sysPrompt,
         tools: TOOLS,
       });
       usedModel = modelId;
