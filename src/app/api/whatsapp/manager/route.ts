@@ -23,14 +23,21 @@ export type EnrichedInstance = {
   instanceWebhookUrl: string;   // URL exclusiva desta instância ← usar esta no UazapiGO
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "manager") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const config = getConfig();
-  const appWebhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
+  // Auto-detecta a URL base: config > env > origem da requisição
+  const baseUrl =
+    config.appBaseUrl?.replace(/\/$/, "") ||
+    process.env.APP_BASE_URL?.replace(/\/$/, "") ||
+    process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
+    `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+
+  const appWebhookUrl = `${baseUrl}/api/whatsapp/webhook`;
 
   // 1. Fetch raw instances from UazAPI
   const rawInstances = await listInstances() as Record<string, unknown>[];
@@ -141,7 +148,12 @@ export async function POST(req: NextRequest) {
 
   const instanceName = name.trim().toLowerCase().replace(/\s+/g, "-");
   const config = getConfig();
-  const appWebhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
+  const baseUrl =
+    config.appBaseUrl?.replace(/\/$/, "") ||
+    process.env.APP_BASE_URL?.replace(/\/$/, "") ||
+    process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
+    `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+  const appWebhookUrl = `${baseUrl}/api/whatsapp/webhook`;
 
   const created = await createInstance(instanceName);
 

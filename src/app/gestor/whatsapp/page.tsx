@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getClients, getConfig } from "@/lib/clients";
@@ -23,7 +24,20 @@ export default async function WhatsAppManagerPage() {
   }));
 
   const config = getConfig();
-  const appWebhookUrl = `${config.appBaseUrl ?? ""}/api/whatsapp/webhook`;
+
+  // Auto-detecta URL base: config > env > cabeçalho da requisição
+  const headersList = await headers();
+  const host = headersList.get("host") ?? "";
+  const proto = headersList.get("x-forwarded-proto") ?? "https";
+  const detectedBase = host ? `${proto}://${host}` : "";
+
+  const baseUrl =
+    config.appBaseUrl?.replace(/\/$/, "") ||
+    process.env.APP_BASE_URL?.replace(/\/$/, "") ||
+    process.env.NEXTAUTH_URL?.replace(/\/$/, "") ||
+    detectedBase;
+
+  const appWebhookUrl = `${baseUrl}/api/whatsapp/webhook`;
 
   return (
     <WhatsAppManagerView
