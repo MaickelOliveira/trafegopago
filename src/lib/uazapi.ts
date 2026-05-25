@@ -239,23 +239,35 @@ export async function updateFieldsMap(token: string): Promise<void> {
 }
 
 export async function sendText(token: string, phone: string, message: string): Promise<boolean> {
-  try {
-    const url = `${base()}/send/text`;
-    // UazapiGO usa "body" para o texto, não "message"
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", token },
-      body: JSON.stringify({ phone, body: message }),
-    });
-    const resText = await res.text();
-    if (!res.ok) {
-      console.error(`[sendText] ERRO ${res.status} → ${url} phone=${phone} token=${token.slice(0,8)}... resp=${resText.slice(0, 300)}`);
+  const url = `${base()}/send/text`;
+  // Tenta os dois formatos que UazapiGO pode aceitar: { phone, message } e { phone, body }
+  const payloads = [
+    { phone, message },
+    { phone, body: message },
+    { phone: `${phone}@s.whatsapp.net`, message },
+    { phone: `${phone}@s.whatsapp.net`, body: message },
+  ];
+
+  for (const payload of payloads) {
+    try {
+      const bodyStr = JSON.stringify(payload);
+      console.log(`[sendText] tentando ${url} payload=${bodyStr.slice(0, 120)}`);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", token },
+        body: bodyStr,
+      });
+      const resText = await res.text();
+      if (res.ok) {
+        console.log(`[sendText] OK com payload keys=${Object.keys(payload).join(",")}`);
+        return true;
+      }
+      console.warn(`[sendText] ${res.status} keys=${Object.keys(payload).join(",")} resp=${resText.slice(0, 200)}`);
+    } catch (e) {
+      console.error("[sendText] EXCEPTION:", e);
     }
-    return res.ok;
-  } catch (e) {
-    console.error("[sendText] EXCEPTION:", e);
-    return false;
   }
+  return false;
 }
 
 export async function sendMedia(

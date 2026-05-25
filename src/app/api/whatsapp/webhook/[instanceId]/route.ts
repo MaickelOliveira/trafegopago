@@ -34,7 +34,7 @@ type Body = Record<string, unknown>;
 
 // ── Extrai mensagem em diferentes formatos ──────────────────────────────────
 function extractMessage(body: Body): { phone: string; text: string; fromMe: boolean } | null {
-  // ── Formato UazapiGO novo: { EventType:"messages", messages:[{phone,body,fromMe}], chat:{} } ──
+  // ── Formato UazapiGO novo: { EventType:"messages", messages:[{phone,body,fromMe,type}], chat:{} } ──
   // É o formato real enviado por nexopro.uazapi.com
   const eventType = (body.EventType ?? body.eventType) as string | undefined;
   if (eventType === "messages" || eventType === "message") {
@@ -43,7 +43,23 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
       const msg = msgs[0];
       const raw = String(msg.phone ?? msg.sender ?? msg.from ?? "");
       const phone = raw.replace("@s.whatsapp.net", "").replace(/\D/g, "");
-      const text = String(msg.body ?? msg.message ?? msg.text ?? msg.content ?? "");
+
+      // body pode ser string (texto) ou objeto (imagem/áudio/video)
+      // Se for objeto, extrai caption ou trata como vazio
+      const rawBody = msg.body ?? msg.message ?? msg.text ?? msg.content ?? "";
+      let text: string;
+      if (typeof rawBody === "string") {
+        text = rawBody;
+      } else if (rawBody && typeof rawBody === "object") {
+        const obj = rawBody as Record<string, unknown>;
+        text = String(obj.text ?? obj.caption ?? obj.body ?? "");
+      } else {
+        text = String(rawBody);
+      }
+
+      // Para mensagens de mídia sem legenda, usa caption no nível do msg
+      if (!text && msg.caption) text = String(msg.caption);
+
       const fromMe = msg.fromMe === true || msg.from_me === true;
       if (phone) return { phone, text, fromMe };
     }
@@ -51,7 +67,8 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
     const chat = body.chat as Record<string, unknown> | undefined;
     const chatPhone = String(chat?.phone ?? "").replace(/\D/g, "");
     if (chatPhone) {
-      const text = String(body.body ?? body.message ?? body.text ?? "");
+      const rawFallback = body.body ?? body.message ?? body.text ?? "";
+      const text = typeof rawFallback === "string" ? rawFallback : "";
       return { phone: chatPhone, text, fromMe: false };
     }
   }
