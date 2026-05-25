@@ -3,11 +3,10 @@ import { getConfig } from "./clients";
 
 function getOAuth2Client() {
   const config = getConfig();
-  return new google.auth.OAuth2(
-    config.googleClientId,
-    config.googleClientSecret,
-    `${config.appBaseUrl}/api/agent/google-auth/callback`
-  );
+  const clientId = process.env.GOOGLE_CLIENT_ID || config.googleClientId;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || config.googleClientSecret;
+  const redirectUri = `${config.appBaseUrl}/api/agent/google-auth/callback`;
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
 export function getAuthUrl(clientId: string): string {

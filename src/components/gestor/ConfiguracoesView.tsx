@@ -39,6 +39,8 @@ type AppConfig = {
   uazapiAdminToken: string;
   appBaseUrl: string;
   uazapiWebhookForward: string;
+  googleClientId: string;
+  googleClientSecret: string;
 };
 
 export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: Client[]; appBaseUrl?: string }) {
@@ -67,6 +69,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: C
     metaToken: "", metaAppId: "", metaAppSecret: "",
     anthropicApiKey: "", uazapiServer: "",
     uazapiToken: "", uazapiAdminToken: "", appBaseUrl: "", uazapiWebhookForward: "",
+    googleClientId: "", googleClientSecret: "",
   });
   const [savingConfig, setSavingConfig] = useState(false);
   const [configMsg, setConfigMsg] = useState("");
@@ -465,6 +468,31 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: C
                   onChange={(v) => setGlobalConfig((c) => ({ ...c, uazapiWebhookForward: v }))}
                   placeholder="https://... (n8n ou outro)"
                 />
+              </div>
+
+              {/* Google Calendar OAuth */}
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">📅 Google Calendar (OAuth)</p>
+                <p className="text-xs text-slate-500">Crie um projeto no <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="underline text-blue-600">Google Cloud Console</a>, ative a API Calendar e crie credenciais OAuth 2.0 do tipo &quot;Aplicativo da Web&quot;. Cole o Client ID e Secret abaixo.</p>
+                <Field
+                  label="Client ID"
+                  value={globalConfig.googleClientId}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, googleClientId: v }))}
+                  placeholder="xxxx.apps.googleusercontent.com"
+                />
+                <Field
+                  label="Client Secret"
+                  type="password"
+                  value={globalConfig.googleClientSecret}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, googleClientSecret: v }))}
+                  placeholder="GOCSPX-..."
+                />
+                {globalConfig.googleClientId && globalConfig.googleClientSecret && (
+                  <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    ✓ Credenciais salvas. Adicione como URI de redirecionamento autorizado no Console Google:<br />
+                    <span className="font-mono break-all">{globalConfig.appBaseUrl || "https://sua-url"}/api/agent/google-auth/callback</span>
+                  </p>
+                )}
               </div>
 
               {/* App URL */}
