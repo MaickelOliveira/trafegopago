@@ -240,7 +240,7 @@ export async function POST(
     const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
 
     const matchSource = matchedFunnel ? "token-url" : fallbackByBodyToken ? "body-token" : fallbackByBodyName ? "body-name" : fallbackByUrlName ? "url-name" : "sem-funil";
-    console.log(`[webhook/${instanceId}] phone=${phone} cid=${cid} funnel=${funnel?.id ?? "none"}(${matchSource}) gemini=${geminiEnabled} uazToken=${instanceUazToken.slice(0, 8)}...`);
+    console.log(`[webhook/${instanceId}] phone=${phone} cid=${cid} funnel=${funnel?.id?.slice(0,8) ?? "none"}(${matchSource}) gemini=${geminiEnabled} wait=${waitSeconds}s uazToken=${instanceUazToken.slice(0, 8)}...`);
 
     // Batching: acumula mensagens antes de responder
     if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {
@@ -253,28 +253,37 @@ export async function POST(
         markProcessing(batch.id);
         const combined = batch.messages.join("\n");
         const h = getHistory(phone);
+        console.log(`[webhook/${instanceId}] Gemini batch iniciando para phone=${phone} cid=${cid} msgs=${batch.messages.length}`);
         runGeminiAgent(combined, h, cid, phone)
           .then(async ({ text: geminiText }) => {
             markDone(batch.id);
+            console.log(`[webhook/${instanceId}] Gemini respondeu (${geminiText?.length ?? 0} chars) para ${phone}`);
             if (geminiText) {
               addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
-              await sendText(instanceUazToken, phone, geminiText);
+              const sent = await sendText(instanceUazToken, phone, geminiText);
+              console.log(`[webhook/${instanceId}] sendText result=${sent} token=${instanceUazToken.slice(0,8)}... phone=${phone}`);
             }
           })
-          .catch(() => markDone(batch.id));
+          .catch((e) => {
+            console.error(`[webhook/${instanceId}] Gemini ERRO para phone=${phone}:`, e);
+            markDone(batch.id);
+          });
       }, waitSeconds * 1000);
 
       return NextResponse.json({ ok: true });
     }
 
-    // Resposta imediata
+    // Resposta imediata (waitSeconds = 0)
     if (!geminiEnabled || cid === "sem-cliente") return NextResponse.json({ ok: true });
 
+    console.log(`[webhook/${instanceId}] Gemini imediato iniciando para phone=${phone}`);
     const { text: geminiText } = await runGeminiAgent(text, history, cid, phone);
+    console.log(`[webhook/${instanceId}] Gemini imediato respondeu (${geminiText?.length ?? 0} chars)`);
     if (!geminiText) return NextResponse.json({ ok: true });
 
     addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
-    await sendText(instanceUazToken, phone, geminiText);
+    const sent = await sendText(instanceUazToken, phone, geminiText);
+    console.log(`[webhook/${instanceId}] sendText result=${sent}`);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
