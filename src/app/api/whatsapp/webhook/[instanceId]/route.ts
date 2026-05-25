@@ -26,6 +26,21 @@ import { getGeminiApiKey } from "@/lib/whatsapp-send";
 /**
  * Usa o Gemini para gerar um resumo em texto corrido da conversa.
  */
+/**
+ * Gera um resumo simples da conversa baseado nas últimas mensagens (sem IA).
+ * Usado como fallback quando o Gemini não está disponível.
+ */
+function buildBasicSummary(history: import("@/lib/conversations").ChatMessage[]): string {
+  if (history.length === 0) return "Sem histórico de conversa.";
+  const last8 = history.slice(-8);
+  const lines = last8.map((m) => {
+    const role = m.role === "user" ? "Lead" : "Agente";
+    const content = m.content.length > 300 ? m.content.slice(0, 300) + "…" : m.content;
+    return `*${role}:* ${content}`;
+  });
+  return `_Últimas mensagens da conversa:_\n\n${lines.join("\n\n")}`;
+}
+
 async function generateSummaryText(
   clientName: string,
   agCfg: AgentConfig,
@@ -43,29 +58,45 @@ async function generateSummaryText(
   if (transcript.length > 3000) transcript = transcript.slice(-3000);
 
   const apiKey = getGeminiApiKey(agCfg.geminiApiKey ?? undefined);
-  if (!apiKey) return "Chave Gemini não configurada — resumo indisponível.";
-  const genAI = new GoogleGenerativeAI(apiKey);
 
-  const prompt =
-    `Você é um assistente que resume conversas de WhatsApp para o gestor.\n\n` +
-    `Cliente/empresa: ${clientName}\n` +
-    `Motivo do resumo: ${motivo}\n\n` +
-    `Conversa:\n${transcript}\n\n` +
-    `Faça um resumo objetivo em texto corrido (máximo 5 linhas) destacando: ` +
-    `o que o lead quer, o estágio da conversa, dúvidas ou objeções levantadas, e próximo passo sugerido. ` +
-    `Não use marcadores ou listas, escreva em parágrafos curtos.`;
+  if (apiKey) {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const prompt =
+      `Você é um assistente que resume conversas de WhatsApp para o gestor.\n\n` +
+      `Cliente/empresa: ${clientName}\n` +
+      `Motivo do resumo: ${motivo}\n\n` +
+      `Conversa:\n${transcript}\n\n` +
+      `Faça um resumo objetivo em texto corrido (máximo 5 linhas) destacando: ` +
+      `o que o lead quer, o estágio da conversa, dúvidas ou objeções levantadas, e próximo passo sugerido. ` +
+      `Não use marcadores ou listas, escreva em parágrafos curtos.`;
 
-  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
-  for (const modelId of modelsToTry) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelId });
-      const result = await model.generateContent(prompt);
-      return result.response.text().trim();
-    } catch (err) {
-      console.warn(`[generateSummaryText] Falha com modelo ${modelId}:`, err);
+    const modelsToTry = [
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-latest",
+      "gemini-1.0-pro",
+    ];
+    for (const modelId of modelsToTry) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelId });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().trim();
+        if (text) {
+          console.log(`[generateSummaryText] Sucesso com modelo ${modelId}`);
+          return text;
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[generateSummaryText] Falha com modelo ${modelId}: ${errMsg}`);
+      }
     }
+    console.error("[generateSummaryText] Todos os modelos Gemini falharam — usando resumo básico");
+  } else {
+    console.error("[generateSummaryText] Chave Gemini não encontrada — usando resumo básico");
   }
-  return "Não foi possível gerar o resumo automaticamente.";
+
+  // Fallback: resumo básico das últimas mensagens (sem IA)
+  return buildBasicSummary(history);
 }
 
 /**
