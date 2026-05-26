@@ -79,16 +79,18 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
   const [importConnId, setImportConnId] = useState(metaConnections[0]?.id ?? "");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const selectedConn = metaConnections.find((c) => c.id === form.connId);
   const importConn = metaConnections.find((c) => c.id === importConnId);
 
   async function doImport() {
-    const wabaId = importWabaId.trim() || importConn?.phoneNumberId;
-    const token = importToken.trim() || importConn?.token;
+    const wabaId = importWabaId.trim();
+    const token = importToken.trim();
     if (!wabaId || !token) return;
     setImporting(true);
     setImportResult(null);
+    setImportError(null);
     const params = new URLSearchParams({ clientId, importWabaId: wabaId, importToken: token });
     if (importConn?.phoneNumberId) params.set("importPhoneId", importConn.phoneNumberId);
     const res = await fetch(`/api/waba/templates?${params}`);
@@ -96,6 +98,9 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
       const data = await res.json();
       setImportResult({ imported: data.imported });
       setTemplates(data.templates);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      setImportError(err?.details?.error?.message || err?.error || `Erro ${res.status} — verifique o WABA ID e o token.`);
     }
     setImporting(false);
   }
@@ -250,24 +255,38 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
               />
             </div>
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-slate-600 mb-1">Token de Acesso (deixe vazio para usar o da conexão)</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Token de Acesso Meta <span className="text-red-500">*</span>
+              </label>
               <input
                 value={importToken}
                 onChange={(e) => setImportToken(e.target.value)}
-                placeholder="Deixe vazio para usar o token da conexão selecionada"
+                placeholder="EAAxxxxx... (token do Sistema de Usuário do Meta Business)"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 bg-white"
               />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Obtenha em:{" "}
+                <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className="underline text-blue-500">
+                  Meta Business → Usuários do Sistema → Gerar token
+                </a>
+                {" "}com permissões <code>whatsapp_business_management</code>
+              </p>
             </div>
           </div>
+          {importError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+              ✕ {importError}
+            </div>
+          )}
           {importResult && (
             <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700 font-medium">
-              ✓ {importResult.imported} template(s) importado(s) com sucesso!
+              ✓ {importResult.imported} template(s) importado(s){importResult.imported === 0 ? " — todos já estavam cadastrados." : " com sucesso!"}
             </div>
           )}
           <div className="flex gap-2">
             <button
               onClick={doImport}
-              disabled={importing || (!importWabaId && !importConn?.phoneNumberId)}
+              disabled={importing || !importWabaId.trim() || !importToken.trim()}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition"
             >
               {importing ? "Importando..." : "Buscar e importar templates"}
