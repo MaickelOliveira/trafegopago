@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getFunnels, createFunnel } from "@/lib/funnels";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return NextResponse.json(getFunnels());
+  const clientId = req.nextUrl.searchParams.get("clientId");
+  const all = getFunnels();
+  const result = clientId ? all.filter(f => f.clientId === clientId) : all;
+  return NextResponse.json(result);
 }
 
 export async function POST(req: NextRequest) {
