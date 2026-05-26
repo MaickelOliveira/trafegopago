@@ -252,7 +252,11 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
     }
 
     // Tenta extrair de body.message (objeto singular com o texto)
-    const chatPhone = String(chat?.phone ?? "").replace(/\D/g, "");
+    // Tenta extrair phone do chat ou do próprio objeto de mensagem
+    const rawChatPhone =
+      String(chat?.phone ?? "").replace(/\D/g, "") ||
+      (msgObj ? String(msgObj.phone ?? msgObj.chatId ?? msgObj.chatid ?? "").replace("@s.whatsapp.net", "").replace("@lid", "").replace(/\D/g, "") : "");
+    const chatPhone = rawChatPhone;
     if (chatPhone) {
       let text = "";
       let fromMe = false;
@@ -281,29 +285,64 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
       }
 
       // Detecta tipo de mídia no caminho singular (body.message)
+      // UazapiGO envia: { type:"media", messageType:"AudioMessage", mediaType:"ptt",
+      //   message: { mimetype:"audio/ogg...", PTT:true, content:{URL:"..."} } }
       const singularSrc = msgObj ?? body;
-      const singularRawType = String(singularSrc.type ?? singularSrc.messageType ?? "").toLowerCase();
-      const singularMime = String(singularSrc.mimetype ?? singularSrc.mimeType ?? "").toLowerCase();
-      const singularMediaUrl = String(singularSrc.media ?? singularSrc.mediaUrl ?? singularSrc.url ?? singularSrc.link ?? "") || undefined;
-      let singularMsgType: string | undefined;
+      // O objeto aninhado body.message.message contém mimetype, PTT, content.URL
+      const nestedMsg = (singularSrc.message as Record<string, unknown> | undefined) ?? {};
+      const nestedContent = (nestedMsg.content as Record<string, unknown> | undefined) ?? {};
+
+      const singularType      = String(singularSrc.type ?? "").toLowerCase();       // "media"
+      const singularMsgType2  = String(singularSrc.messageType ?? "").toLowerCase(); // "audiomessage"
+      const singularMediaType = String(singularSrc.mediaType ?? "").toLowerCase();   // "ptt"
+      const singularMime = String(
+        singularSrc.mimetype ?? singularSrc.mimeType ??
+        nestedMsg.mimetype ?? nestedMsg.mimeType ?? ""
+      ).toLowerCase(); // "audio/ogg; codecs=opus"
+      const singularMediaUrl =
+        String(singularSrc.media ?? singularSrc.mediaUrl ?? singularSrc.url ?? singularSrc.link ??
+          nestedMsg.url ?? nestedMsg.directPath ?? nestedContent.URL ?? "") || undefined;
+      const isPtt = singularSrc.ptt === true || nestedMsg.PTT === true || nestedMsg.ptt === true;
+
+      let singularMsgTypeFinal: string | undefined;
       let singularMedia: string | undefined;
 
-      if (singularRawType === "audio" || singularRawType === "ptt" || singularRawType === "voice" ||
-          singularSrc.ptt === true || singularMime.startsWith("audio/")) {
-        singularMsgType = "audio";
+      const isAudio =
+        singularType === "audio" || singularType === "ptt" || singularType === "voice" ||
+        singularMsgType2 === "audiomessage" || singularMsgType2.includes("audio") ||
+        singularMediaType === "ptt" || singularMediaType === "audio" ||
+        isPtt || singularMime.startsWith("audio/");
+
+      const isImage =
+        !isAudio && (
+          singularType === "image" || singularMsgType2 === "imagemessage" ||
+          singularMediaType === "image" || singularMime.startsWith("image/")
+        );
+
+      const isVideo =
+        !isAudio && !isImage && (
+          singularType === "video" || singularMsgType2 === "videomessage" ||
+          singularMediaType === "video" || singularMime.startsWith("video/")
+        );
+
+      if (isAudio) {
+        singularMsgTypeFinal = "audio";
         singularMedia = singularMediaUrl;
-      } else if (singularRawType === "image" || singularMime.startsWith("image/")) {
-        singularMsgType = "image";
+      } else if (isImage) {
+        singularMsgTypeFinal = "image";
+        singularMedia = singularMediaUrl;
+      } else if (isVideo) {
+        singularMsgTypeFinal = "video";
         singularMedia = singularMediaUrl;
       } else if (!text && singularMediaUrl) {
-        // Fallback: sem texto e tem mídia → áudio
-        singularMsgType = "audio";
+        // Fallback genérico: sem texto mas tem URL de mídia → assume áudio
+        singularMsgTypeFinal = "audio";
         singularMedia = singularMediaUrl;
       }
 
-      console.log(`[webhook/extractMessage/singular] rawType=${singularRawType} mime=${singularMime} msgType=${singularMsgType} mediaUrl=${singularMedia?.slice(0, 60) ?? "none"}`);
+      console.log(`[webhook/extractMessage/singular] type=${singularType} messageType=${singularMsgType2} mediaType=${singularMediaType} mime=${singularMime} ptt=${isPtt} detected=${singularMsgTypeFinal} mediaUrl=${singularMedia?.slice(0, 60) ?? "none"}`);
 
-      return { phone: chatPhone, text, fromMe, msgType: singularMsgType, mediaUrl: singularMedia };
+      return { phone: chatPhone, text, fromMe, msgType: singularMsgTypeFinal, mediaUrl: singularMedia };
     }
   }
 
