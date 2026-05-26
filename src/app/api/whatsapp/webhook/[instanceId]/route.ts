@@ -218,18 +218,33 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
       if (!text && msg.caption) text = String(msg.caption);
 
       // Detecta tipo de mídia (audio, image, video, ptt)
-      const rawType = String(msg.type ?? "").toLowerCase();
+      const rawType = String(msg.type ?? msg.messageType ?? "").toLowerCase();
+      const mimetype = String(msg.mimetype ?? msg.mimeType ?? "").toLowerCase();
       let msgType: string | undefined;
       let mediaUrl: string | undefined;
-      if (rawType === "audio" || rawType === "ptt") {
+      const possibleMediaUrl = String(msg.media ?? msg.mediaUrl ?? msg.url ?? msg.link ?? "") || undefined;
+
+      if (rawType === "audio" || rawType === "ptt" || rawType === "voice" ||
+          msg.ptt === true || mimetype.startsWith("audio/")) {
         msgType = "audio";
-        mediaUrl = String(msg.media ?? msg.mediaUrl ?? msg.url ?? "") || undefined;
-      } else if (rawType === "image") {
+        mediaUrl = possibleMediaUrl;
+      } else if (rawType === "image" || mimetype.startsWith("image/")) {
         msgType = "image";
-        mediaUrl = String(msg.media ?? msg.mediaUrl ?? msg.url ?? "") || undefined;
-      } else if (rawType === "video") {
+        mediaUrl = possibleMediaUrl;
+      } else if (rawType === "video" || mimetype.startsWith("video/")) {
         msgType = "video";
+        mediaUrl = possibleMediaUrl;
+      } else if (rawType === "document" || rawType === "file") {
+        msgType = "document";
       }
+
+      // Fallback: texto vazio mas tem URL de mídia → trata como áudio
+      if (!text && !msgType && possibleMediaUrl) {
+        msgType = "audio";
+        mediaUrl = possibleMediaUrl;
+      }
+
+      console.log(`[webhook/extractMessage] rawType=${rawType} mimetype=${mimetype} msgType=${msgType} ptt=${msg.ptt} mediaUrl=${mediaUrl?.slice(0, 60) ?? "none"}`);
 
       if (phone) return { phone, text, fromMe, msgType, mediaUrl };
     }
