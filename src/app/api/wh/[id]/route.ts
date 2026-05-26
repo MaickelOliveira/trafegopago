@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getWebhookById, incrementWebhookCount } from "@/lib/webhooks";
 import { getFunnelById } from "@/lib/funnels";
 import { createLead, getLeadByPhone } from "@/lib/leads";
+import { runAutomationsForEvent } from "@/lib/crm-automations";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +97,8 @@ export async function POST(
       ai: null,
     });
     incrementWebhookCount(id);
+    // Dispara automações CRM de lead_created (fire-and-forget)
+    runAutomationsForEvent("lead_created", lead);
   }
 
   return NextResponse.json({ ok: true, leadId: lead.id, name: lead.name, phone: lead.phone });

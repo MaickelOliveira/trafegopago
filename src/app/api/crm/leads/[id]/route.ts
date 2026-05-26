@@ -4,6 +4,7 @@ import { getLeadById, updateLead, deleteLead } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { getClientById } from "@/lib/clients";
 import { sendCapiEvent } from "@/lib/meta-capi";
+import { runAutomationsForEvent } from "@/lib/crm-automations";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -44,6 +45,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         }).catch((e) => console.error("[Meta CAPI]", e));
       }
     }
+
+    // Dispara automações CRM de column_changed (fire-and-forget)
+    runAutomationsForEvent("column_changed", lead, { toColumnId: body.status });
   }
 
   return NextResponse.json(lead);
