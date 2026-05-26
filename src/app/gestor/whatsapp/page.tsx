@@ -5,6 +5,8 @@ import { getClients, getConfig, getAllAgentConfigs } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { WhatsAppManagerView } from "@/components/whatsapp/WhatsAppManagerView";
 
+export const dynamic = "force-dynamic";
+
 export default async function WhatsAppManagerPage() {
   const session = await getSession();
   if (!session || session.role !== "manager") redirect("/login");

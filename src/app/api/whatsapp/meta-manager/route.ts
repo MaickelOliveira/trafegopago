@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getFunnels, updateFunnel } from "@/lib/funnels";
+import { getFunnels, updateFunnel, createFunnel } from "@/lib/funnels";
 import { getClients, upsertClient } from "@/lib/clients";
 
 export type MetaConnectionEnriched = {
@@ -80,10 +80,19 @@ export async function POST(req: NextRequest) {
     linkAgent?: boolean;
   };
 
-  const { funnelId, phoneNumberId, token, verifyToken, clientId, linkAgent } = body;
+  const { funnelId: rawFunnelId, phoneNumberId, token, verifyToken, clientId, linkAgent } = body;
 
-  if (!funnelId || !phoneNumberId?.trim() || !token?.trim()) {
+  if (!rawFunnelId || !phoneNumberId?.trim() || !token?.trim()) {
     return NextResponse.json({ error: "funnelId, phoneNumberId e token são obrigatórios" }, { status: 400 });
+  }
+
+  // Auto-create funnel if value is "auto:clientId"
+  let funnelId = rawFunnelId;
+  if (funnelId.startsWith("auto:")) {
+    const autoClientId = funnelId.slice(5);
+    const newFunnel = createFunnel("Funil Principal");
+    updateFunnel(newFunnel.id, { clientId: autoClientId });
+    funnelId = newFunnel.id;
   }
 
   const funnels = getFunnels();
@@ -134,8 +143,17 @@ export async function PUT(req: NextRequest) {
     linkAgent?: boolean;
   };
 
-  const { connId, newFunnelId, clientId, linkAgent } = body;
+  const { connId, newFunnelId: rawNewFunnelId, clientId, linkAgent } = body;
   if (!connId) return NextResponse.json({ error: "connId obrigatório" }, { status: 400 });
+
+  // Auto-create funnel if value is "auto:clientId"
+  let newFunnelId = rawNewFunnelId;
+  if (newFunnelId?.startsWith("auto:")) {
+    const autoClientId = newFunnelId.slice(5);
+    const created = createFunnel("Funil Principal");
+    updateFunnel(created.id, { clientId: autoClientId });
+    newFunnelId = created.id;
+  }
 
   const funnels = getFunnels();
 

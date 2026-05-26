@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClients, upsertClient } from "@/lib/clients";
-import { getFunnels, updateFunnel } from "@/lib/funnels";
+import { getFunnels, updateFunnel, createFunnel } from "@/lib/funnels";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -39,9 +39,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 2. Add to new funnel (if provided)
-  if (funnelId) {
-    const targetFunnel = getFunnels().find(f => f.id === funnelId);
+  // 2. Resolve funnelId — auto-create if value is "auto:clientId"
+  let resolvedFunnelId = funnelId;
+  if (resolvedFunnelId?.startsWith("auto:")) {
+    const autoClientId = resolvedFunnelId.slice(5);
+    const newFunnel = createFunnel("Funil Principal");
+    updateFunnel(newFunnel.id, { clientId: autoClientId });
+    resolvedFunnelId = newFunnel.id;
+  }
+
+  // 3. Add to new funnel (if provided)
+  if (resolvedFunnelId) {
+    const targetFunnel = getFunnels().find(f => f.id === resolvedFunnelId);
     if (!targetFunnel) {
       return NextResponse.json({ error: "Funil não encontrado" }, { status: 404 });
     }
@@ -51,7 +60,7 @@ export async function POST(req: NextRequest) {
       type: "uazapi" as const,
       uazapiToken: instanceToken,
     };
-    updateFunnel(funnelId, {
+    updateFunnel(resolvedFunnelId, {
       connections: [...(targetFunnel.connections ?? []), newConn],
     });
   }
@@ -81,5 +90,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, funnelId, clientId });
+  return NextResponse.json({ ok: true, funnelId: resolvedFunnelId, clientId });
 }

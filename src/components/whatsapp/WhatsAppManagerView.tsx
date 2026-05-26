@@ -36,6 +36,37 @@ function ClientAgentSelect({ clients, value, onChange, accentColor = "green" }: 
   );
 }
 
+function ClientFunnelSelect({ clients, funnels, value, onChange, accentColor = "green" }: {
+  clients: ClientOption[];
+  funnels: FunnelOption[];
+  value: string;
+  onChange: (v: string) => void;
+  accentColor?: "green" | "blue";
+}) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className={`w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-${accentColor}-400`}
+    >
+      <option value="">— Sem vínculo —</option>
+      {clients.map(c => {
+        const clientFunnels = funnels.filter(f => f.clientId === c.id);
+        return (
+          <optgroup key={c.id} label={c.name}>
+            {clientFunnels.length > 0
+              ? clientFunnels.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))
+              : <option value={`auto:${c.id}`}>Funil Principal (criar automaticamente)</option>
+            }
+          </optgroup>
+        );
+      })}
+    </select>
+  );
+}
+
 // ── Modal states ─────────────────────────────────────────────────
 type ModalState =
   | { type: "none" }
@@ -612,13 +643,7 @@ export function WhatsAppManagerView({
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
-              <select value={linkFunnelId} onChange={e => setLinkFunnelId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400">
-                <option value="">— Sem vínculo —</option>
-                {funnels.map(f => (
-                  <option key={f.id} value={f.id}>{f.name}{f.clientId ? ` (${clients.find(c => c.id === f.clientId)?.name ?? f.clientId})` : ""}</option>
-                ))}
-              </select>
+              <ClientFunnelSelect clients={clients} funnels={funnels} value={linkFunnelId} onChange={setLinkFunnelId} accentColor="green" />
               <p className="text-xs text-slate-400 mt-1">Mensagens recebidas criarão leads neste funil.</p>
             </div>
             <div>
@@ -933,13 +958,7 @@ function MetaApiView({ funnels, clients, appBaseUrl }: { funnels: FunnelOption[]
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">🎯 Funil do CRM</label>
-              <select value={addFunnelId} onChange={e => setAddFunnelId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400">
-                <option value="">— Selecione um funil —</option>
-                {funnels.map(f => (
-                  <option key={f.id} value={f.id}>{f.name}{f.clientId ? ` (${clients.find(c => c.id === f.clientId)?.name ?? f.clientId})` : ""}</option>
-                ))}
-              </select>
+              <ClientFunnelSelect clients={clients} funnels={funnels} value={addFunnelId} onChange={setAddFunnelId} accentColor="blue" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
@@ -971,13 +990,7 @@ function MetaApiView({ funnels, clients, appBaseUrl }: { funnels: FunnelOption[]
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
-              <select value={linkFunnelId} onChange={e => setLinkFunnelId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400">
-                <option value="">— Sem vínculo —</option>
-                {funnels.map(f => (
-                  <option key={f.id} value={f.id}>{f.name}{f.clientId ? ` (${clients.find(c => c.id === f.clientId)?.name ?? f.clientId})` : ""}</option>
-                ))}
-              </select>
+              <ClientFunnelSelect clients={clients} funnels={funnels} value={linkFunnelId} onChange={setLinkFunnelId} accentColor="blue" />
               <p className="text-xs text-slate-400 mt-1">Mensagens recebidas criarão leads neste funil.</p>
             </div>
             <div>
