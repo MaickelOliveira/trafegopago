@@ -104,6 +104,7 @@ export function CrmClient({ clients, initialLeads, initialFunnels, selectedClien
         </div>
         <WhatsAppStatus
           clients={clients}
+          clientId={selectedClient}
           funnels={clientFunnels.map(f => ({ id: f.id, name: f.name, clientId: f.clientId, whatsappPhone: f.whatsappPhone }))}
         />
       </div>

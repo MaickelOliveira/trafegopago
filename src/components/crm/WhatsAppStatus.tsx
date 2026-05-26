@@ -6,9 +6,10 @@ type InstStatus = { status: string; phone: string | null; name: string | null; q
 type Instances = Record<string, InstStatus>;
 type FunnelInfo = { id: string; name: string; clientId?: string | null; connections?: FunnelConnection[] };
 
-export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
+export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }: {
   clients: { id: string; name: string }[];
   funnels?: FunnelInfo[];
+  clientId?: string;
   server?: string; token?: string;
 }) {
   const [instances, setInstances] = useState<Instances>({});
@@ -32,7 +33,8 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
     fetchFunnels();
     const t = setInterval(fetchInstances, 8000);
     return () => clearInterval(t);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
 
   // Refetch funis quando painel abre
   useEffect(() => {
@@ -63,7 +65,8 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
 
   async function fetchFunnels() {
     try {
-      const res = await fetch("/api/crm/funnels");
+      const url = clientId ? `/api/crm/funnels?clientId=${encodeURIComponent(clientId)}` : "/api/crm/funnels";
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setFunnels(data.map((f: FunnelInfo) => ({ id: f.id, name: f.name, clientId: f.clientId, connections: f.connections ?? [] })));
