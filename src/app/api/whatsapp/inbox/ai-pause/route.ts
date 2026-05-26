@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setAiPaused } from "@/lib/conversations";
-import { upsertLeadByPhone } from "@/lib/leads";
+import { getLeadByPhone, updateLead } from "@/lib/leads";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,8 @@ export async function POST(req: NextRequest) {
   // Atualiza os dois storages em sincronia
   setAiPaused(cleanPhone, paused);
   if (clientId) {
-    upsertLeadByPhone(clientId, cleanPhone, { aiPaused: paused });
+    const existingLead = getLeadByPhone(clientId, cleanPhone);
+    if (existingLead) updateLead(existingLead.id, { aiPaused: paused });
   }
 
   return NextResponse.json({ ok: true, aiPaused: paused });
