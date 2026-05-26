@@ -14,8 +14,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
-import { getHistory, addMessage, getAiPaused } from "@/lib/conversations";
-import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
+import { getHistory, addMessage, getAiPaused, setAiPaused } from "@/lib/conversations";
+import { upsertLeadByPhone, getLeadByPhone, updateLead } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
 import type { AgentMedia, AgentConfig } from "@/lib/clients";
@@ -186,7 +186,7 @@ import { processKanbanActions } from "@/lib/kanban-agent";
 type Body = Record<string, unknown>;
 
 // ── Extrai mensagem em diferentes formatos ──────────────────────────────────
-function extractMessage(body: Body): { phone: string; text: string; fromMe: boolean } | null {
+function extractMessage(body: Body): { phone: string; text: string; fromMe: boolean; msgType?: string; mediaUrl?: string } | null {
   // ── Formato UazapiGO: { EventType:"messages", chat:{phone}, messages:[{body,fromMe}] } ──
   const eventType = (body.EventType ?? body.eventType) as string | undefined;
   const chat = body.chat as Record<string, unknown> | undefined;
@@ -217,7 +217,21 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
       }
       if (!text && msg.caption) text = String(msg.caption);
 
-      if (phone) return { phone, text, fromMe };
+      // Detecta tipo de mídia (audio, image, video, ptt)
+      const rawType = String(msg.type ?? "").toLowerCase();
+      let msgType: string | undefined;
+      let mediaUrl: string | undefined;
+      if (rawType === "audio" || rawType === "ptt") {
+        msgType = "audio";
+        mediaUrl = String(msg.media ?? msg.mediaUrl ?? msg.url ?? "") || undefined;
+      } else if (rawType === "image") {
+        msgType = "image";
+        mediaUrl = String(msg.media ?? msg.mediaUrl ?? msg.url ?? "") || undefined;
+      } else if (rawType === "video") {
+        msgType = "video";
+      }
+
+      if (phone) return { phone, text, fromMe, msgType, mediaUrl };
     }
 
     // Tenta extrair de body.message (objeto singular com o texto)
@@ -320,7 +334,7 @@ export async function POST(
       return NextResponse.json({ ok: true });
     }
 
-    const { phone, text, fromMe } = extracted;
+    const { phone, text, fromMe, msgType, mediaUrl } = extracted;
 
     // ── Encontra funil + cliente pelo instanceId (token UUID na URL) ──────────
     // O instanceId na URL É o token UazapiGO da instância (UUID opaco)
@@ -398,26 +412,28 @@ export async function POST(
       ...(isNew ? { status: entradaColumn } : {}),
     });
 
-    if (!text.trim()) return NextResponse.json({ ok: true });
+    if (!text.trim() && !msgType) return NextResponse.json({ ok: true });
 
     // ── Salva mensagem no histórico ───────────────────────────────────────
     const ts = Date.now();
-    addMessage(phone, { role: fromMe ? "assistant" : "user", content: text, ts }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
+    const msgContent = text || (msgType ? `[${msgType}]` : "");
+    addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: (msgType === "audio" || msgType === "image") ? msgType : undefined, mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
 
-    // Mensagem enviada por você (gestor)
+    // Mensagem enviada por você (gestor via WhatsApp)
     if (fromMe) {
       if (cid !== "sem-cliente") {
         const agCfg = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
         const resumeKeyword = agCfg?.aiResumeKeyword?.trim();
-        // Palavra-chave de retomada: reativa a IA sem pausar
-        if (resumeKeyword && text.trim().toLowerCase() === resumeKeyword.toLowerCase()) {
-          upsertLeadByPhone(cid, phone, { funnelId, aiPaused: false });
-          console.log(`[webhook/${instanceId}] IA REATIVADA para phone=${phone} via keyword`);
+        const isPausing = !resumeKeyword || text.trim().toLowerCase() !== resumeKeyword.toLowerCase();
+        // Busca o lead real pelo telefone (sem depender de funnelId)
+        const existingLead = getLeadByPhone(cid, phone);
+        if (existingLead) {
+          updateLead(existingLead.id, { aiPaused: isPausing });
         } else {
-          // Qualquer outra mensagem do gestor pausa a IA automaticamente
-          upsertLeadByPhone(cid, phone, { funnelId, aiPaused: true });
-          console.log(`[webhook/${instanceId}] IA PAUSADA para phone=${phone} (mensagem do gestor)`);
+          upsertLeadByPhone(cid, phone, { funnelId, aiPaused: isPausing });
         }
+        setAiPaused(phone, isPausing);
+        console.log(`[webhook/${instanceId}] IA ${isPausing ? "PAUSADA" : "REATIVADA"} para phone=${phone} (mensagem do gestor via WhatsApp)`);
       }
       return NextResponse.json({ ok: true });
     }
