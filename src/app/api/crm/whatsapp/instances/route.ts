@@ -9,10 +9,36 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const instances = await listInstances();
-    return NextResponse.json(instances);
+    const rawInstances = await listInstances();
+    const record: Record<string, { status: string; phone: string | null; name: string | null }> = {};
+
+    for (const raw of rawInstances as Record<string, unknown>[]) {
+      const inst = (raw.instance ?? raw) as Record<string, unknown>;
+      const st   = (raw.status   ?? {})  as Record<string, unknown>;
+
+      // Nome da instância — chave usada pelo componente (conn.id = instanceName)
+      const name = String(inst.name ?? inst.id ?? raw.name ?? raw.id ?? "").trim();
+      if (!name) continue;
+
+      const connected =
+        st.connected === true ||
+        raw.connected === true ||
+        String(inst.status ?? "").toLowerCase() === "connected" ||
+        String(inst.state  ?? "").toLowerCase() === "open";
+
+      const rawPhone = String(inst.owner ?? inst.phone ?? inst.number ?? st.jid ?? "");
+      const phone = rawPhone.replace(/\D/g, "").replace(/@.*/, "") || null;
+
+      record[name] = {
+        status: connected ? "connected" : "disconnected",
+        phone,
+        name: String(inst.pushName ?? inst.profileName ?? name),
+      };
+    }
+
+    return NextResponse.json(record);
   } catch {
-    return NextResponse.json([]);
+    return NextResponse.json({});
   }
 }
 
