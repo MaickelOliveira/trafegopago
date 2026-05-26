@@ -3,6 +3,7 @@ import { getFunnels } from "@/lib/funnels";
 import { sendText, sendMedia } from "@/lib/uazapi";
 import { sendMessageDirect } from "@/lib/whatsapp-send";
 import { addMessage, setAiPaused } from "@/lib/conversations";
+import { upsertLeadByPhone } from "@/lib/leads";
 
 export const dynamic = "force-dynamic";
 
@@ -56,8 +57,9 @@ export async function POST(req: NextRequest) {
   if (ok) {
     // Salva no histórico como mensagem do assistente
     addMessage(cleanPhone, { role: "assistant", content: type === "text" ? content : `[${type}]`, ts, type: type === "video" ? undefined : type }, clientId, { connId: conn.id });
-    // Pausa a IA para esta conversa (gestor assumiu o atendimento)
+    // Pausa a IA nos dois storages (conversations.json para o inbox, leads.json para o CRM)
     setAiPaused(cleanPhone, true);
+    upsertLeadByPhone(clientId, cleanPhone, { aiPaused: true });
   }
 
   return NextResponse.json({ ok });
