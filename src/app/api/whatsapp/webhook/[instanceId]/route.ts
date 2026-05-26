@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
-import { getHistory, addMessage } from "@/lib/conversations";
+import { getHistory, addMessage, getAiPaused } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
@@ -448,7 +448,7 @@ export async function POST(
 
     // Verifica se IA está pausada para esta conversa
     const currentLead = getLeadByPhone(cid, phone);
-    if (currentLead?.aiPaused) return NextResponse.json({ ok: true });
+    if (currentLead?.aiPaused || getAiPaused(phone)) return NextResponse.json({ ok: true });
 
     // Agente Kanban — atualiza CRM (fire-and-forget)
     if (cid !== "sem-cliente") {

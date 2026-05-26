@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
 import { sendText, sendMedia } from "@/lib/uazapi";
 import { sendMessageDirect } from "@/lib/whatsapp-send";
-import { addMessage } from "@/lib/conversations";
-import { upsertLeadByPhone } from "@/lib/leads";
+import { addMessage, setAiPaused } from "@/lib/conversations";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +57,7 @@ export async function POST(req: NextRequest) {
     // Salva no histórico como mensagem do assistente
     addMessage(cleanPhone, { role: "assistant", content: type === "text" ? content : `[${type}]`, ts, type: type === "video" ? undefined : type }, clientId, { connId: conn.id });
     // Pausa a IA para esta conversa (gestor assumiu o atendimento)
-    upsertLeadByPhone(clientId, cleanPhone, { aiPaused: true });
+    setAiPaused(cleanPhone, true);
   }
 
   return NextResponse.json({ ok });

@@ -10,6 +10,7 @@ type Conversation = {
   contactName?: string | null;
   lastActivity: number;
   unread?: boolean;
+  aiPaused?: boolean;
 };
 
 type ConversationStore = Record<string, Conversation>;
@@ -52,6 +53,7 @@ export function getAllConversationsByClientId(clientId: string): Array<{
   lastMessage: ChatMessage | null;
   lastActivity: number;
   unread: boolean;
+  aiPaused: boolean;
 }> {
   const all = load();
   const result = [];
@@ -66,6 +68,7 @@ export function getAllConversationsByClientId(clientId: string): Array<{
       lastMessage,
       lastActivity: conv.lastActivity,
       unread: conv.unread ?? false,
+      aiPaused: conv.aiPaused ?? false,
     });
   }
   return result.sort((a, b) => b.lastActivity - a.lastActivity);
@@ -77,6 +80,18 @@ export function markAsRead(phone: string) {
     all[phone].unread = false;
     save(all);
   }
+}
+
+export function setAiPaused(phone: string, paused: boolean) {
+  const all = load();
+  if (all[phone]) {
+    all[phone].aiPaused = paused;
+    save(all);
+  }
+}
+
+export function getAiPaused(phone: string): boolean {
+  return load()[phone]?.aiPaused ?? false;
 }
 
 export function addMessage(

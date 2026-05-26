@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setAiPaused } from "@/lib/conversations";
 import { upsertLeadByPhone } from "@/lib/leads";
 
 export const dynamic = "force-dynamic";
@@ -10,12 +11,16 @@ export async function POST(req: NextRequest) {
     paused: boolean;
   };
 
-  if (!phone || !clientId) {
-    return NextResponse.json({ error: "phone e clientId são obrigatórios" }, { status: 400 });
+  if (!phone) {
+    return NextResponse.json({ error: "phone é obrigatório" }, { status: 400 });
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
-  upsertLeadByPhone(clientId, cleanPhone, { aiPaused: paused });
+  // Atualiza os dois storages em sincronia
+  setAiPaused(cleanPhone, paused);
+  if (clientId) {
+    upsertLeadByPhone(clientId, cleanPhone, { aiPaused: paused });
+  }
 
   return NextResponse.json({ ok: true, aiPaused: paused });
 }
