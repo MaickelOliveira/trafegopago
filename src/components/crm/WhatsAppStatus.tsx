@@ -133,7 +133,9 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [] }: {
     setFunnels(prev => prev.map(f => f.id === funnelId ? { ...f, connections } : f));
   }
 
-  const totalConnected = Object.values(instances).filter(i => i?.status === "connected").length;
+  // Conta apenas instâncias dos funis visíveis (não todas do servidor)
+  const funnelConnIds = funnels.flatMap(f => f.connections ?? []).map(c => c.id);
+  const totalConnected = funnelConnIds.filter(id => instances[id]?.status === "connected").length;
 
   return (
     <div className="relative" ref={panelRef}>
