@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getHistory, addMessage, getClientId } from "@/lib/conversations";
-import { getLeadByPhone } from "@/lib/leads";
+import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { sendText } from "@/lib/uazapi";
-import { getConfig } from "@/lib/clients";
+import { getConfig, getClientById } from "@/lib/clients";
 
 type Params = Promise<{ phone: string }>;
 
@@ -32,10 +32,12 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
 
   // Busca token da instância do funil do lead para enviar pela instância correta
   let token: string | null = null;
+  let funnelId: string | undefined;
   if (clientId) {
     const lead = getLeadByPhone(clientId, normalized);
-    if (lead?.funnelId) {
-      const funnel = getFunnelById(lead.funnelId);
+    funnelId = lead?.funnelId;
+    if (funnelId) {
+      const funnel = getFunnelById(funnelId);
       const conn = funnel?.connections?.[0];
       token = conn?.uazapiToken ?? null;
     }
@@ -49,6 +51,17 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     await sendText(token, normalized, message.trim());
   } else {
     console.warn("[conversations/send] sem token para enviar ao phone:", normalized);
+  }
+
+  // Pausa a IA — mesma lógica do fromMe no webhook
+  if (clientId) {
+    const agCfg = getClientById(clientId)?.agentConfig;
+    const resumeKeyword = agCfg?.aiResumeKeyword?.trim();
+    if (resumeKeyword && message.trim().toLowerCase() === resumeKeyword.toLowerCase()) {
+      upsertLeadByPhone(clientId, normalized, { funnelId, aiPaused: false });
+    } else {
+      upsertLeadByPhone(clientId, normalized, { funnelId, aiPaused: true });
+    }
   }
 
   addMessage(normalized, { role: "assistant", content: message.trim(), ts: Date.now() }, clientId);
