@@ -34,6 +34,7 @@ type WaConnection = {
 type AgentCfg = {
   enabled: boolean;
   followUpEnabled: boolean;
+  name?: string;
   geminiApiKey?: string;
   googleCalendarId?: string;
   summaryPhone?: string;
@@ -254,8 +255,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       if (selectedConnId) {
         setConfigsSummary(prev => {
           const exists = prev.some(s => s.whatsappConnectionId === selectedConnId);
-          if (exists) return prev.map(s => s.whatsappConnectionId === selectedConnId ? { ...s, enabled: cfg.enabled, followUpEnabled: cfg.followUpEnabled } : s);
-          return [...prev, { whatsappConnectionId: selectedConnId, enabled: cfg.enabled, followUpEnabled: cfg.followUpEnabled }];
+          if (exists) return prev.map(s => s.whatsappConnectionId === selectedConnId ? { ...s, enabled: cfg.enabled, followUpEnabled: cfg.followUpEnabled, name: cfg.name } : s);
+          return [...prev, { whatsappConnectionId: selectedConnId, enabled: cfg.enabled, followUpEnabled: cfg.followUpEnabled, name: cfg.name }];
         });
       }
     } else {
@@ -293,7 +294,9 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             <option value="">⚙ Configuração global</option>
             {waConnections.map((conn) => {
               const summary = configsSummary.find(s => s.whatsappConnectionId === conn.id);
-              const label = conn.phone ? `+${conn.phone}` : conn.id.slice(0, 12);
+              const phone = conn.phone ? `+${conn.phone}` : conn.id.slice(0, 12);
+              const agentName = summary?.name;
+              const label = agentName ? `${agentName} (${phone})` : phone;
               const badge = summary?.enabled ? " ✓" : "";
               return (
                 <option key={conn.id} value={conn.id}>
@@ -459,6 +462,13 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       {/* Instruções do agente */}
       <div className="rounded-2xl border border-violet-200 bg-white p-5 space-y-4 shadow-sm">
         <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Instruções do Agente</p>
+        <Field
+          label="Nome do agente"
+          value={cfg.name ?? ""}
+          onChange={(v) => setCfg((c) => ({ ...c, name: v }))}
+          placeholder="Ex: Ana — Atendimento Nexo"
+          hint="Nome exibido no seletor de número acima para identificar este agente."
+        />
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
             Como o agente deve se comportar

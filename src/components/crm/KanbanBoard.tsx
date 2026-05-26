@@ -364,7 +364,14 @@ export function KanbanBoard({
 }) {
   const [leads, setLeads]     = useState<Lead[]>(initialLeads);
   const [funnels, setFunnels] = useState<Funnel[]>(initialFunnels);
-  const [activeFunnel, setActiveFunnel] = useState<string>(initialFunnels[0]?.id ?? "default");
+  const [activeFunnel, setActiveFunnel] = useState<string>(() => {
+    // Persiste o funil selecionado por cliente no localStorage
+    if (typeof window !== "undefined" && selectedClient) {
+      const saved = localStorage.getItem(`crm_funnel_${selectedClient}`);
+      if (saved && initialFunnels.some(f => f.id === saved)) return saved;
+    }
+    return initialFunnels[0]?.id ?? "default";
+  });
   const filterClient = selectedClient ?? clients[0]?.id ?? "all";
   const [search, setSearch]   = useState("");
   const [selected, setSelected]     = useState<Lead | null>(null);
@@ -637,7 +644,10 @@ export function KanbanBoard({
           {funnels.map((f) => (
             <button
               key={f.id}
-              onClick={() => setActiveFunnel(f.id)}
+              onClick={() => {
+                setActiveFunnel(f.id);
+                if (selectedClient) localStorage.setItem(`crm_funnel_${selectedClient}`, f.id);
+              }}
               className={clsx(
                 "rounded-md px-3 py-1.5 text-sm font-medium transition",
                 activeFunnel === f.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
