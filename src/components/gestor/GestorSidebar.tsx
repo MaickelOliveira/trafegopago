@@ -186,6 +186,19 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
                 <span className="text-base leading-none">🤖</span>
                 Agente IA
               </Link>
+
+              <Link
+                href={`/gestor/${activeClient.id}/inbox`}
+                className={clsx(
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition",
+                  pathname.startsWith(`/gestor/${activeClient.id}/inbox`)
+                    ? "bg-green-50 text-green-700 font-medium"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <span className="text-base leading-none">💬</span>
+                Mensagens
+              </Link>
             </nav>
           </div>
         </>

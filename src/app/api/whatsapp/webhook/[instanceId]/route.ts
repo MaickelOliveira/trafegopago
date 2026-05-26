@@ -402,7 +402,7 @@ export async function POST(
 
     // ── Salva mensagem no histórico ───────────────────────────────────────
     const ts = Date.now();
-    addMessage(phone, { role: fromMe ? "assistant" : "user", content: text, ts }, clientId);
+    addMessage(phone, { role: fromMe ? "assistant" : "user", content: text, ts }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
 
     // Mensagem enviada por você (gestor)
     if (fromMe) {
@@ -484,7 +484,7 @@ export async function POST(
             const agCfg = getAgentConfigForConnection(getClientById(cid)!, connId);
             const clientName = getClientById(cid)?.name ?? cid;
             if (geminiText) {
-              addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
+              addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
               const { clean, names } = extractMediaMarkers(geminiText);
               const textToSend = clean || geminiText;
               const chunks = agCfg?.splitMessages
@@ -521,7 +521,7 @@ export async function POST(
     if (!geminiText && geminiActions.length === 0) return NextResponse.json({ ok: true });
 
     if (geminiText) {
-      addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
+      addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
       const { clean, names } = extractMediaMarkers(geminiText);
       const textToSend = clean || geminiText;
       const chunks = agentCfg?.splitMessages

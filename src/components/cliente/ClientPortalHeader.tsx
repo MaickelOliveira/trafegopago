@@ -97,6 +97,17 @@ export function ClientPortalHeader({
           >
             📋 CRM
           </Link>
+          <Link
+            href="/cliente/inbox"
+            className={clsx(
+              "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
+              pathname.startsWith("/cliente/inbox")
+                ? "bg-blue-50 text-blue-700 font-medium"
+                : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            💬 Mensagens
+          </Link>
         </nav>
       </div>
       <button

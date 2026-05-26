@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
         });
 
         // ── Histórico ────────────────────────────────────────────────────
-        addMessage(phone, { role: "user", content: text, ts }, clientId);
+        addMessage(phone, { role: "user", content: text, ts }, clientId, { connId: connId ?? undefined, contactName: pushName !== phone ? pushName : undefined });
 
         // ── Verifica se IA está pausada ──────────────────────────────────
         const currentLead = getLeadByPhone(cid, phone);
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
         // ── Helper: envia resposta via Meta API ──────────────────────────
         async function sendMetaReply(replyText: string) {
           if (!replyText || !metaToken || !phoneNumberId) return;
-          addMessage(phone, { role: "assistant", content: replyText, ts: Date.now() }, clientId);
+          addMessage(phone, { role: "assistant", content: replyText, ts: Date.now() }, clientId, { connId: connId ?? undefined });
           await sendMessageDirect(phone, replyText, phoneNumberId, metaToken);
         }
 
