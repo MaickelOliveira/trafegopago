@@ -91,11 +91,15 @@ function Field({ label, value, onChange, placeholder, type = "text", hint }: {
   );
 }
 
+type ConfigSummary = { whatsappConnectionId?: string; enabled: boolean; followUpEnabled: boolean; name?: string };
+
 export function AgentView({ clientId, clientName }: { clientId: string; clientName: string }) {
   const searchParams = useSearchParams();
   const [cfg, setCfg] = useState<AgentCfg>({
     enabled: false, followUpEnabled: false, followUps: [],
   });
+  const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
+  const [configsSummary, setConfigsSummary] = useState<ConfigSummary[]>([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [testing, setTesting] = useState(false);
@@ -125,14 +129,19 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     setLoadingCalendars(false);
   }
 
+  async function loadConnConfig(connId: string | null) {
+    const url = connId
+      ? `/api/agent?clientId=${clientId}&connId=${encodeURIComponent(connId)}`
+      : `/api/agent?clientId=${clientId}`;
+    const res = await fetch(url);
+    const d = await res.json();
+    setCfg(d);
+    if (!connId && d._agentConfigsSummary) setConfigsSummary(d._agentConfigsSummary);
+    if (d.calendarConnected) loadCalendars();
+  }
+
   useEffect(() => {
-    fetch(`/api/agent?clientId=${clientId}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setCfg(d);
-        if (d.calendarConnected) loadCalendars();
-      })
-      .catch(() => {});
+    loadConnConfig(null);
 
     // Busca o secret do cron existente
     fetch("/api/gestor/config")
@@ -214,27 +223,49 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
   async function toggleField(field: "enabled" | "followUpEnabled", value: boolean) {
     setCfg((c) => ({ ...c, [field]: value }));
-    await fetch(`/api/agent?clientId=${clientId}`, {
+    const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
+    await fetch(`/api/agent?clientId=${clientId}${connParam}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ field, value }),
     });
+    // Update summary badge
+    if (selectedConnId) {
+      setConfigsSummary(prev => prev.map(s =>
+        s.whatsappConnectionId === selectedConnId ? { ...s, [field]: value } : s
+      ));
+    }
   }
 
   async function save() {
     setSaving(true);
     setMsg("");
-    const res = await fetch(`/api/agent?clientId=${clientId}`, {
+    const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
+    const body = selectedConnId ? { ...cfg, whatsappConnectionId: selectedConnId } : cfg;
+    const res = await fetch(`/api/agent?clientId=${clientId}${connParam}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cfg),
+      body: JSON.stringify(body),
     });
     setSaving(false);
-    setMsg(res.ok ? "✓ Salvo com sucesso!" : "✗ Erro ao salvar.");
+    if (res.ok) {
+      setMsg("✓ Salvo com sucesso!");
+      // Refresh summary
+      if (selectedConnId) {
+        setConfigsSummary(prev => {
+          const exists = prev.some(s => s.whatsappConnectionId === selectedConnId);
+          if (exists) return prev.map(s => s.whatsappConnectionId === selectedConnId ? { ...s, enabled: cfg.enabled, followUpEnabled: cfg.followUpEnabled } : s);
+          return [...prev, { whatsappConnectionId: selectedConnId, enabled: cfg.enabled, followUpEnabled: cfg.followUpEnabled }];
+        });
+      }
+    } else {
+      setMsg("✗ Erro ao salvar.");
+    }
   }
 
   function connectCalendar() {
-    window.location.href = `/api/agent/google-auth?clientId=${clientId}`;
+    const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
+    window.location.href = `/api/agent/google-auth?clientId=${clientId}${connParam}`;
   }
 
   return (
@@ -268,7 +299,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             setTesting(true);
             setTestResult(null);
             // Salva primeiro para garantir que a chave está salva
-            await fetch(`/api/agent?clientId=${clientId}`, {
+            const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
+            await fetch(`/api/agent?clientId=${clientId}${connParam}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(cfg),
@@ -307,10 +339,13 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         />
       </div>
 
-      {/* WhatsApp do agente */}
+      {/* WhatsApp do agente — multi-agente */}
       <div className="rounded-2xl border border-green-200 bg-white p-5 space-y-4 shadow-sm">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">💬 Número do WhatsApp</p>
+          <div>
+            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">💬 Números do WhatsApp</p>
+            <p className="text-xs text-slate-400 mt-0.5">Cada número pode ter um agente de IA independente</p>
+          </div>
           <button onClick={loadWaConnections} disabled={loadingWa} className="text-xs text-green-600 hover:underline">
             {loadingWa ? "Carregando..." : "Atualizar"}
           </button>
@@ -318,54 +353,57 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
         {waConnections.length > 0 ? (
           <div className="space-y-2">
-            {waConnections.map((conn) => (
-              <label key={conn.id} className={clsx(
-                "flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition",
-                cfg.whatsappConnectionId === conn.id
-                  ? "border-green-500 bg-green-50"
-                  : "border-slate-200 hover:border-green-300"
-              )}>
-                <input
-                  type="radio"
-                  name="waConnection"
-                  value={conn.id}
-                  checked={cfg.whatsappConnectionId === conn.id}
-                  onChange={async () => {
-                    setCfg((c) => ({ ...c, whatsappConnectionId: conn.id }));
-                    // Auto-save imediatamente ao selecionar
-                    await fetch(`/api/agent?clientId=${clientId}`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ ...cfg, whatsappConnectionId: conn.id }),
-                    });
-                    setMsg("✓ Número selecionado e salvo!");
-                    setTimeout(() => setMsg(""), 3000);
-                  }}
-                  className="accent-green-600"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-slate-800">
-                      {conn.phone ? `+${conn.phone}` : conn.id}
-                    </span>
-                    <span className={clsx(
-                      "text-[10px] px-1.5 py-0.5 rounded-full font-semibold",
-                      conn.status === "connected" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"
-                    )}>
-                      {conn.status === "connected" ? "● conectado" : "○ desconectado"}
-                    </span>
-                    {cfg.whatsappConnectionId === conn.id && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-semibold">
-                        ✓ Agente ativo aqui
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {conn.type === "meta" ? "📘 Meta Cloud API" : "⚡ UazAPI"} · Funil: {conn.funnelName}
-                  </p>
+            {waConnections.map((conn) => {
+              const summary = configsSummary.find(s => s.whatsappConnectionId === conn.id);
+              const isSelected = selectedConnId === conn.id;
+              return (
+                <div key={conn.id} className={clsx(
+                  "rounded-xl border transition",
+                  isSelected ? "border-green-500 bg-green-50" : "border-slate-200 hover:border-green-300 bg-white"
+                )}>
+                  <button
+                    className="w-full flex items-center gap-3 p-3 text-left"
+                    onClick={async () => {
+                      if (isSelected) {
+                        setSelectedConnId(null);
+                        await loadConnConfig(null);
+                      } else {
+                        setSelectedConnId(conn.id);
+                        await loadConnConfig(conn.id);
+                      }
+                    }}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-slate-800">
+                          {conn.phone ? `+${conn.phone}` : conn.id}
+                        </span>
+                        <span className={clsx(
+                          "text-[10px] px-1.5 py-0.5 rounded-full font-semibold",
+                          conn.status === "connected" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"
+                        )}>
+                          {conn.status === "connected" ? "● conectado" : "○ desconectado"}
+                        </span>
+                        {summary?.enabled && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-semibold">
+                            ✓ Agente ativo
+                          </span>
+                        )}
+                        {summary?.followUpEnabled && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-600 text-white font-semibold">
+                            ⏰ Follow-up
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {conn.type === "meta" ? "📘 Meta Cloud API" : "⚡ UazAPI"} · Funil: {conn.funnelName}
+                      </p>
+                    </div>
+                    <span className="text-slate-400 text-sm shrink-0">{isSelected ? "▲" : "▼"}</span>
+                  </button>
                 </div>
-              </label>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-green-200 p-4 text-center">
@@ -381,6 +419,16 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           + Gerenciar instâncias WhatsApp →
         </button>
 
+        {selectedConnId && (
+          <div className="rounded-xl border border-green-300 bg-white p-3">
+            <p className="text-xs font-semibold text-green-700">
+              ✏️ Configurando agente para: {waConnections.find(c => c.id === selectedConnId)?.phone
+                ? `+${waConnections.find(c => c.id === selectedConnId)?.phone}`
+                : selectedConnId}
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">As configurações abaixo se aplicam apenas a este número.</p>
+          </div>
+        )}
       </div>
 
       {/* Janela de espera de mensagens — bloco separado */}

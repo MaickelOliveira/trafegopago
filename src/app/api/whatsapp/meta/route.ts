@@ -39,10 +39,11 @@ export async function POST(req: NextRequest) {
       let funnelId: string | null = null;
       let clientId: string | null = null;
       let metaToken: string | null = null;
+      let connId: string | null = null;
 
       for (const f of funnels) {
         const conn = f.connections?.find(c => c.type === "meta" && c.metaPhoneNumberId === phoneNumberId);
-        if (conn) { funnelId = f.id; clientId = f.clientId ?? null; metaToken = conn.metaToken ?? null; break; }
+        if (conn) { funnelId = f.id; clientId = f.clientId ?? null; metaToken = conn.metaToken ?? null; connId = conn.id; break; }
       }
 
       for (const msg of (value?.messages ?? [])) {
@@ -67,8 +68,7 @@ export async function POST(req: NextRequest) {
 
         // Resposta IA via Gemini (mesmo agente do webhook UazAPI)
         const history = getHistory(phone);
-        const cid = clientId ?? "sem-cliente";
-        const { text: reply } = await runGeminiAgent(text, history, cid, phone);
+        const { text: reply } = await runGeminiAgent(text, history, cid, phone, connId ?? undefined);
         if (reply && metaToken && phoneNumberId) {
           addMessage(phone, { role: "assistant", content: reply, ts: ts + 1 }, clientId);
           // Envia via Meta API

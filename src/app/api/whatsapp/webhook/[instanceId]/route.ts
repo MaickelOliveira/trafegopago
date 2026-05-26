@@ -13,7 +13,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
-import { getClientById, getConfig } from "@/lib/clients";
+import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
 import { getHistory, addMessage } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
@@ -407,7 +407,7 @@ export async function POST(
     // Mensagem enviada por você (gestor)
     if (fromMe) {
       if (cid !== "sem-cliente") {
-        const agCfg = getClientById(cid)?.agentConfig;
+        const agCfg = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
         const resumeKeyword = agCfg?.aiResumeKeyword?.trim();
         // Palavra-chave de retomada: reativa a IA sem pausar
         if (resumeKeyword && text.trim().toLowerCase() === resumeKeyword.toLowerCase()) {
@@ -424,7 +424,7 @@ export async function POST(
 
     // ── Envia mídia na primeira interação do lead ─────────────────────────
     if (isNew && cid !== "sem-cliente") {
-      const mediaItems = getClientById(cid)?.agentConfig?.mediaLibrary?.filter((m) => m.sendOnFirstContact) ?? [];
+      const mediaItems = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id)?.mediaLibrary?.filter((m) => m.sendOnFirstContact) ?? [];
       for (const media of mediaItems) {
         await sendMedia(instanceUazToken, phone, media.type, media.url, media.caption, media.filename);
         await new Promise<void>((r) => setTimeout(r, 800));
@@ -433,7 +433,7 @@ export async function POST(
 
     // ── Follow-ups ───────────────────────────────────────────────────────
     if (cid !== "sem-cliente") {
-      const agentCfg = getClientById(cid)?.agentConfig;
+      const agentCfg = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
       if (agentCfg?.followUpEnabled && (agentCfg.followUps?.length ?? 0) > 0) {
         if (isNew) {
           startFollowUpSequence(cid, phone, agentCfg.followUps);
@@ -457,7 +457,8 @@ export async function POST(
 
     // ── Agente IA ─────────────────────────────────────────────────────────
     const activeClient = cid !== "sem-cliente" ? getClientById(cid) : null;
-    const agentCfg = activeClient?.agentConfig;
+    const connId = uazConn?.id;
+    const agentCfg = activeClient ? getAgentConfigForConnection(activeClient, connId) : undefined;
     const geminiEnabled = agentCfg?.enabled === true;
     const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
 
@@ -476,11 +477,11 @@ export async function POST(
         const combined = batch.messages.join("\n");
         const h = getHistory(phone);
         console.log(`[webhook/${instanceId}] Gemini batch iniciando para phone=${phone} cid=${cid} msgs=${batch.messages.length}`);
-        runGeminiAgent(combined, h, cid, phone)
+        runGeminiAgent(combined, h, cid, phone, connId)
           .then(async ({ text: geminiText, actions }) => {
             markDone(batch.id);
             console.log(`[webhook/${instanceId}] Gemini respondeu (${geminiText?.length ?? 0} chars) para ${phone}`);
-            const agCfg = getClientById(cid)?.agentConfig;
+            const agCfg = getAgentConfigForConnection(getClientById(cid)!, connId);
             const clientName = getClientById(cid)?.name ?? cid;
             if (geminiText) {
               addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId);
@@ -515,7 +516,7 @@ export async function POST(
     if (!geminiEnabled || cid === "sem-cliente") return NextResponse.json({ ok: true });
 
     console.log(`[webhook/${instanceId}] Gemini imediato iniciando para phone=${phone}`);
-    const { text: geminiText, actions: geminiActions } = await runGeminiAgent(text, history, cid, phone);
+    const { text: geminiText, actions: geminiActions } = await runGeminiAgent(text, history, cid, phone, connId);
     console.log(`[webhook/${instanceId}] Gemini imediato respondeu (${geminiText?.length ?? 0} chars)`);
     if (!geminiText && geminiActions.length === 0) return NextResponse.json({ ok: true });
 

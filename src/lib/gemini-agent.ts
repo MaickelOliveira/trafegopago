@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration } from "@google/generative-ai";
-import { getClientById, type AgentMedia } from "./clients";
+import { getClientById, getAgentConfigForConnection, type AgentMedia } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp, cancelFollowUpsForPhone } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
@@ -143,17 +143,22 @@ export async function runGeminiAgent(
   userMessage: string,
   history: ChatMessage[],
   clientId: string,
-  phone: string
+  phone: string,
+  connectionId?: string
 ): Promise<{ text: string; actions: GeminiAction[] }> {
   const client = getClientById(clientId);
-  if (!client?.agentConfig?.enabled) return { text: "", actions: [] };
+  if (!client) return { text: "", actions: [] };
 
-  const apiKey = getGeminiApiKey(client.agentConfig.geminiApiKey);
+  // Seleciona o agentConfig correto para esta conexão
+  const agentCfg = getAgentConfigForConnection(client, connectionId);
+  if (!agentCfg?.enabled) return { text: "", actions: [] };
+
+  const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
   if (!apiKey) return { text: "", actions: [] };
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const mediaLibrary = client.agentConfig.mediaLibrary;
-  const sysPrompt = buildSystemPrompt(client.name, client.agentConfig.systemPrompt, mediaLibrary);
+  const mediaLibrary = agentCfg.mediaLibrary;
+  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary);
 
   // Tenta modelos em ordem de preferência
   const modelsToTry = [
@@ -250,10 +255,10 @@ export async function runGeminiAgent(
 
           try {
             if (call.name === "listar_horarios_disponiveis") {
-              if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
+              if (agentCfg?.googleRefreshToken && agentCfg.googleCalendarId) {
                 const slots = await listFreeSlots(
-                  client.agentConfig.googleRefreshToken,
-                  client.agentConfig.googleCalendarId,
+                  agentCfg.googleRefreshToken,
+                  agentCfg.googleCalendarId,
                   args.data as string
                 );
                 result = { slots: slots.length > 0 ? slots : "Nenhum horário disponível" };
@@ -263,7 +268,7 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "agendar_compromisso") {
-              if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
+              if (agentCfg?.googleRefreshToken && agentCfg.googleCalendarId) {
                 const data = args.data as string;
                 const horaInicio = args.hora_inicio as string;
                 const duracao = (args.duracao_minutos as number) || 60;
@@ -274,8 +279,8 @@ export async function runGeminiAgent(
                 const endISO = `${endSP}-03:00`;
 
                 const { eventId, link } = await createEvent(
-                  client.agentConfig.googleRefreshToken,
-                  client.agentConfig.googleCalendarId,
+                  agentCfg.googleRefreshToken,
+                  agentCfg.googleCalendarId,
                   {
                     title: args.titulo as string,
                     description: (args.descricao as string) ?? `Lead: ${phone}`,
@@ -297,7 +302,7 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "listar_agendamentos") {
-              if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
+              if (agentCfg?.googleRefreshToken && agentCfg.googleCalendarId) {
                 const dataInicio = args.data_inicio as string;
                 const dataFim = (args.data_fim as string | undefined);
                 const timeMin = new Date(`${dataInicio}T00:00:00-03:00`).toISOString();
@@ -305,8 +310,8 @@ export async function runGeminiAgent(
                   ? new Date(`${dataFim}T23:59:59-03:00`).toISOString()
                   : new Date(new Date(`${dataInicio}T00:00:00-03:00`).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
                 const events = await listEvents(
-                  client.agentConfig.googleRefreshToken,
-                  client.agentConfig.googleCalendarId,
+                  agentCfg.googleRefreshToken,
+                  agentCfg.googleCalendarId,
                   timeMin,
                   timeMax
                 );
@@ -319,10 +324,10 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "cancelar_agendamento") {
-              if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
+              if (agentCfg?.googleRefreshToken && agentCfg.googleCalendarId) {
                 await cancelEvent(
-                  client.agentConfig.googleRefreshToken,
-                  client.agentConfig.googleCalendarId,
+                  agentCfg.googleRefreshToken,
+                  agentCfg.googleCalendarId,
                   args.event_id as string
                 );
                 result = { ok: true };
@@ -333,7 +338,7 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "reagendar_agendamento") {
-              if (client.agentConfig?.googleRefreshToken && client.agentConfig.googleCalendarId) {
+              if (agentCfg?.googleRefreshToken && agentCfg.googleCalendarId) {
                 const data = args.data as string;
                 const horaInicio = args.hora_inicio as string;
                 const duracao = (args.duracao_minutos as number) || 60;
@@ -343,8 +348,8 @@ export async function runGeminiAgent(
                 const endSP = new Date(endMs).toLocaleString("sv", { timeZone: "America/Sao_Paulo" }).replace(" ", "T").substring(0, 19);
                 const endISO = `${endSP}-03:00`;
                 await updateEvent(
-                  client.agentConfig.googleRefreshToken,
-                  client.agentConfig.googleCalendarId,
+                  agentCfg.googleRefreshToken,
+                  agentCfg.googleCalendarId,
                   args.event_id as string,
                   { startDateTime: startISO, endDateTime: endISO }
                 );
@@ -356,7 +361,7 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "agendar_followup") {
-              if (client.agentConfig?.followUpEnabled) {
+              if (agentCfg?.followUpEnabled) {
                 const horas = (args.horas as number) || 24;
                 const scheduledAt = new Date(Date.now() + horas * 3600000).toISOString();
                 scheduleFollowUp({

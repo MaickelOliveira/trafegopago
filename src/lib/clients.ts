@@ -30,6 +30,7 @@ export type AgentMedia = {
 export type AgentConfig = {
   enabled: boolean;              // Liga/desliga o agente
   followUpEnabled: boolean;      // Liga/desliga follow-ups separadamente
+  name?: string;                 // Nome/rótulo do agente (ex: "Agente Vendas", "Suporte")
   geminiApiKey?: string;         // Chave Gemini (sobrescreve a global se preenchida)
   googleCalendarId?: string;     // Calendar ID do cliente (ex: "primary")
   googleRefreshToken?: string;   // OAuth refresh token do Google Calendar
@@ -61,7 +62,8 @@ export type Client = {
   pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
   capiToken?: string;           // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
-  agentConfig?: AgentConfig;    // Configuração do agente Gemini de WhatsApp
+  agentConfig?: AgentConfig;    // Configuração do agente principal (retrocompat)
+  agentConfigs?: AgentConfig[]; // Lista de agentes — um por conexão WhatsApp
 };
 
 export type AppConfig = {
@@ -102,6 +104,36 @@ export function getClients(): Client[] {
 
 export function getClientById(id: string): Client | undefined {
   return getClients().find((c) => c.id === id);
+}
+
+/** Retorna o AgentConfig correto para uma conexão específica.
+ *  Procura em agentConfigs primeiro, depois cai no agentConfig padrão. */
+export function getAgentConfigForConnection(
+  client: Client,
+  connectionId?: string | null
+): AgentConfig | undefined {
+  if (connectionId) {
+    const specific = client.agentConfigs?.find(
+      (c) => c.whatsappConnectionId === connectionId
+    );
+    if (specific) return specific;
+  }
+  return client.agentConfig;
+}
+
+/** Retorna todos os agentConfigs do cliente (agentConfigs + agentConfig como fallback).
+ *  Garante unicidade por whatsappConnectionId. */
+export function getAllAgentConfigs(client: Client): AgentConfig[] {
+  const configs: AgentConfig[] = [...(client.agentConfigs ?? [])];
+  // Inclui agentConfig padrão se não estiver em agentConfigs
+  if (client.agentConfig) {
+    const connId = client.agentConfig.whatsappConnectionId;
+    const alreadyPresent = connId
+      ? configs.some((c) => c.whatsappConnectionId === connId)
+      : configs.length > 0 && !connId; // se o padrão não tem connId e já há configs, não duplica
+    if (!alreadyPresent) configs.push(client.agentConfig);
+  }
+  return configs;
 }
 
 export function getClientByEmail(email: string): Client | undefined {

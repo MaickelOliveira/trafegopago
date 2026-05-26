@@ -7,7 +7,7 @@ export async function register() {
     const { sendMessage } = await import("./lib/whatsapp-send");
     const { runGeminiAgent } = await import("./lib/gemini-agent");
     const { addMessage, getHistory } = await import("./lib/conversations");
-    const { getClientById } = await import("./lib/clients");
+    const { getClientById, getAllAgentConfigs } = await import("./lib/clients");
 
     console.log("[cron] Agendador interno iniciado — verificação a cada 60s");
 
@@ -17,11 +17,15 @@ export async function register() {
         const due = getDueFollowUps();
         for (const fu of due) {
           const client = getClientById(fu.clientId);
-          if (client?.agentConfig?.followUpEnabled !== true) continue;
+          if (!client) continue;
+          // Procura em todos os agentConfigs do cliente qual tem followUpEnabled
+          const allCfgs = getAllAgentConfigs(client);
+          const agCfg = allCfgs.find(c => c.followUpEnabled);
+          if (!agCfg) continue;
           try {
-            await sendMessage(fu.phone, fu.message, fu.clientId, client.agentConfig.whatsappConnectionId);
+            await sendMessage(fu.phone, fu.message, fu.clientId, agCfg.whatsappConnectionId);
             markSent(fu.id);
-            const steps = client.agentConfig.followUps ?? [];
+            const steps = agCfg.followUps ?? [];
             const nextIdx = (fu.stepIndex ?? 0) + 1;
             const nextStep = steps[nextIdx];
             if (nextStep) {
@@ -44,16 +48,20 @@ export async function register() {
         const batches = getDuePending();
         for (const batch of batches) {
           const client = getClientById(batch.clientId);
-          if (!client?.agentConfig?.enabled) continue;
+          if (!client) continue;
+          const allCfgs = getAllAgentConfigs(client);
+          const agCfg = allCfgs.find(c => c.enabled);
+          if (!agCfg) continue;
           try {
             markProcessing(batch.id);
             const combined = batch.messages.join("\n");
             const history = getHistory(batch.phone);
-            const { text: reply } = await runGeminiAgent(combined, history, batch.clientId, batch.phone);
+            const connId = agCfg.whatsappConnectionId;
+            const { text: reply } = await runGeminiAgent(combined, history, batch.clientId, batch.phone, connId);
             markDone(batch.id);
             if (reply) {
               addMessage(batch.phone, { role: "assistant", content: reply, ts: Date.now() }, batch.clientId);
-              await sendMessage(batch.phone, reply, batch.clientId, client.agentConfig.whatsappConnectionId);
+              await sendMessage(batch.phone, reply, batch.clientId, connId);
             }
           } catch (e) {
             console.error("[cron] Erro batch:", batch.id, e);
