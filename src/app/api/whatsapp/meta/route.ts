@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
-import { addMessage } from "@/lib/conversations";
-import { sendWhatsApp } from "@/lib/whatsapp";
-import { generateResponse } from "@/lib/ai-agent";
-import { getHistory } from "@/lib/conversations";
+import { addMessage, getHistory } from "@/lib/conversations";
+import { runGeminiAgent } from "@/lib/gemini-agent";
 
 // GET — verificação do webhook Meta
 export async function GET(req: NextRequest) {
@@ -67,9 +65,10 @@ export async function POST(req: NextRequest) {
 
         addMessage(phone, { role: "user", content: text, ts }, clientId);
 
-        // Resposta IA
+        // Resposta IA via Gemini (mesmo agente do webhook UazAPI)
         const history = getHistory(phone);
-        const reply = await generateResponse(text, history, clientId);
+        const cid = clientId ?? "sem-cliente";
+        const { text: reply } = await runGeminiAgent(text, history, cid, phone);
         if (reply && metaToken && phoneNumberId) {
           addMessage(phone, { role: "assistant", content: reply, ts: ts + 1 }, clientId);
           // Envia via Meta API
