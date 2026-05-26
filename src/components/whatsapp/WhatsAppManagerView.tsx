@@ -4,7 +4,37 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { EnrichedInstance } from "@/app/api/whatsapp/manager/route";
 
 type FunnelOption = { id: string; name: string; clientId: string | null };
-type ClientOption = { id: string; name: string; color: string; agentEnabled: boolean; agentConnectionId: string | null };
+type ClientOption = { id: string; name: string; color: string; agentEnabled: boolean; agentConnectionId: string | null; agents?: { name?: string }[] };
+
+function ClientAgentSelect({ clients, value, onChange, accentColor = "green" }: {
+  clients: ClientOption[];
+  value: string;
+  onChange: (v: string) => void;
+  accentColor?: "green" | "blue";
+}) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className={`w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-${accentColor}-400 mb-2`}
+    >
+      <option value="">— Sem agente —</option>
+      {clients.map(c => {
+        const agents = c.agents ?? [];
+        return (
+          <optgroup key={c.id} label={c.name}>
+            {agents.length > 0
+              ? agents.map((a, i) => (
+                  <option key={i} value={c.id}>{a.name ?? `Agente ${i + 1}`}</option>
+                ))
+              : <option value={c.id}>Agente padrão</option>
+            }
+          </optgroup>
+        );
+      })}
+    </select>
+  );
+}
 
 // ── Modal states ─────────────────────────────────────────────────
 type ModalState =
@@ -593,11 +623,7 @@ export function WhatsAppManagerView({
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
-              <select value={linkClientId} onChange={e => setLinkClientId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-green-400 mb-2">
-                <option value="">— Sem cliente —</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <ClientAgentSelect clients={clients} value={linkClientId} onChange={setLinkClientId} accentColor="green" />
               {linkClientId && (
                 <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setLinkAgent(v => !v)}>
                   <div className={`relative w-10 rounded-full transition-colors ${linkAgent ? "bg-green-500" : "bg-slate-300"}`} style={{ height: "22px" }}>
@@ -917,11 +943,7 @@ function MetaApiView({ funnels, clients, appBaseUrl }: { funnels: FunnelOption[]
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
-              <select value={addClientId} onChange={e => setAddClientId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 mb-2">
-                <option value="">— Sem cliente —</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <ClientAgentSelect clients={clients} value={addClientId} onChange={setAddClientId} accentColor="blue" />
               {addClientId && (
                 <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setAddLinkAgent(v => !v)}>
                   <div className={`relative w-10 rounded-full transition-colors ${addLinkAgent ? "bg-blue-500" : "bg-slate-300"}`} style={{ height: "22px" }}>
@@ -960,11 +982,7 @@ function MetaApiView({ funnels, clients, appBaseUrl }: { funnels: FunnelOption[]
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
-              <select value={linkClientId} onChange={e => setLinkClientId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400 mb-2">
-                <option value="">— Sem cliente —</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <ClientAgentSelect clients={clients} value={linkClientId} onChange={setLinkClientId} accentColor="blue" />
               {linkClientId && (
                 <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setLinkAgent(v => !v)}>
                   <div className={`relative w-10 rounded-full transition-colors ${linkAgent ? "bg-blue-500" : "bg-slate-300"}`} style={{ height: "22px" }}>

@@ -142,8 +142,6 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   useEffect(() => {
-    loadConnConfig(null);
-
     // Busca o secret do cron existente
     fetch("/api/gestor/config")
       .then((r) => r.json())
@@ -203,6 +201,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         }
       }
       setWaConnections(conns);
+      // Auto-select first connection
+      const firstId = conns[0]?.id ?? null;
+      setSelectedConnId(firstId);
+      await loadConnConfig(firstId);
     } catch { /* ignore */ } finally {
       setLoadingWa(false);
     }
@@ -291,7 +293,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             }}
             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 font-medium outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition"
           >
-            <option value="">⚙ Configuração global</option>
+              <option value="">— selecione uma instância —</option>
             {waConnections.map((conn) => {
               const summary = configsSummary.find(s => s.whatsappConnectionId === conn.id);
               const phone = conn.phone ? `+${conn.phone}` : conn.id.slice(0, 12);
@@ -396,7 +398,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               </span>
             </>
           ) : (
-            <span className="text-xs text-slate-500">⚙ Configuração global (aplicada como padrão)</span>
+            <span className="text-xs text-slate-400 italic">Nenhuma instância selecionada</span>
           )}
         </div>
         <button

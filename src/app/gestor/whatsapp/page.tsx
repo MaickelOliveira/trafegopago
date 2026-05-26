@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getClients, getConfig } from "@/lib/clients";
+import { getClients, getConfig, getAllAgentConfigs } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { WhatsAppManagerView } from "@/components/whatsapp/WhatsAppManagerView";
 
@@ -21,6 +21,7 @@ export default async function WhatsAppManagerPage() {
     color: c.color,
     agentEnabled: c.agentConfig?.enabled ?? false,
     agentConnectionId: c.agentConfig?.whatsappConnectionId ?? null,
+    agents: getAllAgentConfigs(c).map(a => ({ name: a.name })),
   }));
 
   const config = getConfig();
