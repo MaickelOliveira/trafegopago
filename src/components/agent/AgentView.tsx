@@ -270,9 +270,45 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Agente de IA — {clientName}</h1>
-        <p className="text-sm text-slate-500 mt-1">Configure o assistente de WhatsApp com Gemini 2.5 Pro</p>
+      {/* Header com seletor de número no canto direito */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Agente de IA — {clientName}</h1>
+          <p className="text-sm text-slate-500 mt-1">Configure o assistente de WhatsApp com Gemini 2.5 Pro</p>
+        </div>
+        {/* Seletor de número */}
+        <div className="shrink-0 min-w-[200px]">
+          <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+            Número / Agente
+          </label>
+          <select
+            value={selectedConnId ?? ""}
+            onChange={async (e) => {
+              const val = e.target.value || null;
+              setSelectedConnId(val);
+              await loadConnConfig(val);
+            }}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 font-medium outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition"
+          >
+            <option value="">⚙ Configuração global</option>
+            {waConnections.map((conn) => {
+              const summary = configsSummary.find(s => s.whatsappConnectionId === conn.id);
+              const label = conn.phone ? `+${conn.phone}` : conn.id.slice(0, 12);
+              const badge = summary?.enabled ? " ✓" : "";
+              return (
+                <option key={conn.id} value={conn.id}>
+                  {conn.type === "meta" ? "📘" : "⚡"} {label}{badge}
+                </option>
+              );
+            })}
+          </select>
+          {selectedConnId && (
+            <p className="text-[10px] text-slate-400 mt-1">
+              Config. salva individualmente para este número
+            </p>
+          )}
+          {loadingWa && <p className="text-[10px] text-slate-400 mt-1">Carregando números...</p>}
+        </div>
       </div>
 
       {msg && (
@@ -339,96 +375,33 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         />
       </div>
 
-      {/* WhatsApp do agente — multi-agente */}
-      <div className="rounded-2xl border border-green-200 bg-white p-5 space-y-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">💬 Números do WhatsApp</p>
-            <p className="text-xs text-slate-400 mt-0.5">Cada número pode ter um agente de IA independente</p>
-          </div>
-          <button onClick={loadWaConnections} disabled={loadingWa} className="text-xs text-green-600 hover:underline">
-            {loadingWa ? "Carregando..." : "Atualizar"}
-          </button>
+      {/* Indicador de contexto + link para gerenciar */}
+      <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5">
+        <div className="flex items-center gap-2 min-w-0">
+          {selectedConnId ? (
+            <>
+              <span className="text-xs font-semibold text-green-700">
+                ✏️ Editando:
+              </span>
+              <span className="text-xs text-slate-700 font-mono truncate">
+                {waConnections.find(c => c.id === selectedConnId)?.phone
+                  ? `+${waConnections.find(c => c.id === selectedConnId)?.phone}`
+                  : selectedConnId}
+              </span>
+              <span className="text-[10px] text-slate-400">
+                ({waConnections.find(c => c.id === selectedConnId)?.type === "meta" ? "Meta API" : "UazAPI"})
+              </span>
+            </>
+          ) : (
+            <span className="text-xs text-slate-500">⚙ Configuração global (aplicada como padrão)</span>
+          )}
         </div>
-
-        {waConnections.length > 0 ? (
-          <div className="space-y-2">
-            {waConnections.map((conn) => {
-              const summary = configsSummary.find(s => s.whatsappConnectionId === conn.id);
-              const isSelected = selectedConnId === conn.id;
-              return (
-                <div key={conn.id} className={clsx(
-                  "rounded-xl border transition",
-                  isSelected ? "border-green-500 bg-green-50" : "border-slate-200 hover:border-green-300 bg-white"
-                )}>
-                  <button
-                    className="w-full flex items-center gap-3 p-3 text-left"
-                    onClick={async () => {
-                      if (isSelected) {
-                        setSelectedConnId(null);
-                        await loadConnConfig(null);
-                      } else {
-                        setSelectedConnId(conn.id);
-                        await loadConnConfig(conn.id);
-                      }
-                    }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-slate-800">
-                          {conn.phone ? `+${conn.phone}` : conn.id}
-                        </span>
-                        <span className={clsx(
-                          "text-[10px] px-1.5 py-0.5 rounded-full font-semibold",
-                          conn.status === "connected" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"
-                        )}>
-                          {conn.status === "connected" ? "● conectado" : "○ desconectado"}
-                        </span>
-                        {summary?.enabled && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-semibold">
-                            ✓ Agente ativo
-                          </span>
-                        )}
-                        {summary?.followUpEnabled && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-600 text-white font-semibold">
-                            ⏰ Follow-up
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {conn.type === "meta" ? "📘 Meta Cloud API" : "⚡ UazAPI"} · Funil: {conn.funnelName}
-                      </p>
-                    </div>
-                    <span className="text-slate-400 text-sm shrink-0">{isSelected ? "▲" : "▼"}</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-green-200 p-4 text-center">
-            <p className="text-sm text-slate-500 mb-2">Nenhum número conectado neste cliente.</p>
-            <p className="text-xs text-slate-400">Conecte um número para o agente poder enviar e receber mensagens.</p>
-          </div>
-        )}
-
         <button
           onClick={connectNewNumber}
-          className="w-full rounded-xl border-2 border-dashed border-green-300 py-2.5 text-sm font-semibold text-green-600 hover:bg-green-50 transition"
+          className="text-xs text-violet-600 hover:underline shrink-0 ml-4"
         >
-          + Gerenciar instâncias WhatsApp →
+          Gerenciar instâncias →
         </button>
-
-        {selectedConnId && (
-          <div className="rounded-xl border border-green-300 bg-white p-3">
-            <p className="text-xs font-semibold text-green-700">
-              ✏️ Configurando agente para: {waConnections.find(c => c.id === selectedConnId)?.phone
-                ? `+${waConnections.find(c => c.id === selectedConnId)?.phone}`
-                : selectedConnId}
-            </p>
-            <p className="text-xs text-slate-400 mt-0.5">As configurações abaixo se aplicam apenas a este número.</p>
-          </div>
-        )}
       </div>
 
       {/* Janela de espera de mensagens — bloco separado */}
