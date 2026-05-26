@@ -14,10 +14,21 @@ export async function GET(req: NextRequest) {
   const importPhoneId = req.nextUrl.searchParams.get("importPhoneId");
   if (importWabaId && importToken && clientId) {
     const url = `https://graph.facebook.com/v19.0/${importWabaId}/message_templates?fields=name,status,category,language,components,rejected_reason&limit=200&access_token=${importToken}`;
-    const metaRes = await fetch(url);
+    let metaRes: Response;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      metaRes = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+    } catch (e) {
+      const msg = e instanceof Error && e.name === "AbortError" ? "Timeout: Meta API demorou mais de 15s." : String(e);
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
     if (!metaRes.ok) {
-      const err = await metaRes.json();
-      return NextResponse.json({ error: "Erro Meta API", details: err }, { status: 502 });
+      const text = await metaRes.text();
+      let metaError = text;
+      try { metaError = JSON.parse(text)?.error?.message ?? text; } catch { /* keep text */ }
+      return NextResponse.json({ error: `Meta API ${metaRes.status}: ${metaError}` }, { status: 502 });
     }
     const metaData = await metaRes.json() as { data: { id: string; name: string; status: string; category: string; language: string; components: object[]; rejected_reason?: string }[] };
     const existing = getTemplates(clientId).map((t) => t.metaId);

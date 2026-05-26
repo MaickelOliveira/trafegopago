@@ -100,7 +100,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
       setTemplates(data.templates);
     } else {
       const err = await res.json().catch(() => ({}));
-      setImportError(err?.details?.error?.message || err?.error || `Erro ${res.status} — verifique o WABA ID e o token.`);
+      setImportError(err?.error || `Erro ${res.status} — verifique o WABA ID e o token.`);
     }
     setImporting(false);
   }
