@@ -6,7 +6,32 @@
  * A chave de descriptografia (mediaKey) é enviada no payload do webhook.
  */
 import { createDecipheriv, hkdfSync } from "crypto";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
+import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const MEDIA_DIR = path.join(process.cwd(), "data", "media");
+
+function ensureMediaDir() {
+  if (!existsSync(MEDIA_DIR)) mkdirSync(MEDIA_DIR, { recursive: true });
+}
+
+/**
+ * Salva o buffer descriptografado em disco e retorna a URL relativa para servir via API.
+ * Ex: /api/media/5511999991234-1748278800000.ogg
+ */
+export function saveDecryptedMedia(buffer: Buffer, phone: string, ts: number, mimeType: string): string {
+  ensureMediaDir();
+  const ext = mimeType.includes("mp4") || mimeType.includes("video") ? "mp4"
+    : mimeType.includes("webp") ? "webp"
+    : mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg"
+    : mimeType.includes("png") ? "png"
+    : "ogg";
+  const safePhone = phone.replace(/\D/g, "");
+  const filename = `${safePhone}-${ts}.${ext}`;
+  writeFileSync(path.join(MEDIA_DIR, filename), buffer);
+  return `/api/media/${filename}`;
+}
 
 export type MediaKind = "audio" | "image" | "video";
 

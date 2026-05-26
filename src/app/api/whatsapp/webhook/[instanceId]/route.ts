@@ -20,7 +20,7 @@ import { getHistory, addMessage, getAiPaused, setAiPaused, updateLastMessage } f
 import { upsertLeadByPhone, getLeadByPhone, updateLead } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
-import { downloadAndDecryptMedia, transcribeMedia } from "@/lib/media-transcribe";
+import { downloadAndDecryptMedia, transcribeMedia, saveDecryptedMedia } from "@/lib/media-transcribe";
 import type { AgentMedia, AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -533,15 +533,22 @@ export async function POST(
         if (gemKey) {
           const kind = (msgType === "image" ? "image" : msgType === "video" ? "video" : "audio") as import("@/lib/media-transcribe").MediaKind;
           const phoneForUpdate = phone;
+          const tsForFile = ts;
           // Fire and forget — não bloqueia a resposta do webhook
           Promise.resolve().then(async () => {
             try {
               const buffer = await downloadAndDecryptMedia(mediaUrlForDecrypt, mediaKeyB64, mediaTypeStr);
               if (!buffer) return;
+
+              // Salva o arquivo descriptografado e atualiza a URL local
+              const localUrl = saveDecryptedMedia(buffer, phoneForUpdate, tsForFile, mediaMimetype);
+              updateLastMessage(phoneForUpdate, { mediaUrl: localUrl });
+
+              // Transcreve via Gemini
               const transcription = await transcribeMedia(buffer, mediaMimetype, gemKey, kind);
               if (transcription) {
                 const prefix = kind === "image" ? "📷" : kind === "video" ? "🎬" : "🎙️";
-                updateLastMessage(phoneForUpdate, { content: `${prefix} ${transcription}`, type: undefined });
+                updateLastMessage(phoneForUpdate, { content: `${prefix} ${transcription}` });
                 console.log(`[webhook/${instanceId}] Transcrição salva para ${phoneForUpdate}: "${transcription.slice(0, 80)}"`);
               }
             } catch (e) {

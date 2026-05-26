@@ -445,7 +445,26 @@ export function LeadModal({
                               isMe
                                 ? "bg-[#dcf8c6] text-slate-800 rounded-br-none"
                                 : "bg-white text-slate-800 rounded-bl-none border border-slate-100")}>
-                              <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                              {m.type === "audio" && m.mediaUrl ? (
+                                <div className="flex flex-col gap-1.5">
+                                  <audio
+                                    controls
+                                    src={m.mediaUrl}
+                                    className="h-8 w-52 max-w-full"
+                                    preload="metadata"
+                                  />
+                                  {m.content && !m.content.startsWith("[") && (
+                                    <p className="text-xs text-slate-500 italic whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                                  )}
+                                </div>
+                              ) : m.type === "audio" ? (
+                                <span className="flex items-center gap-1.5 text-slate-500 italic text-xs">
+                                  <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
+                                  {m.content && !m.content.startsWith("[") ? m.content : "Áudio"}
+                                </span>
+                              ) : (
+                                <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                              )}
                               <p className={clsx("text-[10px] mt-0.5 text-right", isMe ? "text-green-700/50" : "text-slate-400")}>
                                 {fmtTime(m.ts)}
                               </p>
