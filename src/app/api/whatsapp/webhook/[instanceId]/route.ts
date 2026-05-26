@@ -16,10 +16,11 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
-import { getHistory, addMessage, getAiPaused, setAiPaused } from "@/lib/conversations";
+import { getHistory, addMessage, getAiPaused, setAiPaused, updateLastMessage } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone, updateLead } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
+import { downloadAndDecryptMedia, transcribeMedia } from "@/lib/media-transcribe";
 import type { AgentMedia, AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -514,6 +515,42 @@ export async function POST(
     const msgContent = text || (msgType ? `[${msgType}]` : mediaUrl ? "[mídia]" : "");
     const savedType = msgType === "audio" ? "audio" as const : msgType === "image" ? "image" as const : undefined;
     addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: savedType, mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
+
+    // ── Transcrição/descrição de mídia via Gemini (assíncrono) ────────────
+    if ((msgType === "audio" || msgType === "image" || msgType === "video") && cid !== "sem-cliente") {
+      // Extrai mediaKey e URL real do objeto aninhado body.message.message
+      const msgBodyObj = (body.message as Record<string, unknown> | undefined) ?? {};
+      const nestedMsgObj = (msgBodyObj.message as Record<string, unknown> | undefined) ?? {};
+      const nestedContent = (nestedMsgObj.content as Record<string, unknown> | undefined) ?? {};
+      const mediaKeyB64 = String(nestedMsgObj.mediaKey ?? "");
+      const mediaUrlForDecrypt = String(nestedContent.URL ?? nestedMsgObj.url ?? mediaUrl ?? "");
+      const mediaMimetype = String(nestedMsgObj.mimetype ?? nestedMsgObj.mimeType ?? "audio/ogg");
+      const mediaTypeStr = String(msgBodyObj.mediaType ?? msgBodyObj.messageType ?? msgType ?? "audio");
+
+      if (mediaUrlForDecrypt && mediaKeyB64) {
+        const agCfgForMedia = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
+        const gemKey = getGeminiApiKey(agCfgForMedia?.geminiApiKey ?? undefined);
+        if (gemKey) {
+          const kind = (msgType === "image" ? "image" : msgType === "video" ? "video" : "audio") as import("@/lib/media-transcribe").MediaKind;
+          const phoneForUpdate = phone;
+          // Fire and forget — não bloqueia a resposta do webhook
+          Promise.resolve().then(async () => {
+            try {
+              const buffer = await downloadAndDecryptMedia(mediaUrlForDecrypt, mediaKeyB64, mediaTypeStr);
+              if (!buffer) return;
+              const transcription = await transcribeMedia(buffer, mediaMimetype, gemKey, kind);
+              if (transcription) {
+                const prefix = kind === "image" ? "📷" : kind === "video" ? "🎬" : "🎙️";
+                updateLastMessage(phoneForUpdate, { content: `${prefix} ${transcription}`, type: undefined });
+                console.log(`[webhook/${instanceId}] Transcrição salva para ${phoneForUpdate}: "${transcription.slice(0, 80)}"`);
+              }
+            } catch (e) {
+              console.error(`[webhook/${instanceId}] Erro na transcrição de mídia:`, e);
+            }
+          });
+        }
+      }
+    }
 
     // Mensagem enviada por você (gestor via WhatsApp)
     if (fromMe) {

@@ -115,3 +115,12 @@ export function addMessage(
   all[phone] = conv;
   save(all);
 }
+
+/** Atualiza a última mensagem de uma conversa (ex: substituir [audio] pela transcrição). */
+export function updateLastMessage(phone: string, patch: Partial<ChatMessage>) {
+  const all = load();
+  const conv = all[phone];
+  if (!conv || conv.messages.length === 0) return;
+  Object.assign(conv.messages[conv.messages.length - 1], patch);
+  save(all);
+}
