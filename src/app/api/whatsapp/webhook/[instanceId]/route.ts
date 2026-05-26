@@ -278,7 +278,30 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
           "";
       }
 
-      return { phone: chatPhone, text, fromMe };
+      // Detecta tipo de mídia no caminho singular (body.message)
+      const singularSrc = msgObj ?? body;
+      const singularRawType = String(singularSrc.type ?? singularSrc.messageType ?? "").toLowerCase();
+      const singularMime = String(singularSrc.mimetype ?? singularSrc.mimeType ?? "").toLowerCase();
+      const singularMediaUrl = String(singularSrc.media ?? singularSrc.mediaUrl ?? singularSrc.url ?? singularSrc.link ?? "") || undefined;
+      let singularMsgType: string | undefined;
+      let singularMedia: string | undefined;
+
+      if (singularRawType === "audio" || singularRawType === "ptt" || singularRawType === "voice" ||
+          singularSrc.ptt === true || singularMime.startsWith("audio/")) {
+        singularMsgType = "audio";
+        singularMedia = singularMediaUrl;
+      } else if (singularRawType === "image" || singularMime.startsWith("image/")) {
+        singularMsgType = "image";
+        singularMedia = singularMediaUrl;
+      } else if (!text && singularMediaUrl) {
+        // Fallback: sem texto e tem mídia → áudio
+        singularMsgType = "audio";
+        singularMedia = singularMediaUrl;
+      }
+
+      console.log(`[webhook/extractMessage/singular] rawType=${singularRawType} mime=${singularMime} msgType=${singularMsgType} mediaUrl=${singularMedia?.slice(0, 60) ?? "none"}`);
+
+      return { phone: chatPhone, text, fromMe, msgType: singularMsgType, mediaUrl: singularMedia };
     }
   }
 
