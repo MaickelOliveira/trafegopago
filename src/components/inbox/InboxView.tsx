@@ -230,17 +230,17 @@ export default function InboxView({ clientId, initialConversations = [], initial
     }
   };
 
-  // Filtra por conexão selecionada e busca
+  // Filtra por conexão selecionada e busca — filtragem estrita pelo connId
   const connConversations = conversations.filter((c) => {
-    // Pertence à conexão selecionada (ou não tem connId = legado)
-    if (selectedConn && c.connId && c.connId !== selectedConn) return false;
+    // Só mostra conversas que pertencem exatamente à conexão selecionada
+    if (c.connId !== selectedConn) return false;
     if (!search) return true;
     const s = search.toLowerCase();
     return (c.contactName ?? c.phone).toLowerCase().includes(s) || c.phone.includes(s);
   });
 
-  const unreadForConn = (connId: string | null) =>
-    conversations.filter((c) => c.unread && (connId === null || c.connId === connId || (!c.connId && connId === connections[0]?.id))).length;
+  const unreadForConn = (connId: string) =>
+    conversations.filter((c) => c.unread && c.connId === connId).length;
 
   const totalUnread = conversations.filter((c) => c.unread).length;
 
