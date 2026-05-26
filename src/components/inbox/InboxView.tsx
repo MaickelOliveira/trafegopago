@@ -19,9 +19,16 @@ type Conversation = {
   unread: boolean;
 };
 
+type Connection = {
+  id: string;
+  phone: string;
+  type: string;
+};
+
 interface Props {
   clientId: string;
   initialConversations?: Conversation[];
+  initialConnections?: Connection[];
 }
 
 function formatTime(ts: number) {
@@ -52,8 +59,12 @@ function displayPhone(phone: string) {
   return phone;
 }
 
-export default function InboxView({ clientId, initialConversations = [] }: Props) {
+export default function InboxView({ clientId, initialConversations = [], initialConnections = [] }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
+  const [connections, setConnections] = useState<Connection[]>(initialConnections);
+  const [selectedConn, setSelectedConn] = useState<string | null>(
+    initialConnections.length > 0 ? initialConnections[0].id : null
+  );
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
@@ -70,18 +81,21 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
 
   const selectedConv = conversations.find((c) => c.phone === selected);
 
-  // Scroll ao fundo quando mensagens mudam
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Poll: lista de conversas (a cada 5s)
   const fetchConversations = useCallback(async () => {
     try {
       const res = await fetch(`/api/whatsapp/inbox/conversations?clientId=${encodeURIComponent(clientId)}`);
       if (!res.ok) return;
       const data = await res.json();
       setConversations(data.conversations ?? []);
+      if (data.connections && data.connections.length > 0) {
+        setConnections(data.connections);
+        // Se ainda não tem nenhum selecionado, seleciona o primeiro
+        setSelectedConn((prev) => prev ?? data.connections[0].id);
+      }
     } catch {}
   }, [clientId]);
 
@@ -91,7 +105,6 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchConversations]);
 
-  // Busca mensagens quando seleciona conversa
   const fetchMessages = useCallback(async (phone: string) => {
     setLoadingMessages(true);
     try {
@@ -99,7 +112,6 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
       if (!res.ok) return;
       const data = await res.json();
       setMessages(data.messages ?? []);
-      // Marca como lida localmente
       setConversations((prev) => prev.map((c) => c.phone === phone ? { ...c, unread: false } : c));
     } catch {} finally {
       setLoadingMessages(false);
@@ -109,10 +121,20 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
   useEffect(() => {
     if (!selected) { setMessages([]); return; }
     fetchMessages(selected);
-    // Poll de mensagens a cada 3s
     msgPollRef.current = setInterval(() => fetchMessages(selected), 3000);
     return () => { if (msgPollRef.current) clearInterval(msgPollRef.current); };
   }, [selected, fetchMessages]);
+
+  // Quando muda de conexão, deseleciona conversa atual se ela não pertence à nova conexão
+  useEffect(() => {
+    if (selected) {
+      const conv = conversations.find((c) => c.phone === selected);
+      if (conv && conv.connId && conv.connId !== selectedConn) {
+        setSelected(null);
+        setMessages([]);
+      }
+    }
+  }, [selectedConn, selected, conversations]);
 
   const handleSelect = (phone: string) => {
     setSelected(phone);
@@ -125,7 +147,6 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
     const t = text.trim();
     setText("");
 
-    // Otimista: adiciona mensagem localmente
     const optimistic: ChatMessage = { role: "assistant", content: t, ts: Date.now(), type: "text" };
     setMessages((prev) => [...prev, optimistic]);
 
@@ -138,7 +159,7 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
           content: t,
           type: "text",
           clientId,
-          connId: selectedConv?.connId ?? undefined,
+          connId: selectedConv?.connId ?? selectedConn ?? undefined,
         }),
       });
     } catch {} finally {
@@ -182,7 +203,6 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
     if (!selected) return;
     setSending(true);
     try {
-      // Converte para base64
       const reader = new FileReader();
       const base64 = await new Promise<string>((resolve, reject) => {
         reader.onload = () => resolve((reader.result as string).split(",")[1]);
@@ -190,7 +210,6 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
         reader.readAsDataURL(blob);
       });
 
-      // Otimista
       const optimistic: ChatMessage = { role: "assistant", content: "[áudio]", ts: Date.now(), type: "audio" };
       setMessages((prev) => [...prev, optimistic]);
 
@@ -202,7 +221,7 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
           content: `data:audio/ogg;base64,${base64}`,
           type: "audio",
           clientId,
-          connId: selectedConv?.connId ?? undefined,
+          connId: selectedConv?.connId ?? selectedConn ?? undefined,
         }),
       });
     } catch {} finally {
@@ -211,13 +230,21 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
     }
   };
 
-  const filteredConvs = conversations.filter((c) => {
+  // Filtra por conexão selecionada e busca
+  const connConversations = conversations.filter((c) => {
+    // Pertence à conexão selecionada (ou não tem connId = legado)
+    if (selectedConn && c.connId && c.connId !== selectedConn) return false;
     if (!search) return true;
     const s = search.toLowerCase();
     return (c.contactName ?? c.phone).toLowerCase().includes(s) || c.phone.includes(s);
   });
 
+  const unreadForConn = (connId: string | null) =>
+    conversations.filter((c) => c.unread && (connId === null || c.connId === connId || (!c.connId && connId === connections[0]?.id))).length;
+
   const totalUnread = conversations.filter((c) => c.unread).length;
+
+  const activeConn = connections.find((c) => c.id === selectedConn);
 
   return (
     <div className="flex h-full bg-[#111b21] text-white overflow-hidden">
@@ -235,6 +262,40 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
           </div>
         </div>
 
+        {/* ── Seletor de número (tabs) ── */}
+        {connections.length > 0 && (
+          <div className="bg-[#111b21] border-b border-[#2a3942] overflow-x-auto">
+            <div className="flex gap-0 min-w-max">
+              {connections.map((conn) => {
+                const isActive = conn.id === selectedConn;
+                const unread = unreadForConn(conn.id);
+                const label = conn.phone ? displayPhone(conn.phone) : conn.id;
+                return (
+                  <button
+                    key={conn.id}
+                    onClick={() => { setSelectedConn(conn.id); setSelected(null); setMessages([]); }}
+                    className={`flex flex-col items-center px-3 py-2 text-xs border-b-2 transition-colors whitespace-nowrap gap-0.5 ${
+                      isActive
+                        ? "border-[#00a884] text-[#00a884] bg-[#1a2a30]"
+                        : "border-transparent text-[#8696a0] hover:text-[#d1d7db] hover:bg-[#1a2530]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px]">{conn.type === "meta" ? "🔵" : "🟢"}</span>
+                      <span className="font-medium">{label}</span>
+                      {unread > 0 && (
+                        <span className="w-4 h-4 bg-[#00a884] rounded-full text-[9px] text-black font-bold flex items-center justify-center">
+                          {unread > 9 ? "9+" : unread}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Busca */}
         <div className="px-3 py-2 bg-[#111b21]">
           <div className="flex items-center bg-[#202c33] rounded-lg px-3 py-1.5 gap-2">
@@ -243,7 +304,7 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
             </svg>
             <input
               type="text"
-              placeholder="Pesquisar ou começar nova conversa"
+              placeholder="Pesquisar conversa"
               className="bg-transparent text-sm outline-none w-full text-[#d1d7db] placeholder:text-[#8696a0]"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -253,13 +314,13 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
 
         {/* Lista de conversas */}
         <div className="flex-1 overflow-y-auto">
-          {filteredConvs.length === 0 && (
+          {connConversations.length === 0 && (
             <div className="text-[#8696a0] text-sm text-center mt-10 px-4">
               Nenhuma conversa encontrada.
               <br /><span className="text-xs">As mensagens aparecerão aqui quando seus contatos enviarem mensagens via WhatsApp.</span>
             </div>
           )}
-          {filteredConvs.map((conv) => {
+          {connConversations.map((conv) => {
             const isActive = conv.phone === selected;
             const name = conv.contactName || displayPhone(conv.phone);
             const preview = conv.lastMessage
@@ -275,7 +336,6 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
                 onClick={() => handleSelect(conv.phone)}
                 className={`w-full text-left flex items-center px-3 py-3 border-b border-[#2a3942] hover:bg-[#2a3942] transition-colors ${isActive ? "bg-[#2a3942]" : ""}`}
               >
-                {/* Avatar */}
                 <div className="w-10 h-10 rounded-full bg-[#6b7280] flex items-center justify-center text-white font-semibold text-sm shrink-0 mr-3">
                   {name.charAt(0).toUpperCase()}
                 </div>
@@ -314,7 +374,11 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
           </div>
           <div className="text-center">
             <p className="text-[#d1d7db] font-light text-xl">Selecione uma conversa</p>
-            <p className="text-[#8696a0] text-sm mt-1">Escolha um contato à esquerda para começar</p>
+            {activeConn && (
+              <p className="text-[#8696a0] text-sm mt-1">
+                Número: <span className="text-[#00a884]">{displayPhone(activeConn.phone || activeConn.id)}</span>
+              </p>
+            )}
           </div>
         </div>
       ) : (
@@ -330,13 +394,16 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
               </p>
               <p className="text-xs text-[#8696a0]">{displayPhone(selected)}</p>
             </div>
+            {activeConn && (
+              <div className="ml-auto flex items-center gap-1.5 text-xs text-[#8696a0] bg-[#2a3942] rounded-full px-3 py-1">
+                <span>{activeConn.type === "meta" ? "🔵" : "🟢"}</span>
+                <span>{displayPhone(activeConn.phone || activeConn.id)}</span>
+              </div>
+            )}
           </div>
 
           {/* Mensagens */}
-          <div
-            className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1"
-            style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Crect fill='%230b141a' width='400' height='400'/%3E%3C/svg%3E\")" }}
-          >
+          <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1">
             {loadingMessages && (
               <div className="text-center text-[#8696a0] text-sm py-4">Carregando...</div>
             )}
@@ -386,7 +453,6 @@ export default function InboxView({ clientId, initialConversations = [] }: Props
               />
             </div>
 
-            {/* Botão de áudio / enviar */}
             {text.trim() ? (
               <button
                 onClick={handleSend}

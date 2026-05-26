@@ -10,17 +10,21 @@ export async function GET(req: NextRequest) {
 
   // Busca todas as conexões deste cliente
   const funnels = getFunnels().filter((f) => f.clientId === clientId);
+  const connections: { id: string; phone: string; type: string }[] = [];
   const connIds = new Set<string>();
+
   for (const f of funnels) {
     for (const c of f.connections ?? []) {
-      connIds.add(c.id);
+      if (!connIds.has(c.id)) {
+        connIds.add(c.id);
+        connections.push({ id: c.id, phone: c.phone || c.id, type: c.type });
+      }
     }
   }
 
-  // Pega todas as conversas do cliente e filtra apenas as que pertencem às conexões deste cliente
+  // Pega todas as conversas do cliente filtradas pelas conexões deste cliente
   const conversations = getAllConversationsByClientId(clientId);
-  // Inclui conversas sem connId também (mensagens antigas antes do campo existir)
   const filtered = conversations.filter((c) => !c.connId || connIds.has(c.connId));
 
-  return NextResponse.json({ conversations: filtered });
+  return NextResponse.json({ conversations: filtered, connections });
 }
