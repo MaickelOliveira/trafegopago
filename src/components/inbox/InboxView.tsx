@@ -17,6 +17,7 @@ type Conversation = {
   lastMessage: ChatMessage | null;
   lastActivity: number;
   unread: boolean;
+  aiPaused?: boolean;
 };
 
 type Connection = {
@@ -401,6 +402,28 @@ export default function InboxView({ clientId, initialConversations = [], initial
               </div>
             )}
           </div>
+
+          {/* Banner IA pausada */}
+          {selectedConv?.aiPaused && (
+            <div className="flex items-center justify-between px-4 py-2 bg-[#2a1a0e] border-b border-[#5c3b1e] text-sm">
+              <span className="text-[#f0a050]">⏸ IA pausada — você está no controle desta conversa</span>
+              <button
+                onClick={async () => {
+                  await fetch("/api/whatsapp/inbox/ai-pause", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ phone: selected, clientId, paused: false }),
+                  });
+                  setConversations((prev) =>
+                    prev.map((c) => c.phone === selected ? { ...c, aiPaused: false } : c)
+                  );
+                }}
+                className="text-xs text-[#00a884] hover:text-[#06cf9c] font-medium ml-4 shrink-0"
+              >
+                Reativar IA
+              </button>
+            </div>
+          )}
 
           {/* Mensagens */}
           <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1">
