@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTemplates, createTemplate, syncTemplateStatus } from "@/lib/waba-templates";
+import { getTemplates, createTemplate, syncTemplateStatus, type TemplateLanguage } from "@/lib/waba-templates";
 import { getFunnels } from "@/lib/funnels";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +7,41 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId") ?? undefined;
   const sync = req.nextUrl.searchParams.get("sync") === "1";
+
+  // Importar templates existentes do Meta (não cadastrados ainda)
+  const importWabaId  = req.nextUrl.searchParams.get("importWabaId");
+  const importToken   = req.nextUrl.searchParams.get("importToken");
+  const importPhoneId = req.nextUrl.searchParams.get("importPhoneId");
+  if (importWabaId && importToken && clientId) {
+    const url = `https://graph.facebook.com/v19.0/${importWabaId}/message_templates?fields=name,status,category,language,components,rejected_reason&limit=200&access_token=${importToken}`;
+    const metaRes = await fetch(url);
+    if (!metaRes.ok) {
+      const err = await metaRes.json();
+      return NextResponse.json({ error: "Erro Meta API", details: err }, { status: 502 });
+    }
+    const metaData = await metaRes.json() as { data: { id: string; name: string; status: string; category: string; language: string; components: object[]; rejected_reason?: string }[] };
+    const existing = getTemplates(clientId).map((t) => t.metaId);
+    const imported: ReturnType<typeof createTemplate>[] = [];
+    for (const mt of metaData.data ?? []) {
+      if (existing.includes(mt.id)) continue; // já importado
+      const tpl = createTemplate({
+        clientId,
+        name: mt.name,
+        category: (mt.category as "MARKETING" | "UTILITY") ?? "MARKETING",
+        language: mt.language as TemplateLanguage,
+        components: mt.components as Parameters<typeof createTemplate>[0]["components"],
+        status: (mt.status as "APPROVED" | "PENDING" | "REJECTED" | "PAUSED" | "DRAFT") ?? "DRAFT",
+        metaId: mt.id,
+        wabaId: importWabaId,
+        phoneNumberId: importPhoneId ?? undefined,
+        metaToken: importToken,
+        rejectedReason: mt.rejected_reason ?? undefined,
+      });
+      imported.push(tpl);
+    }
+    return NextResponse.json({ imported: imported.length, templates: getTemplates(clientId) });
+  }
+
   let templates = getTemplates(clientId);
 
   if (sync) {

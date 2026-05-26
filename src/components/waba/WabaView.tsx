@@ -72,7 +72,33 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
   });
   const [creating, setCreating] = useState(false);
 
+  // Import do Meta
+  const [showImport, setShowImport] = useState(false);
+  const [importWabaId, setImportWabaId] = useState("");
+  const [importToken, setImportToken] = useState("");
+  const [importConnId, setImportConnId] = useState(metaConnections[0]?.id ?? "");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number } | null>(null);
+
   const selectedConn = metaConnections.find((c) => c.id === form.connId);
+  const importConn = metaConnections.find((c) => c.id === importConnId);
+
+  async function doImport() {
+    const wabaId = importWabaId.trim() || importConn?.phoneNumberId;
+    const token = importToken.trim() || importConn?.token;
+    if (!wabaId || !token) return;
+    setImporting(true);
+    setImportResult(null);
+    const params = new URLSearchParams({ clientId, importWabaId: wabaId, importToken: token });
+    if (importConn?.phoneNumberId) params.set("importPhoneId", importConn.phoneNumberId);
+    const res = await fetch(`/api/waba/templates?${params}`);
+    if (res.ok) {
+      const data = await res.json();
+      setImportResult({ imported: data.imported });
+      setTemplates(data.templates);
+    }
+    setImporting(false);
+  }
 
   async function syncStatus(id: string) {
     setSyncing(id);
@@ -178,6 +204,12 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => { setShowImport((v) => !v); setImportResult(null); }}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 transition"
+          >
+            📥 Importar do Meta
+          </button>
+          <button
             onClick={syncAll}
             disabled={syncing === "all"}
             className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 transition"
@@ -186,6 +218,66 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
           </button>
         </div>
       </div>
+
+      {/* Painel de importação */}
+      {showImport && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-blue-900 mb-0.5">Importar templates existentes do Meta</p>
+            <p className="text-xs text-blue-600">Busca todos os templates aprovados/pendentes do seu WABA e importa aqui.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Conexão WhatsApp</label>
+              <select
+                value={importConnId}
+                onChange={(e) => setImportConnId(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 bg-white"
+              >
+                {metaConnections.length === 0
+                  ? <option value="">Nenhuma conexão configurada</option>
+                  : metaConnections.map((c) => <option key={c.id} value={c.id}>{c.phone} ({c.funnelName})</option>)
+                }
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">WABA ID</label>
+              <input
+                value={importWabaId}
+                onChange={(e) => setImportWabaId(e.target.value)}
+                placeholder="Ex: 123456789012345"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 bg-white"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Token de Acesso (deixe vazio para usar o da conexão)</label>
+              <input
+                value={importToken}
+                onChange={(e) => setImportToken(e.target.value)}
+                placeholder="Deixe vazio para usar o token da conexão selecionada"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 bg-white"
+              />
+            </div>
+          </div>
+          {importResult && (
+            <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700 font-medium">
+              ✓ {importResult.imported} template(s) importado(s) com sucesso!
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={doImport}
+              disabled={importing || (!importWabaId && !importConn?.phoneNumberId)}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition"
+            >
+              {importing ? "Importando..." : "Buscar e importar templates"}
+            </button>
+            <button onClick={() => setShowImport(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition">
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200">

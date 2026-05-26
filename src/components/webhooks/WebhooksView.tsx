@@ -23,9 +23,6 @@ export function WebhooksView({ clientId, funnels, initialWebhooks, baseUrl }: Pr
   const [name, setName] = useState("");
   const [funnelId, setFunnelId] = useState(funnels[0]?.id ?? "");
   const [columnId, setColumnId] = useState(funnels[0]?.columns[0]?.id ?? "");
-  const [nameField, setNameField] = useState("name");
-  const [phoneField, setPhoneField] = useState("phone");
-  const [emailField, setEmailField] = useState("email");
 
   const selectedFunnel = funnels.find((f) => f.id === funnelId);
 
@@ -47,7 +44,7 @@ export function WebhooksView({ clientId, funnels, initialWebhooks, baseUrl }: Pr
           funnelId,
           columnId,
           name: name.trim(),
-          fieldMapping: { nameField, phoneField, emailField: emailField || undefined },
+          fieldMapping: { nameField: "name", phoneField: "phone", emailField: "email" },
           active: true,
         }),
       });
@@ -135,37 +132,8 @@ export function WebhooksView({ clientId, funnels, initialWebhooks, baseUrl }: Pr
             </div>
           </div>
 
-          <div className="border-t border-violet-200 pt-3">
-            <p className="text-xs font-semibold text-slate-600 mb-2">Mapeamento de Campos (nomes dos campos no POST)</p>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Campo "Nome"</label>
-                <input
-                  value={nameField}
-                  onChange={(e) => setNameField(e.target.value)}
-                  className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-violet-400"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Campo "Telefone"</label>
-                <input
-                  value={phoneField}
-                  onChange={(e) => setPhoneField(e.target.value)}
-                  className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-violet-400"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Campo "E-mail" (opcional)</label>
-                <input
-                  value={emailField}
-                  onChange={(e) => setEmailField(e.target.value)}
-                  className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-violet-400"
-                />
-              </div>
-            </div>
-            <p className="text-[10px] text-slate-400 mt-1.5">
-              Campos comuns como <code>nome</code>, <code>telefone</code>, <code>celular</code>, <code>email</code> são detectados automaticamente mesmo sem configuração.
-            </p>
+          <div className="rounded-lg bg-violet-100/60 px-3 py-2 text-xs text-violet-700">
+            ✓ Campos detectados automaticamente: <code>name</code>, <code>nome</code>, <code>phone</code>, <code>telefone</code>, <code>celular</code>, <code>email</code>, <code>utm_*</code>, <code>fbclid</code>, <code>gclid</code> — todos os demais campos são salvos automaticamente.
           </div>
 
           <div className="flex items-center gap-2 pt-1">
