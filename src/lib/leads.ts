@@ -33,6 +33,7 @@ export type Lead = {
   notes: string;
   ai: LeadAI | null;
   aiPaused?: boolean; // IA pausada para esta conversa (especialista assumiu)
+  customFields?: Record<string, string>; // Campos extras do formulário de origem
   createdAt: string;
   updatedAt: string;
 };

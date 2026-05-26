@@ -50,6 +50,20 @@ export async function POST(
     return NextResponse.json({ error: "Telefone não encontrado no payload" }, { status: 422 });
   }
 
+  // Captura todos os campos extras (excluindo os campos já mapeados e UTMs)
+  const SKIP_KEYS = new Set([
+    nameField, phoneField, emailField ?? "",
+    "nome", "name", "telefone", "phone", "celular", "email",
+    "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+    "fbclid", "gclid", "campanha",
+  ]);
+  const customFields: Record<string, string> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (!SKIP_KEYS.has(k) && v && String(v).trim()) {
+      customFields[k] = String(v);
+    }
+  }
+
   const funnel = getFunnelById(wh.funnelId);
   const columnExists = funnel?.columns.some((c) => c.id === wh.columnId) ?? false;
   const columnId = columnExists ? wh.columnId : (funnel?.columns[0]?.id ?? "entrada");
@@ -69,6 +83,7 @@ export async function POST(
       source: "form",
       status: columnId,
       notes: `Origem: ${wh.name}`,
+      customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
       campaignName: payload.utm_campaign || payload.campanha || null,
       utmSource: payload.utm_source || null,
       utmMedium: payload.utm_medium || null,

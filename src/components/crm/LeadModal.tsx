@@ -396,6 +396,21 @@ export function LeadModal({
               </div>
             )}
 
+            {/* Campos extras do formulário */}
+            {lead.customFields && Object.keys(lead.customFields).length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">📋 Dados do Formulário</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  {Object.entries(lead.customFields).map(([k, v]) => (
+                    <>
+                      <span key={k + "_k"} className="text-xs text-slate-400 truncate">{k}</span>
+                      <span key={k + "_v"} className="text-xs font-medium text-slate-700 truncate">{v}</span>
+                    </>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Notes */}
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Anotações</p>
