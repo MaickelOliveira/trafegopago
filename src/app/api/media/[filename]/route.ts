@@ -18,9 +18,9 @@ const MIME_MAP: Record<string, string> = {
 
 export async function GET(
   _req: Request,
-  { params }: { params: { filename: string } }
+  { params }: { params: Promise<{ filename: string }> }
 ) {
-  const filename = params.filename;
+  const { filename } = await params;
 
   // Sanitização: impede path traversal
   if (!filename || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
