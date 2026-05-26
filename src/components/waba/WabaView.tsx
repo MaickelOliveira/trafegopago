@@ -356,7 +356,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
                       </div>
                     ))}
 
-                    {tpl.rejectedReason && (
+                    {tpl.rejectedReason && tpl.rejectedReason !== "NONE" && (
                       <div className="mt-1 text-xs text-red-600 bg-red-50 rounded px-2 py-1">
                         Motivo: {tpl.rejectedReason}
                       </div>
