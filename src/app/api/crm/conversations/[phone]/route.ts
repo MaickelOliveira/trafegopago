@@ -30,24 +30,48 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
 
   const clientId = getClientId(normalized);
 
-  // Busca token da instância do funil do lead para enviar pela instância correta
+  // Busca conexão do funil do lead
   let token: string | null = null;
   let funnelId: string | undefined;
+  let metaPhoneNumberId: string | null = null;
+  let metaToken: string | null = null;
+  let connType: string = "uazapi";
+
   if (clientId) {
     const lead = getLeadByPhone(clientId, normalized);
     funnelId = lead?.funnelId;
     if (funnelId) {
       const funnel = getFunnelById(funnelId);
       const conn = funnel?.connections?.[0];
-      token = conn?.uazapiToken ?? null;
+      if (conn) {
+        connType = conn.type ?? "uazapi";
+        if (conn.type === "meta") {
+          metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
+          metaToken = conn.metaToken ?? null;
+        } else {
+          token = conn.uazapiToken ?? null;
+        }
+      }
     }
   }
-  if (!token) {
+  if (connType !== "meta" && !token) {
     const config = getConfig();
     token = config.uazapiToken ?? null;
   }
 
-  if (token) {
+  // Envia pela conexão correta
+  if (connType === "meta" && metaPhoneNumberId && metaToken) {
+    await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${metaToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: normalized,
+        type: "text",
+        text: { body: message.trim() },
+      }),
+    }).catch(e => console.error("[conversations/send] Meta API error:", e));
+  } else if (token) {
     await sendText(token, normalized, message.trim());
   } else {
     console.warn("[conversations/send] sem token para enviar ao phone:", normalized);
