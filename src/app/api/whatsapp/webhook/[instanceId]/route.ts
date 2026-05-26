@@ -12,6 +12,8 @@
  *  4. Se agente IA ativo → Gemini responde e envia via UazapiGO
  */
 import { NextRequest, NextResponse } from "next/server";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import path from "path";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
 import { getHistory, addMessage, getAiPaused, setAiPaused } from "@/lib/conversations";
@@ -336,6 +338,18 @@ function isGroup(phone: string): boolean {
   return phone.includes("@g.us") || phone.endsWith("@broadcast");
 }
 
+/** Salva os últimos 20 payloads recebidos para diagnóstico. */
+function saveWebhookDebug(entry: Record<string, unknown>) {
+  try {
+    const file = path.join(process.cwd(), "data", "webhook-debug.json");
+    const existing = existsSync(file)
+      ? JSON.parse(readFileSync(file, "utf-8")) as { entries: unknown[] }
+      : { entries: [] };
+    existing.entries = [entry, ...existing.entries].slice(0, 20);
+    writeFileSync(file, JSON.stringify(existing, null, 2));
+  } catch { /* silently ignore */ }
+}
+
 function isValidPhone(phone: string): boolean {
   return phone.length >= 7 && phone.length <= 20;
 }
@@ -352,6 +366,9 @@ export async function POST(
   } catch {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
+
+  // Salva debug: guarda os últimos payloads para diagnóstico via /api/debug/webhooks
+  saveWebhookDebug({ ts: Date.now(), instanceId, body });
 
   console.log(`[webhook/${instanceId}] body=`, JSON.stringify(body).slice(0, 4000));
 
@@ -450,12 +467,14 @@ export async function POST(
       ...(isNew ? { status: entradaColumn } : {}),
     });
 
-    if (!text.trim() && !msgType) return NextResponse.json({ ok: true });
+    // Guarda: pula apenas se não há texto, não há tipo e não há URL de mídia
+    if (!text.trim() && !msgType && !mediaUrl) return NextResponse.json({ ok: true });
 
     // ── Salva mensagem no histórico ───────────────────────────────────────
     const ts = Date.now();
-    const msgContent = text || (msgType ? `[${msgType}]` : "");
-    addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: (msgType === "audio" || msgType === "image") ? msgType : undefined, mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
+    const msgContent = text || (msgType ? `[${msgType}]` : mediaUrl ? "[mídia]" : "");
+    const savedType = msgType === "audio" ? "audio" as const : msgType === "image" ? "image" as const : undefined;
+    addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: savedType, mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
 
     // Mensagem enviada por você (gestor via WhatsApp)
     if (fromMe) {
