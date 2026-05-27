@@ -248,11 +248,17 @@ export default function BriefingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answers: finalAnswers }),
       });
-      const data = await res.json();
-      if (!res.ok) { alert(data.error ?? "Erro ao enviar."); return; }
+      const text = await res.text();
+      let data: { error?: string; ok?: boolean } = {};
+      try { data = JSON.parse(text); } catch { /* resposta não-JSON */ }
+      if (!res.ok) {
+        alert(data.error ?? `Erro ${res.status}`);
+        return;
+      }
       setSubmitted(true);
-    } catch {
-      alert("Erro ao enviar. Tente novamente.");
+    } catch (err) {
+      alert("Erro de conexão. Verifique sua internet e tente novamente.");
+      console.error(err);
     } finally {
       setSubmitting(false);
     }
