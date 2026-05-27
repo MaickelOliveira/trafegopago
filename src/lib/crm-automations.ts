@@ -5,6 +5,7 @@ import type { Lead } from "./leads";
 import { getFunnels } from "./funnels";
 import { sendText } from "./uazapi";
 import { getTemplates, sendTemplate } from "./waba-templates";
+import type { TemplateComponent } from "./waba-templates";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,13 @@ export type CrmAutomation = {
   message?: string;          // texto com variáveis {{nome}} {{telefone}} {{email}} {{funil}}
   // Meta WABA:
   templateId?: string;       // id local do WabaTemplate
+  /**
+   * Mapeamento de variáveis por componente do template.
+   * Chave = tipo do componente ("HEADER" | "BODY").
+   * Valor = array onde índice 0 = {{1}}, índice 1 = {{2}}, etc.
+   * Cada string pode ser texto livre ou variável de lead: {{nome}} {{telefone}} {{email}} {{funil}}
+   */
+  templateVariables?: Record<string, string[]>;
   delayMinutes: number;      // 0 = imediato
   createdAt: string;
   updatedAt: string;
@@ -92,6 +100,32 @@ function interpolate(text: string, lead: Lead, funnelName?: string): string {
     .replace(/\{\{funil\}\}/gi, funnelName ?? "");
 }
 
+/**
+ * Monta o array de componentes para a Meta Cloud API a partir do mapeamento
+ * salvo na automação. Cada {{n}} é substituído pelo valor do lead.
+ */
+function buildMetaComponents(
+  tplComponents: TemplateComponent[],
+  templateVariables: Record<string, string[]>,
+  lead: Lead,
+  funnelName?: string,
+): object[] {
+  const result: object[] = [];
+  for (const comp of tplComponents) {
+    const varMappings = templateVariables[comp.type];
+    if (!varMappings || varMappings.length === 0) continue;
+    const parameters = varMappings.map((mapping) => ({
+      type: "text",
+      text: interpolate(mapping, lead, funnelName),
+    }));
+    result.push({
+      type: comp.type.toLowerCase(),
+      parameters,
+    });
+  }
+  return result;
+}
+
 // ── Execution engine ──────────────────────────────────────────────────────────
 
 async function execute(automation: CrmAutomation, lead: Lead) {
@@ -109,12 +143,19 @@ async function execute(automation: CrmAutomation, lead: Lead) {
     if (!automation.templateId || !conn.metaPhoneNumberId || !conn.metaToken) return;
     const tpl = getTemplates().find((t) => t.id === automation.templateId);
     if (!tpl || tpl.status !== "APPROVED") return;
+
+    // Monta os components com as variáveis preenchidas pelo lead
+    const metaComponents = automation.templateVariables
+      ? buildMetaComponents(tpl.components, automation.templateVariables, lead, funnel?.name)
+      : [];
+
     await sendTemplate(
       conn.metaPhoneNumberId,
       conn.metaToken,
       lead.phone,
       tpl.name,
       tpl.language,
+      metaComponents.length > 0 ? metaComponents : undefined,
     );
   }
 }

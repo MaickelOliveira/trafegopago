@@ -57,6 +57,7 @@ type FormState = {
   connectionId: string;
   message: string;
   templateId: string;
+  templateVariables: Record<string, string[]>; // componentType -> [val para {{1}}, val para {{2}}, ...]
   delayMinutes: number;
 };
 
@@ -69,6 +70,7 @@ const BLANK_FORM = (uazapiConnId: string, templateId: string): FormState => ({
   connectionId: uazapiConnId,
   message: "Olá {{nome}}! Recebemos seu cadastro. Em breve entraremos em contato. 😊",
   templateId,
+  templateVariables: {},
   delayMinutes: 0,
 });
 
@@ -118,6 +120,7 @@ export function CrmAutomationsView({
       connectionId: auto.connectionId,
       message: auto.message ?? "",
       templateId: auto.templateId ?? approvedTemplates[0]?.id ?? "",
+      templateVariables: auto.templateVariables ?? {},
       delayMinutes: auto.delayMinutes,
     });
     setShowForm(true);
@@ -146,6 +149,8 @@ export function CrmAutomationsView({
       connectionId: form.connectionId,
       message: form.channel === "uazapi" ? form.message : undefined,
       templateId: form.channel === "waba" ? form.templateId : undefined,
+      templateVariables: form.channel === "waba" && Object.keys(form.templateVariables).length > 0
+        ? form.templateVariables : undefined,
       delayMinutes: form.delayMinutes,
     };
 
@@ -438,23 +443,136 @@ export function CrmAutomationsView({
               </p>
             </div>
           ) : (
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Template aprovado</label>
-              {approvedTemplates.length === 0 ? (
-                <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 text-sm text-yellow-700">
-                  Nenhum template aprovado. Acesse <strong>Disparos WA</strong> e importe seus templates do Meta.
-                </div>
-              ) : (
-                <select
-                  value={form.templateId}
-                  onChange={(e) => setField("templateId", e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white"
-                >
-                  {approvedTemplates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.language})</option>
-                  ))}
-                </select>
-              )}
+            <div className="space-y-3">
+              {/* Seletor de template */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Template aprovado</label>
+                {approvedTemplates.length === 0 ? (
+                  <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 text-sm text-yellow-700">
+                    Nenhum template aprovado. Acesse <strong>Disparos WA</strong> e importe seus templates do Meta.
+                  </div>
+                ) : (
+                  <select
+                    value={form.templateId}
+                    onChange={(e) => {
+                      setField("templateId", e.target.value);
+                      setField("templateVariables", {}); // reset vars ao trocar template
+                    }}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white"
+                  >
+                    {approvedTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.language})</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Preview + variáveis do template selecionado */}
+              {(() => {
+                const tpl = approvedTemplates.find((t) => t.id === form.templateId);
+                if (!tpl) return null;
+
+                // Componentes que têm variáveis {{n}}
+                const varComps = tpl.components.filter(
+                  (c) => c.text && /\{\{\d+\}\}/.test(c.text)
+                );
+
+                // Componentes de conteúdo (HEADER, BODY, FOOTER) para preview
+                const previewComps = tpl.components.filter(
+                  (c) => c.type !== "BUTTONS" && c.text
+                );
+
+                return (
+                  <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                    {/* Preview da mensagem */}
+                    <div className="bg-[#e9f5fe] px-3 py-3 space-y-1 border-b border-slate-200">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Pré-visualização</p>
+                      {previewComps.map((c) => (
+                        <p key={c.type} className={[
+                          "text-sm text-slate-800 whitespace-pre-wrap",
+                          c.type === "HEADER" ? "font-bold" : "",
+                          c.type === "FOOTER" ? "text-slate-400 text-[11px]" : "",
+                        ].join(" ")}>
+                          {/* Destaca variáveis {{n}} em azul */}
+                          {c.text!.split(/(\{\{\d+\}\})/).map((part, i) =>
+                            /\{\{\d+\}\}/.test(part)
+                              ? <span key={i} className="bg-blue-100 text-blue-700 rounded px-0.5 font-mono">{part}</span>
+                              : part
+                          )}
+                        </p>
+                      ))}
+                    </div>
+
+                    {/* Inputs para preencher cada variável */}
+                    {varComps.length > 0 && (
+                      <div className="px-3 py-3 space-y-3">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                          Preencher variáveis do template
+                        </p>
+                        {varComps.map((comp) => {
+                          const matches = [...comp.text!.matchAll(/\{\{(\d+)\}\}/g)];
+                          return (
+                            <div key={comp.type}>
+                              <p className="text-[10px] font-semibold text-slate-500 mb-1 uppercase">
+                                {comp.type === "HEADER" ? "🔝 Header" : "📝 Body"}
+                              </p>
+                              <div className="space-y-1.5">
+                                {matches.map((m) => {
+                                  const idx = parseInt(m[1]) - 1;
+                                  const current = form.templateVariables[comp.type]?.[idx] ?? "";
+                                  return (
+                                    <div key={m[1]} className="flex items-center gap-2">
+                                      <span className="text-xs font-mono bg-blue-100 text-blue-700 rounded px-1.5 py-0.5 shrink-0">
+                                        {`{{${m[1]}}}`}
+                                      </span>
+                                      <div className="flex-1 relative">
+                                        <input
+                                          value={current}
+                                          onChange={(e) => {
+                                            const vars = { ...form.templateVariables };
+                                            const arr = [...(vars[comp.type] ?? [])];
+                                            arr[idx] = e.target.value;
+                                            vars[comp.type] = arr;
+                                            setField("templateVariables", vars);
+                                          }}
+                                          placeholder={`Valor para {{${m[1]}}}`}
+                                          className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-violet-400 bg-white pr-24"
+                                        />
+                                        {/* Atalhos para variáveis de lead */}
+                                        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
+                                          {["{{nome}}", "{{telefone}}", "{{email}}"].map((v) => (
+                                            <button
+                                              key={v}
+                                              type="button"
+                                              onClick={() => {
+                                                const vars = { ...form.templateVariables };
+                                                const arr = [...(vars[comp.type] ?? [])];
+                                                arr[idx] = v;
+                                                vars[comp.type] = arr;
+                                                setField("templateVariables", vars);
+                                              }}
+                                              className="rounded bg-slate-100 hover:bg-violet-100 hover:text-violet-700 px-1 py-0.5 text-[9px] font-mono text-slate-500 transition"
+                                            >
+                                              {v.replace(/\{\{|\}\}/g, "")}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <p className="text-[10px] text-slate-400">
+                          Clique nos atalhos ou digite texto livre. Variáveis disponíveis: <code className="bg-slate-100 px-1 rounded">{"{{nome}}"}</code> <code className="bg-slate-100 px-1 rounded">{"{{telefone}}"}</code> <code className="bg-slate-100 px-1 rounded">{"{{email}}"}</code> <code className="bg-slate-100 px-1 rounded">{"{{funil}}"}</code>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

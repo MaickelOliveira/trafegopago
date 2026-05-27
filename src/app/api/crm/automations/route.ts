@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { clientId, name, trigger, channel, connectionId, funnelId, triggerColumnId,
-          message, templateId, delayMinutes, active } = body;
+          message, templateId, templateVariables, delayMinutes, active } = body;
 
   if (!clientId || !name || !trigger || !channel || !connectionId) {
     return NextResponse.json({ error: "clientId, name, trigger, channel, connectionId são obrigatórios" }, { status: 400 });
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
     triggerColumnId: triggerColumnId || undefined,
     message: message || undefined,
     templateId: templateId || undefined,
+    templateVariables: templateVariables || undefined,
     delayMinutes: delayMinutes ?? 0,
     active: active ?? true,
   });
