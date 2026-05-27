@@ -623,6 +623,15 @@ export async function POST(
     const geminiEnabled = agentCfg?.enabled === true;
     const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
 
+    // Filtro de número de teste: se configurado, só responde para aquele número
+    if (agentCfg?.testPhone) {
+      const testClean = agentCfg.testPhone.replace(/\D/g, "");
+      if (phone !== testClean) {
+        console.log(`[webhook/${instanceId}] MODO TESTE — ignorando phone=${phone} (permitido: ${testClean})`);
+        return NextResponse.json({ ok: true });
+      }
+    }
+
     const matchSource = matchedFunnel ? "token-url" : fallbackByBodyToken ? "body-token" : fallbackByBodyName ? "body-name" : fallbackByUrlName ? "url-name" : "sem-funil";
     console.log(`[webhook/${instanceId}] phone=${phone} cid=${cid} funnel=${funnel?.id?.slice(0,8) ?? "none"}(${matchSource}) gemini=${geminiEnabled} wait=${waitSeconds}s uazToken=${instanceUazToken.slice(0, 8)}...`);
     console.log(`[webhook/${instanceId}] agentCfg found=${!!agentCfg} enabled=${agentCfg?.enabled} geminiKey=${agentCfg?.geminiApiKey ? "set" : "empty"} connId=${connId ?? "none"}`);

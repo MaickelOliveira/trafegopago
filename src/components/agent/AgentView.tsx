@@ -51,6 +51,7 @@ type AgentCfg = {
   splitMessages?: boolean;
   maxMessageLength?: number;
   aiResumeKeyword?: string;
+  testPhone?: string;
 };
 
 function Toggle({ label, sub, checked, onChange, color = "violet" }: {
@@ -474,6 +475,36 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           />
           <p className="text-xs text-slate-400 mt-1.5">
             Deixe em branco para desativar a retomada automática por palavra-chave (use o sistema para reativar).
+          </p>
+        </div>
+      </div>
+
+      {/* Número de teste */}
+      <div className={`rounded-2xl border p-5 space-y-3 shadow-sm ${cfg.testPhone?.trim() ? "border-orange-400 bg-orange-50" : "border-slate-200 bg-white"}`}>
+        <p className={`text-xs font-semibold uppercase tracking-wide ${cfg.testPhone?.trim() ? "text-orange-600" : "text-slate-500"}`}>
+          🧪 Modo Teste
+        </p>
+        {cfg.testPhone?.trim() && (
+          <div className="flex items-start gap-2 rounded-lg bg-orange-100 border border-orange-300 px-3 py-2">
+            <span className="text-orange-600 text-sm font-semibold">⚠️ Ativo</span>
+            <span className="text-orange-700 text-xs leading-5">
+              A IA está respondendo <strong>apenas</strong> para o número de teste. Limpe o campo para voltar ao modo normal.
+            </span>
+          </div>
+        )}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Número de teste (com DDD e DDI)
+          </label>
+          <input
+            type="text"
+            value={cfg.testPhone ?? ""}
+            onChange={(e) => setCfg((c) => ({ ...c, testPhone: e.target.value }))}
+            placeholder="Ex: 5511999999999"
+            className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition ${cfg.testPhone?.trim() ? "border-orange-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-100" : "border-slate-200 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"}`}
+          />
+          <p className="text-xs text-slate-400 mt-1.5">
+            Quando preenchido, a IA ignora todos os outros números. Deixe vazio para responder normalmente a todos.
           </p>
         </div>
       </div>

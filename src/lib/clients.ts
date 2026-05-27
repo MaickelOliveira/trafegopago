@@ -47,6 +47,7 @@ export type AgentConfig = {
   splitMessages?: boolean;       // Divide respostas longas em múltiplas mensagens
   maxMessageLength?: number;     // Máx. de caracteres por mensagem (padrão: 300)
   aiResumeKeyword?: string;      // Palavra-chave enviada pelo gestor para reativar a IA (ex: "atendimento finalizado")
+  testPhone?: string;            // Número de teste: quando preenchido, a IA responde APENAS este número
 };
 
 export type Client = {
