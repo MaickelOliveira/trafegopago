@@ -2,15 +2,74 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import type { Lead } from "./leads";
+import { updateLead, getLeads } from "./leads";
 import { getFunnels } from "./funnels";
-import { sendText } from "./uazapi";
+import { sendText, sendList } from "./uazapi";
 import { getTemplates, sendTemplate } from "./waba-templates";
 import type { TemplateComponent } from "./waba-templates";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type CrmTrigger = "lead_created" | "column_changed";
+/**
+ * Gatilhos disponíveis:
+ * - lead_created     : Lead cadastrado via formulário/webhook
+ * - column_changed   : Lead muda para qualquer coluna
+ * - column_entered   : Lead criado OU movido para uma coluna específica
+ * - scheduled_daily  : Diariamente às HH:MM para todos os leads de uma coluna
+ */
+export type CrmTrigger =
+  | "lead_created"
+  | "column_changed"
+  | "column_entered"
+  | "scheduled_daily";
+
 export type CrmChannel = "uazapi" | "waba";
+
+/**
+ * Tipos de passo de ação disponíveis:
+ * - send_message  : Enviar mensagem de texto livre (UazapiGO)
+ * - send_template : Enviar template aprovado (Meta WABA)
+ * - send_list     : Enviar lista interativa WhatsApp (UazapiGO)
+ * - add_note      : Adicionar nota/comentário ao lead no CRM
+ * - move_column   : Mover lead para outra coluna do kanban
+ * - delay         : Pausar N minutos antes do próximo passo
+ * - webhook       : Chamar URL externa (HTTP POST com dados do lead)
+ */
+export type CrmStepType =
+  | "send_message"
+  | "send_template"
+  | "send_list"
+  | "add_note"
+  | "move_column"
+  | "delay"
+  | "webhook";
+
+export type ListRow = { id: string; title: string; description?: string };
+
+export type CrmStep = {
+  id: string;
+  type: CrmStepType;
+  // send_message / send_list:
+  connectionId?: string;
+  message?: string;
+  // send_template:
+  templateId?: string;
+  templateVariables?: Record<string, string[]>;
+  // send_list:
+  listTitle?: string;
+  listButtonText?: string;
+  listRows?: ListRow[];
+  // add_note:
+  note?: string;
+  // move_column:
+  targetFunnelId?: string;
+  targetColumnId?: string;
+  // delay:
+  delayMinutes?: number;
+  // webhook:
+  webhookUrl?: string;
+  webhookBody?: string;
+};
 
 export type CrmAutomation = {
   id: string;
@@ -19,21 +78,17 @@ export type CrmAutomation = {
   name: string;
   active: boolean;
   trigger: CrmTrigger;
-  triggerColumnId?: string;  // apenas para trigger = "column_changed"
-  channel: CrmChannel;
-  connectionId: string;      // id da FunnelConnection usada
-  // UazapiGO:
-  message?: string;          // texto com variáveis {{nome}} {{telefone}} {{email}} {{funil}}
-  // Meta WABA:
-  templateId?: string;       // id local do WabaTemplate
-  /**
-   * Mapeamento de variáveis por componente do template.
-   * Chave = tipo do componente ("HEADER" | "BODY").
-   * Valor = array onde índice 0 = {{1}}, índice 1 = {{2}}, etc.
-   * Cada string pode ser texto livre ou variável de lead: {{nome}} {{telefone}} {{email}} {{funil}}
-   */
+  triggerColumnId?: string;  // para column_changed / column_entered / scheduled_daily
+  scheduledTime?: string;    // "HH:MM" para scheduled_daily
+  // ── Multi-passo (novo) ──
+  steps?: CrmStep[];
+  // ── Legacy (single-action, mantido para retrocompatibilidade) ──
+  channel?: CrmChannel;
+  connectionId?: string;
+  message?: string;
+  templateId?: string;
   templateVariables?: Record<string, string[]>;
-  delayMinutes: number;      // 0 = imediato
+  delayMinutes?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -100,10 +155,6 @@ function interpolate(text: string, lead: Lead, funnelName?: string): string {
     .replace(/\{\{funil\}\}/gi, funnelName ?? "");
 }
 
-/**
- * Monta o array de componentes para a Meta Cloud API a partir do mapeamento
- * salvo na automação. Cada {{n}} é substituído pelo valor do lead.
- */
 function buildMetaComponents(
   tplComponents: TemplateComponent[],
   templateVariables: Record<string, string[]>,
@@ -118,17 +169,83 @@ function buildMetaComponents(
       type: "text",
       text: interpolate(mapping, lead, funnelName),
     }));
-    result.push({
-      type: comp.type.toLowerCase(),
-      parameters,
-    });
+    result.push({ type: comp.type.toLowerCase(), parameters });
   }
   return result;
 }
 
-// ── Execution engine ──────────────────────────────────────────────────────────
+// ── Step execution ────────────────────────────────────────────────────────────
 
-async function execute(automation: CrmAutomation, lead: Lead) {
+type FunnelLike = { id: string; name: string; connections?: { id: string; uazapiToken?: string; metaPhoneNumberId?: string; metaToken?: string }[] };
+
+function findConn(funnels: FunnelLike[], connId: string) {
+  return funnels.flatMap((f) => f.connections ?? []).find((c) => c.id === connId);
+}
+
+async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], funnelName?: string) {
+  switch (step.type) {
+    case "send_message": {
+      const conn = findConn(funnels, step.connectionId ?? "");
+      if (!conn?.uazapiToken || !step.message) return;
+      await sendText(conn.uazapiToken, lead.phone, interpolate(step.message, lead, funnelName));
+      break;
+    }
+    case "send_template": {
+      const conn = findConn(funnels, step.connectionId ?? "");
+      if (!step.templateId || !conn?.metaPhoneNumberId || !conn?.metaToken) return;
+      const tpl = getTemplates().find((t) => t.id === step.templateId);
+      if (!tpl || tpl.status !== "APPROVED") return;
+      const comps = step.templateVariables
+        ? buildMetaComponents(tpl.components, step.templateVariables, lead, funnelName)
+        : [];
+      await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, lead.phone, tpl.name, tpl.language,
+        comps.length > 0 ? comps : undefined);
+      break;
+    }
+    case "send_list": {
+      const conn = findConn(funnels, step.connectionId ?? "");
+      if (!conn?.uazapiToken || !step.listTitle || !step.listRows?.length) return;
+      await sendList(conn.uazapiToken, lead.phone, step.listTitle,
+        step.listButtonText ?? "Ver opções",
+        [{ title: step.listTitle, rows: step.listRows }]);
+      break;
+    }
+    case "add_note": {
+      if (!step.note) return;
+      const note = interpolate(step.note, lead, funnelName);
+      const ts = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+      const prev = lead.notes ?? "";
+      updateLead(lead.id, { notes: prev + (prev ? "\n\n" : "") + `[${ts} — automação] ${note}` });
+      break;
+    }
+    case "move_column": {
+      if (!step.targetColumnId) return;
+      const patch: Partial<Lead> = { status: step.targetColumnId };
+      if (step.targetFunnelId) patch.funnelId = step.targetFunnelId;
+      updateLead(lead.id, patch);
+      break;
+    }
+    case "delay":
+      // Delays are handled at the scheduling level (see runAutomationsForEvent)
+      break;
+    case "webhook": {
+      if (!step.webhookUrl) return;
+      const body = step.webhookBody
+        ? interpolate(step.webhookBody, lead, funnelName)
+        : JSON.stringify({ id: lead.id, name: lead.name, phone: lead.phone, email: lead.email, status: lead.status, funnelId: lead.funnelId });
+      await fetch(step.webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }).catch(console.error);
+      break;
+    }
+  }
+}
+
+// ── Legacy execution (backward compat) ───────────────────────────────────────
+
+async function executeLegacy(automation: CrmAutomation, lead: Lead) {
   const funnels = getFunnels();
   const funnel = funnels.find((f) => f.id === lead.funnelId);
   const conn = funnel?.connections?.find((c) => c.id === automation.connectionId);
@@ -136,54 +253,94 @@ async function execute(automation: CrmAutomation, lead: Lead) {
 
   if (automation.channel === "uazapi") {
     if (!conn.uazapiToken || !automation.message) return;
-    const msg = interpolate(automation.message, lead, funnel?.name);
-    await sendText(conn.uazapiToken, lead.phone, msg);
-
+    await sendText(conn.uazapiToken, lead.phone, interpolate(automation.message, lead, funnel?.name));
   } else if (automation.channel === "waba") {
     if (!automation.templateId || !conn.metaPhoneNumberId || !conn.metaToken) return;
     const tpl = getTemplates().find((t) => t.id === automation.templateId);
     if (!tpl || tpl.status !== "APPROVED") return;
-
-    // Monta os components com as variáveis preenchidas pelo lead
-    const metaComponents = automation.templateVariables
+    const comps = automation.templateVariables
       ? buildMetaComponents(tpl.components, automation.templateVariables, lead, funnel?.name)
       : [];
+    await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, lead.phone, tpl.name, tpl.language,
+      comps.length > 0 ? comps : undefined);
+  }
+}
 
-    await sendTemplate(
-      conn.metaPhoneNumberId,
-      conn.metaToken,
-      lead.phone,
-      tpl.name,
-      tpl.language,
-      metaComponents.length > 0 ? metaComponents : undefined,
-    );
+// ── Main runner ───────────────────────────────────────────────────────────────
+
+function scheduleSteps(auto: CrmAutomation, lead: Lead) {
+  const allFunnels = getFunnels();
+  const funnel = allFunnels.find((f) => f.id === lead.funnelId);
+  const funnelName = funnel?.name;
+
+  if (auto.steps && auto.steps.length > 0) {
+    // Multi-step: accumulate delays to schedule each non-delay step
+    let accMs = 0;
+    for (const step of auto.steps) {
+      if (step.type === "delay") {
+        accMs += (step.delayMinutes ?? 1) * 60 * 1000;
+      } else {
+        const delay = accMs;
+        const s = step;
+        const run = () => executeStep(s, lead, allFunnels, funnelName).catch(console.error);
+        if (delay > 0) setTimeout(run, delay);
+        else run();
+      }
+    }
+  } else {
+    // Legacy single-action
+    const run = () => executeLegacy(auto, lead).catch(console.error);
+    const delay = (auto.delayMinutes ?? 0) * 60 * 1000;
+    if (delay > 0) setTimeout(run, delay);
+    else run();
   }
 }
 
 /**
  * Dispara automações para um evento de CRM.
- * Chame este método nos pontos de trigger (webhook, kanban).
  */
 export function runAutomationsForEvent(
   trigger: CrmTrigger,
   lead: Lead,
   opts?: { toColumnId?: string },
 ) {
-  // Fire-and-forget: não bloqueia a resposta
   const all = getAutomations(lead.clientId).filter((a) => {
     if (!a.active) return false;
     if (a.trigger !== trigger) return false;
     if (a.funnelId && a.funnelId !== lead.funnelId) return false;
     if (trigger === "column_changed" && a.triggerColumnId && a.triggerColumnId !== opts?.toColumnId) return false;
+    if (trigger === "column_entered" && a.triggerColumnId && a.triggerColumnId !== opts?.toColumnId) return false;
     return true;
+  });
+  for (const auto of all) scheduleSteps(auto, lead);
+}
+
+/**
+ * Dispara automações scheduled_daily.
+ * Chamar via cron endpoint /api/cron/daily.
+ * Dispara para todos os leads ativos nas colunas configuradas cujo scheduledTime == hora atual.
+ */
+export function runScheduledDailyAutomations() {
+  const now = new Date();
+  const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+  const all = getAutomations().filter((a) => {
+    if (!a.active) return false;
+    if (a.trigger !== "scheduled_daily") return false;
+    if (!a.scheduledTime) return false;
+    // Match HH:MM (allow ±1min window)
+    const [ah, am] = a.scheduledTime.split(":").map(Number);
+    const [ch, cm] = currentTime.split(":").map(Number);
+    return ah === ch && Math.abs(am - cm) <= 1;
   });
 
   for (const auto of all) {
-    const run = () => execute(auto, lead).catch(console.error);
-    if (auto.delayMinutes > 0) {
-      setTimeout(run, auto.delayMinutes * 60 * 1000);
-    } else {
-      run();
-    }
+    const leads = getLeads(auto.clientId).filter((l) => {
+      if (auto.funnelId && l.funnelId !== auto.funnelId) return false;
+      if (auto.triggerColumnId && l.status !== auto.triggerColumnId) return false;
+      return true;
+    });
+    for (const lead of leads) scheduleSteps(auto, lead);
   }
 }
+

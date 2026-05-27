@@ -97,8 +97,9 @@ export async function POST(
       ai: null,
     });
     incrementWebhookCount(id);
-    // Dispara automações CRM de lead_created (fire-and-forget)
+    // Dispara automações CRM de lead_created e column_entered (fire-and-forget)
     runAutomationsForEvent("lead_created", lead);
+    runAutomationsForEvent("column_entered", lead, { toColumnId: columnId });
   }
 
   return NextResponse.json({ ok: true, leadId: lead.id, name: lead.name, phone: lead.phone });

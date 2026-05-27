@@ -46,8 +46,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
-    // Dispara automações CRM de column_changed (fire-and-forget)
+    // Dispara automações CRM de column_changed e column_entered (fire-and-forget)
     runAutomationsForEvent("column_changed", lead, { toColumnId: body.status });
+    runAutomationsForEvent("column_entered", lead, { toColumnId: body.status });
   }
 
   return NextResponse.json(lead);

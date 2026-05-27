@@ -280,6 +280,25 @@ export async function sendText(token: string, phone: string, message: string, de
   return false;
 }
 
+export async function sendList(
+  token: string,
+  phone: string,
+  title: string,
+  buttonText: string,
+  sections: { title: string; rows: { id: string; title: string; description?: string }[] }[],
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${base()}/send/list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify({ number: phone, title, buttonText, sections }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function sendMedia(
   token: string,
   phone: string,
