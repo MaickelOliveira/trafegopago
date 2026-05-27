@@ -373,7 +373,7 @@ function StepEditor({
                           <button
                             key={t.id}
                             type="button"
-                            onClick={() => { sel("templateId", t.id); sel("templateVariables", {}); }}
+                            onClick={() => onChange({ templateId: t.id, templateVariables: {} })}
                             className={clsx(
                               "w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition",
                               step.templateId === t.id
@@ -751,7 +751,10 @@ export function CrmAutomationsView({
   }
 
   function updateStep(id: string, patch: Partial<StepForm>) {
-    setField("steps", form.steps.map((s) => s.id === id ? { ...s, ...patch } : s));
+    setForm((prev) => ({
+      ...prev,
+      steps: prev.steps.map((s) => s.id === id ? { ...s, ...patch } : s),
+    }));
   }
 
   function removeStep(id: string) {
