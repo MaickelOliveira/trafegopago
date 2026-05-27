@@ -65,7 +65,7 @@ const TRIGGER_OPTIONS: { value: CrmTrigger; icon: string; label: string; descrip
     value: "column_entered",
     icon: "🔀",
     label: "Lead chega em etapa específica",
-    description: "Você escolhe a etapa. Ex: lead chegou em "Proposta" → envia mensagem de orçamento",
+    description: "Você escolhe a etapa. Ex: lead chegou em 'Proposta' → envia mensagem de orçamento",
   },
   {
     value: "column_changed",
