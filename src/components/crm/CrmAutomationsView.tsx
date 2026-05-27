@@ -60,11 +60,24 @@ type FormState = {
   delayMinutes: number;
 };
 
+const BLANK_FORM = (uazapiConnId: string, templateId: string): FormState => ({
+  name: "",
+  trigger: "lead_created",
+  funnelId: "",
+  triggerColumnId: "",
+  channel: "uazapi",
+  connectionId: uazapiConnId,
+  message: "Olá {{nome}}! Recebemos seu cadastro. Em breve entraremos em contato. 😊",
+  templateId,
+  delayMinutes: 0,
+});
+
 export function CrmAutomationsView({
   clientId, initialAutomations, funnels, connections, approvedTemplates,
 }: Props) {
   const [automations, setAutomations] = useState<CrmAutomation[]>(initialAutomations);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -72,17 +85,9 @@ export function CrmAutomationsView({
   const uazapiConns = connections.filter((c) => c.type === "uazapi");
   const wabaConns   = connections.filter((c) => c.type === "meta");
 
-  const [form, setForm] = useState<FormState>({
-    name: "",
-    trigger: "lead_created",
-    funnelId: "",
-    triggerColumnId: "",
-    channel: "uazapi",
-    connectionId: uazapiConns[0]?.id ?? "",
-    message: "Olá {{nome}}! Recebemos seu cadastro. Em breve entraremos em contato. 😊",
-    templateId: approvedTemplates[0]?.id ?? "",
-    delayMinutes: 0,
-  });
+  const [form, setForm] = useState<FormState>(
+    BLANK_FORM(uazapiConns[0]?.id ?? "", approvedTemplates[0]?.id ?? "")
+  );
 
   const selectedFunnel = funnels.find((f) => f.id === form.funnelId);
   const availableConns = form.channel === "uazapi" ? uazapiConns : wabaConns;
@@ -96,33 +101,78 @@ export function CrmAutomationsView({
     setForm((f) => ({ ...f, channel: ch, connectionId: conns[0]?.id ?? "" }));
   }
 
-  async function create() {
+  function openNew() {
+    setEditingId(null);
+    setForm(BLANK_FORM(uazapiConns[0]?.id ?? "", approvedTemplates[0]?.id ?? ""));
+    setShowForm(true);
+  }
+
+  function openEdit(auto: CrmAutomation) {
+    setEditingId(auto.id);
+    setForm({
+      name: auto.name,
+      trigger: auto.trigger,
+      funnelId: auto.funnelId ?? "",
+      triggerColumnId: auto.triggerColumnId ?? "",
+      channel: auto.channel,
+      connectionId: auto.connectionId,
+      message: auto.message ?? "",
+      templateId: auto.templateId ?? approvedTemplates[0]?.id ?? "",
+      delayMinutes: auto.delayMinutes,
+    });
+    setShowForm(true);
+    // scroll to form
+    setTimeout(() => document.getElementById("crm-form")?.scrollIntoView({ behavior: "smooth" }), 50);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingId(null);
+  }
+
+  async function save() {
     if (!form.name.trim() || !form.connectionId) return;
     if (form.channel === "uazapi" && !form.message.trim()) return;
     if (form.channel === "waba" && !form.templateId) return;
     setSaving(true);
-    const res = await fetch("/api/crm/automations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientId,
-        name: form.name.trim(),
-        trigger: form.trigger,
-        funnelId: form.funnelId || undefined,
-        triggerColumnId: form.trigger === "column_changed" ? form.triggerColumnId || undefined : undefined,
-        channel: form.channel,
-        connectionId: form.connectionId,
-        message: form.channel === "uazapi" ? form.message : undefined,
-        templateId: form.channel === "waba" ? form.templateId : undefined,
-        delayMinutes: form.delayMinutes,
-        active: true,
-      }),
-    });
-    if (res.ok) {
-      const created = await res.json() as CrmAutomation;
-      setAutomations((prev) => [...prev, created]);
-      setShowForm(false);
-      setForm((f) => ({ ...f, name: "" }));
+
+    const payload = {
+      clientId,
+      name: form.name.trim(),
+      trigger: form.trigger,
+      funnelId: form.funnelId || undefined,
+      triggerColumnId: form.trigger === "column_changed" ? form.triggerColumnId || undefined : undefined,
+      channel: form.channel,
+      connectionId: form.connectionId,
+      message: form.channel === "uazapi" ? form.message : undefined,
+      templateId: form.channel === "waba" ? form.templateId : undefined,
+      delayMinutes: form.delayMinutes,
+    };
+
+    if (editingId) {
+      // Editar existente
+      const res = await fetch(`/api/crm/automations/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const updated = await res.json() as CrmAutomation;
+        setAutomations((prev) => prev.map((a) => a.id === editingId ? updated : a));
+        closeForm();
+      }
+    } else {
+      // Criar novo
+      const res = await fetch("/api/crm/automations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, active: true }),
+      });
+      if (res.ok) {
+        const created = await res.json() as CrmAutomation;
+        setAutomations((prev) => [...prev, created]);
+        closeForm();
+      }
     }
     setSaving(false);
   }
@@ -146,6 +196,7 @@ export function CrmAutomationsView({
     setDeleting(id);
     await fetch(`/api/crm/automations/${id}`, { method: "DELETE" });
     setAutomations((prev) => prev.filter((a) => a.id !== id));
+    if (editingId === id) closeForm();
     setDeleting(null);
   }
 
@@ -157,9 +208,14 @@ export function CrmAutomationsView({
     const col = funnel?.columns.find((c) => c.id === auto.triggerColumnId);
     const tpl = approvedTemplates.find((t) => t.id === auto.templateId);
     const conn = connections.find((c) => c.id === auto.connectionId);
+    const isEditing = editingId === auto.id;
 
     return (
-      <div className={clsx("rounded-xl border p-4", auto.active ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 opacity-60")}>
+      <div className={clsx(
+        "rounded-xl border p-4 transition",
+        isEditing ? "border-violet-300 bg-violet-50" :
+        auto.active ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 opacity-60"
+      )}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -196,6 +252,17 @@ export function CrmAutomationsView({
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <button
+              onClick={() => isEditing ? closeForm() : openEdit(auto)}
+              className={clsx(
+                "rounded-lg px-2.5 py-1 text-xs font-semibold transition",
+                isEditing
+                  ? "bg-violet-100 text-violet-700 hover:bg-violet-200"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              )}
+            >
+              {isEditing ? "✕ Fechar" : "✏ Editar"}
+            </button>
+            <button
               onClick={() => toggleActive(auto)}
               disabled={toggling === auto.id}
               className={clsx(
@@ -211,8 +278,9 @@ export function CrmAutomationsView({
               onClick={() => remove(auto.id)}
               disabled={deleting === auto.id}
               className="text-slate-400 hover:text-red-500 transition text-lg leading-none px-1"
+              title="Excluir"
             >
-              ×
+              {deleting === auto.id ? "..." : "×"}
             </button>
           </div>
         </div>
@@ -231,17 +299,19 @@ export function CrmAutomationsView({
           </p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={openNew}
           className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition"
         >
           + Nova Automação
         </button>
       </div>
 
-      {/* Formulário de criação */}
+      {/* Formulário de criação / edição */}
       {showForm && (
-        <div className="rounded-xl border border-violet-200 bg-violet-50 p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">Configurar nova automação</h2>
+        <div id="crm-form" className="rounded-xl border border-violet-200 bg-violet-50 p-5 space-y-4">
+          <h2 className="font-semibold text-slate-800">
+            {editingId ? "✏ Editar automação" : "Configurar nova automação"}
+          </h2>
 
           {/* Nome */}
           <div>
@@ -283,17 +353,29 @@ export function CrmAutomationsView({
           {/* Coluna alvo (só para column_changed) */}
           {form.trigger === "column_changed" && (
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Coluna de destino</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Coluna de destino (kanban)</label>
               <select
                 value={form.triggerColumnId}
                 onChange={(e) => setField("triggerColumnId", e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white"
               >
-                <option value="">Qualquer coluna</option>
-                {(selectedFunnel ?? funnels[0])?.columns.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
+                <option value="">— Qualquer coluna —</option>
+                {selectedFunnel
+                  ? selectedFunnel.columns.map((c) => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))
+                  : funnels.map((f) => (
+                      <optgroup key={f.id} label={f.name}>
+                        {f.columns.map((c) => (
+                          <option key={`${f.id}-${c.id}`} value={c.id}>{c.label}</option>
+                        ))}
+                      </optgroup>
+                    ))
+                }
               </select>
+              {!form.funnelId && (
+                <p className="text-[10px] text-slate-400 mt-1">Selecione um funil acima para filtrar as colunas desse funil.</p>
+              )}
             </div>
           )}
 
@@ -392,16 +474,16 @@ export function CrmAutomationsView({
 
           <div className="flex gap-2 pt-1">
             <button
-              onClick={create}
+              onClick={save}
               disabled={saving || !form.name.trim() || !form.connectionId ||
                 (form.channel === "uazapi" && !form.message.trim()) ||
                 (form.channel === "waba" && !form.templateId)}
               className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition"
             >
-              {saving ? "Salvando..." : "Criar Automação"}
+              {saving ? "Salvando..." : editingId ? "Salvar alterações" : "Criar Automação"}
             </button>
             <button
-              onClick={() => setShowForm(false)}
+              onClick={closeForm}
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition"
             >
               Cancelar
@@ -417,7 +499,7 @@ export function CrmAutomationsView({
           <p className="font-medium">Nenhuma automação criada</p>
           <p className="text-sm mt-1">Configure envios automáticos quando leads chegarem ou mudarem de etapa.</p>
           <button
-            onClick={() => setShowForm(true)}
+            onClick={openNew}
             className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
           >
             Criar primeira automação
