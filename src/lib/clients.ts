@@ -86,6 +86,8 @@ export type AppConfig = {
   googleClientId?: string;       // Google OAuth client ID (para Google Calendar)
   googleClientSecret?: string;   // Google OAuth client secret
   agentCronSecret?: string;      // Secret para proteger o endpoint de cron
+  masterPhone?: string;          // Número master: recebe notificações do sistema (com DDI, só dígitos)
+  masterConnectionId?: string;   // ID da FunnelConnection usada para enviar mensagens do sistema
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");

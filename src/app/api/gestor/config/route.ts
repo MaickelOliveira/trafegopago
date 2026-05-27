@@ -23,6 +23,8 @@ export async function GET() {
     googleClientId: config.googleClientId ?? "",
     googleClientSecret: config.googleClientSecret ?? "",
     agentCronSecret: config.agentCronSecret ?? "",
+    masterPhone: config.masterPhone ?? "",
+    masterConnectionId: config.masterConnectionId ?? "",
   });
 }
 
@@ -48,6 +50,8 @@ export async function PUT(req: NextRequest) {
     googleClientId: body.googleClientId ?? current.googleClientId,
     googleClientSecret: body.googleClientSecret ?? current.googleClientSecret,
     agentCronSecret: body.agentCronSecret ?? current.agentCronSecret,
+    masterPhone: body.masterPhone ?? current.masterPhone,
+    masterConnectionId: body.masterConnectionId ?? current.masterConnectionId,
   });
   return NextResponse.json({ ok: true });
 }

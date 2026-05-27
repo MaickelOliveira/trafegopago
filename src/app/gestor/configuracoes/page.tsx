@@ -1,8 +1,15 @@
 import { getClients, getConfig } from "@/lib/clients";
+import { getFunnels } from "@/lib/funnels";
 import { ConfiguracoesView } from "@/components/gestor/ConfiguracoesView";
 
 export default async function ConfiguracoesPage() {
   const clients = getClients().map(({ passwordHash: _, ...c }) => c);
   const { appBaseUrl } = getConfig();
-  return <ConfiguracoesView clients={clients} appBaseUrl={appBaseUrl} />;
+  const funnels = getFunnels();
+  const allConnections = funnels.flatMap((f) =>
+    (f.connections ?? [])
+      .filter((c) => c.type === "uazapi" && c.uazapiToken)
+      .map((c) => ({ id: c.id, phone: c.phone, funnelName: f.name }))
+  );
+  return <ConfiguracoesView clients={clients} appBaseUrl={appBaseUrl} allConnections={allConnections} />;
 }

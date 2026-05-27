@@ -41,9 +41,13 @@ type AppConfig = {
   uazapiWebhookForward: string;
   googleClientId: string;
   googleClientSecret: string;
+  masterPhone: string;
+  masterConnectionId: string;
 };
 
-export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: Client[]; appBaseUrl?: string }) {
+type WaConnection = { id: string; phone: string; funnelName: string };
+
+export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections }: { clients: Client[]; appBaseUrl?: string; allConnections?: WaConnection[] }) {
   const router = useRouter();
   const [clients, setClients] = useState(initial);
   const [showForm, setShowForm] = useState(false);
@@ -70,6 +74,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: C
     anthropicApiKey: "", uazapiServer: "",
     uazapiToken: "", uazapiAdminToken: "", appBaseUrl: "", uazapiWebhookForward: "",
     googleClientId: "", googleClientSecret: "",
+    masterPhone: "", masterConnectionId: "",
   });
   const [savingConfig, setSavingConfig] = useState(false);
   const [configMsg, setConfigMsg] = useState("");
@@ -468,6 +473,51 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl }: { clients: C
                   onChange={(v) => setGlobalConfig((c) => ({ ...c, uazapiWebhookForward: v }))}
                   placeholder="https://... (n8n ou outro)"
                 />
+              </div>
+
+              {/* Número Master */}
+              <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">📱 Número Master (notificações do sistema)</p>
+                <p className="text-xs text-slate-500">
+                  O número master <strong>recebe</strong> todas as notificações da plataforma (briefings, automações, alertas).
+                  A conexão master é a instância WhatsApp que <strong>envia</strong> essas mensagens.
+                </p>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Seu número (com DDI, só dígitos)</label>
+                  <input
+                    type="tel"
+                    value={globalConfig.masterPhone}
+                    onChange={(e) => setGlobalConfig((c) => ({ ...c, masterPhone: e.target.value.replace(/\D/g, "") }))}
+                    placeholder="5511999999999"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-400 focus:ring-1 focus:ring-orange-200 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Conexão WhatsApp que envia notificações</label>
+                  {allConnections && allConnections.length > 0 ? (
+                    <select
+                      value={globalConfig.masterConnectionId}
+                      onChange={(e) => setGlobalConfig((c) => ({ ...c, masterConnectionId: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-400 focus:ring-1 focus:ring-orange-200 outline-none"
+                    >
+                      <option value="">— Selecione uma conexão —</option>
+                      {allConnections.map((conn) => (
+                        <option key={conn.id} value={conn.id}>
+                          {conn.phone || conn.id} ({conn.funnelName})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Nenhuma conexão WhatsApp (UazAPI) encontrada. Adicione uma conexão em um funil de cliente primeiro.
+                    </p>
+                  )}
+                </div>
+                {globalConfig.masterPhone && globalConfig.masterConnectionId && (
+                  <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    ✓ Número master configurado. Notificações serão enviadas via a conexão selecionada.
+                  </p>
+                )}
               </div>
 
               {/* Google Calendar OAuth */}
