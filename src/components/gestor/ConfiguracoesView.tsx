@@ -43,9 +43,12 @@ type AppConfig = {
   googleClientSecret: string;
   masterPhone: string;
   masterConnectionId: string;
+  // Usados apenas quando conexão master é Meta (API Oficial)
+  masterMetaTemplateBriefing: string;
+  masterMetaLanguage: string;
 };
 
-type WaConnection = { id: string; phone: string; funnelName: string };
+type WaConnection = { id: string; phone: string; funnelName: string; type: "uazapi" | "meta" };
 
 export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections }: { clients: Client[]; appBaseUrl?: string; allConnections?: WaConnection[] }) {
   const router = useRouter();
@@ -75,6 +78,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
     uazapiToken: "", uazapiAdminToken: "", appBaseUrl: "", uazapiWebhookForward: "",
     googleClientId: "", googleClientSecret: "",
     masterPhone: "", masterConnectionId: "",
+    masterMetaTemplateBriefing: "", masterMetaLanguage: "pt_BR",
   });
   const [savingConfig, setSavingConfig] = useState(false);
   const [configMsg, setConfigMsg] = useState("");
@@ -503,19 +507,72 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                       <option value="">— Selecione uma conexão —</option>
                       {allConnections.map((conn) => (
                         <option key={conn.id} value={conn.id}>
-                          {conn.phone || conn.id} ({conn.funnelName})
+                          {conn.type === "uazapi" ? "📱 UazAPI" : "✅ API Oficial"} — {conn.phone || conn.id} ({conn.funnelName})
                         </option>
                       ))}
                     </select>
                   ) : (
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      Nenhuma conexão WhatsApp (UazAPI) encontrada. Adicione uma conexão em um funil de cliente primeiro.
+                      Nenhuma conexão WhatsApp configurada. Adicione uma conexão em um funil de cliente primeiro.
                     </p>
                   )}
                 </div>
+
+                {/* Hint por tipo de conexão selecionada */}
+                {(() => {
+                  const selectedConn = allConnections?.find((c) => c.id === globalConfig.masterConnectionId);
+                  if (!selectedConn) return null;
+                  if (selectedConn.type === "uazapi") {
+                    return (
+                      <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                        ✓ <strong>UazAPI selecionada</strong> — a IA vai compor todas as mensagens de notificação automaticamente. Nenhuma configuração extra necessária.
+                      </p>
+                    );
+                  }
+                  // Meta — precisa de templates por automação
+                  return (
+                    <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-xs font-semibold text-amber-800">⚠️ API Oficial (Meta) selecionada</p>
+                      <p className="text-xs text-amber-700">
+                        A API Oficial exige <strong>templates pré-aprovados</strong> para envio de mensagens proativas.
+                        Informe abaixo o nome exato do template para cada automação.
+                      </p>
+
+                      {/* Template por automação */}
+                      <div className="space-y-2 pt-1 border-t border-amber-200">
+                        <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Templates por automação</p>
+
+                        <div>
+                          <label className="block text-xs text-slate-600 mb-1">📋 Briefing preenchido — nome do template</label>
+                          <input
+                            type="text"
+                            value={globalConfig.masterMetaTemplateBriefing}
+                            onChange={(e) => setGlobalConfig((c) => ({ ...c, masterMetaTemplateBriefing: e.target.value }))}
+                            placeholder="ex: briefing_preenchido"
+                            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-200 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-slate-600 mb-1">Idioma dos templates</label>
+                          <select
+                            value={globalConfig.masterMetaLanguage}
+                            onChange={(e) => setGlobalConfig((c) => ({ ...c, masterMetaLanguage: e.target.value }))}
+                            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 outline-none"
+                          >
+                            <option value="pt_BR">Português (pt_BR)</option>
+                            <option value="en_US">English (en_US)</option>
+                            <option value="es_ES">Español (es_ES)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {globalConfig.masterPhone && globalConfig.masterConnectionId && (
                   <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                    ✓ Número master configurado. Notificações serão enviadas via a conexão selecionada.
+                    ✓ Número master configurado. Notificações serão enviadas para {globalConfig.masterPhone}.
                   </p>
                 )}
               </div>

@@ -86,8 +86,12 @@ export type AppConfig = {
   googleClientId?: string;       // Google OAuth client ID (para Google Calendar)
   googleClientSecret?: string;   // Google OAuth client secret
   agentCronSecret?: string;      // Secret para proteger o endpoint de cron
-  masterPhone?: string;          // Número master: recebe notificações do sistema (com DDI, só dígitos)
-  masterConnectionId?: string;   // ID da FunnelConnection usada para enviar mensagens do sistema
+  masterPhone?: string;              // Número master: recebe notificações do sistema (com DDI, só dígitos)
+  masterConnectionId?: string;       // ID da FunnelConnection usada para enviar mensagens do sistema
+  // Campos usados SOMENTE quando a conexão master é Meta (API Oficial)
+  // Para UazAPI, a IA compõe a mensagem livremente
+  masterMetaTemplateBriefing?: string;  // Nome do template aprovado para notificação de briefing
+  masterMetaLanguage?: string;          // Código de idioma do template (ex: pt_BR)
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");

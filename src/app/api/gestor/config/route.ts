@@ -25,6 +25,8 @@ export async function GET() {
     agentCronSecret: config.agentCronSecret ?? "",
     masterPhone: config.masterPhone ?? "",
     masterConnectionId: config.masterConnectionId ?? "",
+    masterMetaTemplateBriefing: config.masterMetaTemplateBriefing ?? "",
+    masterMetaLanguage: config.masterMetaLanguage ?? "pt_BR",
   });
 }
 
@@ -52,6 +54,8 @@ export async function PUT(req: NextRequest) {
     agentCronSecret: body.agentCronSecret ?? current.agentCronSecret,
     masterPhone: body.masterPhone ?? current.masterPhone,
     masterConnectionId: body.masterConnectionId ?? current.masterConnectionId,
+    masterMetaTemplateBriefing: body.masterMetaTemplateBriefing ?? current.masterMetaTemplateBriefing,
+    masterMetaLanguage: body.masterMetaLanguage ?? current.masterMetaLanguage,
   });
   return NextResponse.json({ ok: true });
 }
