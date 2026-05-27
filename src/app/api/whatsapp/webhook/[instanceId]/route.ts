@@ -604,7 +604,12 @@ export async function POST(
 
     // Verifica se IA está pausada para esta conversa
     const currentLead = getLeadByPhone(cid, phone);
-    if (currentLead?.aiPaused || getAiPaused(phone)) return NextResponse.json({ ok: true });
+    const convPaused = getAiPaused(phone);
+    console.log(`[webhook/${instanceId}] aiPaused check → lead.aiPaused=${currentLead?.aiPaused ?? "null"} conv.aiPaused=${convPaused} phone=${phone} cid=${cid}`);
+    if (currentLead?.aiPaused || convPaused) {
+      console.log(`[webhook/${instanceId}] IA PAUSADA — ignorando mensagem de phone=${phone}`);
+      return NextResponse.json({ ok: true });
+    }
 
     // Agente Kanban — atualiza CRM (fire-and-forget)
     if (cid !== "sem-cliente") {
@@ -620,6 +625,7 @@ export async function POST(
 
     const matchSource = matchedFunnel ? "token-url" : fallbackByBodyToken ? "body-token" : fallbackByBodyName ? "body-name" : fallbackByUrlName ? "url-name" : "sem-funil";
     console.log(`[webhook/${instanceId}] phone=${phone} cid=${cid} funnel=${funnel?.id?.slice(0,8) ?? "none"}(${matchSource}) gemini=${geminiEnabled} wait=${waitSeconds}s uazToken=${instanceUazToken.slice(0, 8)}...`);
+    console.log(`[webhook/${instanceId}] agentCfg found=${!!agentCfg} enabled=${agentCfg?.enabled} geminiKey=${agentCfg?.geminiApiKey ? "set" : "empty"} connId=${connId ?? "none"}`);
 
     // Batching: acumula mensagens antes de responder
     if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {
