@@ -64,14 +64,14 @@ const TRIGGER_OPTIONS: { value: CrmTrigger; icon: string; label: string; descrip
   {
     value: "column_entered",
     icon: "🔀",
-    label: "Lead chega numa etapa",
-    description: "Dispara quando o lead é movido para uma etapa específica do funil",
+    label: "Lead chega em etapa específica",
+    description: "Você escolhe a etapa. Ex: lead chegou em "Proposta" → envia mensagem de orçamento",
   },
   {
     value: "column_changed",
     icon: "↕",
-    label: "Lead muda de etapa",
-    description: "Dispara toda vez que o lead é movido, independente da etapa",
+    label: "Lead muda de qualquer etapa",
+    description: "Dispara em toda e qualquer mudança de etapa, sem filtrar qual. Use para registros gerais",
   },
   {
     value: "scheduled_daily",
