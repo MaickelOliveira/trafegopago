@@ -343,13 +343,18 @@ export function CrmAutomationsView({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Funil (opcional — vazio = todos)</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Funil {form.trigger === "column_changed" ? <span className="text-red-500">*</span> : "(opcional — vazio = todos)"}
+              </label>
               <select
                 value={form.funnelId}
                 onChange={(e) => { setField("funnelId", e.target.value); setField("triggerColumnId", ""); }}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white"
               >
-                <option value="">Qualquer funil</option>
+                {form.trigger === "column_changed"
+                  ? <option value="">— Selecione um funil —</option>
+                  : <option value="">Qualquer funil</option>
+                }
                 {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
             </div>
@@ -358,28 +363,24 @@ export function CrmAutomationsView({
           {/* Coluna alvo (só para column_changed) */}
           {form.trigger === "column_changed" && (
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Coluna de destino (kanban)</label>
-              <select
-                value={form.triggerColumnId}
-                onChange={(e) => setField("triggerColumnId", e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white"
-              >
-                <option value="">— Qualquer coluna —</option>
-                {selectedFunnel
-                  ? selectedFunnel.columns.map((c) => (
-                      <option key={c.id} value={c.id}>{c.label}</option>
-                    ))
-                  : funnels.map((f) => (
-                      <optgroup key={f.id} label={f.name}>
-                        {f.columns.map((c) => (
-                          <option key={`${f.id}-${c.id}`} value={c.id}>{c.label}</option>
-                        ))}
-                      </optgroup>
-                    ))
-                }
-              </select>
-              {!form.funnelId && (
-                <p className="text-[10px] text-slate-400 mt-1">Selecione um funil acima para filtrar as colunas desse funil.</p>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Coluna de destino (kanban) {form.funnelId && <span className="text-red-500">*</span>}
+              </label>
+              {!form.funnelId ? (
+                <div className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 bg-slate-50 cursor-not-allowed">
+                  ← Selecione um funil primeiro
+                </div>
+              ) : (
+                <select
+                  value={form.triggerColumnId}
+                  onChange={(e) => setField("triggerColumnId", e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white"
+                >
+                  <option value="">— Qualquer coluna —</option>
+                  {(selectedFunnel?.columns ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                </select>
               )}
             </div>
           )}

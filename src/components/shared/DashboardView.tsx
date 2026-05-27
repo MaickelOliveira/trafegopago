@@ -82,7 +82,10 @@ export function DashboardView({ client }: { client: Client }) {
   ];
 
   useEffect(() => {
-    if (!account) return;
+    if (!account) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const qs = new URLSearchParams({ datePreset });
     const today = new Date();
@@ -90,13 +93,18 @@ export function DashboardView({ client }: { client: Client }) {
     const until = today.toISOString().slice(0, 10);
 
     Promise.all([
-      fetch(`/api/meta/${account.id}/campaigns?${qs}`).then((r) => r.json()),
-      fetch(`/api/meta/${account.id}/insights?since=${since}&until=${until}&daily=1`).then((r) => r.ok ? r.json() : []),
-      fetch(`/api/crm/leads?clientId=${client.id}`).then((r) => r.ok ? r.json() : []),
+      fetch(`/api/meta/${account.id}/campaigns?${qs}`).then((r) => r.ok ? r.json() : []).catch(() => []),
+      fetch(`/api/meta/${account.id}/insights?since=${since}&until=${until}&daily=1`).then((r) => r.ok ? r.json() : []).catch(() => []),
+      fetch(`/api/crm/leads?clientId=${client.id}`).then((r) => r.ok ? r.json() : []).catch(() => []),
     ]).then(([camps, d, leads]) => {
       setCampaigns(Array.isArray(camps) ? camps : []);
       setDaily(Array.isArray(d) ? d : []);
       setCrmLeads(Array.isArray(leads) ? leads : []);
+    }).catch(() => {
+      setCampaigns([]);
+      setDaily([]);
+      setCrmLeads([]);
+    }).finally(() => {
       setLoading(false);
     });
   }, [account, datePreset]);
