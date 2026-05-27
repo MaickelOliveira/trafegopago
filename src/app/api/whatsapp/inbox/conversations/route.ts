@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllConversationsByClientId } from "@/lib/conversations";
+import { getAllConversationsByClientId, setAiPaused } from "@/lib/conversations";
 import { getFunnels } from "@/lib/funnels";
+import { getLeadByPhone } from "@/lib/leads";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,17 @@ export async function GET(req: NextRequest) {
 
   // Pega todas as conversas do cliente filtradas pelas conexões deste cliente
   const conversations = getAllConversationsByClientId(clientId);
-  const filtered = conversations.filter((c) => !c.connId || connIds.has(c.connId));
+  const filtered = conversations
+    .filter((c) => !c.connId || connIds.has(c.connId))
+    .map((c) => {
+      // Sincroniza aiPaused com o lead — CRM é a fonte de verdade
+      const lead = getLeadByPhone(clientId, c.phone);
+      if (lead && lead.aiPaused !== undefined && lead.aiPaused !== c.aiPaused) {
+        setAiPaused(c.phone, lead.aiPaused); // corrige conversations.json
+        return { ...c, aiPaused: lead.aiPaused };
+      }
+      return c;
+    });
 
   return NextResponse.json({ conversations: filtered, connections });
 }
