@@ -3,6 +3,52 @@
 import { useState } from "react";
 import type { Briefing } from "@/lib/briefings";
 
+const NICHES = [
+  "Pousada / Hotel Fazenda",
+  "Dentista / Clínica Odontológica",
+  "Construtora / Reforma",
+  "Clínica de Estética",
+  "Gráfica / Comunicação Visual",
+  "Imobiliária",
+  "Barbearia",
+  "Salão de Beleza",
+  "Manicure / Nail Designer",
+  "Nutricionista",
+  "Psicólogo / Terapeuta",
+  "Personal Trainer / Academia",
+  "Advogado / Escritório de Advocacia",
+  "Contador / Contabilidade",
+  "Restaurante / Delivery",
+  "Pet Shop / Veterinária",
+  "Médico / Clínica Médica",
+  "Fotógrafo / Videomaker",
+  "Loja de Roupa / Boutique",
+  "Automecânica / Oficina",
+];
+
+const NICHE_ICONS: Record<string, string> = {
+  "Pousada / Hotel Fazenda": "🏡",
+  "Dentista / Clínica Odontológica": "🦷",
+  "Construtora / Reforma": "🏗️",
+  "Clínica de Estética": "✨",
+  "Gráfica / Comunicação Visual": "🖨️",
+  "Imobiliária": "🏠",
+  "Barbearia": "💈",
+  "Salão de Beleza": "💇",
+  "Manicure / Nail Designer": "💅",
+  "Nutricionista": "🥗",
+  "Psicólogo / Terapeuta": "🧠",
+  "Personal Trainer / Academia": "💪",
+  "Advogado / Escritório de Advocacia": "⚖️",
+  "Contador / Contabilidade": "📊",
+  "Restaurante / Delivery": "🍽️",
+  "Pet Shop / Veterinária": "🐾",
+  "Médico / Clínica Médica": "🩺",
+  "Fotógrafo / Videomaker": "📷",
+  "Loja de Roupa / Boutique": "👗",
+  "Automecânica / Oficina": "🔧",
+};
+
 // ─── Labels das perguntas ─────────────────────────────────────────────────────
 const QUESTION_LABELS: Record<string, string> = {
   nome_negocio: "Nome do negócio",
@@ -41,6 +87,7 @@ export function BriefingsView({
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!form.notifyPhone.trim()) { alert("Informe o WhatsApp para notificação"); return; }
+    if (!form.niche.trim()) { alert("Selecione o nicho do cliente"); return; }
     const res = await fetch("/api/briefing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -102,9 +149,9 @@ export function BriefingsView({
             {!generatedUrl ? (
               <>
                 <h2 className="font-bold text-slate-900 text-lg">Novo briefing</h2>
-                <form onSubmit={handleCreate} className="space-y-3">
+                <form onSubmit={handleCreate} className="space-y-4">
                   <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Nome do negócio do cliente</label>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Nome do negócio do cliente <span className="text-violet-500">*</span></label>
                     <input
                       value={form.clientName}
                       onChange={(e) => setForm((f) => ({ ...f, clientName: e.target.value }))}
@@ -113,7 +160,7 @@ export function BriefingsView({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Seu WhatsApp para receber notificação (com DDI)</label>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Seu WhatsApp para notificação (com DDI) <span className="text-violet-500">*</span></label>
                     <input
                       value={form.notifyPhone}
                       onChange={(e) => setForm((f) => ({ ...f, notifyPhone: e.target.value }))}
@@ -123,13 +170,27 @@ export function BriefingsView({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Nicho (opcional — pré-seleciona no formulário)</label>
-                    <input
-                      value={form.niche}
-                      onChange={(e) => setForm((f) => ({ ...f, niche: e.target.value }))}
-                      placeholder="Ex: Dentista / Clínica Odontológica"
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                    />
+                    <label className="text-xs font-medium text-slate-500 block mb-2">Nicho do cliente <span className="text-violet-500">*</span></label>
+                    <div className="grid grid-cols-2 gap-1.5 max-h-52 overflow-y-auto pr-1">
+                      {NICHES.map((n) => (
+                        <button
+                          type="button"
+                          key={n}
+                          onClick={() => setForm((f) => ({ ...f, niche: n }))}
+                          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left text-xs font-medium transition ${
+                            form.niche === n
+                              ? "border-violet-500 bg-violet-50 text-violet-700"
+                              : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span>{NICHE_ICONS[n] ?? "📋"}</span>
+                          <span className="leading-tight">{n}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {form.niche && (
+                      <p className="text-xs text-violet-600 mt-1.5 font-medium">✓ {form.niche}</p>
+                    )}
                   </div>
                   <div className="flex gap-2 pt-2">
                     <button type="submit" className="flex-1 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold py-2 rounded-xl transition">

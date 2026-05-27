@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
-// ─── Perguntas universais ────────────────────────────────────────────────────
+// ─── Perguntas universais (sem seleção de nicho — nicho é definido pelo gestor) ─
 const UNIVERSAL_QUESTIONS = [
   { id: "nome_negocio", label: "Nome do negócio", type: "text", placeholder: "Ex: Clínica Bem Estar", required: true },
-  { id: "nicho", label: "Qual é o seu segmento?", type: "niche-select", required: true },
   { id: "cidade", label: "Cidade / região de atendimento", type: "text", placeholder: "Ex: São Paulo - SP", required: true },
   { id: "horario", label: "Horário de funcionamento", type: "text", placeholder: "Ex: Seg a Sex das 8h às 18h, Sáb das 8h às 12h", required: true },
   { id: "servico_principal", label: "Principal produto / serviço que oferece", type: "textarea", placeholder: "Descreva brevemente o que você faz...", required: true },
@@ -222,12 +221,10 @@ export default function BriefingPage() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  const selectedNiche = answers["nicho"] ?? preNiche ?? null;
+  const selectedNiche = preNiche;
   const nicheQuestions = selectedNiche ? (NICHE_QUESTIONS[selectedNiche] ?? []) : [];
 
-  const allQuestions = UNIVERSAL_QUESTIONS.map((q) =>
-    q.id === "nicho" ? { ...q, _preSelected: !!preNiche } : q
-  );
+  const allQuestions = UNIVERSAL_QUESTIONS;
 
   function setAnswer(id: string, value: string) {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -242,12 +239,14 @@ export default function BriefingPage() {
         return;
       }
     }
+    // Inclui o nicho nas respostas para referência
+    const finalAnswers = selectedNiche ? { nicho: selectedNiche, ...answers } : answers;
     setSubmitting(true);
     try {
       const res = await fetch(`/api/briefing/${token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers }),
+        body: JSON.stringify({ answers: finalAnswers }),
       });
       const data = await res.json();
       if (!res.ok) { alert(data.error ?? "Erro ao enviar."); return; }
@@ -305,6 +304,12 @@ export default function BriefingPage() {
           <h1 className="text-white text-2xl font-bold">
             Briefing — <span className="text-violet-400">{clientName}</span>
           </h1>
+          {selectedNiche && (
+            <div className="inline-flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-full px-4 py-1.5">
+              <span className="text-base">{NICHE_ICONS[selectedNiche] ?? "📋"}</span>
+              <span className="text-slate-300 text-xs font-medium">{selectedNiche}</span>
+            </div>
+          )}
           <p className="text-slate-400 text-sm max-w-md mx-auto">
             Preencha as informações abaixo para configurarmos o seu assistente de WhatsApp com Inteligência Artificial.
           </p>
@@ -318,19 +323,16 @@ export default function BriefingPage() {
               question={q}
               value={answers[q.id] ?? ""}
               onChange={(v) => setAnswer(q.id, v)}
-              nicheOptions={NICHES}
-              nicheIcons={NICHE_ICONS}
-              preSelected={selectedNiche ?? undefined}
             />
           ))}
 
-          {/* Perguntas do nicho */}
+          {/* Perguntas específicas do nicho */}
           {nicheQuestions.length > 0 && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className="h-px flex-1 bg-violet-800/40" />
                 <span className="text-violet-400 text-xs font-semibold uppercase tracking-wider">
-                  {NICHE_ICONS[selectedNiche!] ?? "📋"} Perguntas sobre {selectedNiche}
+                  {NICHE_ICONS[selectedNiche!] ?? "📋"} Sobre o seu negócio
                 </span>
                 <div className="h-px flex-1 bg-violet-800/40" />
               </div>
@@ -340,8 +342,6 @@ export default function BriefingPage() {
                   question={q}
                   value={answers[q.id] ?? ""}
                   onChange={(v) => setAnswer(q.id, v)}
-                  nicheOptions={NICHES}
-                  nicheIcons={NICHE_ICONS}
                 />
               ))}
             </div>
@@ -365,14 +365,11 @@ export default function BriefingPage() {
 }
 
 function QuestionField({
-  question, value, onChange, nicheOptions, nicheIcons, preSelected,
+  question, value, onChange,
 }: {
   question: { id: string; label: string; type: string; placeholder?: string; options?: string[]; required?: boolean };
   value: string;
   onChange: (v: string) => void;
-  nicheOptions: string[];
-  nicheIcons: Record<string, string>;
-  preSelected?: string;
 }) {
   const inputClass = "w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition placeholder:text-slate-600";
 
@@ -383,25 +380,7 @@ function QuestionField({
         {question.required && <span className="text-violet-400 ml-1">*</span>}
       </label>
 
-      {question.type === "niche-select" ? (
-        <div className="grid grid-cols-2 gap-2">
-          {nicheOptions.map((n) => (
-            <button
-              type="button"
-              key={n}
-              onClick={() => onChange(n)}
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition ${
-                value === n
-                  ? "border-violet-500 bg-violet-600/20 text-violet-300"
-                  : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
-              }`}
-            >
-              <span className="text-base">{nicheIcons[n] ?? "📋"}</span>
-              <span className="leading-tight">{n}</span>
-            </button>
-          ))}
-        </div>
-      ) : question.type === "select" ? (
+      {question.type === "select" ? (
         <select value={value} onChange={(e) => onChange(e.target.value)} className={inputClass + " bg-slate-900"}>
           <option value="">Selecione...</option>
           {question.options?.map((o) => (
