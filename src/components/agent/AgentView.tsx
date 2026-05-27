@@ -9,6 +9,10 @@ type FollowUpStep = {
   delayHours: number;
   message: string;
   label?: string;
+  messageType?: "text" | "ai" | "template";
+  templateId?: string;
+  templateCategory?: "MARKETING" | "UTILITY";
+  templateVariables?: Record<string, string>;
 };
 
 type AgentMedia = {
@@ -117,6 +121,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [uploading, setUploading] = useState(false);
   const [calendars, setCalendars] = useState<{ id: string; name: string; primary: boolean }[]>([]);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
+  const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string; category: string; language: string }[]>([]);
 
   async function loadCalendars() {
     setLoadingCalendars(true);
@@ -153,6 +158,16 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     }
 
     loadWaConnections();
+
+    // Carrega templates Meta aprovados
+    fetch(`/api/waba/templates?clientId=${clientId}`)
+      .then((r) => r.json())
+      .then((data: { id: string; name: string; category: string; language: string; status: string }[]) => {
+        if (Array.isArray(data)) {
+          setApprovedTemplates(data.filter((t) => t.status === "APPROVED"));
+        }
+      })
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
@@ -270,6 +285,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
     window.location.href = `/api/agent/google-auth?clientId=${clientId}${connParam}`;
   }
+
+  const selectedConnType = waConnections.find((c) => c.id === selectedConnId)?.type ?? "uazapi";
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
@@ -578,58 +595,162 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         )}
 
         <div className="space-y-3">
-          {(cfg.followUps ?? []).map((step, idx) => (
-            <div key={step.id} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white shrink-0">
-                  {idx + 1}
-                </span>
-                <input
-                  value={step.label ?? ""}
-                  onChange={(e) => setCfg((c) => ({
-                    ...c,
-                    followUps: c.followUps.map((s) => s.id === step.id ? { ...s, label: e.target.value } : s),
-                  }))}
-                  placeholder={`Follow-up ${idx + 1}`}
-                  className="flex-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-sm font-medium outline-none focus:border-emerald-400"
-                />
-                <button
-                  onClick={() => setCfg((c) => ({ ...c, followUps: c.followUps.filter((s) => s.id !== step.id) }))}
-                  className="text-slate-300 hover:text-red-500 transition text-sm px-1"
-                >✕</button>
-              </div>
+          {(cfg.followUps ?? []).map((step, idx) => {
+            const msgType = step.messageType ?? "text";
+            const updateStep = (patch: Partial<FollowUpStep>) =>
+              setCfg((c) => ({ ...c, followUps: c.followUps.map((s) => s.id === step.id ? { ...s, ...patch } : s) }));
+            const filteredTemplates = step.templateCategory
+              ? approvedTemplates.filter((t) => t.category === step.templateCategory)
+              : approvedTemplates;
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 shrink-0">
-                  {idx === 0 ? "Enviar após" : "Depois de"}
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  value={step.delayHours}
-                  onChange={(e) => setCfg((c) => ({
-                    ...c,
-                    followUps: c.followUps.map((s) => s.id === step.id ? { ...s, delayHours: Number(e.target.value) } : s),
-                  }))}
-                  className="w-20 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-sm outline-none focus:border-emerald-400 text-center"
-                />
-                <span className="text-xs text-slate-500">
-                  {idx === 0 ? "horas sem resposta" : `horas do step ${idx}`}
-                </span>
-              </div>
+            return (
+              <div key={step.id} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 space-y-3">
+                {/* Cabeçalho: número + label + remover */}
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white shrink-0">
+                    {idx + 1}
+                  </span>
+                  <input
+                    value={step.label ?? ""}
+                    onChange={(e) => updateStep({ label: e.target.value })}
+                    placeholder={`Follow-up ${idx + 1}`}
+                    className="flex-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-sm font-medium outline-none focus:border-emerald-400"
+                  />
+                  <button
+                    onClick={() => setCfg((c) => ({ ...c, followUps: c.followUps.filter((s) => s.id !== step.id) }))}
+                    className="text-slate-300 hover:text-red-500 transition text-sm px-1"
+                  >✕</button>
+                </div>
 
-              <textarea
-                rows={2}
-                value={step.message}
-                onChange={(e) => setCfg((c) => ({
-                  ...c,
-                  followUps: c.followUps.map((s) => s.id === step.id ? { ...s, message: e.target.value } : s),
-                }))}
-                placeholder={`Mensagem do follow-up ${idx + 1}...`}
-                className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 resize-none"
-              />
-            </div>
-          ))}
+                {/* Delay */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 shrink-0">
+                    {idx === 0 ? "Enviar após" : "Depois de"}
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={step.delayHours}
+                    onChange={(e) => updateStep({ delayHours: Number(e.target.value) })}
+                    className="w-20 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-sm outline-none focus:border-emerald-400 text-center"
+                  />
+                  <span className="text-xs text-slate-500">
+                    {idx === 0 ? "horas sem resposta" : `horas do step ${idx}`}
+                  </span>
+                </div>
+
+                {/* Tipo de mensagem — tabs */}
+                <div className="flex gap-1 rounded-lg bg-emerald-100 p-0.5">
+                  {(["text", "ai", ...(selectedConnType === "meta" ? ["template"] : [])] as ("text" | "ai" | "template")[]).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => updateStep({ messageType: t })}
+                      className={clsx(
+                        "flex-1 rounded-md px-2 py-1 text-xs font-medium transition",
+                        msgType === t
+                          ? "bg-white text-emerald-700 shadow-sm"
+                          : "text-emerald-600 hover:text-emerald-800"
+                      )}
+                    >
+                      {t === "text" ? "Texto fixo" : t === "ai" ? "✨ IA" : "Template Meta"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Texto fixo */}
+                {msgType === "text" && (
+                  <div className="space-y-1.5">
+                    <textarea
+                      rows={2}
+                      value={step.message}
+                      onChange={(e) => updateStep({ message: e.target.value })}
+                      placeholder={`Mensagem do follow-up ${idx + 1}...`}
+                      className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400 resize-none"
+                    />
+                    <div className="flex flex-wrap gap-1">
+                      {["{{nome}}", "{{nome_completo}}", "{{telefone}}", "{{email}}"].map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => updateStep({ message: step.message + v })}
+                          className="rounded bg-white border border-emerald-200 hover:border-emerald-400 hover:bg-emerald-100 px-2 py-0.5 text-[10px] font-mono text-emerald-700 transition"
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      <span className="font-semibold text-emerald-600">{`{{nome}}`}</span> = primeiro nome &nbsp;·&nbsp;
+                      <span className="font-semibold text-emerald-600">{`{{nome_completo}}`}</span> = nome completo
+                    </p>
+                  </div>
+                )}
+
+                {/* IA */}
+                {msgType === "ai" && (
+                  <div className="rounded-lg bg-violet-50 border border-violet-200 p-3 space-y-1">
+                    <p className="text-xs font-semibold text-violet-700">✨ Follow-up gerado por Inteligência Artificial</p>
+                    <p className="text-xs text-slate-500">
+                      No momento do envio, a IA lê o histórico de conversa, analisa o contexto — o que o lead perguntou, onde a conversa parou, o interesse demonstrado — e gera uma mensagem personalizada com o nome da pessoa.
+                    </p>
+                    <p className="text-[10px] text-violet-400 mt-1">Requer a chave Gemini configurada neste agente.</p>
+                  </div>
+                )}
+
+                {/* Template Meta */}
+                {msgType === "template" && selectedConnType === "meta" && (
+                  <div className="space-y-2">
+                    {/* Filtro de categoria */}
+                    <div className="flex gap-1.5">
+                      {([undefined, "MARKETING", "UTILITY"] as const).map((cat) => (
+                        <button
+                          key={cat ?? "all"}
+                          onClick={() => updateStep({ templateCategory: cat })}
+                          className={clsx(
+                            "rounded-lg px-2.5 py-1 text-xs font-medium border transition",
+                            step.templateCategory === cat
+                              ? "bg-emerald-600 text-white border-emerald-600"
+                              : "bg-white text-slate-500 border-slate-200 hover:border-emerald-400"
+                          )}
+                        >
+                          {cat === undefined ? "Todos" : cat === "MARKETING" ? "Marketing" : "Utilidade"}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Lista de templates */}
+                    <div className="space-y-1 max-h-44 overflow-y-auto rounded-lg">
+                      {filteredTemplates.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic px-1">
+                          {approvedTemplates.length === 0
+                            ? "Nenhum template aprovado. Importe em Disparos WA."
+                            : "Nenhum template nesta categoria."}
+                        </p>
+                      ) : (
+                        filteredTemplates.map((tpl) => (
+                          <button
+                            key={tpl.id}
+                            onClick={() => updateStep({ templateId: tpl.id })}
+                            className={clsx(
+                              "w-full text-left rounded-lg px-3 py-2 text-sm border transition",
+                              step.templateId === tpl.id
+                                ? "bg-emerald-600 text-white border-emerald-600"
+                                : "bg-white border-slate-200 hover:border-emerald-400 text-slate-700"
+                            )}
+                          >
+                            <div className="font-medium">{tpl.name}</div>
+                            <div className={clsx("text-[10px] mt-0.5", step.templateId === tpl.id ? "text-emerald-100" : "text-slate-400")}>
+                              {tpl.category} · {tpl.language}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

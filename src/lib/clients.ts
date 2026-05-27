@@ -15,6 +15,10 @@ export type FollowUpStep = {
   delayHours: number; // horas após o step anterior (ou após o primeiro contato para o step 1)
   message: string;
   label?: string;     // nome opcional para identificar o step
+  messageType?: "text" | "ai" | "template"; // tipo de mensagem
+  templateId?: string;                       // id do template Meta (quando messageType === "template")
+  templateCategory?: "MARKETING" | "UTILITY"; // categoria para filtrar templates
+  templateVariables?: Record<string, string>; // variáveis do template
 };
 
 export type AgentMedia = {

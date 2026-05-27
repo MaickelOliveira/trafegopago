@@ -413,3 +413,41 @@ export async function runGeminiAgent(
 
   return { text: finalText, actions };
 }
+
+/**
+ * Gera uma mensagem de follow-up inteligente usando IA, analisando o histórico da conversa.
+ */
+export async function generateFollowUpAI(
+  history: ChatMessage[],
+  leadName: string | undefined,
+  clientName: string,
+  geminiApiKey: string | null,
+): Promise<string | null> {
+  if (!geminiApiKey) return null;
+  try {
+    const ai = new GoogleGenerativeAI(geminiApiKey);
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const firstName = leadName ? leadName.split(" ")[0] : null;
+    const historyText = history
+      .slice(-20)
+      .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
+      .join("\n");
+
+    const prompt = `Você é um assistente de vendas para ${clientName}.
+${firstName ? `O lead se chama ${firstName}.` : ""}
+Analise o histórico de conversa abaixo e crie uma mensagem de follow-up inteligente e personalizada em português.
+Seja natural, breve (2-3 frases), retome o contexto de onde a conversa parou e demonstre interesse genuíno.
+${firstName ? `Use o primeiro nome "${firstName}" para personalizar a mensagem.` : ""}
+Retorne APENAS a mensagem, sem explicações adicionais.
+
+Histórico:
+${historyText || "Sem histórico de conversa disponível. Crie uma mensagem de reengajamento gentil."}`;
+
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim() || null;
+  } catch (e) {
+    console.error("[gemini-agent] generateFollowUpAI error:", e);
+    return null;
+  }
+}

@@ -5,11 +5,24 @@ export async function register() {
     const { getDueFollowUps, markSent, scheduleFollowUp } = await import("./lib/followups");
     const { getDuePending, markProcessing, markDone } = await import("./lib/pending-responses");
     const { sendMessage } = await import("./lib/whatsapp-send");
-    const { runGeminiAgent } = await import("./lib/gemini-agent");
+    const { runGeminiAgent, generateFollowUpAI } = await import("./lib/gemini-agent");
     const { addMessage, getHistory } = await import("./lib/conversations");
     const { getClientById, getAllAgentConfigs } = await import("./lib/clients");
+    const { getLeadByPhone } = await import("./lib/leads");
+    const { getGeminiApiKey } = await import("./lib/whatsapp-send");
 
     console.log("[cron] Agendador interno iniciado — verificação a cada 60s");
+
+    /** Interpola variáveis {{nome}}, {{nome_completo}}, {{telefone}}, {{email}} */
+    function interpolateFollowUp(msg: string, lead: { name?: string | null; phone?: string | null; email?: string | null } | undefined): string {
+      if (!msg) return msg;
+      const firstName = lead?.name ? lead.name.split(" ")[0] : "";
+      return msg
+        .replace(/\{\{nome\}\}/g, firstName)
+        .replace(/\{\{nome_completo\}\}/g, lead?.name ?? "")
+        .replace(/\{\{telefone\}\}/g, lead?.phone ?? "")
+        .replace(/\{\{email\}\}/g, lead?.email ?? "");
+    }
 
     const tick = async () => {
       try {
@@ -23,7 +36,29 @@ export async function register() {
           const agCfg = allCfgs.find(c => c.followUpEnabled);
           if (!agCfg) continue;
           try {
-            await sendMessage(fu.phone, fu.message, fu.clientId, agCfg.whatsappConnectionId);
+            const lead = getLeadByPhone(fu.clientId, fu.phone);
+
+            if (fu.messageType === "template") {
+              // Envia template Meta aprovado
+              const { getTemplateById, sendTemplate } = await import("./lib/waba-templates");
+              const tpl = fu.templateId ? getTemplateById(fu.templateId) : null;
+              if (tpl && tpl.status === "APPROVED" && tpl.phoneNumberId && tpl.metaToken) {
+                await sendTemplate(tpl.phoneNumberId, tpl.metaToken, fu.phone, tpl.name, tpl.language);
+              }
+            } else if (fu.messageType === "ai") {
+              // Gera follow-up com IA baseado no histórico da conversa
+              const history = getHistory(fu.phone);
+              const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
+              const aiMsg = await generateFollowUpAI(history, lead?.name, client.name, apiKey);
+              if (aiMsg) {
+                await sendMessage(fu.phone, aiMsg, fu.clientId, agCfg.whatsappConnectionId);
+              }
+            } else {
+              // Texto fixo com interpolação de variáveis
+              const interpolated = interpolateFollowUp(fu.message, lead);
+              await sendMessage(fu.phone, interpolated, fu.clientId, agCfg.whatsappConnectionId);
+            }
+
             markSent(fu.id);
             const steps = agCfg.followUps ?? [];
             const nextIdx = (fu.stepIndex ?? 0) + 1;
@@ -37,6 +72,9 @@ export async function register() {
                 type: "followup",
                 stepIndex: nextIdx,
                 stepId: nextStep.id,
+                messageType: nextStep.messageType,
+                templateId: nextStep.templateId,
+                templateVariables: nextStep.templateVariables,
               });
             }
           } catch (e) {

@@ -17,6 +17,9 @@ export type FollowUp = {
   stepId?: string;              // id do FollowUpStep configurado
   appointmentEventId?: string;  // Google Calendar event ID (para appointment_reminder)
   createdAt: string;
+  messageType?: "text" | "ai" | "template"; // tipo de envio
+  templateId?: string;                       // id do template Meta
+  templateVariables?: Record<string, string>; // variáveis do template
 };
 
 const FILE = path.join(process.cwd(), "data", "followups.json");
@@ -88,7 +91,7 @@ export function cancelFollowUp(id: string): void {
 export function startFollowUpSequence(
   clientId: string,
   phone: string,
-  steps: { id: string; delayHours: number; message: string }[]
+  steps: { id: string; delayHours: number; message: string; messageType?: string; templateId?: string; templateVariables?: Record<string, string> }[]
 ): void {
   if (steps.length === 0) return;
   const first = steps[0];
@@ -101,6 +104,9 @@ export function startFollowUpSequence(
     type: "followup",
     stepIndex: 0,
     stepId: first.id,
+    messageType: first.messageType as "text" | "ai" | "template" | undefined,
+    templateId: first.templateId,
+    templateVariables: first.templateVariables,
   });
 }
 
