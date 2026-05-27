@@ -91,7 +91,13 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
       const res = await fetch("/api/waba/templates");
       if (res.ok) {
         const data = await res.json() as { name: string; status: string }[];
-        setWabaTemplates(Array.isArray(data) ? data : []);
+        const seen = new Set<string>();
+        const unique = (Array.isArray(data) ? data : []).filter((t) => {
+          if (seen.has(t.name)) return false;
+          seen.add(t.name);
+          return true;
+        });
+        setWabaTemplates(unique);
       }
     } catch { /* ignore */ } finally {
       setLoadingWabaTemplates(false);
