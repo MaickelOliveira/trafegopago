@@ -82,16 +82,31 @@ export function markAsRead(phone: string) {
   }
 }
 
+/** Normaliza telefone removendo código de país 55 para busca fuzzy */
+function phoneVariants(phone: string): string[] {
+  const digits = phone.replace(/\D/g, "");
+  const variants = [digits];
+  if (digits.startsWith("55") && digits.length > 11) variants.push(digits.slice(2));
+  else if (!digits.startsWith("55") && digits.length <= 11) variants.push("55" + digits);
+  return variants;
+}
+
 export function setAiPaused(phone: string, paused: boolean) {
   const all = load();
-  if (all[phone]) {
-    all[phone].aiPaused = paused;
-    save(all);
+  const variants = phoneVariants(phone);
+  let changed = false;
+  for (const v of variants) {
+    if (all[v]) {
+      all[v].aiPaused = paused;
+      changed = true;
+    }
   }
+  if (changed) save(all);
 }
 
 export function getAiPaused(phone: string): boolean {
-  return load()[phone]?.aiPaused ?? false;
+  const all = load();
+  return phoneVariants(phone).some((v) => all[v]?.aiPaused === true);
 }
 
 export function addMessage(
