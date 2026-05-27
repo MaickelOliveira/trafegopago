@@ -8,7 +8,7 @@ export type Briefing = {
   id: string;            // token UUID — usado na URL pública
   clientId: string;      // gestor que criou
   clientName: string;    // nome do cliente (negócio do gestor)
-  notifyPhone: string;   // WhatsApp do gestor para notificação
+  notifyPhone?: string;  // legado — notificações agora vão via masterPhone nas configs
   niche?: string;        // nicho pré-selecionado (opcional)
   status: BriefingStatus;
   answers?: Record<string, string>;

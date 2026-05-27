@@ -11,18 +11,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
-  const { clientId, clientName, notifyPhone, niche } = await req.json() as {
+  const { clientId, clientName, niche } = await req.json() as {
     clientId: string;
     clientName: string;
-    notifyPhone: string;
     niche?: string;
   };
 
-  if (!clientId || !clientName || !notifyPhone) {
-    return NextResponse.json({ error: "clientId, clientName e notifyPhone são obrigatórios" }, { status: 400 });
+  if (!clientId || !clientName) {
+    return NextResponse.json({ error: "clientId e clientName são obrigatórios" }, { status: 400 });
   }
 
-  const briefing = createBriefing({ clientId, clientName, notifyPhone, niche });
+  const briefing = createBriefing({ clientId, clientName, niche });
 
   // Usa headers do proxy reverso (EasyPanel) para montar a URL pública correta
   const proto = req.headers.get("x-forwarded-proto") ?? "https";

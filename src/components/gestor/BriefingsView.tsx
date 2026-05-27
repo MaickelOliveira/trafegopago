@@ -79,19 +79,18 @@ export function BriefingsView({
 }) {
   const [briefings, setBriefings] = useState<Briefing[]>(initialBriefings);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ clientName, notifyPhone: "", niche: "" });
+  const [form, setForm] = useState({ clientName, niche: "" });
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [selected, setSelected] = useState<Briefing | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.notifyPhone.trim()) { alert("Informe o WhatsApp para notificação"); return; }
     if (!form.niche.trim()) { alert("Selecione o nicho do cliente"); return; }
     const res = await fetch("/api/briefing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId, clientName: form.clientName, notifyPhone: form.notifyPhone, niche: form.niche || undefined }),
+      body: JSON.stringify({ clientId, clientName: form.clientName, niche: form.niche || undefined }),
     });
     const data = await res.json();
     if (!res.ok) { alert(data.error ?? "Erro ao criar"); return; }
@@ -135,7 +134,7 @@ export function BriefingsView({
           <p className="text-slate-500 text-sm mt-0.5">Envie formulários de onboarding para seus clientes</p>
         </div>
         <button
-          onClick={() => { setCreating(true); setGeneratedUrl(null); setForm({ clientName, notifyPhone: "", niche: "" }); }}
+          onClick={() => { setCreating(true); setGeneratedUrl(null); setForm({ clientName, niche: "" }); }}
           className="bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
         >
           + Novo Briefing
@@ -155,16 +154,6 @@ export function BriefingsView({
                     <input
                       value={form.clientName}
                       onChange={(e) => setForm((f) => ({ ...f, clientName: e.target.value }))}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Seu WhatsApp para notificação (com DDI) <span className="text-violet-500">*</span></label>
-                    <input
-                      value={form.notifyPhone}
-                      onChange={(e) => setForm((f) => ({ ...f, notifyPhone: e.target.value }))}
-                      placeholder="Ex: 5511999999999"
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
                       required
                     />

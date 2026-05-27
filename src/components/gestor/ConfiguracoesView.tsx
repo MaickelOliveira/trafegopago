@@ -82,6 +82,21 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
   });
   const [savingConfig, setSavingConfig] = useState(false);
   const [configMsg, setConfigMsg] = useState("");
+  const [wabaTemplates, setWabaTemplates] = useState<{ name: string; status: string }[]>([]);
+  const [loadingWabaTemplates, setLoadingWabaTemplates] = useState(false);
+
+  async function fetchWabaTemplates() {
+    setLoadingWabaTemplates(true);
+    try {
+      const res = await fetch("/api/waba/templates");
+      if (res.ok) {
+        const data = await res.json() as { name: string; status: string }[];
+        setWabaTemplates(Array.isArray(data) ? data : []);
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingWabaTemplates(false);
+    }
+  }
 
   async function openGlobalConfig() {
     const res = await fetch("/api/gestor/config");
@@ -89,6 +104,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
     setGlobalConfig(data);
     setConfigMsg("");
     setShowGlobalConfig(true);
+    fetchWabaTemplates();
   }
 
   async function saveGlobalConfig() {
@@ -543,14 +559,39 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                         <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Templates por automação</p>
 
                         <div>
-                          <label className="block text-xs text-slate-600 mb-1">📋 Briefing preenchido — nome do template</label>
-                          <input
-                            type="text"
-                            value={globalConfig.masterMetaTemplateBriefing}
-                            onChange={(e) => setGlobalConfig((c) => ({ ...c, masterMetaTemplateBriefing: e.target.value }))}
-                            placeholder="ex: briefing_preenchido"
-                            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-200 outline-none"
-                          />
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs text-slate-600">📋 Briefing preenchido — nome do template</label>
+                            <button
+                              type="button"
+                              onClick={fetchWabaTemplates}
+                              disabled={loadingWabaTemplates}
+                              className="text-xs text-amber-700 underline disabled:opacity-50"
+                            >
+                              {loadingWabaTemplates ? "Buscando..." : "Atualizar"}
+                            </button>
+                          </div>
+                          {wabaTemplates.length > 0 ? (
+                            <select
+                              value={globalConfig.masterMetaTemplateBriefing}
+                              onChange={(e) => setGlobalConfig((c) => ({ ...c, masterMetaTemplateBriefing: e.target.value }))}
+                              className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-200 outline-none"
+                            >
+                              <option value="">— Selecione um template —</option>
+                              {wabaTemplates.map((t) => (
+                                <option key={t.name} value={t.name}>
+                                  {t.name}{t.status !== "APPROVED" ? ` (${t.status})` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={globalConfig.masterMetaTemplateBriefing}
+                              onChange={(e) => setGlobalConfig((c) => ({ ...c, masterMetaTemplateBriefing: e.target.value }))}
+                              placeholder="ex: briefing_preenchido"
+                              className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-200 outline-none"
+                            />
+                          )}
                         </div>
 
                         <div>
