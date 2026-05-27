@@ -58,8 +58,9 @@ export async function POST(
     const config = getConfig();
     const uazToken = config.uazapiToken;
     if (uazToken && briefing.notifyPhone) {
-      const baseUrl = req.nextUrl.origin;
-      const viewUrl = `${baseUrl}/gestor/${briefing.clientId}/briefings`;
+      const proto = req.headers.get("x-forwarded-proto") ?? "https";
+      const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+      const viewUrl = `${proto}://${host}/gestor/${briefing.clientId}/briefings`;
       const niche = answers["nicho"] ?? briefing.niche ?? "não informado";
       const msg =
         `📋 *Novo briefing preenchido!*\n\n` +

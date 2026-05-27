@@ -24,8 +24,10 @@ export async function POST(req: NextRequest) {
 
   const briefing = createBriefing({ clientId, clientName, notifyPhone, niche });
 
-  const baseUrl = req.nextUrl.origin;
-  const url = `${baseUrl}/briefing/${briefing.id}`;
+  // Usa headers do proxy reverso (EasyPanel) para montar a URL pública correta
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+  const url = `${proto}://${host}/briefing/${briefing.id}`;
 
   return NextResponse.json({ ok: true, token: briefing.id, url });
 }
