@@ -10,31 +10,35 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientId, name, trigger, channel, connectionId, funnelId, triggerColumnId,
-          message, templateId, templateVariables, delayMinutes, active } = body;
+  const {
+    clientId, name, trigger,
+    funnelId, triggerColumnId, triggerWebhookId, scheduledTime,
+    steps,
+    // legacy fields (mantidos para retrocompatibilidade)
+    channel, connectionId, message, templateId, templateVariables, delayMinutes,
+    active,
+  } = body;
 
-  if (!clientId || !name || !trigger || !channel || !connectionId) {
-    return NextResponse.json({ error: "clientId, name, trigger, channel, connectionId são obrigatórios" }, { status: 400 });
-  }
-  if (channel === "uazapi" && !message) {
-    return NextResponse.json({ error: "message é obrigatório para canal uazapi" }, { status: 400 });
-  }
-  if (channel === "waba" && !templateId) {
-    return NextResponse.json({ error: "templateId é obrigatório para canal waba" }, { status: 400 });
+  if (!clientId || !name || !trigger) {
+    return NextResponse.json({ error: "clientId, name e trigger são obrigatórios" }, { status: 400 });
   }
 
   const auto = createAutomation({
     clientId,
     name,
     trigger,
-    channel,
-    connectionId,
     funnelId: funnelId || undefined,
     triggerColumnId: triggerColumnId || undefined,
+    triggerWebhookId: triggerWebhookId || undefined,
+    scheduledTime: scheduledTime || undefined,
+    steps: steps ?? undefined,
+    // legacy
+    channel: channel || undefined,
+    connectionId: connectionId || undefined,
     message: message || undefined,
     templateId: templateId || undefined,
     templateVariables: templateVariables || undefined,
-    delayMinutes: delayMinutes ?? 0,
+    delayMinutes: delayMinutes ?? undefined,
     active: active ?? true,
   });
 

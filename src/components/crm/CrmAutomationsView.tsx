@@ -790,6 +790,9 @@ export function CrmAutomationsView({
         const updated = await res.json() as CrmAutomation;
         setAutomations((prev) => prev.map((a) => a.id === editingId ? updated : a));
         closeForm();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert("Erro ao salvar: " + (err.error ?? res.status));
       }
     } else {
       const res = await fetch("/api/crm/automations", {
@@ -799,6 +802,9 @@ export function CrmAutomationsView({
         const created = await res.json() as CrmAutomation;
         setAutomations((prev) => [...prev, created]);
         closeForm();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert("Erro ao criar: " + (err.error ?? res.status));
       }
     }
     setSaving(false);
