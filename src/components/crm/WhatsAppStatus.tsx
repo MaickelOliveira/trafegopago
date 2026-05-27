@@ -41,8 +41,12 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
     if (showPanel) fetchFunnels();
   }, [showPanel]);
 
-  // Sincroniza funnels com prop (quando cliente muda)
-  useEffect(() => { setFunnels(funnelsProp); }, [funnelsProp]);
+  // Quando clientId muda, reseta para a prop e busca dados atualizados do servidor
+  useEffect(() => {
+    setFunnels(funnelsProp);
+    fetchFunnels();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
 
   // Poll QR
   useEffect(() => {
