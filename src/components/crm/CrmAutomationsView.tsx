@@ -1048,13 +1048,13 @@ export function CrmAutomationsView({
               </div>
 
               {/* Step picker */}
-              <div className="mt-2 relative">
+              <div className="mt-2">
                 <button onClick={() => setShowPicker((v) => !v)}
                   className="w-full rounded-lg border border-dashed border-violet-300 px-3 py-2.5 text-sm text-violet-600 hover:bg-violet-50 transition font-medium flex items-center justify-center gap-2">
-                  <span className="text-base">+</span> Adicionar passo
+                  <span className="text-base">{showPicker ? "−" : "+"}</span> {showPicker ? "Fechar" : "Adicionar passo"}
                 </button>
                 {showPicker && (
-                  <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-xl p-2 grid grid-cols-2 gap-1 w-full">
+                  <div className="mt-2 border border-slate-200 rounded-xl bg-white p-2 grid grid-cols-2 gap-1">
                     {STEP_PICKER_OPTIONS.map((opt) => (
                       <button key={opt.type} onClick={() => addStep(opt.type)}
                         className="flex items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-violet-50 hover:text-violet-700 transition group">
