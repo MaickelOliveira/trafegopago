@@ -361,15 +361,59 @@ function StepEditor({
             </div>
             <div>
               <label className={labelCls}>Imagem (opcional)</label>
-              <input
-                value={step.imageUrl ?? ""}
-                onChange={(e) => sel("imageUrl", e.target.value)}
-                placeholder="https://exemplo.com/imagem.jpg"
-                className={inputCls}
-              />
-              <p className="text-[10px] text-slate-400 mt-1">
-                Cole a URL de uma imagem (JPG, PNG, GIF). A mensagem será enviada como legenda da foto.
-              </p>
+              <div className="space-y-2">
+                {step.imageUrl ? (
+                  <div className="flex items-start gap-3">
+                    <img
+                      src={step.imageUrl}
+                      alt="preview"
+                      className="h-20 w-20 rounded-lg border border-slate-200 object-cover shrink-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => sel("imageUrl", "")}
+                      className="text-[11px] text-red-500 hover:text-red-700 underline"
+                    >
+                      Remover imagem
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <label className="flex items-center gap-2 cursor-pointer w-fit px-3 py-2 rounded-lg border-2 border-dashed border-slate-300 hover:border-violet-400 hover:bg-violet-50 transition text-sm text-slate-500 hover:text-violet-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4l4 4" />
+                      </svg>
+                      Fazer upload do PC
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => sel("imageUrl", reader.result as string);
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-px bg-slate-200" />
+                      <span className="text-[10px] text-slate-400">ou cole uma URL</span>
+                      <div className="flex-1 h-px bg-slate-200" />
+                    </div>
+                    <input
+                      value={step.imageUrl ?? ""}
+                      onChange={(e) => sel("imageUrl", e.target.value)}
+                      placeholder="https://exemplo.com/imagem.jpg"
+                      className={inputCls}
+                    />
+                  </>
+                )}
+                <p className="text-[10px] text-slate-400">
+                  A mensagem de texto será enviada como legenda da foto.
+                </p>
+              </div>
             </div>
           </div>
         )}
