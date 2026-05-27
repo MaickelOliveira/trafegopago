@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import type { CrmAutomation, CrmTrigger, CrmStep, CrmStepType } from "@/lib/crm-automations";
 import type { Funnel } from "@/lib/funnels";
 import type { WabaTemplate } from "@/lib/waba-templates";
+import type { WebhookConfig } from "@/lib/webhooks";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 type ConnectionInfo = {
@@ -20,6 +21,7 @@ type Props = {
   funnels: Funnel[];
   connections: ConnectionInfo[];
   approvedTemplates: WabaTemplate[];
+  webhooks: WebhookConfig[];
 };
 
 // ── Step form state ────────────────────────────────────────────────────────────
@@ -46,22 +48,90 @@ type FormState = {
   trigger: CrmTrigger;
   funnelId: string;
   triggerColumnId: string;
+  triggerWebhookId: string;
   scheduledTime: string;
   steps: StepForm[];
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
+const TRIGGER_OPTIONS: { value: CrmTrigger; icon: string; label: string; description: string }[] = [
+  {
+    value: "lead_created",
+    icon: "🎯",
+    label: "Lead cadastrado",
+    description: "Dispara quando alguém preenche o formulário do site",
+  },
+  {
+    value: "column_entered",
+    icon: "🔀",
+    label: "Lead chega numa etapa",
+    description: "Dispara quando o lead é movido para uma etapa específica do funil",
+  },
+  {
+    value: "column_changed",
+    icon: "↕",
+    label: "Lead muda de etapa",
+    description: "Dispara toda vez que o lead é movido, independente da etapa",
+  },
+  {
+    value: "scheduled_daily",
+    icon: "📅",
+    label: "Todo dia num horário",
+    description: "Dispara diariamente para todos os leads de uma etapa",
+  },
+];
+
 const TRIGGER_LABEL: Record<CrmTrigger, string> = {
-  lead_created:    "🎯 Lead cadastrado (via formulário)",
-  column_changed:  "↕ Lead muda para qualquer coluna",
-  column_entered:  "🔀 Lead chega/é criado em uma coluna",
-  scheduled_daily: "📅 Diariamente às…",
+  lead_created:    "🎯 Lead cadastrado",
+  column_changed:  "↕ Lead muda de etapa",
+  column_entered:  "🔀 Lead chega numa etapa",
+  scheduled_daily: "📅 Diariamente",
 };
+
+// Simplified step picker options (hidden technical split between send_message / send_template)
+const STEP_PICKER_OPTIONS = [
+  {
+    type: "send_message" as CrmStepType,
+    icon: "💬",
+    label: "Enviar mensagem",
+    description: "WhatsApp via UazapiGO (texto livre) ou template oficial Meta",
+  },
+  {
+    type: "send_list" as CrmStepType,
+    icon: "📱",
+    label: "Menu com opções",
+    description: "Botões interativos para o lead escolher uma opção",
+  },
+  {
+    type: "add_note" as CrmStepType,
+    icon: "📝",
+    label: "Anotar no lead",
+    description: "Adiciona uma observação automática no cadastro do lead",
+  },
+  {
+    type: "move_column" as CrmStepType,
+    icon: "➡️",
+    label: "Mover de etapa",
+    description: "Move o lead para outra etapa ou funil",
+  },
+  {
+    type: "delay" as CrmStepType,
+    icon: "⏸",
+    label: "Aguardar um tempo",
+    description: "Espera antes de executar o próximo passo",
+  },
+  {
+    type: "webhook" as CrmStepType,
+    icon: "🔗",
+    label: "Conectar a outro sistema",
+    description: "Envia os dados do lead para um sistema externo via webhook",
+  },
+];
 
 const STEP_ICONS: Record<CrmStepType, string> = {
   send_message:  "💬",
-  send_template: "🟢",
-  send_list:     "📋",
+  send_template: "💬", // same as send_message (unified UX)
+  send_list:     "📱",
   add_note:      "📝",
   move_column:   "➡️",
   delay:         "⏸",
@@ -69,13 +139,13 @@ const STEP_ICONS: Record<CrmStepType, string> = {
 };
 
 const STEP_LABELS: Record<CrmStepType, string> = {
-  send_message:  "Enviar mensagem (WhatsApp)",
-  send_template: "Enviar template Meta (WABA)",
-  send_list:     "Enviar lista interativa (WhatsApp)",
-  add_note:      "Adicionar nota ao lead",
-  move_column:   "Mover lead de coluna",
-  delay:         "Pausar",
-  webhook:       "Chamar webhook externo",
+  send_message:  "Enviar mensagem",
+  send_template: "Enviar mensagem",
+  send_list:     "Menu com opções",
+  add_note:      "Anotar no lead",
+  move_column:   "Mover de etapa",
+  delay:         "Aguardar",
+  webhook:       "Conectar sistema",
 };
 
 const DELAY_OPTIONS = [
@@ -89,10 +159,14 @@ const DELAY_OPTIONS = [
   { value: 1440, label: "24 horas" },
 ];
 
-const STEP_TYPES_ORDERED: CrmStepType[] = [
-  "send_message", "send_template", "send_list",
-  "add_note", "move_column", "delay", "webhook",
-];
+const CATEGORY_LABEL: Record<string, string> = {
+  MARKETING: "Marketing",
+  UTILITY: "Utilidade",
+};
+const CATEGORY_COLOR: Record<string, string> = {
+  MARKETING: "bg-orange-100 text-orange-700",
+  UTILITY: "bg-blue-100 text-blue-700",
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -129,7 +203,6 @@ function stepsFromAuto(auto: CrmAutomation, connId: string, tplId: string): Step
       webhookBody: s.webhookBody ?? "",
     }));
   }
-  // Legacy: reconstruct
   const steps: StepForm[] = [];
   if ((auto.delayMinutes ?? 0) > 0) {
     const d = blankStep("delay", connId, tplId);
@@ -171,7 +244,11 @@ function stepsToPayload(steps: StepForm[]): CrmStep[] {
   });
 }
 
-// ── Step editor ───────────────────────────────────────────────────────────────
+// ── Input / Select helpers ────────────────────────────────────────────────────
+const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white";
+const labelCls = "block text-xs font-semibold text-slate-500 mb-1";
+
+// ── Step editor (unified send_message + send_template) ─────────────────────────
 function StepEditor({
   step, onChange, funnels, connections, approvedTemplates,
 }: {
@@ -181,119 +258,219 @@ function StepEditor({
   connections: ConnectionInfo[];
   approvedTemplates: WabaTemplate[];
 }) {
+  const sel = (field: keyof StepForm, val: unknown) => onChange({ [field]: val } as Partial<StepForm>);
   const uazapiConns = connections.filter((c) => c.type === "uazapi");
   const metaConns   = connections.filter((c) => c.type === "meta");
-  const sel = (field: keyof StepForm, val: unknown) => onChange({ [field]: val } as Partial<StepForm>);
+  const allConns    = [...uazapiConns, ...metaConns];
 
-  if (step.type === "send_message") {
-    return (
-      <div className="space-y-3">
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Conexão UazapiGO</label>
-          <select value={step.connectionId} onChange={(e) => sel("connectionId", e.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
-            {uazapiConns.length === 0
-              ? <option value="">Nenhuma conexão UazapiGO configurada</option>
-              : uazapiConns.map((c) => <option key={c.id} value={c.id}>{c.phone} ({c.funnelName})</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Mensagem</label>
-          <textarea value={step.message} onChange={(e) => sel("message", e.target.value)} rows={4}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white resize-none" />
-          <p className="text-[10px] text-slate-400 mt-1">Variáveis: <code>{"{{nome}}"}</code> <code>{"{{telefone}}"}</code> <code>{"{{email}}"}</code> <code>{"{{funil}}"}</code></p>
-        </div>
-      </div>
-    );
-  }
+  // ── Unified send message (UazapiGO text OR Meta template) ─────────────────
+  if (step.type === "send_message" || step.type === "send_template") {
+    const selectedConn = connections.find((c) => c.id === step.connectionId);
+    const isMeta = selectedConn?.type === "meta" || step.type === "send_template";
 
-  if (step.type === "send_template") {
+    // Group templates by category
+    const byCategory = approvedTemplates.reduce<Record<string, WabaTemplate[]>>((acc, t) => {
+      (acc[t.category] = acc[t.category] ?? []).push(t);
+      return acc;
+    }, {});
+
     const tpl = approvedTemplates.find((t) => t.id === step.templateId);
     const varComps = tpl?.components.filter((c) => c.text && /\{\{\d+\}\}/.test(c.text)) ?? [];
+
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
+        {/* Channel selector */}
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Conexão Meta</label>
-          <select value={step.connectionId} onChange={(e) => sel("connectionId", e.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
-            {metaConns.length === 0
-              ? <option value="">Nenhuma conexão Meta configurada</option>
-              : metaConns.map((c) => <option key={c.id} value={c.id}>{c.phone} ({c.funnelName})</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Template aprovado</label>
-          {approvedTemplates.length === 0
-            ? <p className="text-sm text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2">Nenhum template aprovado. Importe em Disparos WA.</p>
-            : <select value={step.templateId}
-                onChange={(e) => { sel("templateId", e.target.value); sel("templateVariables", {}); }}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
-                {approvedTemplates.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.language})</option>)}
-              </select>}
-        </div>
-        {tpl && (
-          <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-            <div className="bg-[#e9f5fe] px-3 py-3 space-y-1 border-b border-slate-200">
-              <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Preview</p>
-              {tpl.components.filter((c) => c.type !== "BUTTONS" && c.text).map((c) => (
-                <p key={c.type} className={clsx("text-sm text-slate-800 whitespace-pre-wrap",
-                  c.type === "HEADER" && "font-bold", c.type === "FOOTER" && "text-slate-400 text-[11px]")}>
-                  {c.text!.split(/(\{\{\d+\}\})/).map((part, i) =>
-                    /\{\{\d+\}\}/.test(part)
-                      ? <span key={i} className="bg-blue-100 text-blue-700 rounded px-0.5 font-mono">{part}</span>
-                      : part)}
-                </p>
+          <label className={labelCls}>Por qual número enviar?</label>
+          {allConns.length === 0 ? (
+            <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 text-sm text-yellow-700">
+              Nenhum número conectado. Configure em Configurações → Funil.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-2">
+              {allConns.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    if (c.type === "meta") {
+                      onChange({ connectionId: c.id, type: "send_template" });
+                    } else {
+                      onChange({ connectionId: c.id, type: "send_message" });
+                    }
+                  }}
+                  className={clsx(
+                    "flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition",
+                    step.connectionId === c.id
+                      ? "border-violet-400 bg-violet-50 text-violet-800"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50/50",
+                  )}
+                >
+                  <span className="text-base">{c.type === "uazapi" ? "📱" : "🟢"}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold">{c.phone}</span>
+                    <span className="text-slate-400 ml-2 text-xs">({c.funnelName})</span>
+                  </div>
+                  <span className={clsx(
+                    "rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0",
+                    c.type === "uazapi" ? "bg-emerald-100 text-emerald-700" : "bg-green-100 text-green-700",
+                  )}>
+                    {c.type === "uazapi" ? "UazapiGO" : "API Meta"}
+                  </span>
+                </button>
               ))}
             </div>
-            {varComps.length > 0 && (
-              <div className="px-3 py-3 space-y-3">
-                <p className="text-[10px] font-bold text-slate-500 uppercase">Variáveis do template</p>
-                {varComps.map((comp) => {
-                  const matches = [...comp.text!.matchAll(/\{\{(\d+)\}\}/g)];
-                  return (
-                    <div key={comp.type}>
-                      <p className="text-[10px] font-semibold text-slate-500 mb-1">{comp.type === "HEADER" ? "🔝 Header" : "📝 Body"}</p>
-                      <div className="space-y-1.5">
-                        {matches.map((m) => {
-                          const idx = parseInt(m[1]) - 1;
-                          const current = step.templateVariables[comp.type]?.[idx] ?? "";
-                          return (
-                            <div key={m[1]} className="flex items-center gap-2">
-                              <span className="text-xs font-mono bg-blue-100 text-blue-700 rounded px-1.5 py-0.5 shrink-0">{`{{${m[1]}}}`}</span>
-                              <div className="flex-1 relative">
-                                <input value={current}
-                                  onChange={(e) => {
-                                    const vars = { ...step.templateVariables };
-                                    const arr = [...(vars[comp.type] ?? [])];
-                                    arr[idx] = e.target.value;
-                                    vars[comp.type] = arr;
-                                    sel("templateVariables", vars);
-                                  }}
-                                  placeholder={`Valor para {{${m[1]}}}`}
-                                  className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-violet-400 bg-white pr-24" />
-                                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
-                                  {["{{nome}}", "{{telefone}}", "{{email}}"].map((v) => (
-                                    <button key={v} type="button"
-                                      onClick={() => {
-                                        const vars = { ...step.templateVariables };
-                                        const arr = [...(vars[comp.type] ?? [])];
-                                        arr[idx] = v;
-                                        vars[comp.type] = arr;
-                                        sel("templateVariables", vars);
-                                      }}
-                                      className="rounded bg-slate-100 hover:bg-violet-100 hover:text-violet-700 px-1 py-0.5 text-[9px] font-mono text-slate-500 transition">
-                                      {v.replace(/\{\{|\}\}/g, "")}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+          )}
+          <p className="text-[10px] text-slate-400 mt-1">
+            📱 UazapiGO = texto livre &nbsp;·&nbsp; 🟢 API Meta = templates aprovados
+          </p>
+        </div>
+
+        {/* UazapiGO: free text */}
+        {!isMeta && step.connectionId && (
+          <div>
+            <label className={labelCls}>Mensagem</label>
+            <textarea
+              value={step.message}
+              onChange={(e) => sel("message", e.target.value)}
+              rows={4}
+              placeholder="Olá {{nome}}, tudo bem?"
+              className={clsx(inputCls, "resize-none")}
+            />
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {["{{nome}}", "{{telefone}}", "{{email}}", "{{funil}}"].map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => sel("message", (step.message ?? "") + v)}
+                  className="rounded bg-slate-100 hover:bg-violet-100 hover:text-violet-700 px-2 py-0.5 text-[10px] font-mono text-slate-600 transition"
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Meta: template selector */}
+        {isMeta && step.connectionId && (
+          <div className="space-y-3">
+            <div>
+              <label className={labelCls}>Selecione o modelo de mensagem</label>
+              {approvedTemplates.length === 0 ? (
+                <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2 text-sm text-yellow-700">
+                  Nenhum template aprovado. Importe em <strong>Disparos WA</strong>.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {Object.entries(byCategory).map(([cat, tpls]) => (
+                    <div key={cat}>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">
+                        {CATEGORY_LABEL[cat] ?? cat}
+                      </p>
+                      <div className="space-y-1">
+                        {tpls.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => { sel("templateId", t.id); sel("templateVariables", {}); }}
+                            className={clsx(
+                              "w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition",
+                              step.templateId === t.id
+                                ? "border-violet-400 bg-violet-50"
+                                : "border-slate-200 bg-white hover:border-violet-200",
+                            )}
+                          >
+                            <span className={clsx(
+                              "rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0",
+                              CATEGORY_COLOR[cat] ?? "bg-slate-100 text-slate-600",
+                            )}>
+                              {CATEGORY_LABEL[cat] ?? cat}
+                            </span>
+                            <span className="font-medium text-slate-800">{t.name}</span>
+                            <span className="text-slate-400 text-xs ml-auto shrink-0">{t.language}</span>
+                          </button>
+                        ))}
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Template preview + variables */}
+            {tpl && (
+              <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                <div className="bg-[#e9f5fe] px-3 py-3 space-y-1 border-b border-slate-200">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Prévia da mensagem</p>
+                  {tpl.components.filter((c) => c.type !== "BUTTONS" && c.text).map((c) => (
+                    <p key={c.type} className={clsx(
+                      "text-sm text-slate-800 whitespace-pre-wrap",
+                      c.type === "HEADER" && "font-bold",
+                      c.type === "FOOTER" && "text-slate-400 text-[11px]",
+                    )}>
+                      {c.text!.split(/(\{\{\d+\}\})/).map((part, i) =>
+                        /\{\{\d+\}\}/.test(part)
+                          ? <span key={i} className="bg-blue-100 text-blue-700 rounded px-0.5 font-mono">{part}</span>
+                          : part,
+                      )}
+                    </p>
+                  ))}
+                </div>
+                {varComps.length > 0 && (
+                  <div className="px-3 py-3 space-y-3">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase">Preencha as variáveis</p>
+                    {varComps.map((comp) => {
+                      const matches = [...comp.text!.matchAll(/\{\{(\d+)\}\}/g)];
+                      return (
+                        <div key={comp.type}>
+                          <p className="text-[10px] font-semibold text-slate-500 mb-1.5">
+                            {comp.type === "HEADER" ? "🔝 Cabeçalho" : "📝 Corpo da mensagem"}
+                          </p>
+                          <div className="space-y-1.5">
+                            {matches.map((m) => {
+                              const idx = parseInt(m[1]) - 1;
+                              const current = step.templateVariables[comp.type]?.[idx] ?? "";
+                              return (
+                                <div key={m[1]} className="flex items-center gap-2">
+                                  <span className="text-xs font-mono bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 shrink-0">
+                                    {`{{${m[1]}}}`}
+                                  </span>
+                                  <div className="flex-1">
+                                    <div className="flex gap-1 mb-1">
+                                      {["{{nome}}", "{{telefone}}", "{{email}}"].map((v) => (
+                                        <button key={v} type="button"
+                                          onClick={() => {
+                                            const vars = { ...step.templateVariables };
+                                            const arr = [...(vars[comp.type] ?? [])];
+                                            arr[idx] = v; vars[comp.type] = arr;
+                                            sel("templateVariables", vars);
+                                          }}
+                                          className="rounded bg-violet-100 hover:bg-violet-200 text-violet-700 px-1.5 py-0.5 text-[9px] font-mono transition">
+                                          {v.replace(/\{\{|\}\}/g, "")}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <input value={current}
+                                      onChange={(e) => {
+                                        const vars = { ...step.templateVariables };
+                                        const arr = [...(vars[comp.type] ?? [])];
+                                        arr[idx] = e.target.value; vars[comp.type] = arr;
+                                        sel("templateVariables", vars);
+                                      }}
+                                      placeholder="Ou digite um valor fixo..."
+                                      className={inputCls}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -303,38 +480,38 @@ function StepEditor({
   }
 
   if (step.type === "send_list") {
+    const uazapiConns2 = connections.filter((c) => c.type === "uazapi");
     return (
       <div className="space-y-3">
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Conexão UazapiGO</label>
-          <select value={step.connectionId} onChange={(e) => sel("connectionId", e.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
-            {uazapiConns.map((c) => <option key={c.id} value={c.id}>{c.phone} ({c.funnelName})</option>)}
+          <label className={labelCls}>Número de envio (UazapiGO)</label>
+          <select value={step.connectionId} onChange={(e) => sel("connectionId", e.target.value)} className={inputCls}>
+            {uazapiConns2.length === 0
+              ? <option value="">Nenhuma conexão UazapiGO configurada</option>
+              : uazapiConns2.map((c) => <option key={c.id} value={c.id}>{c.phone} ({c.funnelName})</option>)}
           </select>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Título da lista</label>
-            <input value={step.listTitle} onChange={(e) => sel("listTitle", e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white" />
+            <label className={labelCls}>Título da lista</label>
+            <input value={step.listTitle} onChange={(e) => sel("listTitle", e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Texto do botão</label>
-            <input value={step.listButtonText} onChange={(e) => sel("listButtonText", e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white" />
+            <label className={labelCls}>Texto do botão</label>
+            <input value={step.listButtonText} onChange={(e) => sel("listButtonText", e.target.value)} className={inputCls} />
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Opções da lista</label>
+          <label className={labelCls}>Opções para o lead escolher</label>
           <div className="space-y-2">
             {step.listRows.map((row, i) => (
               <div key={row.id} className="flex gap-2 items-center">
                 <input value={row.title} onChange={(e) => {
                   const rows = [...step.listRows]; rows[i] = { ...rows[i], title: e.target.value }; sel("listRows", rows);
-                }} placeholder="Título" className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-violet-400 bg-white" />
+                }} placeholder="Nome da opção" className={clsx(inputCls, "flex-1")} />
                 <input value={row.description} onChange={(e) => {
                   const rows = [...step.listRows]; rows[i] = { ...rows[i], description: e.target.value }; sel("listRows", rows);
-                }} placeholder="Descrição (opcional)" className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-violet-400 bg-white" />
+                }} placeholder="Descrição (opcional)" className={clsx(inputCls, "flex-1")} />
                 <button onClick={() => sel("listRows", step.listRows.filter((_, j) => j !== i))}
                   className="text-slate-400 hover:text-red-500 px-1 text-lg">×</button>
               </div>
@@ -350,11 +527,19 @@ function StepEditor({
   if (step.type === "add_note") {
     return (
       <div>
-        <label className="block text-xs font-medium text-slate-500 mb-1">Nota (adicionada ao lead)</label>
+        <label className={labelCls}>Texto da nota</label>
         <textarea value={step.note} onChange={(e) => sel("note", e.target.value)} rows={3}
-          placeholder="Ex: Lead entrou na etapa de proposta. Acompanhar em 48h."
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white resize-none" />
-        <p className="text-[10px] text-slate-400 mt-1">Variáveis: <code>{"{{nome}}"}</code> <code>{"{{telefone}}"}</code> <code>{"{{funil}}"}</code></p>
+          placeholder="Ex: Lead entrou na proposta. Ligar em 48h."
+          className={clsx(inputCls, "resize-none")} />
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {["{{nome}}", "{{telefone}}", "{{funil}}"].map((v) => (
+            <button key={v} type="button"
+              onClick={() => sel("note", (step.note ?? "") + v)}
+              className="rounded bg-slate-100 hover:bg-violet-100 hover:text-violet-700 px-2 py-0.5 text-[10px] font-mono text-slate-600 transition">
+              {v}
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
@@ -364,20 +549,19 @@ function StepEditor({
     return (
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Funil de destino</label>
+          <label className={labelCls}>Funil de destino</label>
           <select value={step.targetFunnelId}
             onChange={(e) => { sel("targetFunnelId", e.target.value); sel("targetColumnId", ""); }}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
+            className={inputCls}>
             <option value="">Mesmo funil do lead</option>
             {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Coluna de destino <span className="text-red-500">*</span></label>
+          <label className={labelCls}>Etapa de destino <span className="text-red-500">*</span></label>
           {!step.targetFunnelId
-            ? <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 bg-slate-50">← Selecione um funil</div>
-            : <select value={step.targetColumnId} onChange={(e) => sel("targetColumnId", e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
+            ? <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 bg-slate-50">← Escolha o funil primeiro</div>
+            : <select value={step.targetColumnId} onChange={(e) => sel("targetColumnId", e.target.value)} className={inputCls}>
                 <option value="">— Selecione —</option>
                 {(targetFunnel?.columns ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>}
@@ -389,9 +573,8 @@ function StepEditor({
   if (step.type === "delay") {
     return (
       <div>
-        <label className="block text-xs font-medium text-slate-500 mb-1">Aguardar antes do próximo passo</label>
-        <select value={step.delayMinutes} onChange={(e) => sel("delayMinutes", Number(e.target.value))}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
+        <label className={labelCls}>Quanto tempo aguardar antes do próximo passo?</label>
+        <select value={step.delayMinutes} onChange={(e) => sel("delayMinutes", Number(e.target.value))} className={inputCls}>
           {DELAY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </div>
@@ -402,17 +585,18 @@ function StepEditor({
     return (
       <div className="space-y-3">
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">URL (HTTP POST)</label>
+          <label className={labelCls}>URL do sistema externo (HTTP POST)</label>
           <input value={step.webhookUrl} onChange={(e) => sel("webhookUrl", e.target.value)}
-            placeholder="https://seu-webhook.com/endpoint"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white" />
+            placeholder="https://seu-sistema.com/webhook"
+            className={inputCls} />
+          <p className="text-[10px] text-slate-400 mt-1">Os dados do lead serão enviados automaticamente para esta URL.</p>
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Body JSON (opcional)</label>
+          <label className={labelCls}>Dados personalizados (JSON — opcional)</label>
           <textarea value={step.webhookBody} onChange={(e) => sel("webhookBody", e.target.value)} rows={3}
-            placeholder={`{"nome": "{{nome}}", "telefone": "{{telefone}}", "funil": "{{funil}}"}`}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono outline-none focus:border-violet-400 bg-white resize-none" />
-          <p className="text-[10px] text-slate-400 mt-1">Deixe vazio para enviar os dados do lead automaticamente. Suporta variáveis <code>{"{{nome}}"}</code> etc.</p>
+            placeholder={`{"nome": "{{nome}}", "telefone": "{{telefone}}"}`}
+            className={clsx(inputCls, "resize-none font-mono")} />
+          <p className="text-[10px] text-slate-400 mt-1">Deixe vazio para enviar todos os dados do lead automaticamente.</p>
         </div>
       </div>
     );
@@ -426,15 +610,16 @@ function stepSummary(step: StepForm, conns: ConnectionInfo[], templates: WabaTem
   switch (step.type) {
     case "send_message": {
       const c = conns.find((x) => x.id === step.connectionId);
-      return `${c?.phone ?? "sem conexão"} · "${step.message.slice(0, 35)}${step.message.length > 35 ? "…" : ""}"`;
+      return `${c?.phone ?? "sem número"} · "${step.message.slice(0, 30)}${step.message.length > 30 ? "…" : ""}"`;
     }
     case "send_template": {
+      const c = conns.find((x) => x.id === step.connectionId);
       const t = templates.find((x) => x.id === step.templateId);
-      return t ? `Template: ${t.name}` : "Nenhum template";
+      return `${c?.phone ?? "sem número"} · ${t ? t.name : "nenhum template"}`;
     }
     case "send_list": return `"${step.listTitle}" · ${step.listRows.length} opções`;
-    case "add_note": return `"${step.note.slice(0, 40)}${step.note.length > 40 ? "…" : ""}"`;
-    case "move_column": return step.targetColumnId ? `→ col. ${step.targetColumnId}` : "Coluna não configurada";
+    case "add_note": return `"${step.note.slice(0, 35)}${step.note.length > 35 ? "…" : ""}"`;
+    case "move_column": return step.targetColumnId ? `→ etapa ${step.targetColumnId}` : "Etapa não configurada";
     case "delay": return DELAY_OPTIONS.find((o) => o.value === step.delayMinutes)?.label ?? `${step.delayMinutes}min`;
     case "webhook": return step.webhookUrl ? step.webhookUrl.replace(/^https?:\/\//, "").slice(0, 40) : "URL não configurada";
     default: return "";
@@ -443,15 +628,16 @@ function stepSummary(step: StepForm, conns: ConnectionInfo[], templates: WabaTem
 
 // ── AutoCard ──────────────────────────────────────────────────────────────────
 function AutoCard({
-  auto, isEditing, toggling, deleting, funnels,
+  auto, isEditing, toggling, deleting, funnels, webhooks,
   onEdit, onToggle, onDelete,
 }: {
   auto: CrmAutomation; isEditing: boolean; toggling: boolean; deleting: boolean;
-  funnels: Funnel[];
+  funnels: Funnel[]; webhooks: WebhookConfig[];
   onEdit: () => void; onToggle: () => void; onDelete: () => void;
 }) {
   const funnel = funnels.find((f) => f.id === auto.funnelId);
   const col = funnel?.columns.find((c) => c.id === auto.triggerColumnId);
+  const wh = webhooks.find((w) => w.id === auto.triggerWebhookId);
   const steps = auto.steps ?? [];
 
   return (
@@ -471,7 +657,8 @@ function AutoCard({
           </div>
           <p className="text-xs text-slate-500 mb-2">
             <span className="font-medium">{TRIGGER_LABEL[auto.trigger] ?? auto.trigger}</span>
-            {funnel && <> · {funnel.name}</>}
+            {wh && <> · <span className="text-violet-600 font-medium">{wh.name}</span></>}
+            {funnel && !wh && <> · {funnel.name}</>}
             {col && <> · <span className="font-medium">{col.label}</span></>}
             {auto.trigger === "scheduled_daily" && auto.scheduledTime && <> às <strong>{auto.scheduledTime}</strong></>}
           </p>
@@ -481,7 +668,7 @@ function AutoCard({
                 {STEP_ICONS[s.type]} {STEP_LABELS[s.type]}
               </span>
             )) : (
-              <span className="text-xs text-slate-400 italic">Automação legada (sem passos)</span>
+              <span className="text-xs text-slate-400 italic">Automação legada</span>
             )}
           </div>
         </div>
@@ -497,7 +684,7 @@ function AutoCard({
             {toggling ? "..." : auto.active ? "Pausar" : "Ativar"}
           </button>
           <button onClick={onDelete} disabled={deleting}
-            className="text-slate-400 hover:text-red-500 transition text-lg leading-none px-1" title="Excluir">
+            className="text-slate-400 hover:text-red-500 transition text-lg leading-none px-1">
             {deleting ? "..." : "×"}
           </button>
         </div>
@@ -506,9 +693,9 @@ function AutoCard({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 export function CrmAutomationsView({
-  clientId, initialAutomations, funnels, connections, approvedTemplates,
+  clientId, initialAutomations, funnels, connections, approvedTemplates, webhooks,
 }: Props) {
   const [automations, setAutomations] = useState<CrmAutomation[]>(initialAutomations);
   const [showForm, setShowForm]         = useState(false);
@@ -520,11 +707,11 @@ export function CrmAutomationsView({
   const [showPicker, setShowPicker]     = useState(false);
 
   const uazapiConnId = connections.find((c) => c.type === "uazapi")?.id ?? "";
-  const metaConnId   = connections.find((c) => c.type === "meta")?.id ?? "";
   const firstTplId   = approvedTemplates[0]?.id ?? "";
 
   const blankFormFn = (): FormState => ({
-    name: "", trigger: "lead_created", funnelId: "", triggerColumnId: "", scheduledTime: "09:00",
+    name: "", trigger: "lead_created",
+    funnelId: "", triggerColumnId: "", triggerWebhookId: "", scheduledTime: "09:00",
     steps: [blankStep("send_message", uazapiConnId, firstTplId)],
   });
 
@@ -545,6 +732,7 @@ export function CrmAutomationsView({
     setForm({
       name: auto.name, trigger: auto.trigger,
       funnelId: auto.funnelId ?? "", triggerColumnId: auto.triggerColumnId ?? "",
+      triggerWebhookId: auto.triggerWebhookId ?? "",
       scheduledTime: auto.scheduledTime ?? "09:00",
       steps: stepsFromAuto(auto, uazapiConnId, firstTplId),
     });
@@ -557,10 +745,9 @@ export function CrmAutomationsView({
   }
 
   function addStep(type: CrmStepType) {
-    const connId = type === "send_template" ? metaConnId : uazapiConnId;
-    const s = blankStep(type, connId, firstTplId);
-    const steps = [...form.steps, s];
-    setField("steps", steps); setExpandedStep(s.id); setShowPicker(false);
+    const s = blankStep(type, uazapiConnId, firstTplId);
+    setField("steps", [...form.steps, s]);
+    setExpandedStep(s.id); setShowPicker(false);
   }
 
   function updateStep(id: string, patch: Partial<StepForm>) {
@@ -583,11 +770,11 @@ export function CrmAutomationsView({
   async function save() {
     if (!form.name.trim() || form.steps.length === 0) return;
     setSaving(true);
-    const triggerNeedsCol = form.trigger !== "lead_created";
     const payload = {
       clientId, name: form.name.trim(), trigger: form.trigger,
       funnelId: form.funnelId || undefined,
-      triggerColumnId: triggerNeedsCol ? form.triggerColumnId || undefined : undefined,
+      triggerColumnId: form.trigger !== "lead_created" ? form.triggerColumnId || undefined : undefined,
+      triggerWebhookId: form.trigger === "lead_created" ? form.triggerWebhookId || undefined : undefined,
       scheduledTime: form.trigger === "scheduled_daily" ? form.scheduledTime : undefined,
       steps: stepsToPayload(form.steps),
       active: true,
@@ -637,15 +824,16 @@ export function CrmAutomationsView({
 
   const triggerNeedsColumn = form.trigger !== "lead_created";
   const triggerNeedsFunnel = form.trigger === "column_entered" || form.trigger === "scheduled_daily";
+  const selectedTrigger = TRIGGER_OPTIONS.find((t) => t.value === form.trigger);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Automações CRM</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Fluxos multi-passo disparados por gatilhos do funil — mensagens, notas, mover coluna, webhooks e mais.
+            Envios automáticos em múltiplos passos disparados por gatilhos do funil.
           </p>
         </div>
         <button onClick={openNew}
@@ -656,162 +844,251 @@ export function CrmAutomationsView({
 
       {/* Form */}
       {showForm && (
-        <div id="crm-form" className="rounded-xl border border-violet-200 bg-violet-50 p-5 space-y-5">
-          <h2 className="font-semibold text-slate-800">{editingId ? "✏ Editar automação" : "Configurar nova automação"}</h2>
-
-          {/* Nome */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Nome da automação</label>
-            <input value={form.name} onChange={(e) => setField("name", e.target.value)}
-              placeholder="ex: Boas-vindas, Follow-up Proposta, Alerta diário"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white" />
+        <div id="crm-form" className="rounded-xl border border-violet-200 bg-white shadow-sm overflow-hidden">
+          <div className="bg-violet-600 px-5 py-3">
+            <h2 className="font-semibold text-white text-sm">
+              {editingId ? "✏ Editar automação" : "⚡ Criar nova automação"}
+            </h2>
           </div>
 
-          {/* Gatilho */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="p-5 space-y-6">
+            {/* Step 1: Name */}
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Gatilho</label>
-              <select value={form.trigger}
-                onChange={(e) => { setField("trigger", e.target.value as CrmTrigger); setField("triggerColumnId", ""); }}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
-                {(Object.keys(TRIGGER_LABEL) as CrmTrigger[]).map((t) => (
-                  <option key={t} value={t}>{TRIGGER_LABEL[t]}</option>
+              <label className={labelCls}>1 · Nome da automação</label>
+              <input value={form.name} onChange={(e) => setField("name", e.target.value)}
+                placeholder="ex: Boas-vindas, Follow-up Proposta, Lembrete diário"
+                className={inputCls} />
+            </div>
+
+            {/* Step 2: Trigger */}
+            <div>
+              <label className={labelCls}>2 · Quando disparar?</label>
+              <div className="grid grid-cols-2 gap-2">
+                {TRIGGER_OPTIONS.map((opt) => (
+                  <button key={opt.value} type="button"
+                    onClick={() => { setField("trigger", opt.value); setField("triggerColumnId", ""); setField("triggerWebhookId", ""); }}
+                    className={clsx(
+                      "flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition",
+                      form.trigger === opt.value
+                        ? "border-violet-400 bg-violet-50"
+                        : "border-slate-200 bg-white hover:border-violet-200",
+                    )}>
+                    <span className="text-lg shrink-0">{opt.icon}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{opt.label}</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{opt.description}</p>
+                    </div>
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Funil {triggerNeedsFunnel ? <span className="text-red-500">*</span> : "(opcional)"}
-              </label>
-              <select value={form.funnelId}
-                onChange={(e) => { setField("funnelId", e.target.value); setField("triggerColumnId", ""); }}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
-                {triggerNeedsFunnel
-                  ? <option value="">— Selecione um funil —</option>
-                  : <option value="">Qualquer funil</option>}
-                {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
-            </div>
-          </div>
 
-          {/* Coluna alvo */}
-          {triggerNeedsColumn && (
-            <div className={clsx("grid gap-3", form.trigger === "scheduled_daily" ? "grid-cols-2" : "grid-cols-1")}>
+            {/* Step 3: Trigger config */}
+            {selectedTrigger && (
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  {form.trigger === "scheduled_daily" ? "Coluna dos leads (alvo)" : "Coluna de destino"}
-                  {form.funnelId && <span className="text-red-500 ml-1">*</span>}
-                </label>
-                {!form.funnelId
-                  ? <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 bg-slate-50 cursor-not-allowed">← Selecione um funil primeiro</div>
-                  : <select value={form.triggerColumnId} onChange={(e) => setField("triggerColumnId", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white">
-                      <option value="">— Qualquer coluna —</option>
-                      {(selectedFunnel?.columns ?? []).map((c) => (
-                        <option key={c.id} value={c.id}>{c.label}</option>
-                      ))}
-                    </select>}
-              </div>
-              {form.trigger === "scheduled_daily" && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Horário de disparo <span className="text-red-500">*</span></label>
-                  <input type="time" value={form.scheduledTime} onChange={(e) => setField("scheduledTime", e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 bg-white" />
-                  <p className="text-[10px] text-slate-400 mt-1">Chamar <code className="bg-slate-100 px-1 rounded">/api/cron/daily</code> neste horário via EasyPanel ou n8n.</p>
-                </div>
-              )}
-            </div>
-          )}
+                <label className={labelCls}>3 · Configurar o gatilho</label>
+                <div className="rounded-lg border border-slate-200 p-3 space-y-3 bg-slate-50">
 
-          {/* ── Passos ── */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Passos da automação</label>
-              <span className="text-xs text-slate-400">{form.steps.length} {form.steps.length === 1 ? "passo" : "passos"}</span>
-            </div>
+                  {/* lead_created: webhook selector + optional funnel */}
+                  {form.trigger === "lead_created" && (
+                    <>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">De qual formulário/site?</label>
+                        <select value={form.triggerWebhookId} onChange={(e) => setField("triggerWebhookId", e.target.value)} className={inputCls}>
+                          <option value="">Qualquer formulário (todos os sites)</option>
+                          {webhooks.map((w) => (
+                            <option key={w.id} value={w.id}>{w.name}</option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Deixe em "Qualquer" para disparar quando leads entrarem por qualquer formulário.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Funil (opcional)</label>
+                        <select value={form.funnelId} onChange={(e) => setField("funnelId", e.target.value)} className={inputCls}>
+                          <option value="">Qualquer funil</option>
+                          {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </div>
+                    </>
+                  )}
 
-            {form.steps.length === 0 && (
-              <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-400">
-                Nenhum passo configurado. Clique em "Adicionar passo" abaixo.
-              </div>
-            )}
-
-            <div className="space-y-2">
-              {form.steps.map((step, idx) => (
-                <div key={step.id} className={clsx(
-                  "rounded-lg border bg-white",
-                  expandedStep === step.id ? "border-violet-300" : "border-slate-200",
-                )}>
-                  <div className="flex items-center gap-2 px-3 py-2.5">
-                    <span className="text-base shrink-0">{STEP_ICONS[step.type]}</span>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-semibold text-slate-700">{STEP_LABELS[step.type]}</span>
-                      <span className="text-xs text-slate-400 ml-2 truncate">{stepSummary(step, connections, approvedTemplates)}</span>
+                  {/* column_changed: funnel optional + column optional */}
+                  {form.trigger === "column_changed" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Funil (opcional)</label>
+                        <select value={form.funnelId}
+                          onChange={(e) => { setField("funnelId", e.target.value); setField("triggerColumnId", ""); }}
+                          className={inputCls}>
+                          <option value="">Qualquer funil</option>
+                          {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Etapa (opcional)</label>
+                        {!form.funnelId
+                          ? <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 bg-white cursor-not-allowed">← Selecione um funil</div>
+                          : <select value={form.triggerColumnId} onChange={(e) => setField("triggerColumnId", e.target.value)} className={inputCls}>
+                              <option value="">Qualquer etapa</option>
+                              {(selectedFunnel?.columns ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                            </select>}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => moveStep(step.id, -1)} disabled={idx === 0}
-                        className="rounded p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 text-xs">▲</button>
-                      <button onClick={() => moveStep(step.id, 1)} disabled={idx === form.steps.length - 1}
-                        className="rounded p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 text-xs">▼</button>
-                      <button onClick={() => setExpandedStep(expandedStep === step.id ? null : step.id)}
-                        className="rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 transition">
-                        {expandedStep === step.id ? "Fechar" : "Editar"}
-                      </button>
-                      <button onClick={() => removeStep(step.id)}
-                        className="text-slate-400 hover:text-red-500 transition text-lg leading-none px-1">×</button>
+                  )}
+
+                  {/* column_entered: funnel required + column */}
+                  {form.trigger === "column_entered" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Funil <span className="text-red-500">*</span></label>
+                        <select value={form.funnelId}
+                          onChange={(e) => { setField("funnelId", e.target.value); setField("triggerColumnId", ""); }}
+                          className={inputCls}>
+                          <option value="">— Selecione um funil —</option>
+                          {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Etapa <span className="text-red-500">*</span></label>
+                        {!form.funnelId
+                          ? <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 bg-white cursor-not-allowed">← Selecione o funil primeiro</div>
+                          : <select value={form.triggerColumnId} onChange={(e) => setField("triggerColumnId", e.target.value)} className={inputCls}>
+                              <option value="">— Qualquer etapa —</option>
+                              {(selectedFunnel?.columns ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                            </select>}
+                      </div>
                     </div>
-                  </div>
-                  {expandedStep === step.id && (
-                    <div className="px-3 pb-3 border-t border-slate-100 pt-3">
-                      <StepEditor step={step} onChange={(patch) => updateStep(step.id, patch)}
-                        funnels={funnels} connections={connections} approvedTemplates={approvedTemplates} />
+                  )}
+
+                  {/* scheduled_daily */}
+                  {form.trigger === "scheduled_daily" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Funil <span className="text-red-500">*</span></label>
+                        <select value={form.funnelId}
+                          onChange={(e) => { setField("funnelId", e.target.value); setField("triggerColumnId", ""); }}
+                          className={inputCls}>
+                          <option value="">— Selecione —</option>
+                          {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Etapa alvo (opcional)</label>
+                        {!form.funnelId
+                          ? <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 bg-white cursor-not-allowed">← Selecione o funil</div>
+                          : <select value={form.triggerColumnId} onChange={(e) => setField("triggerColumnId", e.target.value)} className={inputCls}>
+                              <option value="">Todos os leads do funil</option>
+                              {(selectedFunnel?.columns ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                            </select>}
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Horário de disparo <span className="text-red-500">*</span></label>
+                        <input type="time" value={form.scheduledTime} onChange={(e) => setField("scheduledTime", e.target.value)} className={inputCls} />
+                      </div>
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
 
-            {/* Step picker */}
-            <div className="mt-2 relative">
-              <button onClick={() => setShowPicker((v) => !v)}
-                className="w-full rounded-lg border border-dashed border-violet-300 px-3 py-2 text-sm text-violet-600 hover:bg-violet-50 transition font-medium">
-                + Adicionar passo
-              </button>
-              {showPicker && (
-                <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg p-2 grid grid-cols-2 gap-1 w-full">
-                  {STEP_TYPES_ORDERED.map((type) => (
-                    <button key={type} onClick={() => addStep(type)}
-                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-violet-50 hover:text-violet-700 transition text-left">
-                      <span className="text-base">{STEP_ICONS[type]}</span>
-                      <span>{STEP_LABELS[type]}</span>
-                    </button>
-                  ))}
+            {/* Step 4: Steps */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className={labelCls}>4 · O que fazer?</label>
+                <span className="text-xs text-slate-400">{form.steps.length} {form.steps.length === 1 ? "passo" : "passos"}</span>
+              </div>
+
+              {form.steps.length === 0 && (
+                <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-400">
+                  Nenhum passo adicionado ainda.
                 </div>
               )}
-            </div>
-          </div>
 
-          {/* Save/Cancel */}
-          <div className="flex gap-2 pt-1">
-            <button onClick={save} disabled={saving || !form.name.trim() || form.steps.length === 0}
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition">
-              {saving ? "Salvando..." : editingId ? "Salvar alterações" : "Criar Automação"}
-            </button>
-            <button onClick={closeForm}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition">
-              Cancelar
-            </button>
+              <div className="space-y-2">
+                {form.steps.map((step, idx) => (
+                  <div key={step.id} className={clsx(
+                    "rounded-lg border bg-white",
+                    expandedStep === step.id ? "border-violet-300 shadow-sm" : "border-slate-200",
+                  )}>
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </span>
+                      <span className="text-base shrink-0">{STEP_ICONS[step.type]}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold text-slate-700">{STEP_LABELS[step.type]}</span>
+                        <span className="text-xs text-slate-400 ml-2 truncate">{stepSummary(step, connections, approvedTemplates)}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => moveStep(step.id, -1)} disabled={idx === 0}
+                          className="rounded p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 text-xs">▲</button>
+                        <button onClick={() => moveStep(step.id, 1)} disabled={idx === form.steps.length - 1}
+                          className="rounded p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 text-xs">▼</button>
+                        <button onClick={() => setExpandedStep(expandedStep === step.id ? null : step.id)}
+                          className="rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 transition">
+                          {expandedStep === step.id ? "Fechar" : "Configurar"}
+                        </button>
+                        <button onClick={() => removeStep(step.id)}
+                          className="text-slate-400 hover:text-red-500 transition text-lg leading-none px-1">×</button>
+                      </div>
+                    </div>
+                    {expandedStep === step.id && (
+                      <div className="px-3 pb-3 border-t border-slate-100 pt-3">
+                        <StepEditor step={step} onChange={(patch) => updateStep(step.id, patch)}
+                          funnels={funnels} connections={connections} approvedTemplates={approvedTemplates} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Step picker */}
+              <div className="mt-2 relative">
+                <button onClick={() => setShowPicker((v) => !v)}
+                  className="w-full rounded-lg border border-dashed border-violet-300 px-3 py-2.5 text-sm text-violet-600 hover:bg-violet-50 transition font-medium flex items-center justify-center gap-2">
+                  <span className="text-base">+</span> Adicionar passo
+                </button>
+                {showPicker && (
+                  <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-xl p-2 grid grid-cols-2 gap-1 w-full">
+                    {STEP_PICKER_OPTIONS.map((opt) => (
+                      <button key={opt.type} onClick={() => addStep(opt.type)}
+                        className="flex items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-violet-50 hover:text-violet-700 transition group">
+                        <span className="text-lg shrink-0 mt-0.5">{opt.icon}</span>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800 group-hover:text-violet-700">{opt.label}</p>
+                          <p className="text-[10px] text-slate-400 leading-tight mt-0.5">{opt.description}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Save/Cancel */}
+            <div className="flex gap-2 pt-1 border-t border-slate-100">
+              <button onClick={save} disabled={saving || !form.name.trim() || form.steps.length === 0}
+                className="rounded-lg bg-violet-600 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition">
+                {saving ? "Salvando..." : editingId ? "Salvar alterações" : "Criar Automação"}
+              </button>
+              <button onClick={closeForm}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition">
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* List */}
+      {/* Automations list */}
       {automations.length === 0 && !showForm ? (
-        <div className="rounded-xl border border-dashed border-slate-200 p-10 text-center text-slate-400">
-          <div className="text-4xl mb-2">⚡</div>
-          <p className="font-medium">Nenhuma automação criada</p>
-          <p className="text-sm mt-1">Configure fluxos automáticos com múltiplos passos.</p>
-          <button onClick={openNew} className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">
+        <div className="rounded-xl border border-dashed border-slate-200 p-12 text-center">
+          <div className="text-5xl mb-3">⚡</div>
+          <p className="font-semibold text-slate-700">Nenhuma automação criada</p>
+          <p className="text-sm text-slate-400 mt-1">Configure fluxos automáticos com múltiplos passos.</p>
+          <button onClick={openNew} className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">
             Criar primeira automação
           </button>
         </div>
@@ -821,7 +1098,7 @@ export function CrmAutomationsView({
             <AutoCard key={auto.id} auto={auto}
               isEditing={editingId === auto.id}
               toggling={toggling === auto.id} deleting={deleting === auto.id}
-              funnels={funnels}
+              funnels={funnels} webhooks={webhooks}
               onEdit={() => editingId === auto.id ? closeForm() : openEdit(auto)}
               onToggle={() => toggleActive(auto)}
               onDelete={() => remove(auto.id)} />

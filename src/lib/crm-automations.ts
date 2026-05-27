@@ -74,12 +74,13 @@ export type CrmStep = {
 export type CrmAutomation = {
   id: string;
   clientId: string;
-  funnelId?: string;         // se vazio, vale para qualquer funil do cliente
+  funnelId?: string;          // se vazio, vale para qualquer funil do cliente
   name: string;
   active: boolean;
   trigger: CrmTrigger;
-  triggerColumnId?: string;  // para column_changed / column_entered / scheduled_daily
-  scheduledTime?: string;    // "HH:MM" para scheduled_daily
+  triggerColumnId?: string;   // para column_changed / column_entered / scheduled_daily
+  triggerWebhookId?: string;  // para lead_created: filtra por webhook específico (site)
+  scheduledTime?: string;     // "HH:MM" para scheduled_daily
   // ── Multi-passo (novo) ──
   steps?: CrmStep[];
   // ── Legacy (single-action, mantido para retrocompatibilidade) ──
@@ -302,12 +303,13 @@ function scheduleSteps(auto: CrmAutomation, lead: Lead) {
 export function runAutomationsForEvent(
   trigger: CrmTrigger,
   lead: Lead,
-  opts?: { toColumnId?: string },
+  opts?: { toColumnId?: string; webhookId?: string },
 ) {
   const all = getAutomations(lead.clientId).filter((a) => {
     if (!a.active) return false;
     if (a.trigger !== trigger) return false;
     if (a.funnelId && a.funnelId !== lead.funnelId) return false;
+    if (trigger === "lead_created" && a.triggerWebhookId && a.triggerWebhookId !== opts?.webhookId) return false;
     if (trigger === "column_changed" && a.triggerColumnId && a.triggerColumnId !== opts?.toColumnId) return false;
     if (trigger === "column_entered" && a.triggerColumnId && a.triggerColumnId !== opts?.toColumnId) return false;
     return true;

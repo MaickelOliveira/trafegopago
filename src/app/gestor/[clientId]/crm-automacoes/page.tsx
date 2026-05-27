@@ -3,6 +3,7 @@ import { getClientById } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getAutomations } from "@/lib/crm-automations";
 import { getTemplates } from "@/lib/waba-templates";
+import { getWebhooks } from "@/lib/webhooks";
 import { CrmAutomationsView } from "@/components/crm/CrmAutomationsView";
 
 type Props = { params: Promise<{ clientId: string }> };
@@ -15,6 +16,7 @@ export default async function CrmAutomacoesPage({ params }: Props) {
   const funnels = getFunnels().filter((f) => f.clientId === clientId);
   const automations = getAutomations(clientId);
   const approvedTemplates = getTemplates(clientId).filter((t) => t.status === "APPROVED");
+  const webhooks = getWebhooks(clientId).filter((w) => w.active);
 
   // Conexões disponíveis (UazapiGO e Meta) de todos os funis
   const connections = funnels.flatMap((f) =>
@@ -34,6 +36,7 @@ export default async function CrmAutomacoesPage({ params }: Props) {
       funnels={funnels}
       connections={connections}
       approvedTemplates={approvedTemplates}
+      webhooks={webhooks}
     />
   );
 }

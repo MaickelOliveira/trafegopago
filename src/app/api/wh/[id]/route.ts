@@ -98,7 +98,7 @@ export async function POST(
     });
     incrementWebhookCount(id);
     // Dispara automações CRM de lead_created e column_entered (fire-and-forget)
-    runAutomationsForEvent("lead_created", lead);
+    runAutomationsForEvent("lead_created", lead, { webhookId: id });
     runAutomationsForEvent("column_entered", lead, { toColumnId: columnId });
   }
 
