@@ -5,6 +5,7 @@ import { getClientById, getConfig } from "@/lib/clients";
 import { sendMessage } from "@/lib/whatsapp-send";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { addMessage, getHistory } from "@/lib/conversations";
+import { runScheduledDailyAutomations } from "@/lib/crm-automations";
 
 // GET /api/agent/cron?secret=xxx
 // Chamado pelo EasyPanel a cada 15 min para processar follow-ups vencidos
@@ -85,6 +86,9 @@ export async function GET(req: NextRequest) {
       markDone(batch.id);
     }
   }
+
+  // ── Automações CRM agendadas (scheduled_daily) ───────────────────────────
+  runScheduledDailyAutomations();
 
   return NextResponse.json({ ok: true, processed, skipped, total: due.length, batchesProcessed });
 }
