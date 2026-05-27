@@ -41,6 +41,7 @@ type StepForm = {
   delayMinutes: number;
   webhookUrl: string;
   webhookBody: string;
+  imageUrl: string;
 };
 
 type FormState = {
@@ -181,6 +182,7 @@ function blankStep(type: CrmStepType, connId = "", tplId = ""): StepForm {
     note: "", targetFunnelId: "", targetColumnId: "",
     delayMinutes: 5,
     webhookUrl: "", webhookBody: "",
+    imageUrl: "",
   };
 }
 
@@ -201,6 +203,7 @@ function stepsFromAuto(auto: CrmAutomation, connId: string, tplId: string): Step
       delayMinutes: s.delayMinutes ?? 5,
       webhookUrl: s.webhookUrl ?? "",
       webhookBody: s.webhookBody ?? "",
+      imageUrl: s.imageUrl ?? "",
     }));
   }
   const steps: StepForm[] = [];
@@ -223,6 +226,7 @@ function stepsToPayload(steps: StepForm[]): CrmStep[] {
     const base: CrmStep = { id: s.id, type: s.type };
     if (s.type === "send_message") {
       base.connectionId = s.connectionId; base.message = s.message;
+      if (s.imageUrl) base.imageUrl = s.imageUrl;
     } else if (s.type === "send_template") {
       base.connectionId = s.connectionId; base.templateId = s.templateId;
       if (Object.keys(s.templateVariables).length > 0) base.templateVariables = s.templateVariables;
@@ -328,26 +332,44 @@ function StepEditor({
 
         {/* UazapiGO: free text */}
         {!isMeta && step.connectionId && (
-          <div>
-            <label className={labelCls}>Mensagem</label>
-            <textarea
-              value={step.message}
-              onChange={(e) => sel("message", e.target.value)}
-              rows={4}
-              placeholder="Olá {{nome}}, tudo bem?"
-              className={clsx(inputCls, "resize-none")}
-            />
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {["{{nome}}", "{{telefone}}", "{{email}}", "{{funil}}"].map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => sel("message", (step.message ?? "") + v)}
-                  className="rounded bg-slate-100 hover:bg-violet-100 hover:text-violet-700 px-2 py-0.5 text-[10px] font-mono text-slate-600 transition"
-                >
-                  {v}
-                </button>
-              ))}
+          <div className="space-y-3">
+            <div>
+              <label className={labelCls}>Mensagem</label>
+              <textarea
+                value={step.message}
+                onChange={(e) => sel("message", e.target.value)}
+                rows={4}
+                placeholder="Olá {{nome}}, tudo bem?"
+                className={clsx(inputCls, "resize-none")}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                <span className="font-semibold text-violet-600">{`{{nome}}`}</span> = primeiro nome &nbsp;·&nbsp;
+                <span className="font-semibold text-violet-600">{`{{nome_completo}}`}</span> = nome completo
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {["{{nome}}", "{{nome_completo}}", "{{telefone}}", "{{email}}", "{{funil}}"].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => sel("message", (step.message ?? "") + v)}
+                    className="rounded bg-slate-100 hover:bg-violet-100 hover:text-violet-700 px-2 py-0.5 text-[10px] font-mono text-slate-600 transition"
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Imagem (opcional)</label>
+              <input
+                value={step.imageUrl ?? ""}
+                onChange={(e) => sel("imageUrl", e.target.value)}
+                placeholder="https://exemplo.com/imagem.jpg"
+                className={inputCls}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Cole a URL de uma imagem (JPG, PNG, GIF). A mensagem será enviada como legenda da foto.
+              </p>
             </div>
           </div>
         )}

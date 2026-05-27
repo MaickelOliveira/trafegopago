@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import type { Lead } from "./leads";
 import { updateLead, getLeads } from "./leads";
 import { getFunnels } from "./funnels";
-import { sendText, sendList } from "./uazapi";
+import { sendText, sendList, sendMedia } from "./uazapi";
 import { getTemplates, sendTemplate } from "./waba-templates";
 import type { TemplateComponent } from "./waba-templates";
 
@@ -52,6 +52,7 @@ export type CrmStep = {
   // send_message / send_list:
   connectionId?: string;
   message?: string;
+  imageUrl?: string;    // opcional: envia imagem + legenda (só UazapiGO)
   // send_template:
   templateId?: string;
   templateVariables?: Record<string, string[]>;
@@ -149,8 +150,11 @@ export function deleteAutomation(id: string): boolean {
 // ── Variable substitution ─────────────────────────────────────────────────────
 
 function interpolate(text: string, lead: Lead, funnelName?: string): string {
+  const firstName = (lead.name ?? "").split(" ")[0];
+  const fullName  = lead.name ?? "";
   return text
-    .replace(/\{\{nome\}\}/gi, lead.name ?? "")
+    .replace(/\{\{nome\}\}/gi, firstName)
+    .replace(/\{\{nome_completo\}\}/gi, fullName)
     .replace(/\{\{telefone\}\}/gi, lead.phone ?? "")
     .replace(/\{\{email\}\}/gi, lead.email ?? "")
     .replace(/\{\{funil\}\}/gi, funnelName ?? "");
@@ -187,8 +191,13 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
   switch (step.type) {
     case "send_message": {
       const conn = findConn(funnels, step.connectionId ?? "");
-      if (!conn?.uazapiToken || !step.message) return;
-      await sendText(conn.uazapiToken, lead.phone, interpolate(step.message, lead, funnelName));
+      if (!conn?.uazapiToken) return;
+      const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
+      if (step.imageUrl) {
+        await sendMedia(conn.uazapiToken, lead.phone, "image", step.imageUrl, msg || undefined);
+      } else if (msg) {
+        await sendText(conn.uazapiToken, lead.phone, msg);
+      }
       break;
     }
     case "send_template": {
