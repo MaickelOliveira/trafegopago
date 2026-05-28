@@ -1,17 +1,30 @@
 import { NextResponse } from "next/server";
 import { getAllFollowUps, getDueFollowUps } from "@/lib/followups";
 import { getClients, getAllAgentConfigs, getConfig } from "@/lib/clients";
+import { getFunnels } from "@/lib/funnels";
 
 export async function GET() {
   const all = getAllFollowUps();
   const due = getDueFollowUps();
   const globalConfig = getConfig();
 
+  const allFunnels = getFunnels();
+
   const clients = getClients().map((client) => {
     const cfgs = getAllAgentConfigs(client);
+    const clientFunnels = allFunnels.filter((f) => f.clientId === client.id);
+    const allConns = clientFunnels.flatMap((f) => f.connections ?? []);
+
     return {
       id: client.id,
       name: client.name,
+      connections: allConns.map((c) => ({
+        id: c.id,
+        type: c.type,
+        phone: c.phone,
+        hasUazapiToken: !!c.uazapiToken,
+        hasMetaToken: !!c.metaToken && !!c.metaPhoneNumberId,
+      })),
       agentConfigs: cfgs.map((c) => ({
         whatsappConnectionId: c.whatsappConnectionId,
         enabled: c.enabled,
