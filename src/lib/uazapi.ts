@@ -307,25 +307,26 @@ export async function sendMedia(
   caption?: string,
   filename?: string,
 ): Promise<boolean> {
-  const endpoint = type === "image" ? "image" : type === "audio" ? "audio" : type === "video" ? "video" : "document";
   try {
-    const isBase64 = urlOrBase64.startsWith("data:") || !urlOrBase64.startsWith("http");
-    // UazapiGO usa "number" (igual ao sendText), não "phone"
-    const body: Record<string, unknown> = { number: phone, caption };
+    // UazapiGO nexopro: endpoint /send/media com {number, file, text, type}
+    // "file" aceita URL pública ou data URI base64
+    // "type" é obrigatório para enviar como mídia (image/video/audio/document)
+    const body: Record<string, unknown> = {
+      number: phone,
+      file: urlOrBase64,
+      text: caption ?? "",
+      type,
+    };
     if (type === "document" && filename) body.filename = filename;
-    if (isBase64) {
-      body.base64 = urlOrBase64;
-    } else {
-      body.url = urlOrBase64;
-    }
-    const res = await fetch(`${base()}/send/${endpoint}`, {
+
+    const res = await fetch(`${base()}/send/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json", token },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
-      console.warn(`[sendMedia] ${res.status} endpoint=${endpoint} resp=${txt.slice(0, 200)}`);
+      console.warn(`[sendMedia] ${res.status} type=${type} resp=${txt.slice(0, 200)}`);
     }
     return res.ok;
   } catch (e) {
