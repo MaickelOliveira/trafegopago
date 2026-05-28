@@ -69,6 +69,14 @@ export async function POST(
   const columnExists = funnel?.columns.some((c) => c.id === wh.columnId) ?? false;
   const columnId = columnExists ? wh.columnId : (funnel?.columns[0]?.id ?? "entrada");
 
+  // Detecta plataforma de origem
+  const utmSourceRaw = (payload.utm_source ?? "").toLowerCase();
+  const metaSources = ["facebook", "instagram", "fb", "meta"];
+  const adPlatform: "meta" | "google" | null =
+    payload.fbclid || metaSources.includes(utmSourceRaw) ? "meta"
+    : payload.gclid || utmSourceRaw === "google"         ? "google"
+    : null;
+
   // Evita duplicata — se lead já existe no mesmo funil, não recria
   const existing = getLeadByPhone(wh.clientId, phone);
   let lead;
@@ -85,6 +93,7 @@ export async function POST(
       status: columnId,
       notes: `Origem: ${wh.name}`,
       customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
+      adPlatform,
       campaignName: payload.utm_campaign || payload.campanha || null,
       utmSource: payload.utm_source || null,
       utmMedium: payload.utm_medium || null,
