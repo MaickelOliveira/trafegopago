@@ -700,8 +700,8 @@ export async function POST(
                 // Transcreve/descreve via Gemini
                 return await transcribeMedia(buffer, mediaMimetype, gemKey, kind);
               })(),
-              // Timeout de 20s para não segurar o webhook por tempo indeterminado
-              new Promise<null>((r) => setTimeout(() => r(null), 20_000)),
+              // Timeout: 45s para áudio (File API leva mais), 25s para imagem/vídeo/doc
+              new Promise<null>((r) => setTimeout(() => r(null), kind === "audio" ? 45_000 : 25_000)),
             ]);
 
             if (transcribeResult) {
