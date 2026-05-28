@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getConfig, getClientById } from "@/lib/clients";
+import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getHistory, addMessage } from "@/lib/conversations";
 import { generateResponse } from "@/lib/ai-agent";
 import { sendWhatsApp } from "@/lib/whatsapp";
@@ -111,40 +111,47 @@ export async function POST(req: NextRequest) {
 
     let clientId: string | null = null;
     let funnelIdOverride: string | null = null;
+    let incomingConnectionId: string | null = null;
 
     const funnels = getFunnels();
 
     // Busca por token UUID da instância (mais confiável)
     if (!clientId && uazInstanceToken) {
-      const matchedFunnel = funnels.find(f =>
-        f.connections?.some(c => c.type === "uazapi" && c.uazapiToken === uazInstanceToken)
-      );
-      if (matchedFunnel) {
-        funnelIdOverride = matchedFunnel.id;
-        clientId = matchedFunnel.clientId ?? null;
+      for (const f of funnels) {
+        const conn = f.connections?.find(c => c.type === "uazapi" && c.uazapiToken === uazInstanceToken);
+        if (conn) {
+          funnelIdOverride = f.id;
+          clientId = f.clientId ?? null;
+          incomingConnectionId = conn.id;
+          break;
+        }
       }
     }
     // Busca pelo nome da instância (instanceId no body)
     if (!clientId && uazInstanceId) {
-      const matchedFunnel = funnels.find(f =>
-        f.connections?.some(c => c.type === "uazapi" && c.id === uazInstanceId)
-      );
-      if (matchedFunnel) {
-        funnelIdOverride = funnelIdOverride ?? matchedFunnel.id;
-        clientId = matchedFunnel.clientId ?? null;
+      for (const f of funnels) {
+        const conn = f.connections?.find(c => c.type === "uazapi" && c.id === uazInstanceId);
+        if (conn) {
+          funnelIdOverride = funnelIdOverride ?? f.id;
+          clientId = f.clientId ?? null;
+          incomingConnectionId = incomingConnectionId ?? conn.id;
+          break;
+        }
       }
     }
     // Busca pelo telefone da instância
     if (!clientId && instancePhone) {
-      const matchedFunnel = funnels.find(f =>
-        f.connections?.some(c => {
+      for (const f of funnels) {
+        const conn = f.connections?.find(c => {
           const cp = (c.phone ?? "").replace(/\D/g, "");
           return cp.length > 0 && (cp === instancePhone || instancePhone.endsWith(cp.slice(-9)));
-        })
-      );
-      if (matchedFunnel) {
-        funnelIdOverride = funnelIdOverride ?? matchedFunnel.id;
-        clientId = matchedFunnel.clientId ?? null;
+        });
+        if (conn) {
+          funnelIdOverride = funnelIdOverride ?? f.id;
+          clientId = f.clientId ?? null;
+          incomingConnectionId = incomingConnectionId ?? conn.id;
+          break;
+        }
       }
     }
 
@@ -213,12 +220,23 @@ export async function POST(req: NextRequest) {
     }
 
     const activeClient = cid !== "sem-cliente" ? getClientById(cid) : null;
-    const agentCfg = activeClient?.agentConfig;
+    // Resolve o agentConfig correto: considera agentConfigs[] por conexão de entrada
+    const agentCfg = activeClient
+      ? getAgentConfigForConnection(activeClient, incomingConnectionId)
+      : undefined;
     const geminiEnabled = agentCfg?.enabled === true;
     const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
-    const connectionId = agentCfg?.whatsappConnectionId;
+    const connectionId = agentCfg?.whatsappConnectionId ?? incomingConnectionId;
 
-    console.log(`[webhook] phone=${phone} cid=${cid} gemini=${geminiEnabled} wait=${waitSeconds}s connId=${connectionId ?? "none"}`);
+    // testPhone: quando configurado, IA responde APENAS este número
+    if (geminiEnabled && agentCfg?.testPhone) {
+      const testNorm = agentCfg.testPhone.replace(/\D/g, "");
+      if (phone !== testNorm && !phone.endsWith(testNorm.slice(-9))) {
+        return NextResponse.json({ ok: true });
+      }
+    }
+
+    console.log(`[webhook] phone=${phone} cid=${cid} connId=${incomingConnectionId ?? "none"} gemini=${geminiEnabled} wait=${waitSeconds}s sendConn=${connectionId ?? "none"}`);
 
     // ── Batching: acumula mensagens antes de responder ────────────────────────
     if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {
@@ -237,13 +255,13 @@ export async function POST(req: NextRequest) {
         const combined = batch.messages.join("\n");
         const h = getHistory(_phone);
         console.log(`[webhook] Processando batch ${batch.id} (${batch.messages.length} msg) para ${_phone}`);
-        runGeminiAgent(combined, h, _cid, _phone)
+        runGeminiAgent(combined, h, _cid, _phone, _connectionId ?? undefined)
           .then(async ({ text: geminiText }) => {
             markDone(batch.id);
             console.log(`[webhook] Gemini respondeu (${geminiText?.length ?? 0} chars): ${geminiText?.slice(0, 80)}`);
             if (geminiText) {
               addMessage(_phone, { role: "assistant", content: geminiText, ts: Date.now() }, _clientId);
-              await sendMessageUnified(_phone, geminiText, _cid, _connectionId);
+              await sendMessageUnified(_phone, geminiText, _cid, _connectionId ?? undefined);
               console.log(`[webhook] Mensagem enviada para ${_phone}`);
             }
           })
@@ -263,7 +281,7 @@ export async function POST(req: NextRequest) {
     let reply: string | null = null;
 
     if (geminiEnabled && cid !== "sem-cliente") {
-      const { text: geminiText } = await runGeminiAgent(text, history, cid, phone);
+      const { text: geminiText } = await runGeminiAgent(text, history, cid, phone, connectionId ?? undefined);
       reply = geminiText || null;
     } else {
       reply = await generateResponse(text, history, clientId);
@@ -274,7 +292,7 @@ export async function POST(req: NextRequest) {
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId);
 
     if (cid !== "sem-cliente") {
-      await sendMessageUnified(phone, reply, cid, connectionId);
+      await sendMessageUnified(phone, reply, cid, connectionId ?? undefined);
     } else {
       await sendWhatsApp(phone, reply);
     }
