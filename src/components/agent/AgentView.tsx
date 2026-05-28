@@ -654,20 +654,41 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                 </div>
 
                 {/* Delay */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs text-slate-500 shrink-0">
                     {idx === 0 ? "Enviar após" : "Depois de"}
                   </span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={step.delayHours}
-                    onChange={(e) => updateStep({ delayHours: Number(e.target.value) })}
-                    className="w-20 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-sm outline-none focus:border-emerald-400 text-center"
-                  />
-                  <span className="text-xs text-slate-500">
-                    {idx === 0 ? "horas sem resposta" : `horas do step ${idx}`}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      value={Math.floor(step.delayHours)}
+                      onChange={(e) => {
+                        const h = Math.max(0, Number(e.target.value));
+                        const m = Math.round((step.delayHours % 1) * 60);
+                        updateStep({ delayHours: h + m / 60 });
+                      }}
+                      className="w-14 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-sm outline-none focus:border-emerald-400 text-center"
+                    />
+                    <span className="text-xs text-slate-500">h</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={Math.round((step.delayHours % 1) * 60)}
+                      onChange={(e) => {
+                        const m = Math.min(59, Math.max(0, Number(e.target.value)));
+                        const h = Math.floor(step.delayHours);
+                        updateStep({ delayHours: h + m / 60 });
+                      }}
+                      className="w-14 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-sm outline-none focus:border-emerald-400 text-center"
+                    />
+                    <span className="text-xs text-slate-500">
+                      {idx === 0 ? "min sem resposta" : `min do step ${idx}`}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Tipo de mensagem — tabs */}
