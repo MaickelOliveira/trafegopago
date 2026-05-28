@@ -160,48 +160,23 @@ export async function runGeminiAgent(
   const mediaLibrary = agentCfg.mediaLibrary;
   const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary);
 
-  // Tenta modelos em ordem de preferência
+  // Tenta modelos em ordem de preferência (sem chamada de teste — economiza quota)
   const modelsToTry = [
+    "gemini-2.5-flash-preview-05-20",
+    "gemini-2.5-flash",
     "gemini-2.5-pro-preview-05-06",
     "gemini-2.5-pro",
-    "gemini-2.5-pro-exp-03-25",
     "gemini-1.5-pro",
   ];
 
-  let model;
-  let usedModel = modelsToTry[0];
-  for (const modelId of modelsToTry) {
-    try {
-      const m = genAI.getGenerativeModel({
-        model: modelId,
-        systemInstruction: sysPrompt,
-        tools: TOOLS,
-      });
-      // Teste rápido para verificar se o modelo existe
-      await m.generateContent("test");
-      model = m;
-      usedModel = modelId;
-      break;
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("not found") || msg.includes("404")) continue;
-      // Outro erro — usa este modelo mesmo assim
-      model = genAI.getGenerativeModel({
-        model: modelId,
-        systemInstruction: sysPrompt,
-        tools: TOOLS,
-      });
-      usedModel = modelId;
-      break;
-    }
-  }
+  const usedModel = modelsToTry[0];
+  const model = genAI.getGenerativeModel({
+    model: usedModel,
+    systemInstruction: sysPrompt,
+    tools: TOOLS,
+  });
 
-  if (!model) {
-    console.error("[gemini-agent] Nenhum modelo disponível para a chave fornecida");
-    return { text: "", actions: [] };
-  }
-
-  console.log(`[gemini-agent] Usando modelo: ${usedModel}`);
+  console.log(`[gemini-agent] Usando modelo: ${usedModel} clientId=${clientId} phone=${phone}`);
 
   // Converte histórico para formato Gemini
   // Gemini exige que o histórico comece com 'user' — remove mensagens iniciais do assistente
@@ -407,10 +382,13 @@ export async function runGeminiAgent(
     cancelFollowUpsForPhone(clientId, phone);
 
   } catch (err) {
-    console.error("[gemini-agent] Error:", err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[gemini-agent] ERRO na chamada ao Gemini: ${errMsg}`);
+    console.error(`[gemini-agent] Detalhes: modelo=${usedModel} clientId=${clientId} phone=${phone} apiKey=${apiKey ? apiKey.slice(0,8) + "..." : "MISSING"}`);
     return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
   }
 
+  console.log(`[gemini-agent] Resposta finalText.length=${finalText.length} actions=${actions.length}`);
   return { text: finalText, actions };
 }
 

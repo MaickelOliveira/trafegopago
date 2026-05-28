@@ -425,7 +425,16 @@ export async function POST(
   try {
     const extracted = extractMessage(body);
     console.log(`[webhook/${instanceId}] extracted=`, JSON.stringify(extracted));
-    if (!extracted || isGroup(extracted.phone) || !isValidPhone(extracted.phone)) {
+    if (!extracted) {
+      console.log(`[webhook/${instanceId}] IGNORADO — não foi possível extrair mensagem do payload`);
+      return NextResponse.json({ ok: true });
+    }
+    if (isGroup(extracted.phone)) {
+      console.log(`[webhook/${instanceId}] IGNORADO — mensagem de grupo phone=${extracted.phone}`);
+      return NextResponse.json({ ok: true });
+    }
+    if (!isValidPhone(extracted.phone)) {
+      console.log(`[webhook/${instanceId}] IGNORADO — telefone inválido phone=${extracted.phone}`);
       return NextResponse.json({ ok: true });
     }
 
@@ -508,7 +517,10 @@ export async function POST(
     });
 
     // Guarda: pula apenas se não há texto, não há tipo e não há URL de mídia
-    if (!text.trim() && !msgType && !mediaUrl) return NextResponse.json({ ok: true });
+    if (!text.trim() && !msgType && !mediaUrl) {
+      console.log(`[webhook/${instanceId}] IGNORADO — mensagem vazia (sem texto, tipo ou mídia) phone=${phone}`);
+      return NextResponse.json({ ok: true });
+    }
 
     // ── Salva mensagem no histórico ───────────────────────────────────────
     const ts = Date.now();
@@ -684,12 +696,23 @@ export async function POST(
     }
 
     // Resposta imediata (waitSeconds = 0)
-    if (!geminiEnabled || cid === "sem-cliente") return NextResponse.json({ ok: true });
+    if (cid === "sem-cliente") {
+      console.log(`[webhook/${instanceId}] IGNORADO — cliente não identificado (cid=sem-cliente) phone=${phone} instanceId=${instanceId}`);
+      console.log(`[webhook/${instanceId}] Funis disponíveis:`, funnels.map(f => ({ id: f.id, name: f.name, clientId: f.clientId, conns: f.connections?.map(c => ({ id: c.id, type: c.type, token: c.uazapiToken?.slice(0,8) })) })));
+      return NextResponse.json({ ok: true });
+    }
+    if (!geminiEnabled) {
+      console.log(`[webhook/${instanceId}] IGNORADO — Gemini não habilitado. agentCfg=${JSON.stringify({ found: !!agentCfg, enabled: agentCfg?.enabled, connId, clientAgentConfigs: activeClient?.agentConfigs?.length ?? 0, hasLegacyAgentConfig: !!activeClient?.agentConfig })}`);
+      return NextResponse.json({ ok: true });
+    }
 
-    console.log(`[webhook/${instanceId}] Gemini imediato iniciando para phone=${phone}`);
+    console.log(`[webhook/${instanceId}] Gemini imediato iniciando para phone=${phone} cid=${cid} connId=${connId ?? "none"}`);
     const { text: geminiText, actions: geminiActions } = await runGeminiAgent(text, history, cid, phone, connId);
-    console.log(`[webhook/${instanceId}] Gemini imediato respondeu (${geminiText?.length ?? 0} chars)`);
-    if (!geminiText && geminiActions.length === 0) return NextResponse.json({ ok: true });
+    console.log(`[webhook/${instanceId}] Gemini imediato respondeu chars=${geminiText?.length ?? 0} actions=${geminiActions.length}`);
+    if (!geminiText && geminiActions.length === 0) {
+      console.log(`[webhook/${instanceId}] Gemini retornou vazio — sem resposta enviada`);
+      return NextResponse.json({ ok: true });
+    }
 
     if (geminiText) {
       addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
