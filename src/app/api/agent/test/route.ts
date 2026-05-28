@@ -11,7 +11,7 @@ const MODELS_TO_TRY = [
   "gemini-1.5-pro",
 ];
 
-// POST /api/agent/test?clientId=xxx — testa conexão com Gemini e retorna diagnóstico
+// POST /api/agent/test?clientId=xxx[&connId=yyy] — testa conexão com Gemini e retorna diagnóstico
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "manager") {
@@ -24,7 +24,15 @@ export async function POST(req: NextRequest) {
   const client = getClientById(clientId);
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
-  const apiKey = getGeminiApiKey(client.agentConfig?.geminiApiKey);
+  const connId = req.nextUrl.searchParams.get("connId");
+  let agentGeminiKey: string | undefined;
+  if (connId && client.agentConfigs) {
+    const found = client.agentConfigs.find(c => c.whatsappConnectionId === connId);
+    agentGeminiKey = found?.geminiApiKey;
+  }
+  if (!agentGeminiKey) agentGeminiKey = client.agentConfig?.geminiApiKey;
+
+  const apiKey = getGeminiApiKey(agentGeminiKey);
   if (!apiKey) {
     return NextResponse.json({
       ok: false,

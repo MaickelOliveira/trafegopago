@@ -364,7 +364,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(cfg),
             });
-            const res = await fetch(`/api/agent/test?clientId=${clientId}`, { method: "POST" });
+            const res = await fetch(`/api/agent/test?clientId=${clientId}${connParam}`, { method: "POST" });
             const data = await res.json();
             setTestResult(data);
             setTesting(false);
