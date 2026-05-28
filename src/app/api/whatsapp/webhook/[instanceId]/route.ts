@@ -646,9 +646,10 @@ export async function POST(
                 }
 
                 // 2. URL direta (já descriptografada pelo UazapiGO)
+                const dlTimeout = kind === "video" ? 30_000 : 15_000;
                 if (!buffer && directUrl) {
                   try {
-                    const res = await fetch(directUrl, { signal: AbortSignal.timeout(15_000) });
+                    const res = await fetch(directUrl, { signal: AbortSignal.timeout(dlTimeout) });
                     if (res.ok) {
                       buffer = Buffer.from(await res.arrayBuffer());
                       console.log(`[webhook/${instanceId}] Download direto OK: ${buffer.length} bytes`);
@@ -665,7 +666,7 @@ export async function POST(
                   try {
                     const res = await fetch(cdnUrl, {
                       headers: { "User-Agent": "WhatsApp/2.24.10.0" },
-                      signal: AbortSignal.timeout(15_000),
+                      signal: AbortSignal.timeout(dlTimeout),
                     });
                     if (res.ok) {
                       buffer = Buffer.from(await res.arrayBuffer());
@@ -700,8 +701,12 @@ export async function POST(
                 // Transcreve/descreve via Gemini
                 return await transcribeMedia(buffer, mediaMimetype, gemKey, kind);
               })(),
-              // Timeout: 45s para áudio (File API leva mais), 25s para imagem/vídeo/doc
-              new Promise<null>((r) => setTimeout(() => r(null), kind === "audio" ? 45_000 : 25_000)),
+              // Timeout por kind: vídeo (download grande) > áudio > documento > imagem
+              new Promise<null>((r) => setTimeout(() => r(null),
+                kind === "video" ? 60_000 :
+                kind === "audio" ? 45_000 :
+                kind === "document" ? 40_000 : 25_000
+              )),
             ]);
 
             if (transcribeResult) {

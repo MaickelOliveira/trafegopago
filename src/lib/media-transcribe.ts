@@ -56,7 +56,7 @@ export async function downloadAndDecryptMedia(
   try {
     const res = await fetch(encryptedUrl, {
       headers: { "User-Agent": "WhatsApp/2.24.10.0" },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
       console.error(`[media-decrypt] HTTP ${res.status} ao baixar mídia de ${encryptedUrl.slice(0, 80)}`);
