@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
-import { getHistory, addMessage, getAiPaused, setAiPaused, updateLastMessage } from "@/lib/conversations";
+import { getHistory, addMessage, getAiPaused, setAiPaused } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone, updateLead } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
@@ -359,6 +359,12 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
           singularMediaType === "video" || singularMime.startsWith("video/")
         );
 
+      const isDocument =
+        !isAudio && !isImage && !isVideo && (
+          singularType === "document" || singularType === "file" ||
+          singularMsgType2 === "documentmessage" || singularMediaType === "document"
+        );
+
       if (isAudio) {
         singularMsgTypeFinal = "audio";
         singularMedia = singularMediaUrl;
@@ -367,6 +373,9 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
         singularMedia = singularMediaUrl;
       } else if (isVideo) {
         singularMsgTypeFinal = "video";
+        singularMedia = singularMediaUrl;
+      } else if (isDocument) {
+        singularMsgTypeFinal = "document";
         singularMedia = singularMediaUrl;
       } else if (!text && singularMediaUrl) {
         // Fallback genérico: sem texto mas tem URL de mídia → assume áudio
@@ -555,81 +564,105 @@ export async function POST(
       return NextResponse.json({ ok: true });
     }
 
-    // ── Salva mensagem no histórico ───────────────────────────────────────
+    // ── Transcrição síncrona de mídia ─────────────────────────────────────
+    // Feita ANTES de salvar no histórico e chamar o Gemini, para a IA ver o conteúdo real.
     const ts = Date.now();
-    const msgContent = text || (msgType ? `[${msgType}]` : mediaUrl ? "[mídia]" : "");
-    const savedType = msgType === "audio" ? "audio" as const : msgType === "image" ? "image" as const : undefined;
-    addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: savedType, mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
+    let transcribedContent: string | null = null;
+    let localMediaUrl: string | undefined;
 
-    // ── Transcrição/descrição de mídia via Gemini (assíncrono) ────────────
-    if (msgType && msgType !== "text" && cid !== "sem-cliente") {
-      // Extrai mediaKey e URL do objeto aninhado body.message.message (formato WhatsApp CDN)
-      const msgBodyObj = (body.message as Record<string, unknown> | undefined) ?? {};
-      const nestedMsgObj = (msgBodyObj.message as Record<string, unknown> | undefined) ?? {};
-      const nestedContent = (nestedMsgObj.content as Record<string, unknown> | undefined) ?? {};
-      const mediaKeyB64 = String(nestedMsgObj.mediaKey ?? "");
-      const cdnUrl = String(nestedContent.URL ?? nestedMsgObj.url ?? "");
-      const directUrl = mediaUrl ?? ""; // URL direta do UazapiGO (pode ser pré-descriptografada)
-      const mediaMimetype = String(nestedMsgObj.mimetype ?? nestedMsgObj.mimeType ??
-        (msgType === "audio" ? "audio/ogg" : msgType === "image" ? "image/jpeg" : msgType === "video" ? "video/mp4" : "application/octet-stream"));
-      const mediaTypeStr = String(msgBodyObj.mediaType ?? msgBodyObj.messageType ?? msgType ?? "audio");
-
+    if (!fromMe && msgType && msgType !== "text" && cid !== "sem-cliente") {
       const agCfgForMedia = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
       const gemKey = getGeminiApiKey(agCfgForMedia?.geminiApiKey ?? undefined);
 
-      const kind = (msgType === "image" ? "image" : msgType === "video" ? "video" : msgType === "document" ? "document" : "audio") as import("@/lib/media-transcribe").MediaKind;
-      if (gemKey && (cdnUrl || directUrl)) {
-        const phoneForUpdate = phone;
-        const tsForFile = ts;
+      if (gemKey) {
+        // Extrai mediaKey e URLs do payload (formato WhatsApp CDN aninhado)
+        const msgBodyObj = (body.message as Record<string, unknown> | undefined) ?? {};
+        const nestedMsgObj = (msgBodyObj.message as Record<string, unknown> | undefined) ?? {};
+        const nestedContent = (nestedMsgObj.content as Record<string, unknown> | undefined) ?? {};
+        const mediaKeyB64 = String(nestedMsgObj.mediaKey ?? "");
+        const cdnUrl = String(nestedContent.URL ?? nestedMsgObj.url ?? "");
+        const directUrl = mediaUrl ?? "";
+        const mediaMimetype = String(
+          nestedMsgObj.mimetype ?? nestedMsgObj.mimeType ??
+          (msgType === "audio" ? "audio/ogg" :
+           msgType === "image" ? "image/jpeg" :
+           msgType === "video" ? "video/mp4" : "application/octet-stream")
+        );
+        const mediaTypeStr = String(msgBodyObj.mediaType ?? msgBodyObj.messageType ?? msgType ?? "audio");
+        const kind = (
+          msgType === "image" ? "image" :
+          msgType === "video" ? "video" :
+          msgType === "document" ? "document" : "audio"
+        ) as import("@/lib/media-transcribe").MediaKind;
 
-        console.log(`[webhook/${instanceId}] Mídia recebida: kind=${kind} hasCDN=${!!cdnUrl} hasKey=${!!mediaKeyB64} hasDirectUrl=${!!directUrl}`);
+        console.log(`[webhook/${instanceId}] Transcrição síncrona kind=${kind} cdnUrl=${cdnUrl.slice(0, 60)} directUrl=${directUrl.slice(0, 60)} hasKey=${!!mediaKeyB64}`);
 
-        // Fire and forget — não bloqueia a resposta do webhook
-        Promise.resolve().then(async () => {
+        if (cdnUrl || directUrl) {
           try {
-            let buffer: Buffer | null = null;
+            const transcribeResult = await Promise.race([
+              (async (): Promise<string | null> => {
+                let buffer: Buffer | null = null;
 
-            // Tenta descriptografia (WhatsApp CDN) se mediaKey disponível
-            if (cdnUrl && mediaKeyB64) {
-              buffer = await downloadAndDecryptMedia(cdnUrl, mediaKeyB64, mediaTypeStr);
-            }
+                // 1. Tenta descriptografia WhatsApp CDN (HKDF + AES-256-CBC)
+                if (cdnUrl && mediaKeyB64) {
+                  buffer = await downloadAndDecryptMedia(cdnUrl, mediaKeyB64, mediaTypeStr);
+                  if (buffer) console.log(`[webhook/${instanceId}] CDN decrypt OK: ${buffer.length} bytes`);
+                }
 
-            // Fallback: download direto da URL do UazapiGO (já descriptografada)
-            if (!buffer && directUrl) {
-              console.log(`[webhook/${instanceId}] Tentando download direto: ${directUrl.slice(0, 80)}`);
-              try {
-                const res = await fetch(directUrl, { signal: AbortSignal.timeout(20_000) });
-                if (res.ok) buffer = Buffer.from(await res.arrayBuffer());
-                else console.warn(`[webhook/${instanceId}] Download direto falhou: HTTP ${res.status}`);
-              } catch (e) {
-                console.error(`[webhook/${instanceId}] Erro no download direto:`, e);
-              }
-            }
+                // 2. Fallback: URL direta do UazapiGO (já descriptografada)
+                if (!buffer && directUrl) {
+                  try {
+                    const res = await fetch(directUrl, { signal: AbortSignal.timeout(15_000) });
+                    if (res.ok) {
+                      buffer = Buffer.from(await res.arrayBuffer());
+                      console.log(`[webhook/${instanceId}] Download direto OK: ${buffer.length} bytes`);
+                    } else {
+                      console.warn(`[webhook/${instanceId}] Download direto HTTP ${res.status}`);
+                    }
+                  } catch (fe) {
+                    console.error(`[webhook/${instanceId}] Erro download direto:`, fe instanceof Error ? fe.message : fe);
+                  }
+                }
 
-            if (!buffer) {
-              console.warn(`[webhook/${instanceId}] Não foi possível baixar a mídia para ${phoneForUpdate}`);
-              return;
-            }
+                if (!buffer) {
+                  console.warn(`[webhook/${instanceId}] Nenhum buffer obtido para kind=${kind}`);
+                  return null;
+                }
 
-            // Salva o arquivo e atualiza a URL local
-            const localUrl = saveDecryptedMedia(buffer, phoneForUpdate, tsForFile, mediaMimetype);
-            updateLastMessage(phoneForUpdate, { mediaUrl: localUrl });
+                // Salva cópia local
+                localMediaUrl = saveDecryptedMedia(buffer, phone, ts, mediaMimetype);
+                console.log(`[webhook/${instanceId}] Mídia salva em ${localMediaUrl} (${buffer.length} bytes), enviando ao Gemini...`);
 
-            // Transcreve/descreve via Gemini
-            const transcription = await transcribeMedia(buffer, mediaMimetype, gemKey, kind);
-            if (transcription) {
+                // Transcreve/descreve via Gemini
+                return await transcribeMedia(buffer, mediaMimetype, gemKey, kind);
+              })(),
+              // Timeout de 20s para não segurar o webhook por tempo indeterminado
+              new Promise<null>((r) => setTimeout(() => r(null), 20_000)),
+            ]);
+
+            if (transcribeResult) {
               const prefix = kind === "image" ? "📷" : kind === "video" ? "🎬" : kind === "document" ? "📄" : "🎙️";
-              updateLastMessage(phoneForUpdate, { content: `${prefix} ${transcription}` });
-              console.log(`[webhook/${instanceId}] ${kind} processado para ${phoneForUpdate}: "${transcription.slice(0, 80)}"`);
+              transcribedContent = `${prefix} ${transcribeResult}`;
+              console.log(`[webhook/${instanceId}] Transcrição OK kind=${kind}: "${transcribeResult.slice(0, 120)}"`);
+            } else {
+              console.warn(`[webhook/${instanceId}] Transcrição null/timeout kind=${kind}`);
             }
           } catch (e) {
-            console.error(`[webhook/${instanceId}] Erro ao processar mídia:`, e);
+            console.error(`[webhook/${instanceId}] Erro na transcrição síncrona:`, e instanceof Error ? e.message : e);
           }
-        });
+        } else {
+          console.log(`[webhook/${instanceId}] Sem URL de mídia — não é possível transcrever kind=${kind}`);
+        }
       } else {
-        console.log(`[webhook/${instanceId}] Mídia sem URL ou sem gemKey — não processada. kind=${kind ?? msgType} gemKey=${!!gemKey}`);
+        console.log(`[webhook/${instanceId}] Sem geminiApiKey — não é possível transcrever`);
       }
     }
+
+    // ── Salva mensagem no histórico ────────────────────────────────────────
+    // Usa a transcrição como conteúdo quando disponível, para a IA ver o que foi enviado
+    const msgContent = transcribedContent || text || (msgType ? `[${msgType}]` : mediaUrl ? "[mídia]" : "");
+    const savedType = msgType === "audio" ? "audio" as const : msgType === "image" ? "image" as const : undefined;
+    addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: savedType, mediaUrl: localMediaUrl ?? mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
 
     // Mensagem enviada por você (gestor via WhatsApp)
     if (fromMe) {
@@ -709,9 +742,12 @@ export async function POST(
     console.log(`[webhook/${instanceId}] phone=${phone} cid=${cid} funnel=${funnel?.id?.slice(0,8) ?? "none"}(${matchSource}) gemini=${geminiEnabled} wait=${waitSeconds}s uazToken=${instanceUazToken.slice(0, 8)}...`);
     console.log(`[webhook/${instanceId}] agentCfg found=${!!agentCfg} enabled=${agentCfg?.enabled} geminiKey=${agentCfg?.geminiApiKey ? "set" : "empty"} connId=${connId ?? "none"}`);
 
+    // Mensagem a enviar para o Gemini: usa transcrição quando disponível
+    const userMsgForAI = transcribedContent || text || (msgType ? `[${msgType}]` : "");
+
     // Batching: acumula mensagens antes de responder
     if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {
-      const pending = upsertPending(cid, phone, text, waitSeconds);
+      const pending = upsertPending(cid, phone, userMsgForAI, waitSeconds);
       const _pendingId = pending.id;
 
       setTimeout(() => {
@@ -772,8 +808,8 @@ export async function POST(
       return NextResponse.json({ ok: true });
     }
 
-    console.log(`[webhook/${instanceId}] Gemini imediato iniciando para phone=${phone} cid=${cid} connId=${connId ?? "none"}`);
-    const { text: geminiText, actions: geminiActions } = await runGeminiAgent(text, history, cid, phone, connId);
+    console.log(`[webhook/${instanceId}] Gemini imediato iniciando para phone=${phone} cid=${cid} connId=${connId ?? "none"} userMsg="${userMsgForAI.slice(0, 80)}"`);
+    const { text: geminiText, actions: geminiActions } = await runGeminiAgent(userMsgForAI, history, cid, phone, connId);
     console.log(`[webhook/${instanceId}] Gemini imediato respondeu chars=${geminiText?.length ?? 0} actions=${geminiActions.length}`);
     if (!geminiText && geminiActions.length === 0) {
       console.log(`[webhook/${instanceId}] Gemini retornou vazio — sem resposta enviada`);
