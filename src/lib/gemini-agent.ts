@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration } from "@google/generative-ai";
 import { getClientById, getAgentConfigForConnection, type AgentMedia } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
-import { scheduleFollowUp, cancelFollowUpsForPhone } from "./followups";
+import { scheduleFollowUp } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
 import { getHistory } from "./conversations";
 import type { ChatMessage } from "./conversations";
@@ -398,8 +398,6 @@ export async function runGeminiAgent(
       candidate = response.response;
     }
 
-    // Cancela follow-ups pendentes quando lead responde
-    cancelFollowUpsForPhone(clientId, phone);
     succeeded = true;
     break; // modelo funcionou — sai do loop
 
