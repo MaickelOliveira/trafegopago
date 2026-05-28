@@ -575,27 +575,56 @@ export async function POST(
       const gemKey = getGeminiApiKey(agCfgForMedia?.geminiApiKey ?? undefined);
 
       if (gemKey) {
-        // Extrai mediaKey e URLs do payload (formato WhatsApp CDN aninhado)
+        // ── Extração de URL/chave em TODOS os formatos UazapiGO ─────────────
+        // Formato 1 (singular): body.message.message.content.URL + body.message.message.mediaKey
         const msgBodyObj = (body.message as Record<string, unknown> | undefined) ?? {};
         const nestedMsgObj = (msgBodyObj.message as Record<string, unknown> | undefined) ?? {};
         const nestedContent = (nestedMsgObj.content as Record<string, unknown> | undefined) ?? {};
-        const mediaKeyB64 = String(nestedMsgObj.mediaKey ?? "");
-        const cdnUrl = String(nestedContent.URL ?? nestedMsgObj.url ?? "");
-        const directUrl = mediaUrl ?? "";
+
+        // Formato 2 (array): body.messages[0].body (CDN URL) + body.messages[0].mediaKey
+        const msgArr = body.messages as Record<string, unknown>[] | undefined;
+        const msg0 = (Array.isArray(msgArr) && msgArr.length > 0 ? msgArr[0] : {}) as Record<string, unknown>;
+        const msg0Nested = (msg0.message as Record<string, unknown> | undefined) ?? {};
+        const msg0Content = (msg0Nested.content as Record<string, unknown> | undefined) ?? {};
+
+        // mediaKey: singular → array → nested
+        const mediaKeyB64 = String(
+          nestedMsgObj.mediaKey ?? msg0.mediaKey ?? msg0Nested.mediaKey ?? ""
+        );
+
+        // CDN URL (criptografada, requer HKDF): singular content.URL → array body (quando é https://)
+        const textIsUrl = text && msgType &&
+          (text.startsWith("https://") || text.startsWith("http://"));
+        const cdnUrl = String(
+          nestedContent.URL ?? nestedMsgObj.url ??
+          msg0Content.URL ?? msg0Nested.url ??
+          (textIsUrl ? text : "")
+        );
+
+        // URL direta (UazapiGO pré-descriptografada): mediaUrl da extração → campos do msg0
+        const directUrl = mediaUrl ??
+          String(msg0.media ?? msg0.mediaUrl ?? msg0.url ?? msg0.link ?? "") ??
+          "";
+
+        // Mimetype
         const mediaMimetype = String(
           nestedMsgObj.mimetype ?? nestedMsgObj.mimeType ??
+          msg0.mimetype ?? msg0.mimeType ?? msg0Nested.mimetype ??
           (msgType === "audio" ? "audio/ogg" :
            msgType === "image" ? "image/jpeg" :
            msgType === "video" ? "video/mp4" : "application/octet-stream")
         );
-        const mediaTypeStr = String(msgBodyObj.mediaType ?? msgBodyObj.messageType ?? msgType ?? "audio");
+        const mediaTypeStr = String(
+          msgBodyObj.mediaType ?? msgBodyObj.messageType ??
+          msg0.mediaType ?? msg0.messageType ?? msgType ?? "audio"
+        );
         const kind = (
           msgType === "image" ? "image" :
           msgType === "video" ? "video" :
           msgType === "document" ? "document" : "audio"
         ) as import("@/lib/media-transcribe").MediaKind;
 
-        console.log(`[webhook/${instanceId}] Transcrição síncrona kind=${kind} cdnUrl=${cdnUrl.slice(0, 60)} directUrl=${directUrl.slice(0, 60)} hasKey=${!!mediaKeyB64}`);
+        console.log(`[webhook/${instanceId}] Transcrição síncrona kind=${kind} cdnUrl=${cdnUrl.slice(0, 80)} directUrl=${directUrl.slice(0, 80)} hasKey=${!!mediaKeyB64} mediaMime=${mediaMimetype}`);
 
         if (cdnUrl || directUrl) {
           try {
@@ -603,13 +632,13 @@ export async function POST(
               (async (): Promise<string | null> => {
                 let buffer: Buffer | null = null;
 
-                // 1. Tenta descriptografia WhatsApp CDN (HKDF + AES-256-CBC)
+                // 1. CDN criptografado (HKDF + AES-256-CBC)
                 if (cdnUrl && mediaKeyB64) {
                   buffer = await downloadAndDecryptMedia(cdnUrl, mediaKeyB64, mediaTypeStr);
                   if (buffer) console.log(`[webhook/${instanceId}] CDN decrypt OK: ${buffer.length} bytes`);
                 }
 
-                // 2. Fallback: URL direta do UazapiGO (já descriptografada)
+                // 2. URL direta (já descriptografada pelo UazapiGO)
                 if (!buffer && directUrl) {
                   try {
                     const res = await fetch(directUrl, { signal: AbortSignal.timeout(15_000) });
@@ -622,6 +651,20 @@ export async function POST(
                   } catch (fe) {
                     console.error(`[webhook/${instanceId}] Erro download direto:`, fe instanceof Error ? fe.message : fe);
                   }
+                }
+
+                // 3. Fallback: tenta CDN sem mediaKey (download direto do URL criptografado pode funcionar em alguns casos)
+                if (!buffer && cdnUrl && !mediaKeyB64) {
+                  try {
+                    const res = await fetch(cdnUrl, {
+                      headers: { "User-Agent": "WhatsApp/2.24.10.0" },
+                      signal: AbortSignal.timeout(15_000),
+                    });
+                    if (res.ok) {
+                      buffer = Buffer.from(await res.arrayBuffer());
+                      console.log(`[webhook/${instanceId}] CDN sem decrypt OK: ${buffer.length} bytes`);
+                    }
+                  } catch { /* silently ignore */ }
                 }
 
                 if (!buffer) {
@@ -659,8 +702,11 @@ export async function POST(
     }
 
     // ── Salva mensagem no histórico ────────────────────────────────────────
-    // Usa a transcrição como conteúdo quando disponível, para a IA ver o que foi enviado
-    const msgContent = transcribedContent || text || (msgType ? `[${msgType}]` : mediaUrl ? "[mídia]" : "");
+    // Se text é uma URL de CDN (colocada pelo UazapiGO no campo body), não salvar como texto —
+    // seria confuso no histórico. Usar apenas a transcrição ou o placeholder [tipo].
+    const textIsMediaUrl = !!msgType && !!text && (text.startsWith("https://") || text.startsWith("http://") || text.startsWith("data:"));
+    const textForContent = textIsMediaUrl ? "" : text;
+    const msgContent = transcribedContent || textForContent || (msgType ? `[${msgType}]` : mediaUrl ? "[mídia]" : "");
     const savedType = msgType === "audio" ? "audio" as const : msgType === "image" ? "image" as const : undefined;
     addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: savedType, mediaUrl: localMediaUrl ?? mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
 
@@ -743,7 +789,7 @@ export async function POST(
     console.log(`[webhook/${instanceId}] agentCfg found=${!!agentCfg} enabled=${agentCfg?.enabled} geminiKey=${agentCfg?.geminiApiKey ? "set" : "empty"} connId=${connId ?? "none"}`);
 
     // Mensagem a enviar para o Gemini: usa transcrição quando disponível
-    const userMsgForAI = transcribedContent || text || (msgType ? `[${msgType}]` : "");
+    const userMsgForAI = transcribedContent || textForContent || (msgType ? `[${msgType}]` : "");
 
     // Batching: acumula mensagens antes de responder
     if (geminiEnabled && waitSeconds > 0 && cid !== "sem-cliente") {
