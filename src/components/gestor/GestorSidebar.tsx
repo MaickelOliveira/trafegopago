@@ -29,7 +29,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
 
   const clientMatch = pathname.match(/^\/gestor\/([^/]+)/);
   const activeClientId = clientMatch?.[1];
-  const staticRoutes = ["configuracoes", "crm", "financeiro", "social", "whatsapp", "utm-builder"];
+  const staticRoutes = ["configuracoes", "crm", "financeiro", "social", "whatsapp", "utm-builder", "wa-links"];
   const isInsideClient = !!activeClientId && !staticRoutes.includes(activeClientId);
   const activeClient = isInsideClient ? clients.find((c) => c.id === activeClientId) : null;
 
@@ -206,6 +206,15 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               >
                 <span className="text-base leading-none">🧰</span>
                 UTM Builder
+              </Link>
+
+              <Link
+                href={`/gestor/${activeClient.id}/wa-links`}
+                className={clsx("flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition",
+                  pathname.startsWith(`/gestor/${activeClient.id}/wa-links`) ? NAV_ACTIVE : NAV_INACTIVE)}
+              >
+                <span className="text-base leading-none">📲</span>
+                Rastreio WhatsApp
               </Link>
 
               <Link

@@ -10,8 +10,27 @@ import { processKanbanActions } from "@/lib/kanban-agent";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
 import { upsertPending, getPendingForPhone, getDuePending, markDone, markProcessing, cancelPendingForPhone } from "@/lib/pending-responses";
+import { sendCapiEvent } from "@/lib/meta-capi";
 
 type Body = Record<string, unknown>;
+
+/** Extrai payload de rastreamento oculto da mensagem.
+ *  Formato embutido pelo snippet JS: " [_:src=google&cmp=campanha&fbc=xxx]"
+ */
+function parseWaTracking(text: string) {
+  const match = text.match(/\[_:([^\]]+)\]/);
+  if (!match) return null;
+  const params = new URLSearchParams(match[1]);
+  return {
+    utmSource:   params.get("src") || null,
+    utmCampaign: params.get("cmp") || null,
+    utmMedium:   params.get("med") || null,
+    utmContent:  params.get("cnt") || null,
+    utmTerm:     params.get("trm") || null,
+    fbclid:      params.get("fbc") || null,
+    gclid:       params.get("gcd") || null,
+  };
+}
 
 // Extrai phone + text de diferentes formatos de webhook (UazAPI / Evolution API)
 function extractMessage(body: Body): { phone: string; text: string; fromMe: boolean } | null {
@@ -171,13 +190,48 @@ export async function POST(req: NextRequest) {
     // Só atualiza o nome se for lead novo ou se o nome atual ainda é apenas o número
     const shouldUpdateName = isNew || (existingLead?.name === existingLead?.phone || existingLead?.name === phone);
 
-    upsertLeadByPhone(cid, phone, {
+    // Extrai rastreamento oculto da primeira mensagem do lead (payload [_:...])
+    const tracking = isNew ? parseWaTracking(text) : null;
+    const utmSourceRaw = (tracking?.utmSource ?? "").toLowerCase();
+    const metaSources  = ["facebook", "instagram", "fb", "meta"];
+    const adPlatform   = tracking
+      ? (tracking.fbclid || metaSources.includes(utmSourceRaw) ? "meta"
+        : tracking.gclid  || utmSourceRaw === "google"          ? "google"
+        : null)
+      : undefined;
+
+    const newLead = upsertLeadByPhone(cid, phone, {
       clientId: cid,
       funnelId: funnelIdOverride ?? "default",
       source: "whatsapp",
       ...(shouldUpdateName ? { name: contactName } : {}),
       ...(isNew ? { status: "entrada" } : {}),
+      ...(tracking ? {
+        adPlatform,
+        utmSource:   tracking.utmSource,
+        utmCampaign: tracking.utmCampaign,
+        utmMedium:   tracking.utmMedium,
+        utmContent:  tracking.utmContent,
+        utmTerm:     tracking.utmTerm,
+        fbclid:      tracking.fbclid,
+        gclid:       tracking.gclid,
+        campaignName: tracking.utmCampaign,
+      } : {}),
     });
+
+    // Envia Lead para Meta CAPI quando lead novo veio de anúncio Meta
+    if (isNew && adPlatform === "meta") {
+      const clientObj = getClientById(cid);
+      if (clientObj?.pixelId) {
+        sendCapiEvent({
+          pixelId:   clientObj.pixelId,
+          capiToken: clientObj.capiToken,
+          eventName: "Lead",
+          phone,
+          externalId: newLead.id,
+        }).catch((e) => console.error("[CAPI WA]", e));
+      }
+    }
 
     if (!text.trim()) return NextResponse.json({ ok: true });
 
