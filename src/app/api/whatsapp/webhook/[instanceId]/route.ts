@@ -161,6 +161,31 @@ function extractMediaMarkers(text: string): { clean: string; names: string[] } {
 /**
  * Envia mídias referenciadas pelo agente após enviar o texto principal.
  */
+/** Converte URL local /api/uploads/... em base64 lendo direto do disco */
+function resolveMediaPayload(url: string): string {
+  const localMatch = url.match(/\/api\/uploads\/([^/?#]+)$/);
+  if (!localMatch) return url;
+  try {
+    const filePath = path.join(process.cwd(), "data", "uploads", localMatch[1]);
+    if (!existsSync(filePath)) return url;
+    const buffer = readFileSync(filePath);
+    const ext = localMatch[1].split(".").pop()?.toLowerCase() ?? "";
+    const mimeMap: Record<string, string> = {
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+      gif: "image/gif", webp: "image/webp", mp4: "video/mp4",
+      pdf: "application/pdf",
+      doc: "application/msword",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    };
+    const mime = mimeMap[ext] ?? "application/octet-stream";
+    return `data:${mime};base64,${buffer.toString("base64")}`;
+  } catch (e) {
+    console.error("[resolveMediaPayload] Erro ao ler arquivo local:", e);
+    return url;
+  }
+}
+
 async function sendMarkedMedia(
   token: string,
   phone: string,
@@ -170,7 +195,8 @@ async function sendMarkedMedia(
   for (const name of names) {
     const media = library.find((m) => m.name?.toLowerCase() === name);
     if (!media) continue;
-    await sendMedia(token, phone, media.type, media.url, media.caption, media.filename);
+    const payload = resolveMediaPayload(media.url);
+    await sendMedia(token, phone, media.type, payload, media.caption, media.filename);
     await new Promise<void>((r) => setTimeout(r, 700));
   }
 }
@@ -594,7 +620,8 @@ export async function POST(
     if (isNew && cid !== "sem-cliente") {
       const mediaItems = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id)?.mediaLibrary?.filter((m) => m.sendOnFirstContact) ?? [];
       for (const media of mediaItems) {
-        await sendMedia(instanceUazToken, phone, media.type, media.url, media.caption, media.filename);
+        const payload = resolveMediaPayload(media.url);
+        await sendMedia(instanceUazToken, phone, media.type, payload, media.caption, media.filename);
         await new Promise<void>((r) => setTimeout(r, 800));
       }
     }
