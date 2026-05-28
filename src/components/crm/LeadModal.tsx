@@ -396,6 +396,23 @@ export function LeadModal({
               </div>
             )}
 
+            {/* Dados da Campanha */}
+            {(lead.adPlatform || lead.campaignId || lead.adSetName || lead.adName || lead.adId) && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                  {lead.adPlatform === "meta" ? "🟦 Campanha Meta Ads" : lead.adPlatform === "google" ? "🔴 Campanha Google Ads" : "📣 Dados da Campanha"}
+                </p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  {lead.adPlatform   && <><span className="text-xs text-slate-400">Plataforma</span>   <span className="text-xs font-medium text-slate-700">{lead.adPlatform === "meta" ? "Meta Ads" : lead.adPlatform === "google" ? "Google Ads" : lead.adPlatform}</span></>}
+                  {lead.campaignName && <><span className="text-xs text-slate-400">Campanha</span>      <span className="text-xs font-medium text-slate-700 truncate">{lead.campaignName}</span></>}
+                  {lead.adSetName    && <><span className="text-xs text-slate-400">Conjunto</span>      <span className="text-xs font-medium text-slate-700 truncate">{lead.adSetName}</span></>}
+                  {lead.adName       && <><span className="text-xs text-slate-400">Anúncio</span>       <span className="text-xs font-medium text-slate-700 truncate">{lead.adName}</span></>}
+                  {lead.adId         && <><span className="text-xs text-slate-400">Ad ID</span>         <span className="text-xs font-mono text-slate-500 truncate">{lead.adId}</span></>}
+                  {lead.campaignId   && <><span className="text-xs text-slate-400">Campaign ID</span>   <span className="text-xs font-mono text-slate-500 truncate">{lead.campaignId}</span></>}
+                </div>
+              </div>
+            )}
+
             {/* Campos extras do formulário */}
             {lead.customFields && Object.keys(lead.customFields).length > 0 && (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">

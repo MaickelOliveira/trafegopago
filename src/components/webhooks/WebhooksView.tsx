@@ -5,6 +5,91 @@ import { clsx } from "clsx";
 import type { WebhookConfig } from "@/lib/webhooks";
 import type { Funnel } from "@/lib/funnels";
 
+// ── Cartão do Webhook de Formulário ─────────────────────────────────────────
+function FormWebhookCard({ baseUrl, clientId }: { baseUrl: string; clientId: string }) {
+  const url = `${baseUrl}/api/crm/webhook/form?clientId=${clientId}`;
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+
+  function copy(text: string, which: "url" | "snippet") {
+    navigator.clipboard.writeText(text).then(() => {
+      if (which === "url")     { setCopiedUrl(true);     setTimeout(() => setCopiedUrl(false), 2000); }
+      if (which === "snippet") { setCopiedSnippet(true); setTimeout(() => setCopiedSnippet(false), 2000); }
+    });
+  }
+
+  const snippet = `<!-- Adicione ao <head> do seu site -->
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var form = document.querySelector("form"); // ajuste o seletor se necessário
+    if (!form) return;
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var data = Object.fromEntries(new FormData(form));
+      // Captura UTMs e fbclid da URL
+      var params = new URLSearchParams(window.location.search);
+      ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","fbclid","gclid"].forEach(function(k){
+        if (params.get(k)) data[k] = params.get(k);
+      });
+      fetch("${url}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      // continue o submit se quiser: form.submit();
+    });
+  });
+</script>`;
+
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <svg viewBox="0 0 24 24" className="w-5 h-5 text-blue-600" fill="currentColor">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM8 13h8v1H8v-1zm0 3h8v1H8v-1zm0-6h4v1H8v-1z"/>
+        </svg>
+        <h2 className="font-semibold text-slate-800">Webhook de Formulário do Site</h2>
+      </div>
+      <p className="text-sm text-slate-600">
+        Conecte qualquer formulário HTML à plataforma. Os leads entram automaticamente no CRM com rastreamento de UTMs, fbclid e gclid.
+      </p>
+
+      {/* URL */}
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">URL do Webhook (POST)</p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 rounded-lg bg-white border border-blue-200 px-3 py-2 text-xs font-mono text-slate-700 break-all">{url}</code>
+          <button onClick={() => copy(url, "url")}
+            className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition">
+            {copiedUrl ? "✓ Copiado" : "Copiar"}
+          </button>
+        </div>
+      </div>
+
+      {/* Campos aceitos */}
+      <div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Campos aceitos no JSON</p>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs text-slate-600">
+          {[["phone / whatsapp","Telefone (obrigatório)"],["name / nome","Nome do lead"],["email","E-mail"],["funnelId","ID do funil (opcional)"],["campaignName","Nome da campanha"],["utm_source","Origem do tráfego"],["utm_medium","Mídia"],["utm_campaign","Campanha"],["fbclid","Click ID do Meta"],["gclid","Click ID do Google"],["adId","ID do anúncio"],["adSetName","Nome do conjunto"],["adName","Nome do anúncio"]].map(([k, v]) => (
+            <><span key={k} className="font-mono text-blue-700">{k}</span><span key={k+"v"} className="text-slate-500">{v}</span></>
+          ))}
+        </div>
+      </div>
+
+      {/* Snippet JS */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Snippet JavaScript pronto</p>
+          <button onClick={() => copy(snippet, "snippet")}
+            className="rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 transition">
+            {copiedSnippet ? "✓ Copiado" : "Copiar código"}
+          </button>
+        </div>
+        <pre className="rounded-lg bg-slate-900 p-3 text-xs text-green-300 overflow-x-auto whitespace-pre-wrap">{snippet}</pre>
+      </div>
+    </div>
+  );
+}
+
 type Props = {
   clientId: string;
   funnels: Funnel[];
@@ -91,6 +176,11 @@ export function WebhooksView({ clientId, funnels, initialWebhooks, baseUrl }: Pr
           + Novo Webhook
         </button>
       </div>
+
+      {/* Webhook de Formulário do Site */}
+      {baseUrl && (
+        <FormWebhookCard baseUrl={baseUrl} clientId={clientId} />
+      )}
 
       {/* Formulário de criação */}
       {showForm && (

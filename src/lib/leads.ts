@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 
 export type LeadStatus = "novo" | "contato" | "proposta" | "ganho" | "perdido";
 export type LeadSource = "whatsapp" | "form" | "manual";
+export type AdPlatform = "meta" | "google" | null;
 
 export type LeadAI = {
   summary: string;
@@ -20,7 +21,13 @@ export type Lead = {
   phone: string;
   email: string | null;
   source: LeadSource;
+  adPlatform?: AdPlatform;     // "meta" | "google" | null
   campaignName: string | null;
+  campaignId?: string | null;  // ID da campanha (Meta/Google)
+  adSetName?: string | null;   // Nome do conjunto de anúncios
+  adSetId?: string | null;     // ID do conjunto de anúncios
+  adName?: string | null;      // Nome do anúncio
+  adId?: string | null;        // ID do anúncio (Meta ad_id / Google creative)
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
@@ -120,7 +127,13 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     name: patch.name ?? "Desconhecido",
     email: patch.email ?? null,
     source: patch.source ?? "whatsapp",
+    adPlatform: patch.adPlatform ?? null,
     campaignName: patch.campaignName ?? null,
+    campaignId: patch.campaignId ?? null,
+    adSetName: patch.adSetName ?? null,
+    adSetId: patch.adSetId ?? null,
+    adName: patch.adName ?? null,
+    adId: patch.adId ?? null,
     utmSource: patch.utmSource ?? null,
     utmMedium: patch.utmMedium ?? null,
     utmCampaign: patch.utmCampaign ?? null,

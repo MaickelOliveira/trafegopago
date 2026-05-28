@@ -24,7 +24,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
   // Detecta se está dentro de um cliente específico
   const clientMatch = pathname.match(/^\/gestor\/([^/]+)/);
   const activeClientId = clientMatch?.[1];
-  const staticRoutes = ["configuracoes", "crm", "financeiro", "social", "whatsapp"];
+  const staticRoutes = ["configuracoes", "crm", "financeiro", "social", "whatsapp", "utm-builder"];
   const isInsideClient = !!activeClientId && !staticRoutes.includes(activeClientId);
   const activeClient = isInsideClient ? clients.find((c) => c.id === activeClientId) : null;
 
@@ -232,6 +232,19 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               >
                 <span className="text-base leading-none">🔗</span>
                 Webhooks
+              </Link>
+
+              <Link
+                href={`/gestor/${activeClient.id}/utm-builder`}
+                className={clsx(
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition",
+                  pathname.startsWith(`/gestor/${activeClient.id}/utm-builder`)
+                    ? "bg-violet-50 text-violet-700 font-medium"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <span className="text-base leading-none">🧰</span>
+                UTM Builder
               </Link>
 
               <Link

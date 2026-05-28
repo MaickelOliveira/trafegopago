@@ -114,3 +114,97 @@ Transactions split into `receita`/`despesa`. Types and constants shared with cli
 - Mount a persistent volume at `/app/data` to preserve all JSON data across restarts
 - Set `GOOGLE_IMAGEN_API_KEY`, `NANOBANANA_API_KEY`, `TINTIM_*` etc. as EasyPanel environment variables
 - After deploy, configure UazAPI webhook to `https://{domain}/api/whatsapp/webhook` — the handler auto-forwards to `config.uazapiWebhookForward` (the previous n8n URL)
+
+criar instancia
+
+curl --request POST \
+  --url https://nexopro.uazapi.com/instance/create \
+  --header 'Accept: application/json' \
+  --header 'Content-Type: application/json' \
+  --header 'admintoken: hAb2D8eK9mCejxOJGRyWxImkTDe7xgUmxkOsySIyJV7ME3OmfX' \
+  --data '{
+  "name": "minha-instancia",
+  "adminField01": "custom-metadata-1",
+  "adminField02": "custom-metadata-2"
+}'
+
+Listar instancia 
+
+curl --request GET \
+  --url https://nexopro.uazapi.com/instance/all \
+  --header 'Accept: application/json' \
+  --header 'admintoken: hAb2D8eK9mCejxOJGRyWxImkTDe7xgUmxkOsySIyJV7ME3OmfX'
+
+  conectar instancia
+
+  curl --request POST \
+  --url https://nexopro.uazapi.com/instance/connect \
+  --header 'Accept: application/json' \
+  --header 'Content-Type: application/json' \
+  --data '{
+  "browser": "auto",
+  "systemName": "Minha Empresa",
+  "proxy_managed_country": "br",
+  "proxy_managed_state": "sp",
+  "proxy_managed_city": "campinas"
+}'
+
+Deconecta Instancia
+
+curl --request POST \
+  --url https://nexopro.uazapi.com/instance/disconnect \
+  --header 'Accept: application/json'
+
+  Deleta a instancia
+
+  curl --request DELETE \
+  --url https://nexopro.uazapi.com/instance \
+  --header 'Accept: application/json'
+
+  Consultar webhook
+  curl --request GET \
+  --url https://nexopro.uazapi.com/webhook \
+  --header 'Accept: application/json'
+
+  Configura webhook
+
+  curl --request POST \
+  --url https://nexopro.uazapi.com/webhook \
+  --header 'Accept: application/json' \
+  --header 'Content-Type: application/json' \
+  --data '{
+  "action": "add",
+  "enabled": true,
+  "url": "https://api.exemplo.com/webhook",
+  "events": [
+    "messages",
+    "groups"
+  ],
+  "excludeMessages": [
+    "wasSentByApi"
+  ]
+}'
+
+enviar mensagem
+
+curl --request POST \
+  --url https://nexopro.uazapi.com/send/text \
+  --header 'Accept: application/json' \
+  --header 'Content-Type: application/json' \
+  --data '{
+  "number": "5511999999999",
+  "text": "Olá! Como posso ajudar?"
+}'
+
+Enviar midia
+
+curl --request POST \
+  --url https://nexopro.uazapi.com/send/media \
+  --header 'Accept: application/json' \
+  --header 'Content-Type: application/json' \
+  --data '{
+  "number": "5544999999999",
+  "type": "video",
+  "file": "https://exemplo.com/video.mp4",
+  "text": "Confira este vídeo!"
+}'
