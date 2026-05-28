@@ -18,7 +18,7 @@ type Client = {
 const NEXO_GREEN = "#C4E91E";
 
 // classes reutilizáveis
-const NAV_INACTIVE = "text-[#999] hover:bg-white/[0.07] hover:text-white";
+const NAV_INACTIVE = "text-slate-600 hover:bg-slate-50 hover:text-slate-900";
 const NAV_ACTIVE   = "bg-[#C4E91E]/10 text-[#C4E91E] font-medium";
 
 export function GestorSidebar({ clients }: { clients: Client[] }) {
@@ -60,10 +60,10 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
   }
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-[#222222] bg-[#111111] sticky top-0">
+    <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white sticky top-0">
 
       {/* Logo */}
-      <div className="flex items-center border-b border-[#222222] px-5 py-4">
+      <div className="flex items-center border-b border-slate-100 px-5 py-4">
         <img src="/nexo-logo.png" alt="Nexo" className="h-10 w-auto object-contain" />
       </div>
 
@@ -74,7 +74,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
           <div className="px-3 pt-3 pb-2">
             <Link
               href="/gestor"
-              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-[#999] hover:bg-white/[0.07] hover:text-white transition"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -84,7 +84,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
           </div>
 
           {/* Header do cliente */}
-          <div className="px-5 pb-3 border-b border-[#222222]">
+          <div className="px-5 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
               <span
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-black"
@@ -93,8 +93,8 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
                 {activeClient.name.charAt(0).toUpperCase()}
               </span>
               <div className="min-w-0">
-                <p className="font-semibold text-white truncate text-sm">{activeClient.name}</p>
-                <p className="text-xs text-[#666]">CPL alvo: R$ {activeClient.cplTarget}</p>
+                <p className="font-semibold text-slate-900 truncate text-sm">{activeClient.name}</p>
+                <p className="text-xs text-slate-400">CPL alvo: R$ {activeClient.cplTarget}</p>
               </div>
             </div>
           </div>
@@ -268,7 +268,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
                 Financeiro
               </Link>
               {pathname.startsWith("/gestor/financeiro") && (
-                <div className="ml-4 border-l border-[#333] pl-3 space-y-0.5">
+                <div className="ml-4 border-l border-slate-200 pl-3 space-y-0.5">
                   {[
                     { href: "/gestor/financeiro",          label: "Visão geral" },
                     { href: "/gestor/financeiro/receitas", label: "Receitas" },
@@ -278,7 +278,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
                       key={item.href}
                       href={item.href}
                       className={clsx("block rounded-lg px-3 py-1.5 text-sm transition",
-                        pathname === item.href ? NAV_ACTIVE : "text-[#888] hover:bg-white/[0.07] hover:text-white")}
+                        pathname === item.href ? NAV_ACTIVE : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"})
                     >
                       {item.label}
                     </Link>
@@ -291,7 +291,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
       )}
 
       {/* Footer */}
-      <div className="border-t border-[#222222] p-3 space-y-0.5">
+      <div className="border-t border-slate-100 p-3 space-y-0.5">
         <Link
           href="/gestor/configuracoes"
           className={clsx("flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition",
@@ -306,7 +306,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
         <button
           onClick={logout}
           disabled={loggingOut}
-          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-[#999] hover:bg-red-900/20 hover:text-red-400 transition"
+          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-red-50 hover:text-red-600 transition"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
