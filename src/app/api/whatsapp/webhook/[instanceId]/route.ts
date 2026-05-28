@@ -192,11 +192,18 @@ async function sendMarkedMedia(
   names: string[],
   library: AgentMedia[],
 ): Promise<void> {
+  const libraryNames = library.map((m) => m.name?.toLowerCase());
   for (const name of names) {
     const media = library.find((m) => m.name?.toLowerCase() === name);
-    if (!media) continue;
+    if (!media) {
+      console.warn(`[sendMarkedMedia] Mídia "${name}" não encontrada. Library: ${JSON.stringify(libraryNames)}`);
+      continue;
+    }
     const payload = resolveMediaPayload(media.url);
-    await sendMedia(token, phone, media.type, payload, media.caption, media.filename);
+    const isBase64 = payload.startsWith("data:");
+    console.log(`[sendMarkedMedia] Enviando "${name}" (${media.type}) isBase64=${isBase64} url=${isBase64 ? "[base64]" : media.url}`);
+    const result = await sendMedia(token, phone, media.type, payload, media.caption, media.filename);
+    console.log(`[sendMarkedMedia] Resultado "${name}": ${result}`);
     await new Promise<void>((r) => setTimeout(r, 700));
   }
 }
@@ -694,8 +701,11 @@ export async function POST(
             const agCfg = getAgentConfigForConnection(getClientById(cid)!, connId);
             const clientName = getClientById(cid)?.name ?? cid;
             if (geminiText) {
-              addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
+              console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
               const { clean, names } = extractMediaMarkers(geminiText);
+              console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(names)} | library size: ${agCfg?.mediaLibrary?.length ?? 0}`);
+              // Salva texto limpo (sem marcadores) no histórico
+              addMessage(phone, { role: "assistant", content: clean || geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
               const textToSend = clean || geminiText;
               const chunks = agCfg?.splitMessages
                 ? splitMessage(textToSend, agCfg.maxMessageLength ?? 300)
@@ -707,6 +717,8 @@ export async function POST(
               }
               if (names.length > 0 && agCfg?.mediaLibrary?.length) {
                 await sendMarkedMedia(instanceUazToken, phone, names, agCfg.mediaLibrary);
+              } else if (names.length > 0) {
+                console.warn(`[webhook/${instanceId}] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
               }
             }
             if (agCfg && actions.length > 0) {
@@ -742,8 +754,11 @@ export async function POST(
     }
 
     if (geminiText) {
-      addMessage(phone, { role: "assistant", content: geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
+      console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
       const { clean, names } = extractMediaMarkers(geminiText);
+      console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(names)} | library size: ${agentCfg?.mediaLibrary?.length ?? 0}`);
+      // Salva texto limpo (sem marcadores) no histórico
+      addMessage(phone, { role: "assistant", content: clean || geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
       const textToSend = clean || geminiText;
       const chunks = agentCfg?.splitMessages
         ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
@@ -755,6 +770,8 @@ export async function POST(
       }
       if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
         await sendMarkedMedia(instanceUazToken, phone, names, agentCfg.mediaLibrary);
+      } else if (names.length > 0) {
+        console.warn(`[webhook/${instanceId}] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
       }
     }
     if (agentCfg && geminiActions.length > 0) {
