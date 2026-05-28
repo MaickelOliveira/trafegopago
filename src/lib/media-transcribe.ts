@@ -2,7 +2,7 @@
  * Faz download e descriptografia de mídia do WhatsApp (AES-256-CBC + HKDF),
  * depois transcreve/descreve via Gemini.
  *
- * Para áudio usa a Gemini File API (upload + fileData) — mais confiável
+ * Para áudio usa a Gemini File API (GoogleAIFileManager) — mais confiável
  * para OGG/Opus do que inlineData base64.
  * Para imagem/vídeo/documento usa inlineData base64.
  */
@@ -10,6 +10,7 @@ import { createDecipheriv, hkdfSync } from "crypto";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 
 const MEDIA_DIR = path.join(process.cwd(), "data", "media");
 
@@ -74,8 +75,8 @@ export async function downloadAndDecryptMedia(
     const decipher = createDecipheriv("aes-256-cbc", cipherKey, iv);
     decipher.setAutoPadding(true);
     const decrypted = Buffer.concat([decipher.update(encContent), decipher.final()]);
-    // Log primeiros bytes para validar formato (OGG = 4f676753 "OggS", JPEG = ffd8ff)
-    console.log(`[media-decrypt] Descriptografado: ${decrypted.length} bytes, magic=${decrypted.subarray(0, 4).toString("hex")}`);
+    // Primeiros bytes identificam o formato: OGG=4f676753 JPEG=ffd8ff PNG=89504e47
+    console.log(`[media-decrypt] OK: ${decrypted.length} bytes, magic=${decrypted.subarray(0, 4).toString("hex")}`);
     return decrypted;
   } catch (err) {
     console.error("[media-decrypt] Erro:", err instanceof Error ? err.message : String(err));
@@ -89,101 +90,49 @@ function cleanMime(mime: string): string {
 }
 
 /**
- * Faz upload do buffer para a Gemini File API via upload resumível.
- * Retorna { uri, name } ou null em caso de erro.
+ * Faz upload do buffer para a Gemini File API via GoogleAIFileManager e
+ * aguarda o estado ACTIVE. Retorna { uri, name } ou null.
  */
-async function uploadToGeminiFileAPI(
+async function uploadAudioToFileAPI(
   buffer: Buffer,
   mimeType: string,
   apiKey: string,
 ): Promise<{ uri: string; name: string } | null> {
   try {
-    // 1. Inicia upload resumível
-    const initRes = await fetch(
-      `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: {
-          "X-Goog-Upload-Protocol": "resumable",
-          "X-Goog-Upload-Command": "start",
-          "X-Goog-Upload-Header-Content-Length": buffer.length.toString(),
-          "X-Goog-Upload-Header-Content-Type": mimeType,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ file: { displayName: `audio-${Date.now()}` } }),
-        signal: AbortSignal.timeout(10_000),
-      }
-    );
-    console.log(`[gemini-file-api] init status=${initRes.status}`);
+    const fileManager = new GoogleAIFileManager(apiKey);
 
-    const uploadUrl = initRes.headers.get("x-goog-upload-url");
-    if (!uploadUrl) {
-      const body = await initRes.text().catch(() => "");
-      console.error("[gemini-file-api] Sem upload URL. Body:", body.slice(0, 300));
-      return null;
-    }
-
-    // 2. Envia o buffer
-    const uploadRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Length": buffer.length.toString(),
-        "X-Goog-Upload-Offset": "0",
-        "X-Goog-Upload-Command": "upload, finalize",
-      },
-      body: new Uint8Array(buffer),
-      signal: AbortSignal.timeout(20_000),
+    const uploadResult = await fileManager.uploadFile(buffer, {
+      mimeType,
+      displayName: `audio-${Date.now()}`,
     });
 
-    if (!uploadRes.ok) {
-      const errBody = await uploadRes.text().catch(() => "");
-      console.error(`[gemini-file-api] Upload falhou ${uploadRes.status}: ${errBody.slice(0, 200)}`);
-      return null;
-    }
+    const { name, uri } = uploadResult.file;
+    let state = uploadResult.file.state;
+    console.log(`[gemini-file-api] Upload OK: name=${name} state=${state} uri=${uri?.slice(0, 60)}`);
 
-    const fileData = await uploadRes.json() as Record<string, Record<string, unknown>>;
-    const file = fileData.file;
-    if (!file?.uri) {
-      console.error("[gemini-file-api] Sem URI na resposta:", JSON.stringify(fileData).slice(0, 300));
-      return null;
-    }
-
-    // 3. Aguarda processamento (tipicamente imediato para arquivos pequenos)
-    let fileState = String(file.state ?? "ACTIVE");
-    const fileName = String(file.name ?? "");
+    // Aguarda processamento (tipicamente imediato para arquivos pequenos)
     let retries = 0;
-    while (fileState === "PROCESSING" && retries < 15) {
+    while (state === FileState.PROCESSING && retries < 15) {
       await new Promise<void>((r) => setTimeout(r, 2000));
       try {
-        const statusRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${encodeURIComponent(apiKey)}`,
-          { signal: AbortSignal.timeout(5_000) }
-        );
-        const statusData = await statusRes.json() as Record<string, unknown>;
-        fileState = String(statusData.state ?? "");
-      } catch { /* retenta */ }
+        const updated = await fileManager.getFile(name);
+        state = updated.state;
+        console.log(`[gemini-file-api] Poll ${retries + 1}: state=${state}`);
+      } catch { /* retry silently */ }
       retries++;
     }
 
-    if (fileState === "FAILED") {
-      console.error("[gemini-file-api] Processamento falhou após", retries, "tentativas");
+    if (state === FileState.FAILED) {
+      console.error("[gemini-file-api] Processing FAILED:", name);
+      fileManager.deleteFile(name).catch(() => {});
       return null;
     }
 
-    console.log(`[gemini-file-api] Arquivo pronto: uri=${String(file.uri).slice(0, 80)} state=${fileState}`);
-    return { uri: String(file.uri), name: fileName };
+    return { uri, name };
   } catch (err) {
     console.error("[gemini-file-api] Erro no upload:", err instanceof Error ? err.message : String(err));
     return null;
   }
-}
-
-function deleteGeminiFile(fileName: string, apiKey: string): void {
-  if (!fileName) return;
-  fetch(
-    `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${encodeURIComponent(apiKey)}`,
-    { method: "DELETE" }
-  ).catch(() => {});
 }
 
 export async function transcribeMedia(
@@ -211,13 +160,15 @@ export async function transcribeMedia(
     "gemini-1.5-flash",
   ];
 
-  // ── Áudio: File API (upload + fileData) — Google recomenda para OGG/Opus ──
+  // ── Áudio: File API (upload + fileData URI) ────────────────────────────────
+  // Google recomenda File API para áudio OGG/Opus do WhatsApp.
   if (kind === "audio") {
-    console.log(`[media-transcribe] Áudio: tentando File API (${mediaBuffer.length} bytes, mime=${mimeType})`);
+    console.log(`[media-transcribe] Áudio: usando File API (${mediaBuffer.length} bytes, mime=${mimeType})`);
 
-    const fileInfo = await uploadToGeminiFileAPI(mediaBuffer, mimeType, apiKey);
+    const fileInfo = await uploadAudioToFileAPI(mediaBuffer, mimeType, apiKey);
 
     if (fileInfo) {
+      const fileManager = new GoogleAIFileManager(apiKey);
       for (const modelId of modelsToTry) {
         try {
           const model = genAI.getGenerativeModel({ model: modelId });
@@ -228,21 +179,21 @@ export async function transcribeMedia(
           const text = result.response.text().trim();
           if (text) {
             console.log(`[media-transcribe] File API + ${modelId} → "${text.slice(0, 120)}"`);
-            deleteGeminiFile(fileInfo.name, apiKey);
+            fileManager.deleteFile(fileInfo.name).catch(() => {});
             return text;
           }
         } catch (err) {
           console.error(`[media-transcribe] File API + ${modelId} falhou:`, err instanceof Error ? err.message : String(err));
         }
       }
-      deleteGeminiFile(fileInfo.name, apiKey);
+      new GoogleAIFileManager(apiKey).deleteFile(fileInfo.name).catch(() => {});
     }
 
-    // Fallback: inline base64 com múltiplos MIMEs (OGG nativo, Vorbis, WebM)
+    // Fallback: inline base64 com múltiplos MIMEs
     console.log("[media-transcribe] File API falhou — tentando inline base64");
     const base64 = mediaBuffer.toString("base64");
     const audioMimes = [rawMimeType, mimeType, "audio/ogg", "audio/webm", "audio/mp4"]
-      .filter((m, i, arr) => m && arr.indexOf(m) === i);
+      .filter((m, i, arr) => Boolean(m) && arr.indexOf(m) === i);
 
     for (const aMime of audioMimes) {
       for (const modelId of modelsToTry.slice(0, 3)) {
@@ -265,7 +216,39 @@ export async function transcribeMedia(
     return null;
   }
 
-  // ── Imagem / Vídeo / Documento: inline base64 ──────────────────────────────
+  // ── Vídeo / Documento: File API primeiro, inline como fallback ────────────
+  if (kind === "video" || kind === "document") {
+    console.log(`[media-transcribe] ${kind}: usando File API (${mediaBuffer.length} bytes, mime=${mimeType})`);
+
+    const fileInfo = await uploadAudioToFileAPI(mediaBuffer, mimeType, apiKey);
+
+    if (fileInfo) {
+      const fileManager = new GoogleAIFileManager(apiKey);
+      for (const modelId of modelsToTry) {
+        try {
+          const model = genAI.getGenerativeModel({ model: modelId });
+          const result = await model.generateContent([
+            { fileData: { mimeType, fileUri: fileInfo.uri } },
+            { text: prompts[kind] },
+          ]);
+          const text = result.response.text().trim();
+          if (text) {
+            console.log(`[media-transcribe] File API + ${modelId} (${kind}) → "${text.slice(0, 120)}"`);
+            fileManager.deleteFile(fileInfo.name).catch(() => {});
+            return text;
+          }
+        } catch (err) {
+          console.error(`[media-transcribe] File API + ${modelId} (${kind}) falhou:`, err instanceof Error ? err.message : String(err));
+        }
+      }
+      new GoogleAIFileManager(apiKey).deleteFile(fileInfo.name).catch(() => {});
+    }
+
+    // Fallback: inline base64
+    console.log(`[media-transcribe] File API falhou para ${kind} — tentando inline base64`);
+  }
+
+  // ── Imagem (e fallback para vídeo/doc): inline base64 ─────────────────────
   const base64 = mediaBuffer.toString("base64");
   for (const modelId of modelsToTry) {
     try {
@@ -276,11 +259,11 @@ export async function transcribeMedia(
       ]);
       const text = result.response.text().trim();
       if (text) {
-        console.log(`[media-transcribe] ${modelId} → "${text.slice(0, 120)}"`);
+        console.log(`[media-transcribe] inline ${modelId} (${kind}) → "${text.slice(0, 120)}"`);
         return text;
       }
     } catch (err) {
-      console.error(`[media-transcribe] ${modelId} falhou:`, err instanceof Error ? err.message : String(err));
+      console.error(`[media-transcribe] inline ${modelId} (${kind}) falhou:`, err instanceof Error ? err.message : String(err));
     }
   }
   return null;
