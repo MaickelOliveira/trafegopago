@@ -11,6 +11,7 @@ import { runGeminiAgent } from "@/lib/gemini-agent";
 import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
 import { upsertPending, getPendingForPhone, getDuePending, markDone, markProcessing, cancelPendingForPhone } from "@/lib/pending-responses";
 import { sendCapiEvent } from "@/lib/meta-capi";
+import { matchClick } from "@/lib/wa-clicks";
 
 type Body = Record<string, unknown>;
 
@@ -190,14 +191,34 @@ export async function POST(req: NextRequest) {
     // Só atualiza o nome se for lead novo ou se o nome atual ainda é apenas o número
     const shouldUpdateName = isNew || (existingLead?.name === existingLead?.phone || existingLead?.name === phone);
 
-    // Extrai rastreamento oculto da primeira mensagem do lead (payload [_:...])
-    const tracking = isNew ? parseWaTracking(text) : null;
-    const utmSourceRaw = (tracking?.utmSource ?? "").toLowerCase();
-    const metaSources  = ["facebook", "instagram", "fb", "meta"];
-    const adPlatform   = tracking
-      ? (tracking.fbclid || metaSources.includes(utmSourceRaw) ? "meta"
-        : tracking.gclid  || utmSourceRaw === "google"          ? "google"
-        : null)
+    // Para leads novos: tenta associar a um clique recente via pixel/redirect (matchClick),
+    // e cai back no payload inline da mensagem [_:...] se não houver match.
+    let tracking: ReturnType<typeof parseWaTracking> = null;
+    if (isNew) {
+      const click = matchClick(cid, phone);
+      if (click) {
+        tracking = {
+          utmSource:   click.utmSource,
+          utmCampaign: click.utmCampaign,
+          utmMedium:   click.utmMedium,
+          utmContent:  click.utmContent,
+          utmTerm:     click.utmTerm,
+          fbclid:      click.fbclid,
+          gclid:       click.gclid,
+        };
+      } else {
+        tracking = parseWaTracking(text);
+      }
+    }
+
+    const adPlatform = tracking
+      ? ((): "meta" | "google" | null => {
+          const s = (tracking.utmSource ?? "").toLowerCase();
+          const metas = ["facebook", "instagram", "fb", "meta"];
+          return tracking.fbclid || metas.includes(s) ? "meta"
+            : tracking.gclid  || s === "google"       ? "google"
+            : null;
+        })()
       : undefined;
 
     const newLead = upsertLeadByPhone(cid, phone, {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/lib/clients";
 import { upsertLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
+import { recordClick } from "@/lib/wa-clicks";
 
 type PixelEvent = {
   clientId?: string;
@@ -20,7 +21,7 @@ type PixelEvent = {
   gclid?: string;
 };
 
-const LEAD_EVENTS = ["Lead", "FormSubmit", "WhatsAppClick"];
+const LEAD_EVENTS = ["Lead", "FormSubmit"];
 
 export async function POST(req: NextRequest) {
   let body: PixelEvent;
@@ -34,8 +35,25 @@ export async function POST(req: NextRequest) {
   const { clientId, event, phone, name, email, source, url,
     utmSource, utmMedium, utmCampaign, utmContent, utmTerm, fbclid, gclid } = body;
 
+  if (!clientId) return NextResponse.json({ ok: true });
+
+  // Clique em link de WhatsApp — salva click temporário para o webhook associar depois
+  if (event === "WhatsAppClick") {
+    recordClick({
+      clientId,
+      utmSource:   utmSource   ?? null,
+      utmCampaign: utmCampaign ?? null,
+      utmMedium:   utmMedium   ?? null,
+      utmContent:  utmContent  ?? null,
+      utmTerm:     utmTerm     ?? null,
+      fbclid:      fbclid      ?? null,
+      gclid:       gclid       ?? null,
+    });
+    return NextResponse.json({ ok: true });
+  }
+
   // Só cria lead em eventos relevantes que tenham telefone
-  if (!clientId || !LEAD_EVENTS.includes(event ?? "") || !phone?.trim()) {
+  if (!LEAD_EVENTS.includes(event ?? "") || !phone?.trim()) {
     return NextResponse.json({ ok: true });
   }
 
