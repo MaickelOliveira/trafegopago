@@ -322,21 +322,20 @@ function extractMessage(body: Body): { phone: string; text: string; fromMe: bool
       // UazapiGO envia: { type:"media", messageType:"AudioMessage", mediaType:"ptt",
       //   message: { mimetype:"audio/ogg...", PTT:true, content:{URL:"..."} } }
       const singularSrc = msgObj ?? body;
-      // O objeto aninhado body.message.message contém mimetype, PTT, content.URL
-      const nestedMsg = (singularSrc.message as Record<string, unknown> | undefined) ?? {};
-      const nestedContent = (nestedMsg.content as Record<string, unknown> | undefined) ?? {};
+      // UazapiGO nexopro: body.message.content contém URL, mimetype, mediaKey, PTT
+      const singularContent = (singularSrc.content as Record<string, unknown> | undefined) ?? {};
 
       const singularType      = String(singularSrc.type ?? "").toLowerCase();       // "media"
       const singularMsgType2  = String(singularSrc.messageType ?? "").toLowerCase(); // "audiomessage"
       const singularMediaType = String(singularSrc.mediaType ?? "").toLowerCase();   // "ptt"
       const singularMime = String(
         singularSrc.mimetype ?? singularSrc.mimeType ??
-        nestedMsg.mimetype ?? nestedMsg.mimeType ?? ""
+        singularContent.mimetype ?? singularContent.mimeType ?? ""
       ).toLowerCase(); // "audio/ogg; codecs=opus"
       const singularMediaUrl =
         String(singularSrc.media ?? singularSrc.mediaUrl ?? singularSrc.url ?? singularSrc.link ??
-          nestedMsg.url ?? nestedMsg.directPath ?? nestedContent.URL ?? "") || undefined;
-      const isPtt = singularSrc.ptt === true || nestedMsg.PTT === true || nestedMsg.ptt === true;
+          singularContent.URL ?? singularContent.url ?? singularContent.directPath ?? "") || undefined;
+      const isPtt = singularSrc.ptt === true || singularContent.PTT === true || singularContent.ptt === true;
 
       let singularMsgTypeFinal: string | undefined;
       let singularMedia: string | undefined;
@@ -575,41 +574,49 @@ export async function POST(
       const gemKey = getGeminiApiKey(agCfgForMedia?.geminiApiKey ?? undefined);
 
       if (gemKey) {
-        // ── Extração de URL/chave em TODOS os formatos UazapiGO ─────────────
-        // Formato 1 (singular): body.message.message.content.URL + body.message.message.mediaKey
+        // ── Extração de URL/chave: cobre TODOS os formatos UazapiGO conhecidos ─
+        // Formato 1 (singular): body.message.content.URL + mediaKey (UazapiGO nexopro)
         const msgBodyObj = (body.message as Record<string, unknown> | undefined) ?? {};
-        const nestedMsgObj = (msgBodyObj.message as Record<string, unknown> | undefined) ?? {};
-        const nestedContent = (nestedMsgObj.content as Record<string, unknown> | undefined) ?? {};
+        const msgBodyContent = (msgBodyObj.content as Record<string, unknown> | undefined) ?? {};
 
-        // Formato 2 (array): body.messages[0].body (CDN URL) + body.messages[0].mediaKey
+        // Formato 2 (array): body.messages[0].* com subníveis
         const msgArr = body.messages as Record<string, unknown>[] | undefined;
         const msg0 = (Array.isArray(msgArr) && msgArr.length > 0 ? msgArr[0] : {}) as Record<string, unknown>;
         const msg0Nested = (msg0.message as Record<string, unknown> | undefined) ?? {};
         const msg0Content = (msg0Nested.content as Record<string, unknown> | undefined) ?? {};
 
-        // mediaKey: singular → array → nested
+        // Log diagnóstico: mostra os campos brutos que temos
+        console.log(`[webhook/${instanceId}] [media-diag] msg0 keys=${JSON.stringify(Object.keys(msg0))} body=${String(msg0.body ?? "").slice(0, 80)} media=${String(msg0.media ?? "")} mediaKey=${String(msg0.mediaKey ?? "").slice(0, 20)}`);
+        console.log(`[webhook/${instanceId}] [media-diag] msgBodyContent keys=${JSON.stringify(Object.keys(msgBodyContent))} msgBodyObj keys=${JSON.stringify(Object.keys(msgBodyObj))}`);
+
+        // mediaKey: body.message.content.mediaKey (UazapiGO nexopro) + fallbacks
         const mediaKeyB64 = String(
-          nestedMsgObj.mediaKey ?? msg0.mediaKey ?? msg0Nested.mediaKey ?? ""
+          msgBodyContent.mediaKey ?? msg0.mediaKey ?? msg0Nested.mediaKey ??
+          msgBodyObj.mediaKey ?? body.mediaKey ?? ""
         );
 
-        // CDN URL (criptografada, requer HKDF): singular content.URL → array body (quando é https://)
-        const textIsUrl = text && msgType &&
-          (text.startsWith("https://") || text.startsWith("http://"));
-        const cdnUrl = String(
-          nestedContent.URL ?? nestedMsgObj.url ??
-          msg0Content.URL ?? msg0Nested.url ??
-          (textIsUrl ? text : "")
+        // CDN URL: criptografada, precisa HKDF. Pode estar em vários campos.
+        const bodyAsUrl = typeof body.body === "string" && (body.body.startsWith("https://") || body.body.startsWith("http://")) ? body.body : "";
+        const msg0BodyAsUrl = typeof msg0.body === "string" && (msg0.body.startsWith("https://") || msg0.body.startsWith("http://")) ? msg0.body : "";
+        const textIsUrl = !!text && !!msgType && (text.startsWith("https://") || text.startsWith("http://"));
+        const cdnUrl = (
+          String(msgBodyContent.URL ?? msgBodyContent.url ?? msgBodyContent.directPath ?? "") ||
+          String(msg0Content.URL ?? msg0Nested.url ?? msg0Nested.directPath ?? "") ||
+          msg0BodyAsUrl || bodyAsUrl || (textIsUrl ? text : "")
         );
 
-        // URL direta (UazapiGO pré-descriptografada): mediaUrl da extração → campos do msg0
-        const directUrl = mediaUrl ??
-          String(msg0.media ?? msg0.mediaUrl ?? msg0.url ?? msg0.link ?? "") ??
-          "";
+        // URL direta (já descriptografada pelo UazapiGO ou pré-assinada)
+        const directUrl = String(
+          mediaUrl ??
+          msg0.media ?? msg0.mediaUrl ?? msg0.url ?? msg0.link ??
+          msgBodyObj.media ?? msgBodyObj.url ?? ""
+        );
 
-        // Mimetype
+        // Mimetype: body.message.content.mimetype (UazapiGO nexopro) + fallbacks
         const mediaMimetype = String(
-          nestedMsgObj.mimetype ?? nestedMsgObj.mimeType ??
+          msgBodyContent.mimetype ?? msgBodyContent.mimeType ??
           msg0.mimetype ?? msg0.mimeType ?? msg0Nested.mimetype ??
+          msgBodyObj.mimetype ?? msgBodyObj.mimeType ??
           (msgType === "audio" ? "audio/ogg" :
            msgType === "image" ? "image/jpeg" :
            msgType === "video" ? "video/mp4" : "application/octet-stream")
@@ -624,7 +631,7 @@ export async function POST(
           msgType === "document" ? "document" : "audio"
         ) as import("@/lib/media-transcribe").MediaKind;
 
-        console.log(`[webhook/${instanceId}] Transcrição síncrona kind=${kind} cdnUrl=${cdnUrl.slice(0, 80)} directUrl=${directUrl.slice(0, 80)} hasKey=${!!mediaKeyB64} mediaMime=${mediaMimetype}`);
+        console.log(`[webhook/${instanceId}] Transcrição síncrona kind=${kind} cdnUrl=${cdnUrl.slice(0, 100)} directUrl=${directUrl.slice(0, 100)} hasKey=${!!mediaKeyB64} mime=${mediaMimetype}`);
 
         if (cdnUrl || directUrl) {
           try {
@@ -653,8 +660,8 @@ export async function POST(
                   }
                 }
 
-                // 3. Fallback: tenta CDN sem mediaKey (download direto do URL criptografado pode funcionar em alguns casos)
-                if (!buffer && cdnUrl && !mediaKeyB64) {
+                // 3. Fallback: tenta CDN sem mediaKey (UazapiGO pode servir URL pré-autenticada)
+                if (!buffer && cdnUrl) {
                   try {
                     const res = await fetch(cdnUrl, {
                       headers: { "User-Agent": "WhatsApp/2.24.10.0" },
@@ -662,13 +669,27 @@ export async function POST(
                     });
                     if (res.ok) {
                       buffer = Buffer.from(await res.arrayBuffer());
-                      console.log(`[webhook/${instanceId}] CDN sem decrypt OK: ${buffer.length} bytes`);
+                      console.log(`[webhook/${instanceId}] CDN direto OK: ${buffer.length} bytes`);
+                    } else {
+                      console.warn(`[webhook/${instanceId}] CDN direto HTTP ${res.status}`);
                     }
                   } catch { /* silently ignore */ }
                 }
 
+                // 4. Fallback: base64 embutido no campo body/text da mensagem
                 if (!buffer) {
-                  console.warn(`[webhook/${instanceId}] Nenhum buffer obtido para kind=${kind}`);
+                  const rawBase64Candidate = typeof msg0.body === "string" ? msg0.body : (typeof body.body === "string" ? body.body : "");
+                  const isBase64 = rawBase64Candidate.length > 100 && !rawBase64Candidate.includes(" ") && /^[A-Za-z0-9+/=]+$/.test(rawBase64Candidate.slice(0, 100));
+                  if (isBase64) {
+                    try {
+                      buffer = Buffer.from(rawBase64Candidate, "base64");
+                      console.log(`[webhook/${instanceId}] Base64 inline OK: ${buffer.length} bytes`);
+                    } catch { /* silently ignore */ }
+                  }
+                }
+
+                if (!buffer) {
+                  console.warn(`[webhook/${instanceId}] Nenhum buffer obtido para kind=${kind} — verifique /api/debug/webhooks para ver o payload`);
                   return null;
                 }
 
