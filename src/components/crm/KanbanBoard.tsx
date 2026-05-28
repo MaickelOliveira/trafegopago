@@ -875,7 +875,7 @@ export function KanbanBoard({
 
                       <div className="flex items-center gap-1 flex-wrap mb-1">
                         <PlatformIcon lead={lead} />
-                        {lead.campaignName && (
+                        {lead.campaignName && !["google","meta","facebook","instagram","fb"].includes(lead.campaignName.toLowerCase()) && (
                           <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 truncate max-w-[100px]">
                             {lead.campaignName}
                           </span>
