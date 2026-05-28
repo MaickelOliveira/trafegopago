@@ -19,6 +19,7 @@ type Client = {
   tintimWebhookForward?: string;
   pixelId?: string;
   capiToken?: string;
+  metaPageId?: string;
 };
 
 const FUNNEL_OPTIONS: { value: FunnelType; label: string; desc: string; icon: string }[] = [
@@ -176,7 +177,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
 
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
-    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "", capiToken: "",
+    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "", capiToken: "", metaPageId: "",
   });
   const [form, setForm] = useState(empty());
 
@@ -953,6 +954,17 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                 <p className="text-[10px] text-blue-400">
                   Gerado em Gerenciador de Eventos → Fontes de Dados → seu Pixel → Configurações → Gerar token de acesso.
                   Se não preenchido, usa o token global de APIs &amp; Tokens.
+                </p>
+
+                <Field
+                  label="ID da Página do Facebook (Lead Ads)"
+                  value={form.metaPageId ?? ""}
+                  onChange={(v) => setForm((f) => ({ ...f, metaPageId: v }))}
+                  placeholder="123456789012345"
+                />
+                <p className="text-[10px] text-blue-400">
+                  Necessário para vincular leads de formulários nativos do Meta (Lead Ads) a este cliente.
+                  Encontre em: Gerenciador de Negócios → Páginas → selecione a página → About → Page ID.
                 </p>
               </div>
 
