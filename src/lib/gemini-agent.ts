@@ -160,39 +160,59 @@ export async function runGeminiAgent(
   const mediaLibrary = agentCfg.mediaLibrary;
   const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary);
 
-  // Tenta modelos em ordem de preferência (sem chamada de teste — economiza quota)
   const modelsToTry = [
-    "gemini-2.5-flash-preview-05-20",
-    "gemini-2.5-flash",
-    "gemini-2.5-pro-preview-05-06",
     "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
     "gemini-1.5-pro",
   ];
 
-  const usedModel = modelsToTry[0];
-  const model = genAI.getGenerativeModel({
-    model: usedModel,
-    systemInstruction: sysPrompt,
-    tools: TOOLS,
-  });
-
-  console.log(`[gemini-agent] Usando modelo: ${usedModel} clientId=${clientId} phone=${phone}`);
-
   // Converte histórico para formato Gemini
-  // Gemini exige que o histórico comece com 'user' — remove mensagens iniciais do assistente
-  const rawHistory = history.slice(-10).map((m) => ({
-    role: m.role === "user" ? "user" : "model",
-    parts: [{ text: m.content }],
-  }));
+  // A mensagem atual já foi salva em conversations.json antes de chegar aqui —
+  // se incluirmos ela no histórico E enviarmos via sendMessage, o Gemini recebe
+  // dois turns consecutivos do usuário e rejeita. Por isso removemos o último
+  // item se for do usuário (ele será enviado via sendMessage).
+  const historyWithoutCurrent =
+    history.length > 0 && history[history.length - 1].role === "user"
+      ? history.slice(0, -1)
+      : history;
+
+  // Mescla mensagens consecutivas do mesmo papel (pode ocorrer com batching)
+  const mergedHistory: { role: "user" | "model"; parts: { text: string }[] }[] = [];
+  for (const m of historyWithoutCurrent.slice(-20)) {
+    const role = m.role === "user" ? "user" : "model";
+    if (mergedHistory.length > 0 && mergedHistory[mergedHistory.length - 1].role === role) {
+      mergedHistory[mergedHistory.length - 1].parts[0].text += "\n" + m.content;
+    } else {
+      mergedHistory.push({ role, parts: [{ text: m.content }] });
+    }
+  }
+
+  // Remove tail se terminar com user (startChat exige que termine com model ou vazio)
+  if (mergedHistory.length > 0 && mergedHistory[mergedHistory.length - 1].role === "user") {
+    mergedHistory.pop();
+  }
+
+  const rawHistory = mergedHistory.slice(-10);
   const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
   const geminiHistory = firstUserIdx > 0 ? rawHistory.slice(firstUserIdx) : rawHistory;
 
-  const chat = model.startChat({ history: geminiHistory });
-
   const actions: GeminiAction[] = [];
   let finalText = "";
+  let succeeded = false;
 
-  try {
+  for (const usedModel of modelsToTry) {
+    const model = genAI.getGenerativeModel({
+      model: usedModel,
+      systemInstruction: sysPrompt,
+      tools: TOOLS,
+    });
+
+    console.log(`[gemini-agent] Tentando modelo: ${usedModel} clientId=${clientId} phone=${phone}`);
+
+    const chat = model.startChat({ history: geminiHistory });
+
+    try {
     let response = await chat.sendMessage(userMessage);
     let candidate = response.response;
 
@@ -380,11 +400,30 @@ export async function runGeminiAgent(
 
     // Cancela follow-ups pendentes quando lead responde
     cancelFollowUpsForPhone(clientId, phone);
+    succeeded = true;
+    break; // modelo funcionou — sai do loop
 
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.error(`[gemini-agent] ERRO na chamada ao Gemini: ${errMsg}`);
-    console.error(`[gemini-agent] Detalhes: modelo=${usedModel} clientId=${clientId} phone=${phone} apiKey=${apiKey ? apiKey.slice(0,8) + "..." : "MISSING"}`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const isModelUnavailable =
+        errMsg.includes("404") ||
+        errMsg.toLowerCase().includes("not found") ||
+        errMsg.toLowerCase().includes("not supported") ||
+        errMsg.toLowerCase().includes("not available");
+
+      if (isModelUnavailable) {
+        console.warn(`[gemini-agent] Modelo ${usedModel} indisponível — tentando próximo...`);
+        continue;
+      }
+
+      console.error(`[gemini-agent] ERRO na chamada ao Gemini: ${errMsg}`);
+      console.error(`[gemini-agent] Detalhes: modelo=${usedModel} clientId=${clientId} phone=${phone} apiKey=${apiKey ? apiKey.slice(0,8) + "..." : "MISSING"}`);
+      return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
+    }
+  } // fim do loop de modelos
+
+  if (!succeeded) {
+    console.error(`[gemini-agent] Todos os modelos falharam. clientId=${clientId} phone=${phone}`);
     return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
   }
 
