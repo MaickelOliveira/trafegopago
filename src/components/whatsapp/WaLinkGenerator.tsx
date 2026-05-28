@@ -59,7 +59,7 @@ export function WaLinkGenerator({ clientId, clientName, pixelId }: Props) {
       <div>
         <h1 className="text-xl font-bold text-slate-900">Rastreamento de WhatsApp — {clientName}</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Instale o pixel em qualquer landing page. Ele captura UTMs, dispara Meta Pixel + Google Ads, e registra o lead automaticamente quando a pessoa mandar a primeira mensagem.
+          Instale o pixel em qualquer landing page. Ele captura UTMs, dispara Google Ads no clique e envia o evento Lead para o Meta via CAPI somente quando o lead entra no CRM — garantindo qualidade máxima nos dados.
         </p>
       </div>
 
@@ -67,9 +67,9 @@ export function WaLinkGenerator({ clientId, clientName, pixelId }: Props) {
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 space-y-1">
         <p className="font-semibold text-slate-700">Como funciona</p>
         <p>1. Pixel carrega na página → captura <code className="bg-white px-1 rounded">utm_source</code>, <code className="bg-white px-1 rounded">fbclid</code>, <code className="bg-white px-1 rounded">gclid</code> etc.</p>
-        <p>2. Lead clica no botão → dispara <strong>Meta Pixel Lead</strong> + <strong>Google Ads conversion</strong> no browser</p>
-        <p>3. Redireciona para wa.me via servidor (UTMs ficam salvos — a mensagem chega limpa, sem código)</p>
-        <p>4. Quando o lead manda a 1ª mensagem → a plataforma associa automaticamente e envia <strong>Lead para Meta CAPI</strong></p>
+        <p>2. Lead clica no botão → dispara <strong>Google Ads conversion</strong> no browser + salva UTMs no servidor</p>
+        <p>3. Redireciona para wa.me (mensagem limpa, sem código oculto)</p>
+        <p>4. Lead manda a 1ª mensagem → entra no CRM → plataforma envia <strong>Lead para Meta via CAPI</strong> (só nesse momento — lead confirmado)</p>
       </div>
 
       {/* Configuração */}

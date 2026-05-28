@@ -110,19 +110,16 @@ function buildScript(cfg: ScriptConfig): string {
   }
 
   // ── Disparo de pixels ─────────────────────────────────────────────────────────
+  // NOTA: Meta Pixel "Lead" NÃO é disparado aqui — ele só dispara via CAPI no servidor
+  // quando o lead entra de fato no CRM (1ª mensagem recebida no WhatsApp).
+  // Isso evita contabilizar quem clicou mas desistiu antes de enviar mensagem.
 
   function firePixels(utms) {
-    // Meta Pixel
-    if (w.fbq && _cfg.pixelId) {
-      fbq("track", "Lead", {
-        content_name:     utms.utmCampaign || "WhatsApp",
-        content_category: utms.utmSource   || "direto",
-      });
-    }
-    // Google Ads
+    // Google Ads — dispara no clique (padrão do mercado para conversão de clique em WA)
     if (w.gtag && _cfg.gadsId && _cfg.gadsLabel) {
       gtag("event", "conversion", { send_to: _cfg.gadsId + "/" + _cfg.gadsLabel });
     }
+    void utms; // utms disponível para uso futuro (ex: enhanced conversions)
   }
 
   // ── Rastreamento automático de links wa.me ────────────────────────────────────
