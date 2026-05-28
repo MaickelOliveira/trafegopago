@@ -10,7 +10,7 @@ export default async function GestorLayout({ children }: { children: React.React
   const clients = getClients().map(({ passwordHash: _, ...c }) => c);
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-[#0d0d0d]">
       <GestorSidebar clients={clients} />
       <main className="flex-1 min-w-0 overflow-auto">{children}</main>
     </div>
