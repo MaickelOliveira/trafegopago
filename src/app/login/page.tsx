@@ -37,12 +37,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600">
-            <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">TráfegoPago</h1>
+          <img src="/nexo-logo.png" alt="Nexo" className="mx-auto mb-4 h-12 w-auto object-contain" />
           <p className="mt-1 text-sm text-slate-500">Entre com suas credenciais</p>
         </div>
 
@@ -56,7 +51,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoFocus
-                className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-[#C4E91E] focus:ring-2 focus:ring-[#C4E91E]/20 transition"
                 placeholder="seu@email.com"
               />
             </div>
@@ -67,7 +62,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-[#C4E91E] focus:ring-2 focus:ring-[#C4E91E]/20 transition"
                 placeholder="••••••••"
               />
             </div>
@@ -81,7 +76,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition"
+              className="w-full rounded-lg bg-[#C4E91E] px-4 py-2.5 text-sm font-semibold text-black hover:bg-[#b5d81a] disabled:opacity-60 transition"
             >
               {loading ? "Entrando..." : "Entrar"}
             </button>

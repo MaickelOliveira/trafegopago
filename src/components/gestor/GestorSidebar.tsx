@@ -58,13 +58,8 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white sticky top-0">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 border-b border-slate-100 px-5 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-          <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-          </svg>
-        </div>
-        <span className="font-semibold text-slate-900">TráfegoPago</span>
+      <div className="flex items-center border-b border-slate-100 px-5 py-3">
+        <img src="/nexo-logo.png" alt="Nexo" className="h-8 w-auto object-contain" />
       </div>
 
       {/* ── MODO CLIENTE: dentro de /gestor/[clientId] ── */}

@@ -13,11 +13,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TráfegoPago — Dashboard de Campanhas",
+  title: "Nexo — Dashboard de Campanhas",
   description: "Dashboard inteligente para gestão de tráfego pago: Meta Ads e Google Ads",
   icons: {
-    icon: "/icon.svg",
-    shortcut: "/icon.svg",
+    icon: "/nexo-logo.png",
+    shortcut: "/nexo-logo.png",
   },
 };
 
