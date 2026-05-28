@@ -10,7 +10,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("tp_session")?.value;
 
-  const isPublic = pathname === "/" || pathname.startsWith("/login");
+  const isPublic = pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/briefing");
   const isGestor = pathname.startsWith("/gestor");
   const isCliente = pathname.startsWith("/cliente");
 
