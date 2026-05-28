@@ -310,7 +310,8 @@ export async function sendMedia(
   const endpoint = type === "image" ? "image" : type === "audio" ? "audio" : type === "video" ? "video" : "document";
   try {
     const isBase64 = urlOrBase64.startsWith("data:") || !urlOrBase64.startsWith("http");
-    const body: Record<string, unknown> = { phone, caption };
+    // UazapiGO usa "number" (igual ao sendText), não "phone"
+    const body: Record<string, unknown> = { number: phone, caption };
     if (type === "document" && filename) body.filename = filename;
     if (isBase64) {
       body.base64 = urlOrBase64;
@@ -322,8 +323,13 @@ export async function sendMedia(
       headers: { "Content-Type": "application/json", token },
       body: JSON.stringify(body),
     });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.warn(`[sendMedia] ${res.status} endpoint=${endpoint} resp=${txt.slice(0, 200)}`);
+    }
     return res.ok;
-  } catch {
+  } catch (e) {
+    console.error("[sendMedia] EXCEPTION:", e);
     return false;
   }
 }
