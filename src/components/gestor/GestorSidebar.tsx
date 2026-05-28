@@ -63,8 +63,8 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
     <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white sticky top-0">
 
       {/* Logo */}
-      <div className="flex items-center border-b border-slate-100 px-5 py-4">
-        <img src="/nexo-logo.png" alt="Nexo" className="h-10 w-auto object-contain" />
+      <div className="flex items-center border-b border-slate-100 px-5 py-5">
+        <img src="/nexo-logo.png" alt="Nexo" className="h-16 w-auto object-contain" />
       </div>
 
       {/* ── MODO CLIENTE ── */}
