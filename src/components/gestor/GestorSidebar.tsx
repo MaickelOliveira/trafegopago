@@ -278,7 +278,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
                       key={item.href}
                       href={item.href}
                       className={clsx("block rounded-lg px-3 py-1.5 text-sm transition",
-                        pathname === item.href ? NAV_ACTIVE : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"})
+                        pathname === item.href ? NAV_ACTIVE : "text-slate-500 hover:bg-slate-50 hover:text-slate-700")}
                     >
                       {item.label}
                     </Link>
