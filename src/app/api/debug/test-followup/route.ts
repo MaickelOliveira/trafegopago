@@ -2,18 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClients, getAllAgentConfigs, getConfig } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getHistory } from "@/lib/conversations";
-import { sendText } from "@/lib/uazapi";
 import { generateFollowUpAI } from "@/lib/gemini-agent";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 
 /**
- * POST /api/debug/test-followup
- * Body: { clientId: "sbcie", phone: "5544..." }
+ * GET /api/debug/test-followup?clientId=sbcie&phone=5544...&send=1
  *
  * Executa o fluxo completo de follow-up AI ao vivo e retorna cada passo.
+ * Sem send=1 apenas testa a geração da IA sem enviar.
  */
-export async function POST(req: NextRequest) {
-  const { clientId, phone } = await req.json();
+export async function GET(req: NextRequest) {
+  const { searchParams } = req.nextUrl;
+  const clientId = searchParams.get("clientId") ?? "sbcie";
+  const phone = searchParams.get("phone") ?? "";
+  const doSend = searchParams.get("send") === "1";
 
   const client = getClients().find((c) => c.id === clientId);
   if (!client) return NextResponse.json({ error: "cliente não encontrado" }, { status: 404 });
@@ -71,7 +73,19 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Passo 4: Envia via UazAPI
+  // Passo 4: Envia via UazAPI (apenas se send=1)
+  if (!doSend) {
+    return NextResponse.json({
+      step: "ready_to_send",
+      success: true,
+      note: "Adicione &send=1 na URL para enviar de verdade",
+      aiMsg,
+      phone: phone.replace(/\D/g, ""),
+      connectionId: conn.id,
+      connType: conn.type,
+    });
+  }
+
   let sendOk = false;
   let sendError: string | null = null;
   const globalCfg = getConfig();
