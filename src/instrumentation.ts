@@ -38,24 +38,36 @@ export async function register() {
           try {
             const lead = getLeadByPhone(fu.clientId, fu.phone);
 
+            console.log(`[cron] follow-up id=${fu.id} phone=${fu.phone} type=${fu.messageType} connId=${agCfg.whatsappConnectionId}`);
+
             if (fu.messageType === "template") {
               // Envia template Meta aprovado
               const { getTemplateById, sendTemplate } = await import("./lib/waba-templates");
               const tpl = fu.templateId ? getTemplateById(fu.templateId) : null;
               if (tpl && tpl.status === "APPROVED" && tpl.phoneNumberId && tpl.metaToken) {
                 await sendTemplate(tpl.phoneNumberId, tpl.metaToken, fu.phone, tpl.name, tpl.language);
+              } else {
+                console.warn(`[cron] template não encontrado/aprovado para fu=${fu.id}`);
               }
             } else if (fu.messageType === "ai") {
               // Gera follow-up com IA baseado no histórico da conversa
               const history = getHistory(fu.phone);
               const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
-              const aiMsg = await generateFollowUpAI(history, lead?.name, client.name, apiKey);
-              if (aiMsg) {
-                await sendMessage(fu.phone, aiMsg, fu.clientId, agCfg.whatsappConnectionId);
+              if (!apiKey) {
+                console.error(`[cron] sem geminiApiKey para fu=${fu.id} — follow-up AI não enviado`);
+              } else {
+                const aiMsg = await generateFollowUpAI(history, lead?.name, client.name, apiKey);
+                if (aiMsg) {
+                  console.log(`[cron] AI gerou mensagem para ${fu.phone}: "${aiMsg.slice(0, 80)}"`);
+                  await sendMessage(fu.phone, aiMsg, fu.clientId, agCfg.whatsappConnectionId);
+                } else {
+                  console.error(`[cron] generateFollowUpAI retornou null para fu=${fu.id}`);
+                }
               }
             } else {
               // Texto fixo com interpolação de variáveis
               const interpolated = interpolateFollowUp(fu.message, lead);
+              console.log(`[cron] enviando texto fixo para ${fu.phone}: "${interpolated.slice(0, 80)}"`);
               await sendMessage(fu.phone, interpolated, fu.clientId, agCfg.whatsappConnectionId);
             }
 

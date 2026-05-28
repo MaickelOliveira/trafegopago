@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAllFollowUps, getDueFollowUps } from "@/lib/followups";
-import { getClients, getAllAgentConfigs } from "@/lib/clients";
+import { getClients, getAllAgentConfigs, getConfig } from "@/lib/clients";
 
 export async function GET() {
   const all = getAllFollowUps();
   const due = getDueFollowUps();
+  const globalConfig = getConfig();
 
   const clients = getClients().map((client) => {
     const cfgs = getAllAgentConfigs(client);
@@ -15,10 +16,13 @@ export async function GET() {
         whatsappConnectionId: c.whatsappConnectionId,
         enabled: c.enabled,
         followUpEnabled: c.followUpEnabled,
+        hasGeminiKey: !!(c.geminiApiKey || globalConfig.geminiApiKey),
+        geminiKeySource: c.geminiApiKey ? "client" : globalConfig.geminiApiKey ? "global" : "MISSING",
         followUpsCount: c.followUps?.length ?? 0,
         followUpSteps: c.followUps?.map((s) => ({
           id: s.id,
           delayHours: s.delayHours,
+          messageType: s.messageType,
           messagePreview: s.message?.slice(0, 60),
         })) ?? [],
       })),
