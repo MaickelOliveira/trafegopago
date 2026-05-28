@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClients, getAllAgentConfigs, getConfig } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getHistory } from "@/lib/conversations";
-import { generateFollowUpAI } from "@/lib/gemini-agent";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 /**
  * GET /api/debug/test-followup?clientId=sbcie&phone=5544...&send=1
  *
- * Executa o fluxo completo de follow-up AI ao vivo e retorna cada passo.
- * Sem send=1 apenas testa a geração da IA sem enviar.
+ * Testa o fluxo completo de follow-up AI e retorna erros reais do Gemini.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -26,25 +25,53 @@ export async function GET(req: NextRequest) {
 
   // Passo 1: API key
   const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
-  if (!apiKey) return NextResponse.json({ error: "geminiApiKey ausente", agCfg: { whatsappConnectionId: agCfg.whatsappConnectionId } }, { status: 400 });
+  if (!apiKey) return NextResponse.json({ step: "apiKey", error: "geminiApiKey ausente" }, { status: 400 });
 
-  // Passo 2: Gera mensagem com IA
+  // Passo 2: Chama Gemini diretamente (sem try-catch interno que engole erro)
   const history = getHistory(phone);
+  const historyText = history
+    .slice(-20)
+    .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
+    .join("\n");
+
+  const prompt = `Você é um assistente de vendas para ${client.name}.
+Analise o histórico de conversa abaixo e crie uma mensagem de follow-up inteligente e personalizada em português.
+Seja natural, breve (2-3 frases), retome o contexto de onde a conversa parou e demonstre interesse genuíno.
+Retorne APENAS a mensagem, sem explicações adicionais.
+
+Histórico:
+${historyText || "Sem histórico de conversa disponível. Crie uma mensagem de reengajamento gentil."}`;
+
   let aiMsg: string | null = null;
   let aiError: string | null = null;
-  try {
-    aiMsg = await generateFollowUpAI(history, undefined, client.name, apiKey);
-  } catch (e) {
-    aiError = e instanceof Error ? e.message : String(e);
+  let modelUsed: string | null = null;
+
+  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"];
+
+  for (const modelId of modelsToTry) {
+    try {
+      const ai = new GoogleGenerativeAI(apiKey);
+      const model = ai.getGenerativeModel({ model: modelId });
+      const result = await model.generateContent(prompt);
+      const text = result.response.text().trim();
+      if (text) {
+        aiMsg = text;
+        modelUsed = modelId;
+        break;
+      }
+    } catch (e) {
+      aiError = `${modelId}: ${e instanceof Error ? e.message : String(e)}`;
+    }
   }
 
   if (!aiMsg) {
     return NextResponse.json({
       step: "generateFollowUpAI",
       success: false,
-      aiMsg,
+      aiMsg: null,
       aiError,
       historyLength: history.length,
+      apiKeyPrefix: apiKey.slice(0, 8) + "...",
     });
   }
 
@@ -60,6 +87,7 @@ export async function GET(req: NextRequest) {
       lookedFor: agCfg.whatsappConnectionId,
       available: allConns.map((c) => c.id),
       aiMsg,
+      modelUsed,
     });
   }
 
@@ -70,6 +98,7 @@ export async function GET(req: NextRequest) {
       connType: conn.type,
       hasToken: !!conn.uazapiToken,
       aiMsg,
+      modelUsed,
     });
   }
 
@@ -80,9 +109,9 @@ export async function GET(req: NextRequest) {
       success: true,
       note: "Adicione &send=1 na URL para enviar de verdade",
       aiMsg,
+      modelUsed,
       phone: phone.replace(/\D/g, ""),
       connectionId: conn.id,
-      connType: conn.type,
     });
   }
 
@@ -108,6 +137,7 @@ export async function GET(req: NextRequest) {
     success: sendOk,
     sendError,
     aiMsg,
+    modelUsed,
     phone: phone.replace(/\D/g, ""),
     connectionId: conn.id,
   });
