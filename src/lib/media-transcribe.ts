@@ -33,7 +33,7 @@ export function saveDecryptedMedia(buffer: Buffer, phone: string, ts: number, mi
   return `/api/media/${filename}`;
 }
 
-export type MediaKind = "audio" | "image" | "video";
+export type MediaKind = "audio" | "image" | "video" | "document";
 
 /**
  * Retorna a string de info HKDF correta para cada tipo de mídia do WhatsApp.
@@ -118,11 +118,12 @@ export async function transcribeMedia(
     audio: "Transcreva o áudio exatamente como falado, em português. Retorne apenas a transcrição literal, sem comentários ou formatação adicional.",
     image: "Descreva o conteúdo desta imagem em português. Se houver texto, transcreva-o integralmente.",
     video: "Descreva o conteúdo deste vídeo em português. Se houver fala ou texto visível, transcreva.",
+    document: "Descreva o conteúdo deste documento em português. Se houver texto, resuma os pontos principais.",
   };
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const modelsToTry = [
-    "gemini-2.5-flash-preview-05-20",
+    "gemini-2.5-pro",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
