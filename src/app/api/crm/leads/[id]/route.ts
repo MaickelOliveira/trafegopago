@@ -5,6 +5,7 @@ import { getFunnelById } from "@/lib/funnels";
 import { getClientById } from "@/lib/clients";
 import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
+import { setAiPaused } from "@/lib/conversations";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -26,6 +27,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const previous = getLeadById(id);
   const lead = updateLead(id, body);
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Sincroniza conversations.json quando aiPaused muda via UI
+  if (typeof body.aiPaused === "boolean" && lead.phone) {
+    setAiPaused(lead.phone, body.aiPaused);
+  }
 
   // Dispara evento CAPI quando o status muda e a coluna tem metaEvent configurado
   if (body.status && previous && body.status !== previous.status) {
