@@ -23,9 +23,12 @@ function PlatformIcon({ lead }: { lead: Lead }) {
   );
   if (lead.adPlatform === "google") return (
     <svg viewBox="0 0 192 192" className="w-3.5 h-3.5 shrink-0" aria-label="Google Ads">
-      <rect x="16"  y="100" width="48" height="76" rx="24" fill="#FBBC04"/>
-      <rect x="72"  y="16"  width="48" height="160" rx="24" fill="#4285F4"/>
-      <rect x="128" y="56"  width="48" height="120" rx="24" fill="#34A853"/>
+      {/* perna esquerda do A — azul */}
+      <path fill="#4285F4" d="M17 168 L52 168 L104 24 L69 24 Z"/>
+      {/* perna direita do A — amarelo */}
+      <path fill="#FBBC04" d="M88 24 L123 24 L164 148 L129 148 Z"/>
+      {/* círculo — verde */}
+      <circle fill="#34A853" cx="152" cy="155" r="30"/>
     </svg>
   );
   if (lead.source === "whatsapp") return (
