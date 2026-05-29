@@ -54,6 +54,11 @@ export function getClientId(phone: string): string | null {
   return null;
 }
 
+/** Debug: retorna amostra de chaves brutas de conversations.json para diagnóstico */
+export function debugGetRawKeys(limit = 20): string[] {
+  return Object.keys(load()).slice(0, limit);
+}
+
 export function getAllConversationsByClientId(clientId: string): Array<{
   phone: string;
   contactName: string | null;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getHistory, addMessage, getClientId, getAllConversationsByClientId } from "@/lib/conversations";
+import { getHistory, addMessage, getClientId, getAllConversationsByClientId, debugGetRawKeys } from "@/lib/conversations";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { sendText } from "@/lib/uazapi";
@@ -17,14 +17,12 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
   const messages = getHistory(normalized);
-  // debug: busca chaves do arquivo que contenham dígitos do número buscado
-  const clientId = session.clientId as string | undefined;
-  const allConvs = clientId ? getAllConversationsByClientId(clientId).map((c) => c.phone) : [];
-  // busca qualquer chave que contenha o número (sem 55) como substring
+  // debug: pega chaves brutas do arquivo sem filtro de clientId
+  const rawKeys = debugGetRawKeys(30);
   const digits = normalized.startsWith("55") ? normalized.slice(2) : normalized;
-  const matching = allConvs.filter((p) => p.includes(digits));
-  console.log(`[conversations/GET] phone=${normalized} digits=${digits} found=${messages.length} matching=${JSON.stringify(matching)} total=${allConvs.length}`);
-  return NextResponse.json({ messages, _debug: { phone: normalized, digits, count: messages.length, clientId, matching, totalConvs: allConvs.length, sampleKeys: allConvs.slice(0, 10) } });
+  const matching = rawKeys.filter((k) => k.includes(digits));
+  console.log(`[conversations/GET] phone=${normalized} found=${messages.length} matching=${JSON.stringify(matching)} sample=${JSON.stringify(rawKeys.slice(0, 5))}`);
+  return NextResponse.json({ messages, _debug: { phone: normalized, digits, count: messages.length, matching, sampleKeys: rawKeys } });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Params }) {
