@@ -28,17 +28,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "phone obrigatório" }, { status: 400 });
   }
 
-  // Salva o clique com os UTMs
-  recordClick({
-    clientId,
-    utmSource:   p.get("src")  || null,
-    utmCampaign: p.get("cmp")  || null,
-    utmMedium:   p.get("med")  || null,
-    utmContent:  p.get("cnt")  || null,
-    utmTerm:     p.get("trm")  || null,
-    fbclid:      p.get("fbc")  || null,
-    gclid:       p.get("gcd")  || null,
-  });
+  // Salva o clique com os UTMs (erro não bloqueia o redirect)
+  try {
+    recordClick({
+      clientId,
+      utmSource:   p.get("src")  || null,
+      utmCampaign: p.get("cmp")  || null,
+      utmMedium:   p.get("med")  || null,
+      utmContent:  p.get("cnt")  || null,
+      utmTerm:     p.get("trm")  || null,
+      fbclid:      p.get("fbc")  || null,
+      gclid:       p.get("gcd")  || null,
+    });
+  } catch (err) {
+    console.error("[wa-redirect] Falha ao salvar clique:", err);
+  }
 
   // Redireciona para wa.me com mensagem limpa (sem UTMs)
   const waUrl = `https://wa.me/${phone}${msg ? `?text=${encodeURIComponent(msg)}` : ""}`;
