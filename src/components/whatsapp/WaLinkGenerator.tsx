@@ -33,14 +33,18 @@ export function WaLinkGenerator({ clientId, clientName, pixelId }: Props) {
   // URL base: no browser sempre temos window.location.origin
   const base = typeof window !== "undefined" ? window.location.origin : "";
 
-  // Tag <script> de uma linha
+  // Tag <script> de uma linha — apenas config de conta (sem telefone/mensagem)
   const pixelParams = new URLSearchParams();
-  if (cleanPhone)     pixelParams.set("phone", cleanPhone);
-  if (message)        pixelParams.set("msg", message);
-  if (googleAdsId)    pixelParams.set("gadsId", googleAdsId);
+  if (googleAdsId)     pixelParams.set("gadsId", googleAdsId);
   if (googleConvLabel) pixelParams.set("gadsLabel", googleConvLabel);
-  const pixelUrl = `${base}/api/pixel/${clientId}?${pixelParams.toString()}`;
+  const pixelParamStr = pixelParams.toString();
+  const pixelUrl  = `${base}/api/pixel/${clientId}${pixelParamStr ? `?${pixelParamStr}` : ""}`;
   const scriptTag = `<script src="${pixelUrl}"></script>`;
+
+  // Botão com dados no atributo (telefone e mensagem ficam no botão, não no pixel)
+  const buttonExample = cleanPhone
+    ? `<a href="#" data-wa-track data-wa-phone="${cleanPhone}" data-wa-msg="${message}">\n  Falar no WhatsApp\n</a>`
+    : `<a href="#" data-wa-track data-wa-phone="NUMERO" data-wa-msg="${message}">\n  Falar no WhatsApp\n</a>`;
 
   // Link direto (sem UTMs — para bio ou testes)
   const directLink = cleanPhone
@@ -153,23 +157,26 @@ export function WaLinkGenerator({ clientId, clientName, pixelId }: Props) {
 
             {/* Step 2 */}
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-slate-700">Passo 2 — Adicione <code className="bg-slate-100 px-1 rounded">data-wa-track</code> nos botões de WhatsApp</p>
+              <p className="text-xs font-semibold text-slate-700">
+                Passo 2 — Substitua seus botões de WhatsApp por este modelo
+              </p>
               <div className="flex items-start gap-2">
-                <code className="flex-1 block break-all rounded-lg bg-slate-900 px-3 py-2 text-xs text-green-300 font-mono">
-                  {`<a href="#" data-wa-track>Falar no WhatsApp</a>`}
-                </code>
-                <CopyButton text={`<a href="#" data-wa-track>Falar no WhatsApp</a>`} />
+                <pre className="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-xs text-green-300 font-mono whitespace-pre overflow-x-auto">
+                  {buttonExample}
+                </pre>
+                <CopyButton text={buttonExample} />
               </div>
-              <p className="text-[11px] text-slate-400">
-                Qualquer elemento com <code className="bg-slate-100 px-1 rounded">data-wa-track</code> vira um botão rastreado — <code>&lt;a&gt;</code>, <code>&lt;button&gt;</code>, <code>&lt;div&gt;</code>, etc.
+              <p className="text-[11px] text-slate-400 space-y-0.5">
+                O telefone e a mensagem ficam <strong>no botão</strong>, não na URL do pixel.
+                Isso permite ter botões diferentes na mesma página (ex: um por produto).
               </p>
             </div>
 
             {/* Observação */}
             <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700 space-y-1">
-              <p className="font-semibold">Nenhuma configuração adicional</p>
-              <p>O pixel já sabe o telefone, a mensagem e os pixels de conversão. Os UTMs vêm automaticamente da URL do anúncio.</p>
-              {!cleanPhone && <p className="text-amber-600 font-medium mt-1">⚠ Preencha o número do WhatsApp acima para gerar o script correto.</p>}
+              <p className="font-semibold">Como funciona</p>
+              <p>O pixel carrega uma única vez e fica de plantão. Quando o botão é clicado, ele lê o <code className="bg-blue-100 px-0.5 rounded">data-wa-phone</code> e <code className="bg-blue-100 px-0.5 rounded">data-wa-msg</code> do próprio elemento, captura os UTMs da URL e redireciona pelo servidor — a mensagem chega limpa, sem código.</p>
+              {!cleanPhone && <p className="text-amber-600 font-medium mt-1">⚠ Preencha o número acima para gerar o botão correto.</p>}
             </div>
           </div>
         )}

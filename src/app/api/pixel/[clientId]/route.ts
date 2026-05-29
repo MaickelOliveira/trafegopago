@@ -5,10 +5,11 @@ export const dynamic = "force-dynamic";
 
 // GET /api/pixel/{clientId} — serve o script de rastreamento para o site do cliente
 // Query params opcionais na URL do <script src>:
-//   phone      – telefone do WhatsApp do negócio (override de client.whatsappPhone)
-//   msg        – mensagem pré-preenchida ao abrir WhatsApp
 //   gadsId     – ID de conta Google Ads  (ex: AW-123456789)
 //   gadsLabel  – label de conversão       (ex: AbCdEfGhI)
+//
+// Telefone e mensagem NÃO ficam na URL do pixel — ficam nos atributos do botão:
+//   <a href="#" data-wa-track data-wa-phone="5544..." data-wa-msg="Olá!">Falar</a>
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
@@ -24,15 +25,13 @@ export async function GET(
     });
   }
 
-  const q           = req.nextUrl.searchParams;
-  const baseUrl     = req.nextUrl.origin;
-  const pixelId     = client.pixelId     ?? "";
-  const waPhone     = (q.get("phone") ?? client.whatsappPhone ?? "").replace(/\D/g, "");
-  const waMsg       = q.get("msg")       ?? "";
-  const gadsId      = q.get("gadsId")    ?? "";
-  const gadsLabel   = q.get("gadsLabel") ?? "";
+  const q         = req.nextUrl.searchParams;
+  const baseUrl   = req.nextUrl.origin;
+  const pixelId   = client.pixelId ?? "";
+  const gadsId    = q.get("gadsId")    ?? "";
+  const gadsLabel = q.get("gadsLabel") ?? "";
 
-  const script = buildScript({ clientId, baseUrl, pixelId, waPhone, waMsg, gadsId, gadsLabel });
+  const script = buildScript({ clientId, baseUrl, pixelId, gadsId, gadsLabel });
 
   return new NextResponse(script, {
     headers: {
@@ -47,25 +46,21 @@ interface ScriptConfig {
   clientId:  string;
   baseUrl:   string;
   pixelId:   string;
-  waPhone:   string;
-  waMsg:     string;
   gadsId:    string;
   gadsLabel: string;
 }
 
 function buildScript(cfg: ScriptConfig): string {
-  const { clientId, baseUrl, pixelId, waPhone, waMsg, gadsId, gadsLabel } = cfg;
+  const { clientId, baseUrl, pixelId, gadsId, gadsLabel } = cfg;
   return `
 (function(w, d) {
   if (w._tp) return;
 
   var _cfg = {
-    clientId:     ${JSON.stringify(clientId)},
-    pixelId:      ${JSON.stringify(pixelId)},
-    waPhone:      ${JSON.stringify(waPhone)},
-    waMsg:        ${JSON.stringify(waMsg)},
-    gadsId:       ${JSON.stringify(gadsId)},
-    gadsLabel:    ${JSON.stringify(gadsLabel)},
+    clientId:         ${JSON.stringify(clientId)},
+    pixelId:          ${JSON.stringify(pixelId)},
+    gadsId:           ${JSON.stringify(gadsId)},
+    gadsLabel:        ${JSON.stringify(gadsLabel)},
     eventEndpoint:    ${JSON.stringify(baseUrl + "/api/pixel/event")},
     redirectEndpoint: ${JSON.stringify(baseUrl + "/api/wa-redirect")},
   };
@@ -141,19 +136,28 @@ function buildScript(cfg: ScriptConfig): string {
   }
 
   // ── Botões com data-wa-track → redirect limpo (UTMs no servidor) ──────────────
+  // O telefone e a mensagem ficam nos atributos do botão, não na URL do pixel:
+  //   <a href="#" data-wa-track data-wa-phone="5544..." data-wa-msg="Olá!">Falar</a>
 
   function onWaTrackClick(e) {
     if (e && e.preventDefault) e.preventDefault();
 
+    var el    = e.currentTarget || e.target;
+    var phone = (el.getAttribute("data-wa-phone") || "").replace(/\\D/g, "");
+    var msg   = el.getAttribute("data-wa-msg") || "";
+
+    if (!phone) {
+      console.warn("[Pixel] data-wa-phone não encontrado no botão.");
+      return;
+    }
+
     var utms = loadUTMs();
     firePixels(utms);
 
-    // Notifica o servidor para registrar o clique + UTMs
-    // (o redirect é feito via /api/wa-redirect, que salva e redireciona para wa.me)
     var url = _cfg.redirectEndpoint
       + "?clientId=" + encodeURIComponent(_cfg.clientId)
-      + "&phone="    + encodeURIComponent(_cfg.waPhone)
-      + "&msg="      + encodeURIComponent(_cfg.waMsg);
+      + "&phone="    + encodeURIComponent(phone)
+      + "&msg="      + encodeURIComponent(msg);
 
     if (utms.utmSource)   url += "&src=" + encodeURIComponent(utms.utmSource);
     if (utms.utmCampaign) url += "&cmp=" + encodeURIComponent(utms.utmCampaign);
