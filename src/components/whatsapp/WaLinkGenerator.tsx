@@ -33,7 +33,16 @@ export function WaLinkGenerator({ clientId, clientName, pixelId }: Props) {
 
   // URL do pixel sempre limpa — Google Ads, Meta Pixel etc. vêm das Configurações do cliente
   const pixelUrl  = `${base}/api/pixel/${clientId}`;
-  const scriptTag = `<script src="${pixelUrl}"></script>`;
+  // IIFE async — não bloqueia a renderização da página (mesmo padrão do Meta Pixel, TikTok, GTM)
+  const scriptTag = `<script>
+(function(w,d,s,c){
+  if(w._nxp) return; w._nxp={};
+  var e=d.createElement('script');
+  e.async=1; e.src=s;
+  d.getElementsByTagName('head')[0].appendChild(e);
+  w._nxp.clientId=c;
+})(window,document,'${pixelUrl}','${clientId}');
+</script>`;
 
   // Botão com dados no atributo (telefone e mensagem ficam no botão, não no pixel)
   const buttonExample = cleanPhone
@@ -118,9 +127,9 @@ export function WaLinkGenerator({ clientId, clientName, pixelId }: Props) {
             <div className="space-y-2">
               <p className="text-xs font-semibold text-slate-700">Passo 1 — Cole esta tag antes do <code className="bg-slate-100 px-1 rounded">&lt;/body&gt;</code></p>
               <div className="flex items-start gap-2">
-                <code className="flex-1 block break-all rounded-lg bg-slate-900 px-3 py-2 text-xs text-green-300 font-mono">
+                <pre className="flex-1 overflow-x-auto rounded-lg bg-slate-900 px-3 py-2 text-xs text-green-300 font-mono whitespace-pre">
                   {scriptTag}
-                </code>
+                </pre>
                 <CopyButton text={scriptTag} />
               </div>
               <p className="text-[11px] text-slate-400">
