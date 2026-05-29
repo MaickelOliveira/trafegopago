@@ -8,6 +8,8 @@ import { getConfig, getClientById } from "@/lib/clients";
 
 type Params = Promise<{ phone: string }>;
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest, { params }: { params: Params }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -15,7 +17,9 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
   const messages = getHistory(normalized);
-  return NextResponse.json({ messages });
+  // debug temporário — remove após confirmar
+  console.log(`[conversations/GET] phone=${normalized} found=${messages.length} msgs`);
+  return NextResponse.json({ messages, _debug: { phone: normalized, count: messages.length } });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Params }) {
