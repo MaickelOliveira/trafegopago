@@ -21,9 +21,13 @@ export async function GET(
     });
   }
 
-  // Usa appBaseUrl do config (URL pública) se disponível — evita hostname interno do Docker
-  const appConfig = getConfig();
-  const baseUrl   = appConfig.appBaseUrl?.replace(/\/$/, "") || req.nextUrl.origin;
+  // Resolve a URL pública: appBaseUrl > x-forwarded-host (EasyPanel/Traefik) > origin
+  const appConfig      = getConfig();
+  const fwdHost        = req.headers.get("x-forwarded-host");
+  const fwdProto       = (req.headers.get("x-forwarded-proto") ?? "https").split(",")[0].trim();
+  const baseUrl        =
+    appConfig.appBaseUrl?.replace(/\/$/, "") ??
+    (fwdHost ? `${fwdProto}://${fwdHost}` : req.nextUrl.origin);
   const pixelId   = client.pixelId        ?? "";
   const gadsId    = client.googleAdsId    ?? "";
   const gadsLabel = client.googleConvLabel ?? "";
