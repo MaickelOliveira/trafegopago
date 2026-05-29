@@ -128,12 +128,23 @@ export function deleteLead(id: string): boolean {
   return true;
 }
 
-/** Remove não-dígitos e normaliza número BR: strips leading 55 se sobrar 11+ dígitos */
+/**
+ * Normaliza qualquer formato de telefone BR para comparação.
+ * Aceita: (44) 9 9884-1285 | 44998841285 | 5544998841285 | 554498841285 etc.
+ * 1. Remove não-dígitos
+ * 2. Strip código do país BR (55) se sobrar ≥ 10 dígitos
+ * 3. Migração do 9º dígito: número com 10 dígitos onde o 3º dígito é 6-9
+ *    (celular em formato antigo) recebe o 9 após o DDD → 11 dígitos
+ */
 function normalizePhone(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  // Se vier com código do país Brasil (55) e ainda restar ≥10 dígitos, remove o 55
-  if (digits.startsWith("55") && digits.length >= 12) return digits.slice(2);
-  return digits;
+  let d = raw.replace(/\D/g, "");
+  // Remove código do país Brasil
+  if (d.startsWith("55") && d.length >= 12) d = d.slice(2);
+  // Migração 9º dígito BR: DDD(2) + celular antigo(8 dígitos começando com 6-9)
+  if (d.length === 10 && /^[1-9]{2}[6-9]/.test(d)) {
+    d = d.slice(0, 2) + "9" + d.slice(2);
+  }
+  return d;
 }
 
 export function upsertLeadByPhone(clientId: string, phone: string, patch: Partial<Lead>): Lead {
