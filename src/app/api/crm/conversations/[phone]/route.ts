@@ -17,11 +17,14 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
   const messages = getHistory(normalized);
-  // debug temporário — lista chaves existentes para o clientId deste lead
-  const clientId = getClientId(normalized);
+  // debug: busca chaves do arquivo que contenham dígitos do número buscado
+  const clientId = session.clientId as string | undefined;
   const allConvs = clientId ? getAllConversationsByClientId(clientId).map((c) => c.phone) : [];
-  console.log(`[conversations/GET] phone=${normalized} clientId=${clientId} found=${messages.length} allKeys=${JSON.stringify(allConvs.slice(0, 10))}`);
-  return NextResponse.json({ messages, _debug: { phone: normalized, count: messages.length, clientId, allPhones: allConvs.slice(0, 20) } });
+  // busca qualquer chave que contenha o número (sem 55) como substring
+  const digits = normalized.startsWith("55") ? normalized.slice(2) : normalized;
+  const matching = allConvs.filter((p) => p.includes(digits));
+  console.log(`[conversations/GET] phone=${normalized} digits=${digits} found=${messages.length} matching=${JSON.stringify(matching)} total=${allConvs.length}`);
+  return NextResponse.json({ messages, _debug: { phone: normalized, digits, count: messages.length, clientId, matching, totalConvs: allConvs.length, sampleKeys: allConvs.slice(0, 10) } });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Params }) {
