@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getHistory, addMessage, getClientId } from "@/lib/conversations";
+import { getHistory, addMessage, getClientId, getAllConversationsByClientId } from "@/lib/conversations";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { sendText } from "@/lib/uazapi";
@@ -17,9 +17,11 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
   const messages = getHistory(normalized);
-  // debug temporário — remove após confirmar
-  console.log(`[conversations/GET] phone=${normalized} found=${messages.length} msgs`);
-  return NextResponse.json({ messages, _debug: { phone: normalized, count: messages.length } });
+  // debug temporário — lista chaves existentes para o clientId deste lead
+  const clientId = getClientId(normalized);
+  const allConvs = clientId ? getAllConversationsByClientId(clientId).map((c) => c.phone) : [];
+  console.log(`[conversations/GET] phone=${normalized} clientId=${clientId} found=${messages.length} allKeys=${JSON.stringify(allConvs.slice(0, 10))}`);
+  return NextResponse.json({ messages, _debug: { phone: normalized, count: messages.length, clientId, allPhones: allConvs.slice(0, 20) } });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Params }) {
