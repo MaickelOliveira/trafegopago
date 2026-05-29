@@ -52,18 +52,30 @@ interface ScriptConfig {
 }
 
 function buildScript(cfg: ScriptConfig): string {
-  const { clientId, baseUrl, pixelId, gadsId, gadsLabel } = cfg;
+  const { clientId, pixelId, gadsId, gadsLabel } = cfg;
   return `
 (function(w, d) {
   if (w._tp) return;
+
+  // Detecta a URL base a partir da tag <script src="/api/pixel/..."> no DOM
+  // Funciona em qualquer ambiente (Docker, proxy, CDN) sem depender de config do servidor
+  var _base = (function(){
+    var ss = d.getElementsByTagName('script');
+    for(var i=ss.length-1;i>=0;i--){
+      if(ss[i].src && ss[i].src.indexOf('/api/pixel/')!==-1){
+        return ss[i].src.split('/api/pixel/')[0];
+      }
+    }
+    return '';
+  })();
 
   var _cfg = {
     clientId:         ${JSON.stringify(clientId)},
     pixelId:          ${JSON.stringify(pixelId)},
     gadsId:           ${JSON.stringify(gadsId)},
     gadsLabel:        ${JSON.stringify(gadsLabel)},
-    eventEndpoint:    ${JSON.stringify(baseUrl + "/api/pixel/event")},
-    redirectEndpoint: ${JSON.stringify(baseUrl + "/api/wa-redirect")},
+    eventEndpoint:    _base + "/api/pixel/event",
+    redirectEndpoint: _base + "/api/wa-redirect",
   };
 
   // ── Utilitários ──────────────────────────────────────────────────────────────
