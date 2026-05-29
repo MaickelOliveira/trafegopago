@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientById } from "@/lib/clients";
+import { getClientById, getConfig } from "@/lib/clients";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,9 @@ export async function GET(
     });
   }
 
-  const baseUrl   = req.nextUrl.origin;
+  // Usa appBaseUrl do config (URL pública) se disponível — evita hostname interno do Docker
+  const appConfig = getConfig();
+  const baseUrl   = appConfig.appBaseUrl?.replace(/\/$/, "") || req.nextUrl.origin;
   const pixelId   = client.pixelId        ?? "";
   const gadsId    = client.googleAdsId    ?? "";
   const gadsLabel = client.googleConvLabel ?? "";
