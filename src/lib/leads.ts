@@ -128,12 +128,20 @@ export function deleteLead(id: string): boolean {
   return true;
 }
 
+/** Remove não-dígitos e normaliza número BR: strips leading 55 se sobrar 11+ dígitos */
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  // Se vier com código do país Brasil (55) e ainda restar ≥10 dígitos, remove o 55
+  if (digits.startsWith("55") && digits.length >= 12) return digits.slice(2);
+  return digits;
+}
+
 export function upsertLeadByPhone(clientId: string, phone: string, patch: Partial<Lead>): Lead {
   const leads = load();
-  const normalized = phone.replace(/\D/g, "");
+  const normalized = normalizePhone(phone);
   const funnelId = patch.funnelId ?? "default";
   const idx = leads.findIndex(
-    (l) => l.clientId === clientId && l.funnelId === funnelId && l.phone.replace(/\D/g, "") === normalized
+    (l) => l.clientId === clientId && l.funnelId === funnelId && normalizePhone(l.phone) === normalized
   );
   const now = new Date().toISOString();
   if (idx >= 0) {
@@ -145,7 +153,7 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     id: randomUUID(),
     clientId,
     funnelId,
-    phone: normalized,
+    phone: normalizePhone(phone),
     name: patch.name ?? "Desconhecido",
     email: patch.email ?? null,
     source: patch.source ?? "whatsapp",
