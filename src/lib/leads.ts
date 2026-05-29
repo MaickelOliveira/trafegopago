@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, renameSync, mkdirSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -45,19 +45,41 @@ export type Lead = {
   updatedAt: string;
 };
 
-const FILE = path.join(process.cwd(), "data", "leads.json");
+const DIR  = path.join(process.cwd(), "data");
+const FILE = path.join(DIR, "leads.json");
+const BAK  = FILE + ".bak";
+const TMP  = FILE + ".tmp";
 
 function load(): Lead[] {
+  // Tenta arquivo principal
   try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
+    if (existsSync(FILE)) {
+      const raw = readFileSync(FILE, "utf-8");
+      if (raw.trim()) return JSON.parse(raw);
+    }
   } catch {
-    return [];
+    console.warn("[leads] leads.json corrompido, tentando backup...");
   }
+  // Fallback: backup anterior
+  try {
+    if (existsSync(BAK)) {
+      console.warn("[leads] Restaurando de leads.json.bak");
+      return JSON.parse(readFileSync(BAK, "utf-8"));
+    }
+  } catch {
+    // nada a fazer
+  }
+  return [];
 }
 
 function save(leads: Lead[]) {
-  writeFileSync(FILE, JSON.stringify(leads, null, 2));
+  if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
+  // 1. Escreve em arquivo temporário
+  writeFileSync(TMP, JSON.stringify(leads, null, 2));
+  // 2. Backup do arquivo atual (se existir)
+  if (existsSync(FILE)) renameSync(FILE, BAK);
+  // 3. Rename atômico: tmp → principal
+  renameSync(TMP, FILE);
 }
 
 export function getLeads(clientId?: string): Lead[] {

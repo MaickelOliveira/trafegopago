@@ -5,7 +5,7 @@
  * pelo clientId + janela de tempo (30 min) e associa os UTMs ao lead.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -34,7 +34,9 @@ function load(): WaClick[] {
 
 function save(clicks: WaClick[]) {
   if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(clicks, null, 2));
+  const tmp = FILE + ".tmp";
+  writeFileSync(tmp, JSON.stringify(clicks, null, 2));
+  renameSync(tmp, FILE);
 }
 
 /** Registra um novo clique e limpa os antigos (> 30 min) */
