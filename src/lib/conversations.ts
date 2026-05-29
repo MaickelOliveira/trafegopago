@@ -98,10 +98,32 @@ export function markAsRead(phone: string) {
 /** Normaliza telefone removendo código de país 55 para busca fuzzy */
 function phoneVariants(phone: string): string[] {
   const digits = phone.replace(/\D/g, "");
-  const variants = [digits];
-  if (digits.startsWith("55") && digits.length > 11) variants.push(digits.slice(2));
-  else if (!digits.startsWith("55") && digits.length <= 11) variants.push("55" + digits);
-  return variants;
+  const variants = new Set<string>([digits]);
+
+  // Obtém o número local (sem prefixo 55)
+  const local = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+
+  // Sempre testa com e sem o prefixo 55
+  variants.add(local);
+  variants.add("55" + local);
+
+  // Se local tem 11 dígitos e o 3º dígito é 9 (formato novo com 9º dígito):
+  // também testa o formato antigo sem o 9 (10 dígitos locais = 12 com 55)
+  if (local.length === 11 && local[2] === "9") {
+    const sem9 = local.slice(0, 2) + local.slice(3); // remove o 9
+    variants.add(sem9);
+    variants.add("55" + sem9);
+  }
+
+  // Se local tem 10 dígitos e 3º dígito >= 6 (celular formato antigo):
+  // também testa com o 9 adicionado (11 dígitos locais = 13 com 55)
+  if (local.length === 10 && /^[1-9]{2}[6-9]/.test(local)) {
+    const com9 = local.slice(0, 2) + "9" + local.slice(2);
+    variants.add(com9);
+    variants.add("55" + com9);
+  }
+
+  return [...variants];
 }
 
 export function setAiPaused(phone: string, paused: boolean) {
