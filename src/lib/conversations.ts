@@ -151,7 +151,9 @@ export function addMessage(
   opts?: { connId?: string; contactName?: string }
 ) {
   const all = load();
-  const conv: Conversation = all[phone] ?? { messages: [], clientId, lastActivity: 0 };
+  // Usa a chave existente se já houver conversa em outro formato (ex: antigo sem 9º dígito)
+  const existingKey = phoneVariants(phone).find((v) => all[v]) ?? phone;
+  const conv: Conversation = all[existingKey] ?? { messages: [], clientId, lastActivity: 0 };
   conv.messages.push(msg);
   if (conv.messages.length > MAX_MESSAGES) {
     conv.messages = conv.messages.slice(-MAX_MESSAGES);
@@ -162,7 +164,7 @@ export function addMessage(
   if (opts?.contactName) conv.contactName = opts.contactName;
   // Marca como não lida quando chega mensagem do contato
   if (msg.role === "user") conv.unread = true;
-  all[phone] = conv;
+  all[existingKey] = conv;
   save(all);
 }
 

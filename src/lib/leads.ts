@@ -92,8 +92,8 @@ export function getLeadById(id: string): Lead | undefined {
 }
 
 export function getLeadByPhone(clientId: string, phone: string): Lead | undefined {
-  const normalized = phone.replace(/\D/g, "");
-  return load().find((l) => l.clientId === clientId && l.phone.replace(/\D/g, "") === normalized);
+  const normalized = normalizePhone(phone);
+  return load().find((l) => l.clientId === clientId && normalizePhone(l.phone) === normalized);
 }
 
 export function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedAt">): Lead {
