@@ -36,14 +36,22 @@ function save(data: ConversationStore) {
 
 export function getHistory(phone: string): ChatMessage[] {
   const all = load();
-  const conv = all[phone];
-  if (!conv) return [];
-  if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
-  return conv.messages;
+  for (const v of phoneVariants(phone)) {
+    const conv = all[v];
+    if (conv) {
+      if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
+      return conv.messages;
+    }
+  }
+  return [];
 }
 
 export function getClientId(phone: string): string | null {
-  return load()[phone]?.clientId ?? null;
+  const all = load();
+  for (const v of phoneVariants(phone)) {
+    if (all[v]?.clientId) return all[v].clientId;
+  }
+  return null;
 }
 
 export function getAllConversationsByClientId(clientId: string): Array<{
