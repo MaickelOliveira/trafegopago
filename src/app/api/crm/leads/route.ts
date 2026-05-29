@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getLeads, createLead, type LeadSource } from "@/lib/leads";
+import { getLeads, upsertLeadByPhone, type LeadSource } from "@/lib/leads";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -27,11 +27,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "clientId e phone são obrigatórios" }, { status: 400 });
   }
 
-  const lead = createLead({
-    clientId,
+  const lead = upsertLeadByPhone(clientId, phone, {
     funnelId: body.funnelId || "default",
     name: name || "Sem nome",
-    phone,
     email: email || null,
     source: (source as LeadSource) || "manual",
     campaignName: campaignName || null,
