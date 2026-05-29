@@ -104,15 +104,15 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white sticky top-0">
 
-      {/* Logo — PNG quadrado com espaço vazio: usa overflow-hidden + posição absoluta pra fazer crop no logo */}
-      <div style={{ height: "80px", overflow: "hidden", borderBottom: "1px solid #e2e8f0", position: "relative" }}>
+      {/* Logo */}
+      <div style={{ height: "60px", overflow: "hidden", borderBottom: "1px solid #e2e8f0", position: "relative" }}>
         <img
           src="/nexo-logo.png"
           alt="Nexo"
           style={{
             position: "absolute",
-            width: "160%",
-            left: "-30%",
+            width: "90%",
+            left: "5%",
             top: "50%",
             transform: "translateY(-50%)",
           }}
