@@ -20,6 +20,8 @@ type Client = {
   pixelId?: string;
   capiToken?: string;
   metaPageId?: string;
+  googleAdsId?: string;
+  googleConvLabel?: string;
 };
 
 const FUNNEL_OPTIONS: { value: FunnelType; label: string; desc: string; icon: string }[] = [
@@ -177,7 +179,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
 
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
-    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "", capiToken: "", metaPageId: "",
+    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "", capiToken: "", metaPageId: "", googleAdsId: "", googleConvLabel: "",
   });
   const [form, setForm] = useState(empty());
 
@@ -966,6 +968,26 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                   Necessário para vincular leads de formulários nativos do Meta (Lead Ads) a este cliente.
                   Encontre em: Gerenciador de Negócios → Páginas → selecione a página → About → Page ID.
                 </p>
+
+                {/* Google Ads */}
+                <div className="border-t border-blue-100 pt-4 mt-2 space-y-3">
+                  <p className="text-xs font-semibold text-slate-700">Google Ads</p>
+                  <Field
+                    label="ID da conta (ex: AW-123456789)"
+                    value={form.googleAdsId ?? ""}
+                    onChange={(v) => setForm((f) => ({ ...f, googleAdsId: v }))}
+                    placeholder="AW-123456789"
+                  />
+                  <Field
+                    label="Label de conversão"
+                    value={form.googleConvLabel ?? ""}
+                    onChange={(v) => setForm((f) => ({ ...f, googleConvLabel: v }))}
+                    placeholder="xXxXxXxXxX"
+                  />
+                  <p className="text-[10px] text-blue-400">
+                    Encontre em: Google Ads → Metas → Conversões → clique na conversão → Tag do Google → Configuração da tag.
+                  </p>
+                </div>
               </div>
 
               {error && (

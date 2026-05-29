@@ -23,22 +23,16 @@ function CopyButton({ text }: { text: string }) {
 export function WaLinkGenerator({ clientId, clientName, pixelId }: Props) {
   const [tab, setTab] = useState<"pixel" | "link">("pixel");
 
-  const [phone, setPhone]               = useState("");
-  const [message, setMessage]           = useState("Olá! Vi seu anúncio e tenho interesse. Pode me ajudar?");
-  const [googleAdsId, setGoogleAdsId]   = useState("");
-  const [googleConvLabel, setGoogleConvLabel] = useState("");
+  const [phone, setPhone]     = useState("");
+  const [message, setMessage] = useState("Olá! Vi seu anúncio e tenho interesse. Pode me ajudar?");
 
   const cleanPhone = phone.replace(/\D/g, "");
 
   // URL base: no browser sempre temos window.location.origin
   const base = typeof window !== "undefined" ? window.location.origin : "";
 
-  // Tag <script> de uma linha — apenas config de conta (sem telefone/mensagem)
-  const pixelParams = new URLSearchParams();
-  if (googleAdsId)     pixelParams.set("gadsId", googleAdsId);
-  if (googleConvLabel) pixelParams.set("gadsLabel", googleConvLabel);
-  const pixelParamStr = pixelParams.toString();
-  const pixelUrl  = `${base}/api/pixel/${clientId}${pixelParamStr ? `?${pixelParamStr}` : ""}`;
+  // URL do pixel sempre limpa — Google Ads, Meta Pixel etc. vêm das Configurações do cliente
+  const pixelUrl  = `${base}/api/pixel/${clientId}`;
   const scriptTag = `<script src="${pixelUrl}"></script>`;
 
   // Botão com dados no atributo (telefone e mensagem ficam no botão, não no pixel)
@@ -100,27 +94,6 @@ export function WaLinkGenerator({ clientId, clientName, pixelId }: Props) {
               onChange={(e) => setMessage(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#C4E91E] focus:ring-1 focus:ring-[#C4E91E] resize-none"
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-slate-600">Google Ads ID</label>
-              <input
-                value={googleAdsId}
-                onChange={(e) => setGoogleAdsId(e.target.value)}
-                placeholder="AW-12345678"
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#C4E91E] focus:ring-1 focus:ring-[#C4E91E]"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600">Label de conversão</label>
-              <input
-                value={googleConvLabel}
-                onChange={(e) => setGoogleConvLabel(e.target.value)}
-                placeholder="xXxXxXxXxX"
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#C4E91E] focus:ring-1 focus:ring-[#C4E91E]"
-              />
-            </div>
           </div>
 
           {pixelId && (

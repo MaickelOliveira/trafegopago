@@ -4,12 +4,8 @@ import { getClientById } from "@/lib/clients";
 export const dynamic = "force-dynamic";
 
 // GET /api/pixel/{clientId} — serve o script de rastreamento para o site do cliente
-// Query params opcionais na URL do <script src>:
-//   gadsId     – ID de conta Google Ads  (ex: AW-123456789)
-//   gadsLabel  – label de conversão       (ex: AbCdEfGhI)
-//
-// Telefone e mensagem NÃO ficam na URL do pixel — ficam nos atributos do botão:
-//   <a href="#" data-wa-track data-wa-phone="5544..." data-wa-msg="Olá!">Falar</a>
+// URL sempre limpa: <script src="/api/pixel/sbcie"></script>
+// Google Ads ID, label e Pixel Meta vêm do config do cliente (Configurações).
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ clientId: string }> }
@@ -25,11 +21,10 @@ export async function GET(
     });
   }
 
-  const q         = req.nextUrl.searchParams;
   const baseUrl   = req.nextUrl.origin;
-  const pixelId   = client.pixelId ?? "";
-  const gadsId    = q.get("gadsId")    ?? "";
-  const gadsLabel = q.get("gadsLabel") ?? "";
+  const pixelId   = client.pixelId        ?? "";
+  const gadsId    = client.googleAdsId    ?? "";
+  const gadsLabel = client.googleConvLabel ?? "";
 
   const script = buildScript({ clientId, baseUrl, pixelId, gadsId, gadsLabel });
 

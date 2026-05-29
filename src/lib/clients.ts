@@ -66,6 +66,8 @@ export type Client = {
   tintimWebhookForward?: string;
   pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
   capiToken?: string;           // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
+  googleAdsId?: string;         // ID de conta Google Ads  (ex: AW-123456789)
+  googleConvLabel?: string;     // Label de conversão Google Ads (ex: AbCdEfGhI)
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
   metaPageId?: string;          // ID da página do Facebook (para Lead Ads — vincula leads ao cliente certo)
   agentConfig?: AgentConfig;    // Configuração do agente principal (retrocompat)
