@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWebhookById, incrementWebhookCount } from "@/lib/webhooks";
 import { getFunnelById } from "@/lib/funnels";
-import { createLead, getLeadByPhone } from "@/lib/leads";
+import { upsertLeadByPhone } from "@/lib/leads";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
 
 export const dynamic = "force-dynamic";
@@ -77,39 +77,32 @@ export async function POST(
     : payload.gclid || utmSourceRaw === "google"         ? "google"
     : null;
 
-  // Evita duplicata — se lead já existe no mesmo funil, não recria
-  const existing = getLeadByPhone(wh.clientId, phone);
-  let lead;
-  if (existing) {
-    lead = existing;
-  } else {
-    lead = createLead({
-      clientId: wh.clientId,
-      funnelId: wh.funnelId,
-      name,
-      phone,
-      email: email ?? null,
-      source: "form",
-      status: columnId,
-      notes: `Origem: ${wh.name}`,
-      customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
-      adPlatform,
-      campaignName: payload.utm_campaign || payload.campanha || null,
-      utmSource: payload.utm_source || null,
-      utmMedium: payload.utm_medium || null,
-      utmCampaign: payload.utm_campaign || null,
-      utmContent: payload.utm_content || null,
-      utmTerm: payload.utm_term || null,
-      fbclid: payload.fbclid || null,
-      gclid: payload.gclid || null,
-      value: null,
-      ai: null,
-    });
-    incrementWebhookCount(id);
-    // Dispara automações CRM de lead_created e column_entered (fire-and-forget)
-    runAutomationsForEvent("lead_created", lead, { webhookId: id });
-    runAutomationsForEvent("column_entered", lead, { toColumnId: columnId });
-  }
+  // Upsert: se lead já existe no mesmo funil (mesmo se veio por WhatsApp), atualiza status
+  // para a coluna configurada no webhook (ex: "Novo"). Se não existe, cria.
+  const lead = upsertLeadByPhone(wh.clientId, phone, {
+    funnelId: wh.funnelId,
+    name,
+    email: email ?? null,
+    source: "form",
+    status: columnId,
+    notes: `Origem: ${wh.name}`,
+    customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
+    adPlatform,
+    campaignName: payload.utm_campaign || payload.campanha || null,
+    utmSource: payload.utm_source || null,
+    utmMedium: payload.utm_medium || null,
+    utmCampaign: payload.utm_campaign || null,
+    utmContent: payload.utm_content || null,
+    utmTerm: payload.utm_term || null,
+    fbclid: payload.fbclid || null,
+    gclid: payload.gclid || null,
+    value: null,
+    ai: null,
+  });
+  incrementWebhookCount(id);
+  // Dispara automações CRM
+  runAutomationsForEvent("lead_created", lead, { webhookId: id });
+  runAutomationsForEvent("column_entered", lead, { toColumnId: columnId });
 
   return NextResponse.json({ ok: true, leadId: lead.id, name: lead.name, phone: lead.phone });
 }
