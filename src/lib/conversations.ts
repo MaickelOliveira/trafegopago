@@ -98,32 +98,37 @@ export function markAsRead(phone: string) {
 /** Normaliza telefone removendo código de país 55 para busca fuzzy */
 function phoneVariants(phone: string): string[] {
   const digits = phone.replace(/\D/g, "");
-  const variants = new Set<string>([digits]);
 
-  // Obtém o número local (sem prefixo 55)
+  // Obtém número local sem prefixo 55
   const local = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
 
-  // Sempre testa com e sem o prefixo 55
-  variants.add(local);
-  variants.add("55" + local);
+  const variants: string[] = [];
 
-  // Se local tem 11 dígitos e o 3º dígito é 9 (formato novo com 9º dígito):
-  // também testa o formato antigo sem o 9 (10 dígitos locais = 12 com 55)
   if (local.length === 11 && local[2] === "9") {
+    // Formato novo com 9º dígito: gera também o formato antigo sem 9
+    // O formato com 55 vem SEMPRE PRIMEIRO (é o que UazAPI armazena)
     const sem9 = local.slice(0, 2) + local.slice(3); // remove o 9
-    variants.add(sem9);
-    variants.add("55" + sem9);
+    variants.push("55" + sem9);   // 12 dígitos sem 9 ← formato UazAPI mais comum
+    variants.push("55" + local);  // 13 dígitos com 9
+    variants.push(sem9);          // 10 dígitos sem 9
+    variants.push(local);         // 11 dígitos com 9
+  } else if (local.length === 10) {
+    // Formato antigo sem 9º dígito
+    variants.push("55" + local);  // 12 dígitos ← formato UazAPI mais comum
+    variants.push(local);         // 10 dígitos
+    // Se 3º dígito >= 6, tenta também com o 9
+    if (/^[1-9]{2}[6-9]/.test(local)) {
+      const com9 = local.slice(0, 2) + "9" + local.slice(2);
+      variants.push("55" + com9); // 13 dígitos
+      variants.push(com9);        // 11 dígitos
+    }
+  } else {
+    variants.push("55" + local);
+    variants.push(local);
   }
 
-  // Se local tem 10 dígitos e 3º dígito >= 6 (celular formato antigo):
-  // também testa com o 9 adicionado (11 dígitos locais = 13 com 55)
-  if (local.length === 10 && /^[1-9]{2}[6-9]/.test(local)) {
-    const com9 = local.slice(0, 2) + "9" + local.slice(2);
-    variants.add(com9);
-    variants.add("55" + com9);
-  }
-
-  return [...variants];
+  // Garante que o dígito original está incluído e sem duplicatas
+  return [...new Set([...variants, digits])];
 }
 
 export function setAiPaused(phone: string, paused: boolean) {
