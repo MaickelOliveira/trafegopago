@@ -154,9 +154,11 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
 
-  // Para novos contatos LID, tenta resolver o número real de exibição via API (best-effort)
+  // Para contatos LID sem número real resolvido, tenta resolver via API (best-effort)
+  // Roda tanto para leads novos quanto para leads existentes que ainda não têm realPhone
   let resolvedRealPhone: string | undefined;
-  if (isLidContact && isNew) {
+  const needsPhoneResolution = isLidContact && !existingLead?.realPhone;
+  if (needsPhoneResolution) {
     try {
       const lidJid = String(body.chatId ?? "").endsWith("@lid")
         ? String(body.chatId)
@@ -167,8 +169,12 @@ export async function POST(
       if (realPhone && realPhone !== phone) {
         console.log(`[WPPConnect Webhook] LID ${phone} → número real: ${realPhone}`);
         resolvedRealPhone = realPhone;
+      } else {
+        console.log(`[WPPConnect Webhook] LID ${phone} pn-lid retornou: ${JSON.stringify(realPhone)}`);
       }
-    } catch { /* best-effort */ }
+    } catch (e) {
+      console.log(`[WPPConnect Webhook] LID ${phone} erro ao resolver: ${e}`);
+    }
   }
 
   upsertLeadByPhone(clientId, phone, {

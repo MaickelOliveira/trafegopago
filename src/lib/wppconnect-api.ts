@@ -201,8 +201,14 @@ export async function resolveContactPhone(
       `${base()}/api/${sessionName}/contact/pn-lid/${encodeURIComponent(jid)}`,
       { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
     );
-    if (!res.ok) return null;
+    console.log(`[WPPConnect] pn-lid HTTP ${res.status} para ${jid}`);
+    if (!res.ok) {
+      const err = await res.text();
+      console.log(`[WPPConnect] pn-lid erro: ${err.slice(0, 200)}`);
+      return null;
+    }
     const data = await res.json() as Record<string, unknown>;
+    console.log(`[WPPConnect] pn-lid resposta: ${JSON.stringify(data).slice(0, 300)}`);
     // O endpoint retorna diretamente o objeto (sem wrapper .response)
     const phoneNumber = data.phoneNumber as Record<string, unknown> | undefined;
     if (phoneNumber) {
