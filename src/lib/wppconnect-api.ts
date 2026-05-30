@@ -181,3 +181,42 @@ export async function listSessions(): Promise<{ session: string; status: string 
     return [];
   }
 }
+
+// Tenta resolver o número real de um contato LID via API do WPPConnect.
+// Retorna o número real (ex: "5544XXXXXXXX") ou null se não conseguir resolver.
+export async function resolveContactPhone(
+  sessionName: string,
+  token: string,
+  contactId: string, // e.g. "18983856173090@lid" ou "18983856173090"
+): Promise<string | null> {
+  if (!base()) return null;
+  // Garante que o JID está no formato completo
+  const jid = contactId.includes("@") ? contactId : `${contactId}@lid`;
+  try {
+    // WPPConnect Server: GET /api/{session}/contact/{jid}
+    const res = await fetch(
+      `${base()}/api/${sessionName}/contact/${encodeURIComponent(jid)}`,
+      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as Record<string, unknown>;
+    const contact = (data.response ?? data) as Record<string, unknown>;
+    // Extrai o número: pode estar em .number, .phone ou .id.user
+    const candidates = [
+      contact.number as string,
+      contact.phone as string,
+      ((contact.id as Record<string, unknown>)?.user as string),
+    ];
+    for (const c of candidates) {
+      if (c && /^\d{10,15}$/.test(c.replace(/\D/g, "")) && !["lid"].includes(c)) {
+        const digits = c.replace(/\D/g, "");
+        // Rejeita se for idêntico ao LID (não é número real)
+        const lidBase = contactId.replace(/@.*/, "").replace(/\D/g, "");
+        if (digits !== lidBase) return digits;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

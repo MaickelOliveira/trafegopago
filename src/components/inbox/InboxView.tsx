@@ -12,6 +12,7 @@ type ChatMessage = {
 
 type Conversation = {
   phone: string;
+  realPhone?: string;
   contactName: string | null;
   connId: string | null;
   lastMessage: ChatMessage | null;
@@ -393,7 +394,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
               <p className="font-medium text-sm text-[#e9edef]">
                 {selectedConv?.contactName || displayPhone(selected)}
               </p>
-              <p className="text-xs text-[#8696a0]">{displayPhone(selected)}</p>
+              <p className="text-xs text-[#8696a0]">{displayPhone(selectedConv?.realPhone ?? selected)}</p>
             </div>
             {activeConn && (
               <div className="ml-auto flex items-center gap-1.5 text-xs text-[#8696a0] bg-[#2a3942] rounded-full px-3 py-1">

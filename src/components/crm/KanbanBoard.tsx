@@ -869,7 +869,7 @@ export function KanbanBoard({
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-500 mb-2 font-mono">{lead.phone}</p>
+                      <p className="text-xs text-slate-500 mb-2 font-mono">{lead.realPhone ?? lead.phone}</p>
 
                       <div className="flex items-center gap-1 flex-wrap mb-1">
                         <PlatformIcon lead={lead} />

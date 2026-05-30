@@ -512,7 +512,7 @@ export function DashboardView({ client }: { client: Client }) {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-white truncate">{l.name}</p>
-                            <p className="text-xs text-slate-500">{l.phone}</p>
+                            <p className="text-xs text-slate-500">{l.realPhone ?? l.phone}</p>
                           </div>
                           <div className="text-right flex-shrink-0">
                             <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg bg-white/10 text-slate-300">

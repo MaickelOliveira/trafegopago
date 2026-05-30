@@ -346,7 +346,7 @@ export function LeadModal({
                   <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                     className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400" />
                 ) : (
-                  <a href={`https://wa.me/${lead.phone}`} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline font-mono">{lead.phone}</a>
+                  <a href={`https://wa.me/${lead.realPhone ?? lead.phone}`} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline font-mono">{lead.realPhone ?? lead.phone}</a>
                 )}
               </div>
               <div>

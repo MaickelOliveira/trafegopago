@@ -41,11 +41,12 @@ export async function GET(req: NextRequest) {
     .map((c) => {
       // Sincroniza aiPaused com o lead — CRM é a fonte de verdade
       const lead = getLeadByPhone(clientId, c.phone);
+      const realPhone = lead?.realPhone;
       if (lead && lead.aiPaused !== undefined && lead.aiPaused !== c.aiPaused) {
         setAiPaused(c.phone, lead.aiPaused); // corrige conversations.json
-        return { ...c, aiPaused: lead.aiPaused };
+        return { ...c, aiPaused: lead.aiPaused, ...(realPhone ? { realPhone } : {}) };
       }
-      return c;
+      return { ...c, ...(realPhone ? { realPhone } : {}) };
     });
 
   return NextResponse.json({ conversations: filtered, connections });

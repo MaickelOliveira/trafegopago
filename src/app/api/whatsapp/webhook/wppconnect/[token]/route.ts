@@ -8,7 +8,7 @@ import { getHistory, addMessage, setAiPaused } from "@/lib/conversations";
 import { markSent, consumeSent } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
-import { sendText as wppSendText } from "@/lib/wppconnect-api";
+import { sendText as wppSendText, resolveContactPhone } from "@/lib/wppconnect-api";
 import {
   upsertPending,
   getPendingForPhone,
@@ -154,6 +154,23 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
 
+  // Para novos contatos LID, tenta resolver o número real de exibição via API (best-effort)
+  let resolvedRealPhone: string | undefined;
+  if (isLidContact && isNew) {
+    try {
+      const lidJid = String(body.chatId ?? "").endsWith("@lid")
+        ? String(body.chatId)
+        : String(body.from ?? "").endsWith("@lid")
+          ? String(body.from)
+          : `${phone}@lid`;
+      const realPhone = await resolveContactPhone(wppSession.sessionName, wppSession.sessionToken, lidJid);
+      if (realPhone && realPhone !== phone) {
+        console.log(`[WPPConnect Webhook] LID ${phone} → número real: ${realPhone}`);
+        resolvedRealPhone = realPhone;
+      }
+    } catch { /* best-effort */ }
+  }
+
   upsertLeadByPhone(clientId, phone, {
     clientId,
     funnelId,
@@ -161,6 +178,7 @@ export async function POST(
     ...(shouldUpdateName ? { name: pushName } : {}),
     ...(isNew ? { status: entradaColumnId } : {}),
     ...(isLidContact ? { isLid: true } : {}),
+    ...(resolvedRealPhone ? { realPhone: resolvedRealPhone } : {}),
     ...adFields,
   });
 
