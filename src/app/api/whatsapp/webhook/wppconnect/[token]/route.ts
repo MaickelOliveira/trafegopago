@@ -238,9 +238,12 @@ export async function POST(
   if (!text.trim()) return NextResponse.json({ ok: true });
 
   // ── Agente Kanban — roda sempre, independente da IA de atendimento (fire-and-forget) ──
+  // NOTA: getHistory já inclui a mensagem recém adicionada, então removemos o último
+  // item para não duplicar (runKanbanAgent envia lastMessage separadamente)
   if (clientId !== "sem-cliente") {
     const _h = getHistory(phone);
-    processKanbanActions(text, _h, clientId, phone).catch(() => {});
+    const historyForKanban = _h.length > 1 ? _h.slice(0, -1) : [];
+    processKanbanActions(text, historyForKanban, clientId, phone).catch(() => {});
   }
 
   // ── Verifica IA ──

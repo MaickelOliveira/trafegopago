@@ -284,8 +284,11 @@ export async function POST(req: NextRequest) {
     const history = getHistory(phone);
 
     // Agente Kanban — roda sempre, independente da IA de atendimento (fire-and-forget)
+    // NOTA: history já inclui a mensagem recém adicionada; removemos o último item
+    // para não duplicar (runKanbanAgent envia lastMessage separadamente)
     if (cid !== "sem-cliente") {
-      processKanbanActions(text, history, cid, phone).catch((e) =>
+      const historyForKanban = history.length > 1 ? history.slice(0, -1) : [];
+      processKanbanActions(text, historyForKanban, cid, phone).catch((e) =>
         console.error("[kanban-agent]", e)
       );
     }

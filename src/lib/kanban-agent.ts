@@ -126,6 +126,9 @@ async function runKanbanAgent(
     const response = result.response;
 
     const actions: KanbanAction[] = [];
+    const allParts = response.candidates?.flatMap((c) => c.content?.parts ?? []) ?? [];
+    const fnCalls = allParts.filter((p) => p.functionCall).map((p) => p.functionCall!.name);
+    console.log(`[kanban-agent/gemini] candidatos=${response.candidates?.length ?? 0} fnCalls=[${fnCalls.join(",")}] text="${(response.text?.() ?? "").slice(0, 100)}"`);
 
     for (const candidate of response.candidates ?? []) {
       for (const part of candidate.content?.parts ?? []) {
@@ -137,6 +140,8 @@ async function runKanbanAgent(
           const colunaValida = (funnel.columns ?? []).find((c) => c.id === colunaId);
           if (colunaValida && !colunaValida.blockAutoMove && colunaId !== lead.status) {
             actions.push({ type: "mover_lead", colunaId, motivo: args.motivo ?? "" });
+          } else {
+            console.log(`[kanban-agent/gemini] mover_lead ignorado: colunaId=${colunaId} valida=${!!colunaValida} blockAutoMove=${colunaValida?.blockAutoMove} jaEsta=${colunaId === lead.status}`);
           }
         }
 
@@ -219,24 +224,44 @@ export async function processKanbanActions(
 ): Promise<void> {
   const client = getClientById(clientId);
   // Agente desabilitado explicitamente pelo gestor
-  if (client?.kanbanAgentEnabled === false) return;
+  if (client?.kanbanAgentEnabled === false) {
+    console.log(`[kanban-agent] desabilitado para client=${clientId}`);
+    return;
+  }
 
   const geminiApiKey = getGeminiApiKey(client?.agentConfig?.geminiApiKey ?? undefined);
-  if (!geminiApiKey) return;
+  if (!geminiApiKey) {
+    console.error(`[kanban-agent] GEMINI_API_KEY não configurada — client=${clientId}`);
+    return;
+  }
 
   const lead = getLeadByPhone(clientId, phone);
-  if (!lead) return;
+  if (!lead) {
+    console.log(`[kanban-agent] lead não encontrado client=${clientId} phone=${phone}`);
+    return;
+  }
 
   const funnel = getFunnelById(lead.funnelId);
-  if (!funnel) return;
+  if (!funnel) {
+    console.log(`[kanban-agent] funil não encontrado funnelId=${lead.funnelId}`);
+    return;
+  }
+
+  console.log(`[kanban-agent] iniciando — lead=${lead.name} status=${lead.status} msg="${lastMessage.slice(0, 80)}"`);
 
   const actions = await runKanbanAgent(lastMessage, history, lead, funnel, geminiApiKey);
+
+  console.log(`[kanban-agent] Gemini retornou ${actions.length} ação(ões):`, JSON.stringify(actions));
+
   if (actions.length === 0) return;
 
   for (const action of actions) {
     if (action.type === "mover_lead") {
       const col = (funnel.columns ?? []).find((c) => c.id === action.colunaId);
-      if (!col) continue;
+      if (!col) {
+        console.log(`[kanban-agent] coluna não encontrada: ${action.colunaId}`);
+        continue;
+      }
 
       updateLead(lead.id, { status: col.id });
       console.log(`[kanban-agent] Lead ${lead.name} → ${col.label} (${action.motivo})`);
