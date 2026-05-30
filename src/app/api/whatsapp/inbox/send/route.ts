@@ -53,8 +53,19 @@ export async function POST(req: NextRequest) {
   // ── WPPConnect ──
   if (wppSession) {
     if (type === "text") {
-      ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, cleanPhone, content);
-      console.log(`[inbox/send] WPPConnect send ok=${ok} session=${wppSession.sessionName} phone=${cleanPhone}`);
+      const existingLeadForLid = getLeadByPhone(clientId, cleanPhone);
+      let isLid = existingLeadForLid?.isLid === true;
+      ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, cleanPhone, content, isLid);
+      // Fallback: se falhou e ainda não tentamos com isLid, tenta com isLid:true
+      if (!ok && !isLid) {
+        console.log(`[inbox/send] Retrying with isLid=true phone=${cleanPhone}`);
+        ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, cleanPhone, content, true);
+        if (ok && existingLeadForLid) {
+          updateLead(existingLeadForLid.id, { isLid: true });
+          isLid = true;
+        }
+      }
+      console.log(`[inbox/send] WPPConnect send ok=${ok} session=${wppSession.sessionName} phone=${cleanPhone} isLid=${isLid}`);
     } else {
       return NextResponse.json({ error: "Tipo de mídia não suportado via WPPConnect ainda" }, { status: 400 });
     }
