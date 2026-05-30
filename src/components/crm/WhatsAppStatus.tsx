@@ -1,10 +1,22 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { FunnelConnection, ConnectionType } from "@/lib/funnels";
+
+declare global {
+  interface Window {
+    FB: {
+      init: (opts: Record<string, unknown>) => void;
+      login: (cb: (r: { authResponse?: { code?: string } }) => void, opts: Record<string, unknown>) => void;
+    };
+    fbAsyncInit?: () => void;
+  }
+}
 
 type InstStatus = { status: string; phone: string | null; name: string | null; qr?: string | null; type?: string };
 type Instances = Record<string, InstStatus>;
 type FunnelInfo = { id: string; name: string; clientId?: string | null; connections?: FunnelConnection[] };
+
+const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID ?? "";
 
 export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }: {
   clients: { id: string; name: string }[];
@@ -25,6 +37,9 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
   const [newMetaToken, setNewMetaToken] = useState("");
   const [newVerifyToken, setNewVerifyToken] = useState("trafegopago");
   const [saving, setSaving] = useState(false);
+  const [embeddedStatus, setEmbeddedStatus] = useState<"idle" | "loading" | "running" | "done" | "error">("idle");
+  const [embeddedError, setEmbeddedError] = useState("");
+  const embeddedFunnelRef = useRef<string | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +75,100 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
     return () => clearInterval(t);
   }, [qrData]);
 
-  async function fetchInstances() {
+  // ── Embedded Signup Meta SDK ─────────────────────────────────────────────
+  const loadMetaSDK = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      if (typeof window.FB !== "undefined") { resolve(); return; }
+      window.fbAsyncInit = () => {
+        window.FB.init({ appId: META_APP_ID, version: "v21.0", xfbml: false, cookie: false });
+        resolve();
+      };
+      if (!document.getElementById("facebook-jssdk")) {
+        const s = document.createElement("script");
+        s.id = "facebook-jssdk";
+        s.src = "https://connect.facebook.net/pt_BR/sdk.js";
+        s.async = true;
+        document.head.appendChild(s);
+      }
+    });
+  }, []);
+
+  // Listener para capturar wabaId + phoneNumberId da sessão
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      if (event.origin !== "https://www.facebook.com") return;
+      try {
+        const d = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (d?.type !== "WA_EMBEDDED_SIGNUP") return;
+        if (d.event === "FINISH") {
+          const { phone_number_id: phoneNumberId, waba_id: wabaId } = d.data ?? {};
+          const code = d.authResponse?.code;
+          const funnelId = embeddedFunnelRef.current;
+          if (!code || !phoneNumberId || !wabaId || !funnelId) return;
+          completEmbeddedSignup(code, wabaId, phoneNumberId, funnelId);
+        } else if (d.event === "CANCEL") {
+          setEmbeddedStatus("idle");
+        } else if (d.event === "ERROR") {
+          setEmbeddedError(d.data?.error_message ?? "Erro no fluxo Meta");
+          setEmbeddedStatus("error");
+        }
+      } catch { /* ignora mensagens não JSON */ }
+    }
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function completEmbeddedSignup(code: string, wabaId: string, phoneNumberId: string, funnelId: string) {
+    setEmbeddedStatus("loading");
+    try {
+      const res = await fetch("/api/meta/embedded-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, wabaId, phoneNumberId, funnelId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setEmbeddedError(data.error ?? "Falha ao salvar conexão");
+        setEmbeddedStatus("error");
+        return;
+      }
+      setEmbeddedStatus("done");
+      setAddingTo(null);
+      fetchFunnels();
+    } catch {
+      setEmbeddedError("Erro de rede ao finalizar conexão");
+      setEmbeddedStatus("error");
+    }
+  }
+
+  async function launchEmbeddedSignup(funnelId: string) {
+    if (!META_APP_ID) {
+      setEmbeddedError("NEXT_PUBLIC_META_APP_ID não configurado");
+      setEmbeddedStatus("error");
+      return;
+    }
+    setEmbeddedStatus("running");
+    embeddedFunnelRef.current = funnelId;
+    await loadMetaSDK();
+    window.FB.login(
+      (response) => {
+        // Código também pode chegar aqui no authResponse, mas priorizamos o event listener
+        if (response.authResponse?.code) {
+          // Se o listener de mensagem não capturou, tenta via FB.login callback
+          // (comportamento depende da versão do flow)
+          console.log("[EmbeddedSignup] authResponse code recebido via callback");
+        }
+      },
+      {
+        config_id: process.env.NEXT_PUBLIC_META_EMBEDDED_CONFIG_ID ?? undefined,
+        response_type: "code",
+        override_default_response_type: true,
+        scope: "whatsapp_business_management,whatsapp_business_messaging",
+        extras: { sessionInfoVersion: 2 },
+      }
+    );
+  }
     try {
       const res = await fetch("/api/crm/whatsapp/instances");
       if (res.ok) setInstances(await res.json());
@@ -191,9 +299,75 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
                           {status === "connected" ? (inst?.phone ? `+${inst.phone}` : "Conectado") : "Desconectado"}
                         </p>
                       </div>
+                      <button onClick={() => removeConnection(f.id, conn.id)}
+                        className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded">
+                        ✕
+                      </button>
                     </div>
                   );
                 })}
+
+                {/* Botão adicionar + modal inline */}
+                {addingTo === f.id ? (
+                  <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 space-y-3">
+                    <p className="text-xs font-semibold text-slate-700">Escolha o tipo de conexão:</p>
+
+                    {/* Opção: Meta Embedded Signup */}
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                      <p className="text-xs font-bold text-blue-800 mb-1">🏢 Meta Cloud API — Rastreio nativo de anúncios</p>
+                      <p className="text-xs text-blue-600 mb-2">
+                        Conecta via conta Meta do cliente. Captura campanha, conjunto e anúncio automaticamente em leads de Click-to-WhatsApp.
+                      </p>
+                      {embeddedStatus === "error" && (
+                        <p className="text-xs text-red-600 mb-2">⚠️ {embeddedError}</p>
+                      )}
+                      {embeddedStatus === "done" && (
+                        <p className="text-xs text-green-700 mb-2">✅ Conectado com sucesso!</p>
+                      )}
+                      <button
+                        onClick={() => launchEmbeddedSignup(f.id)}
+                        disabled={embeddedStatus === "running" || embeddedStatus === "loading"}
+                        className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold py-2 transition">
+                        {embeddedStatus === "running" ? "Aguardando Meta..." :
+                         embeddedStatus === "loading" ? "Salvando conexão..." :
+                         "Conectar via Meta (Embedded Signup)"}
+                      </button>
+                    </div>
+
+                    {/* Separador */}
+                    <p className="text-xs text-slate-400 text-center">— ou —</p>
+
+                    {/* Opção: UazAPI */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                      <p className="text-xs font-bold text-slate-700">⚡ UazAPI (QR Code)</p>
+                      <input
+                        className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                        placeholder="Nome da instância (ex: nexo-principal)"
+                        value={newInstanceName}
+                        onChange={e => setNewInstanceName(e.target.value)}
+                      />
+                      <button
+                        onClick={() => { setNewType("uazapi"); addConnection(f.id); }}
+                        disabled={saving || !newInstanceName.trim()}
+                        className="w-full rounded-lg bg-slate-700 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold py-2 transition">
+                        {saving ? "Criando..." : "Criar instância QR Code"}
+                      </button>
+                    </div>
+
+                    <button onClick={() => { setAddingTo(null); setEmbeddedStatus("idle"); setEmbeddedError(""); }}
+                      className="w-full text-xs text-slate-400 hover:text-slate-600 py-1">
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="px-4 py-2">
+                    <button
+                      onClick={() => { setAddingTo(f.id); setEmbeddedStatus("idle"); setEmbeddedError(""); setNewInstanceName(""); }}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                      + Adicionar número
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

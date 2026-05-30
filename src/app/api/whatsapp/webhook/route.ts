@@ -118,7 +118,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const { phone, text, fromMe } = extracted;
+    const { phone, text: rawText, fromMe } = extracted;
+    // Remove o código de rastreio [_:...] da mensagem — extração já foi feita, IA não deve ver
+    const text = rawText.replace(/\s*\[_:[^\]]+\]/g, "").trim();
 
     // Identifica funil e cliente pelo instanceId ou instancePhone enviados pelo UazapiGO
     const chatObj = body.chat as Record<string, unknown> | undefined;
@@ -207,7 +209,7 @@ export async function POST(req: NextRequest) {
           gclid:       click.gclid,
         };
       } else {
-        tracking = parseWaTracking(text);
+        tracking = parseWaTracking(rawText);
       }
     }
 
