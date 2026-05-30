@@ -41,6 +41,7 @@ export type Lead = {
   notes: string;
   ai: LeadAI | null;
   aiPaused?: boolean; // IA pausada para esta conversa (especialista assumiu)
+  isLid?: boolean;    // Contato usa LID interno do WhatsApp (novo protocolo) — envia com isLid:true
   customFields?: Record<string, string>; // Campos extras do formulário de origem
   createdAt: string;
   updatedAt: string;

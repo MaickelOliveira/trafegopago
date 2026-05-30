@@ -136,12 +136,16 @@ export async function POST(
       }
     : {};
 
+  // Detecta se o contato usa LID (novo sistema interno do WhatsApp)
+  const isLidContact = String(body.from ?? "").endsWith("@lid");
+
   upsertLeadByPhone(clientId, phone, {
     clientId,
     funnelId,
     source: "whatsapp",
     ...(shouldUpdateName ? { name: pushName } : {}),
     ...(isNew ? { status: entradaColumnId } : {}),
+    ...(isLidContact ? { isLid: true } : {}),
     ...adFields,
   });
 
@@ -187,9 +191,10 @@ export async function POST(
   const history = getHistory(phone);
 
   // Helper: envia e registra a resposta da IA
+  const isLidPhone = String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, { connId });
-    await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, reply);
+    await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, reply, isLidPhone);
   }
 
   // ── Batching: acumula mensagens antes de responder ──

@@ -75,8 +75,10 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
 
   // Envia pela conexão correta
   if (wppSession) {
-    const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim());
-    console.log(`[conversations/send] WPPConnect ok=${ok} session=${wppSession.sessionName} phone=${normalized}`);
+    const lead = clientId ? getLeadByPhone(clientId, normalized) : undefined;
+    const isLid = lead?.isLid === true;
+    const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim(), isLid);
+    console.log(`[conversations/send] WPPConnect ok=${ok} session=${wppSession.sessionName} phone=${normalized} isLid=${isLid}`);
   } else if (connType === "meta" && metaPhoneNumberId && metaToken) {
     await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
       method: "POST",

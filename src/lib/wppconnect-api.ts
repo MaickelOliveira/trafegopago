@@ -129,15 +129,21 @@ export async function logoutSession(sessionName: string, token: string): Promise
 }
 
 // Envia mensagem de texto
+// isLid=true: para contatos com LID interno do WhatsApp (ex: 18983856173090@lid)
 export async function sendText(
   sessionName: string,
   token: string,
   phone: string,
   message: string,
+  isLid = false,
 ): Promise<boolean> {
   if (!base()) return false;
   try {
-    const phoneFormatted = phone.includes("@") ? phone : `${phone}@c.us`;
+    // Para contatos LID, envia o número puro (sem @c.us) com isLid:true
+    // Para contatos normais, formata como número@c.us
+    const phoneFormatted = isLid
+      ? phone.replace(/@.*/, "")           // remove qualquer sufixo existente
+      : phone.includes("@") ? phone : `${phone}@c.us`;
     const res = await fetch(
       `${base()}/api/${sessionName}/send-message`,
       {
@@ -146,12 +152,12 @@ export async function sendText(
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ phone: phoneFormatted, message, isGroup: false }),
+        body: JSON.stringify({ phone: phoneFormatted, message, isGroup: false, ...(isLid ? { isLid: true } : {}) }),
       },
     );
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.error(`[wppconnect-api] sendText FAILED status=${res.status} session=${sessionName} phone=${phoneFormatted} body=${body}`);
+      console.error(`[wppconnect-api] sendText FAILED status=${res.status} session=${sessionName} phone=${phoneFormatted} isLid=${isLid} body=${body}`);
     }
     return res.ok;
   } catch (e) {
