@@ -1,20 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig, saveConfig } from "@/lib/clients";
 
+/** Retorna a URL pública da plataforma, mesmo atrás de reverse proxy (EasyPanel/nginx) */
+function getPublicBaseUrl(req: NextRequest, appBaseUrl?: string): string {
+  if (appBaseUrl) return appBaseUrl.replace(/\/$/, "");
+  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+  return `${proto}://${host}`;
+}
+
 export async function GET(req: NextRequest) {
+  const config = getConfig();
+  const baseUrl = getPublicBaseUrl(req, config.appBaseUrl);
+
   const code = req.nextUrl.searchParams.get("code");
   const error = req.nextUrl.searchParams.get("error");
 
   if (error || !code) {
-    return NextResponse.redirect(`${req.nextUrl.origin}/gestor/configuracoes?meta_error=cancelled`);
+    return NextResponse.redirect(`${baseUrl}/gestor/configuracoes?meta_error=cancelled`);
   }
 
-  const config = getConfig();
   if (!config.metaAppId || !config.metaAppSecret) {
-    return NextResponse.redirect(`${req.nextUrl.origin}/gestor/configuracoes?meta_error=no_app`);
+    return NextResponse.redirect(`${baseUrl}/gestor/configuracoes?meta_error=no_app`);
   }
 
-  const redirectUri = `${config.appBaseUrl?.replace(/\/$/, "")}/api/meta/oauth/callback`;
+  const redirectUri = `${baseUrl}/api/meta/oauth/callback`;
 
   // Troca code por token de curta duração
   const tokenRes = await fetch(
@@ -47,5 +57,5 @@ export async function GET(req: NextRequest) {
 
   saveConfig({ ...config, metaToken: finalToken });
 
-  return NextResponse.redirect(`${req.nextUrl.origin}/gestor/configuracoes?meta_success=1`);
+  return NextResponse.redirect(`${baseUrl}/gestor/configuracoes?meta_success=1`);
 }

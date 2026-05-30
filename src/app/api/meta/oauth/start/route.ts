@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getConfig } from "@/lib/clients";
 
+/** Retorna a URL pública da plataforma, mesmo atrás de reverse proxy (EasyPanel/nginx) */
+function getPublicBaseUrl(req: NextRequest, appBaseUrl?: string): string {
+  if (appBaseUrl) return appBaseUrl.replace(/\/$/, "");
+  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+  return `${proto}://${host}`;
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "manager") {
@@ -13,8 +21,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Configure o App ID e App Secret da Meta primeiro." }, { status: 400 });
   }
 
-  // Usa appBaseUrl salvo ou origin da requisição como fallback
-  const baseUrl = (config.appBaseUrl?.replace(/\/$/, "")) || req.nextUrl.origin;
+  const baseUrl = getPublicBaseUrl(req, config.appBaseUrl);
   const redirectUri = `${baseUrl}/api/meta/oauth/callback`;
 
   const params = new URLSearchParams({
