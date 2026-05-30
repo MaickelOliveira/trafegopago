@@ -28,6 +28,7 @@ export type Lead = {
   adSetId?: string | null;     // ID do conjunto de anúncios
   adName?: string | null;      // Nome do anúncio
   adId?: string | null;        // ID do anúncio (Meta ad_id / Google creative)
+  adSourceUrl?: string | null; // Link do anúncio (referral.source_url do CTWa)
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
@@ -175,6 +176,7 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     adSetId: patch.adSetId ?? null,
     adName: patch.adName ?? null,
     adId: patch.adId ?? null,
+    adSourceUrl: patch.adSourceUrl ?? null,
     utmSource: patch.utmSource ?? null,
     utmMedium: patch.utmMedium ?? null,
     utmCampaign: patch.utmCampaign ?? null,

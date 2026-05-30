@@ -586,11 +586,13 @@ export async function POST(
         adSetName: adInfo.adSetName,
         campaignId: adInfo.campaignId,
         campaignName: adInfo.campaignName,
+        adSourceUrl: (ctwaReferral?.source_url as string) ?? null,
       } : ctwaReferral ? {
         // Fallback: sem token Meta mas tem referral — salva o que veio no payload
         adPlatform: "meta",
         adId: ctwaAdId ?? null,
         campaignName: (ctwaReferral.headline as string) ?? null,
+        adSourceUrl: (ctwaReferral.source_url as string) ?? null,
       } : {}),
     });
 
