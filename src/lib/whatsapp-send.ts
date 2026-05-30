@@ -89,5 +89,11 @@ export async function sendMessageDirect(
 
 export function getGeminiApiKey(clientGeminiKey?: string): string | null {
   const config = getConfig();
-  return clientGeminiKey || config.geminiApiKey || null;
+  return (
+    clientGeminiKey ||
+    config.geminiApiKey ||
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_IMAGEN_API_KEY ||
+    null
+  );
 }
