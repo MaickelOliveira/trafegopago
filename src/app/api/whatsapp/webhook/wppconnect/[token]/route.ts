@@ -17,6 +17,35 @@ import {
 
 export const dynamic = "force-dynamic";
 
+// Registro em memória de mensagens enviadas pela IA.
+// Quando a IA envia, o WPPConnect dispara onselfmessage de volta — sem esse registro,
+// o webhook pausaria a IA achando que foi o operador quem enviou.
+const aiSentRegistry = new Map<string, string[]>(); // phone → conteúdos recentes da IA
+
+function markAiSent(phone: string, content: string) {
+  const list = aiSentRegistry.get(phone) ?? [];
+  list.push(content);
+  aiSentRegistry.set(phone, list);
+  // Limpa após 60s para não acumular memória
+  setTimeout(() => {
+    const cur = aiSentRegistry.get(phone);
+    if (!cur) return;
+    const idx = cur.indexOf(content);
+    if (idx !== -1) cur.splice(idx, 1);
+    if (cur.length === 0) aiSentRegistry.delete(phone);
+  }, 60_000);
+}
+
+function consumeAiSent(phone: string, content: string): boolean {
+  const list = aiSentRegistry.get(phone);
+  if (!list) return false;
+  const idx = list.indexOf(content);
+  if (idx === -1) return false;
+  list.splice(idx, 1);
+  if (list.length === 0) aiSentRegistry.delete(phone);
+  return true;
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -177,10 +206,14 @@ export async function POST(
     );
   }
 
-  // Se foi enviado por nós, pausa a IA e não responde
+  // Se foi enviado por nós (fromMe), verifica se foi a IA ou o operador
   if (fromMe) {
     if (text.trim()) {
-      // Pausa a IA quando operador responde manualmente pelo celular
+      // Se a própria IA enviou esta mensagem, apenas ignora (não pausa)
+      if (consumeAiSent(phone, text.trim())) {
+        return NextResponse.json({ ok: true });
+      }
+      // Operador enviou manualmente pelo celular → pausa a IA
       const activeClientFM = clientId !== "sem-cliente" ? getClientById(clientId) : null;
       const agentCfgFM = activeClientFM ? getAgentConfigForConnection(activeClientFM, connId) : undefined;
       const resumeKeyword = agentCfgFM?.aiResumeKeyword?.trim();
@@ -221,6 +254,7 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
+    markAiSent(phone, reply); // marca antes de enviar: ignora o onselfmessage de volta
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, { connId });
     await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, reply, isLidPhone);
   }
