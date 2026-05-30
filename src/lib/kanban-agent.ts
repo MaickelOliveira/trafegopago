@@ -58,7 +58,11 @@ Regras:
 - IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou reunião 2 mensagens atrás e depois disse "ok", o estado ainda é "reunião confirmada"
 - NUNCA mova para colunas bloqueadas
 - Não mova se o lead já está na coluna correta
-- Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante, (c) preencher 'valor' SOMENTE quando o Assistente/vendedor propôs um preço E o lead aceitou explicitamente — nunca preencha se o lead apenas mencionou um número ou se o valor ainda não foi confirmado
+- Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante
+- REGRA DO VALOR: preencha o campo 'valor' SOMENTE se AMBAS as condições forem verdadeiras:
+    1. O Assistente (ou vendedor) propôs explicitamente um preço/valor na conversa
+    2. O lead aceitou — disse algo como "ok", "fechado", "topo", "pode ser", "vamos nessa", "aceito", "confirmado", "tá bom", "feito"
+  Se o lead apenas perguntou o preço, mencionou um número sem contexto, ou ainda não confirmou → NÃO preencha 'valor'
 - Se não houver nada a fazer, não chame nenhuma ferramenta
 - Você NÃO responde ao usuário — apenas executa ações no CRM`;
 }
