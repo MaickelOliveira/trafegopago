@@ -169,6 +169,8 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
       }
     );
   }
+
+  async function fetchInstances() {
     try {
       const res = await fetch("/api/crm/whatsapp/instances");
       if (res.ok) setInstances(await res.json());
