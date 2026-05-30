@@ -413,6 +413,25 @@ export function KanbanBoard({
     clients.find((c) => c.id === (selectedClient ?? clients[0]?.id))?.kanbanAgentEnabled !== false
   );
   const [togglingAgent, setTogglingAgent] = useState(false);
+  const [classifying, setClassifying] = useState(false);
+  const [classifyResult, setClassifyResult] = useState<string | null>(null);
+
+  async function classifyAll() {
+    const cid = selectedClient ?? clients[0]?.id;
+    if (!cid) return;
+    setClassifying(true);
+    setClassifyResult(null);
+    const res = await fetch(`/api/crm/kanban-agent?clientId=${cid}`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json() as { processed: number; moved: number; total: number };
+      setClassifyResult(`${data.moved} de ${data.processed} leads movidos`);
+      // Recarrega os leads
+      const leadsRes = await fetch(`/api/crm/leads?clientId=${cid}`);
+      if (leadsRes.ok) setLeads(await leadsRes.json());
+      setTimeout(() => setClassifyResult(null), 5000);
+    }
+    setClassifying(false);
+  }
 
   async function toggleAgent() {
     const cid = selectedClient ?? clients[0]?.id;
@@ -755,6 +774,22 @@ export function KanbanBoard({
         >
           <span className={clsx("h-2 w-2 rounded-full", agentEnabled ? "bg-violet-500" : "bg-slate-300")} />
           {togglingAgent ? "..." : agentEnabled ? "IA ativa" : "IA desligada"}
+        </button>
+
+        {/* Classificar todos os leads com IA */}
+        <button
+          onClick={classifyAll}
+          disabled={classifying}
+          title="Analisa a conversa de todos os leads e move cada um para a coluna correta"
+          className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition shrink-0 flex items-center gap-1.5 disabled:opacity-50"
+        >
+          {classifying ? (
+            <><svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Classificando...</>
+          ) : classifyResult ? (
+            <><svg className="h-3 w-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg> {classifyResult}</>
+          ) : (
+            <>✦ Classificar leads</>
+          )}
         </button>
 
         <button
