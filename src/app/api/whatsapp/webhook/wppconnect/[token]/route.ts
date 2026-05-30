@@ -63,18 +63,24 @@ export async function POST(
   }
 
   // Extrai o número do remetente
-  // IMPORTANTE: o campo `from` pode ser um LID interno do WhatsApp (ex: 18983856173090)
-  // e não o número real de telefone. Usa sender.number ou sender.id._serialized como prioridade.
+  // Para fromMe=true (mensagem enviada por nós): usa chatId (o contato) em vez de sender (nós mesmos)
+  // Para fromMe=false (mensagem recebida): usa sender.number; se LID → usa senderIdObj.user
   const sender = body.sender as Record<string, unknown> | undefined;
   const senderIdObj = sender?.id as Record<string, unknown> | undefined;
 
-  const rawFrom =
-    (sender?.number as string) ||                       // número real (mais confiável)
-    (senderIdObj?.user as string) ||                    // user part do ID serializado
-    (senderIdObj?._serialized as string) ||             // ID serializado completo
-    (body.from as string) ||                            // fallback: campo from (pode ser LID)
-    (body.chatId as string) ||
-    "";
+  const rawFrom = fromMe
+    ? // Mensagem enviada por nós → pega o número do destinatário (chatId)
+      (body.chatId as string) ||
+      (body.to as string) ||
+      (body.from as string) ||
+      ""
+    : // Mensagem recebida → pega o número do remetente
+      (sender?.number as string) ||                       // número real (mais confiável)
+      (senderIdObj?.user as string) ||                    // user part do ID serializado
+      (senderIdObj?._serialized as string) ||             // ID serializado completo
+      (body.from as string) ||                            // fallback: campo from (pode ser LID)
+      (body.chatId as string) ||
+      "";
   const phone = rawFrom.replace(/@.*/, "").replace(/\D/g, "");
   if (!phone) return NextResponse.json({ ok: true });
 
@@ -137,7 +143,10 @@ export async function POST(
     : {};
 
   // Detecta se o contato usa LID (novo sistema interno do WhatsApp)
-  const isLidContact = String(body.from ?? "").endsWith("@lid");
+  // Para fromMe=true, o chatId é o destinatário (o LID); para fromMe=false, o from é o remetente LID
+  const isLidContact =
+    String(body.chatId ?? "").endsWith("@lid") ||
+    String(body.from ?? "").endsWith("@lid");
 
   upsertLeadByPhone(clientId, phone, {
     clientId,
@@ -191,7 +200,9 @@ export async function POST(
   const history = getHistory(phone);
 
   // Helper: envia e registra a resposta da IA
-  const isLidPhone = String(body.from ?? "").endsWith("@lid");
+  const isLidPhone =
+    String(body.chatId ?? "").endsWith("@lid") ||
+    String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, { connId });
     await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, reply, isLidPhone);
