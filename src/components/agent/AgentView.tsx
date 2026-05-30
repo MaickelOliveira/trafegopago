@@ -30,7 +30,7 @@ type WaConnection = {
   phone?: string;
   name?: string;
   status: string; // "connected" | "connecting" | "disconnected"
-  type: "uazapi" | "meta";
+  type: "uazapi" | "meta" | "wppconnect";
   funnelId: string;
   funnelName: string;
 };
@@ -175,20 +175,27 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   async function loadWaConnections() {
     setLoadingWa(true);
     try {
-      // Busca funis do cliente + instâncias enriquecidas do WhatsApp Manager
-      const [funnelsRes, managerRes] = await Promise.all([
+      // Busca funis do cliente + instâncias enriquecidas do WhatsApp Manager + sessões WPPConnect
+      const [funnelsRes, managerRes, wppRes] = await Promise.all([
         fetch(`/api/crm/funnels?clientId=${clientId}`),
         fetch("/api/whatsapp/manager"),
+        fetch("/api/whatsapp/wppconnect-manager"),
       ]);
       const funnels: { id: string; name: string; connections?: { id: string; phone?: string; type: string; uazapiToken?: string; metaPhoneNumberId?: string }[] }[] =
         funnelsRes.ok ? await funnelsRes.json() : [];
       // EnrichedInstance array from /api/whatsapp/manager
       type EnrichedInst = { token: string; name: string; status: string; phone: string | null };
       const enrichedList: EnrichedInst[] = managerRes.ok ? await managerRes.json() : [];
+      // WPPConnect sessions
+      type WppSess = { id: string; sessionName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
+      const wppSessions: WppSess[] = wppRes.ok ? await wppRes.json() : [];
 
       // Lookup by token or name
       const byToken = new Map(enrichedList.map(e => [e.token, e]));
       const byName  = new Map(enrichedList.map(e => [e.name,  e]));
+
+      // Funnel IDs belonging to this client
+      const clientFunnelIds = new Set(funnels.map(f => f.id));
 
       const conns: WaConnection[] = [];
       for (const funnel of funnels) {
@@ -216,6 +223,22 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           }
         }
       }
+
+      // Adiciona sessões WPPConnect vinculadas aos funis do cliente
+      for (const wpp of wppSessions) {
+        if (wpp.linkedFunnelId && clientFunnelIds.has(wpp.linkedFunnelId)) {
+          conns.push({
+            id: wpp.id,
+            phone: wpp.phone ?? undefined,
+            name: wpp.sessionName,
+            status: wpp.status,
+            type: "wppconnect",
+            funnelId: wpp.linkedFunnelId,
+            funnelName: wpp.linkedFunnelName ?? "",
+          });
+        }
+      }
+
       setWaConnections(conns);
       // Auto-select first connection
       const firstId = conns[0]?.id ?? null;
@@ -314,13 +337,14 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               <option value="">— selecione uma instância —</option>
             {waConnections.map((conn) => {
               const summary = configsSummary.find(s => s.whatsappConnectionId === conn.id);
-              const phone = conn.phone ? `+${conn.phone}` : conn.id.slice(0, 12);
+              const phone = conn.phone ? `+${conn.phone}` : (conn.name ?? conn.id.slice(0, 12));
               const agentName = summary?.name;
               const label = agentName ? `${agentName} (${phone})` : phone;
               const badge = summary?.enabled ? " ✓" : "";
+              const icon = conn.type === "meta" ? "📘" : conn.type === "wppconnect" ? "📱" : "⚡";
               return (
                 <option key={conn.id} value={conn.id}>
-                  {conn.type === "meta" ? "📘" : "⚡"} {label}{badge}
+                  {icon} {label}{badge}
                 </option>
               );
             })}
@@ -412,7 +436,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                   : selectedConnId}
               </span>
               <span className="text-[10px] text-slate-400">
-                ({waConnections.find(c => c.id === selectedConnId)?.type === "meta" ? "Meta API" : "UazAPI"})
+                ({waConnections.find(c => c.id === selectedConnId)?.type === "meta" ? "Meta API" : waConnections.find(c => c.id === selectedConnId)?.type === "wppconnect" ? "WPPConnect" : "UazAPI"})
               </span>
             </>
           ) : (
