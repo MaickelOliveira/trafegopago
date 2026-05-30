@@ -26,6 +26,7 @@ export async function POST(
   // Identifica a sessão pelo UUID
   const wppSession = getWppSessionById(token);
   if (!wppSession || !wppSession.funnelId) {
+    console.log(`[WPPConnect Webhook] token=${token} ignorado (sessão sem funil ou inexistente)`);
     return NextResponse.json({ ok: true }); // ignora sessões sem funil
   }
 
@@ -36,36 +37,37 @@ export async function POST(
     return NextResponse.json({ ok: true });
   }
 
+  console.log(`[WPPConnect Webhook] session=${wppSession.sessionName} event=${body.event} from=${body.from}`);
+
   // WPPConnect envia event = "onmessage" ou outros eventos
   const event = (body.event as string ?? "").toLowerCase();
   if (event !== "onmessage" && event !== "onanymessage" && event !== "message") {
     return NextResponse.json({ ok: true });
   }
 
-  const data = body.data as Record<string, unknown> | undefined;
-  if (!data) return NextResponse.json({ ok: true });
-
-  const fromMe = data.fromMe === true || data.self === "out";
+  // WPPConnect espalha os campos da mensagem diretamente no body
+  // (NÃO há um campo body.data — os campos ficam no nível raiz)
+  const fromMe = body.fromMe === true || body.self === "out";
 
   // Ignora grupos
-  const isGroupMsg = data.isGroupMsg === true || String(data.from ?? "").endsWith("@g.us");
+  const isGroupMsg = body.isGroupMsg === true || String(body.from ?? "").endsWith("@g.us");
   if (isGroupMsg) return NextResponse.json({ ok: true });
 
   // Extrai o número do remetente
-  const rawFrom = (data.from as string) ?? (data.chatId as string) ?? "";
+  const rawFrom = (body.from as string) ?? (body.chatId as string) ?? "";
   const phone = rawFrom.replace(/@.*/, "").replace(/\D/g, "");
   if (!phone) return NextResponse.json({ ok: true });
 
   // Extrai o texto da mensagem
-  const text = (data.body as string) || (data.caption as string) || "";
+  const text = (body.body as string) || (body.caption as string) || "";
 
   // Extrai o nome do contato
-  const sender = data.sender as Record<string, unknown> | undefined;
-  const pushName = (sender?.pushname as string) || (data.notifyName as string) || phone;
+  const sender = body.sender as Record<string, unknown> | undefined;
+  const pushName = (sender?.pushname as string) || (body.notifyName as string) || phone;
 
   // ── CTWa: referral data (Click-to-WhatsApp) ──
   // WPPConnect expõe dados de anúncio no campo `referral`
-  const referral = data.referral as Record<string, unknown> | undefined;
+  const referral = body.referral as Record<string, unknown> | undefined;
   const ctwaAdId      = referral?.source_id as string | undefined;
   const ctwaSourceUrl = referral?.source_url as string | undefined;
   const ctwaHeadline  = referral?.headline as string | undefined;
