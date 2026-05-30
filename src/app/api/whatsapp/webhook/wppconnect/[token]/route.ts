@@ -5,6 +5,7 @@ import { getLeadByPhone, upsertLeadByPhone, updateLead } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused } from "@/lib/conversations";
+import { markSent, consumeSent } from "@/lib/wppconnect-sent";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText as wppSendText } from "@/lib/wppconnect-api";
 import {
@@ -16,35 +17,6 @@ import {
 } from "@/lib/pending-responses";
 
 export const dynamic = "force-dynamic";
-
-// Registro em memória de mensagens enviadas pela IA.
-// Quando a IA envia, o WPPConnect dispara onselfmessage de volta — sem esse registro,
-// o webhook pausaria a IA achando que foi o operador quem enviou.
-const aiSentRegistry = new Map<string, string[]>(); // phone → conteúdos recentes da IA
-
-function markAiSent(phone: string, content: string) {
-  const list = aiSentRegistry.get(phone) ?? [];
-  list.push(content);
-  aiSentRegistry.set(phone, list);
-  // Limpa após 60s para não acumular memória
-  setTimeout(() => {
-    const cur = aiSentRegistry.get(phone);
-    if (!cur) return;
-    const idx = cur.indexOf(content);
-    if (idx !== -1) cur.splice(idx, 1);
-    if (cur.length === 0) aiSentRegistry.delete(phone);
-  }, 60_000);
-}
-
-function consumeAiSent(phone: string, content: string): boolean {
-  const list = aiSentRegistry.get(phone);
-  if (!list) return false;
-  const idx = list.indexOf(content);
-  if (idx === -1) return false;
-  list.splice(idx, 1);
-  if (list.length === 0) aiSentRegistry.delete(phone);
-  return true;
-}
 
 export async function POST(
   req: NextRequest,
@@ -195,25 +167,28 @@ export async function POST(
     console.log(`[WPPConnect Webhook] CTWa lead phone=${phone} adId=${ctwaAdId} adInfo=${JSON.stringify(adInfo)}`);
   }
 
-  // ── Salva a mensagem na conversa (sempre) ──
-  if (text.trim()) {
+  // ── Salva a mensagem na conversa (somente mensagens recebidas do lead) ──
+  // Mensagens fromMe (IA ou plataforma) já são salvas por quem as envia.
+  // Mensagens do celular do operador são salvas no bloco fromMe abaixo.
+  if (text.trim() && !fromMe) {
     const ts = Date.now();
     addMessage(
       phone,
-      { role: fromMe ? "assistant" : "user", content: text, ts },
+      { role: "user", content: text, ts },
       clientId,
-      { connId, contactName: !fromMe && pushName !== phone ? pushName : undefined },
+      { connId, contactName: pushName !== phone ? pushName : undefined },
     );
   }
 
-  // Se foi enviado por nós (fromMe), verifica se foi a IA ou o operador
+  // Se foi enviado por nós (fromMe = IA, plataforma ou operador pelo celular)
   if (fromMe) {
     if (text.trim()) {
-      // Se a própria IA enviou esta mensagem, apenas ignora (não pausa)
-      if (consumeAiSent(phone, text.trim())) {
+      // Se já foi salvo pela IA ou pela plataforma, apenas ignora
+      if (consumeSent(phone, text.trim())) {
         return NextResponse.json({ ok: true });
       }
-      // Operador enviou manualmente pelo celular → pausa a IA
+      // Operador enviou pelo celular → salva e pausa a IA
+      addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
       const activeClientFM = clientId !== "sem-cliente" ? getClientById(clientId) : null;
       const agentCfgFM = activeClientFM ? getAgentConfigForConnection(activeClientFM, connId) : undefined;
       const resumeKeyword = agentCfgFM?.aiResumeKeyword?.trim();
@@ -254,7 +229,7 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
-    markAiSent(phone, reply); // marca antes de enviar: ignora o onselfmessage de volta
+    markSent(phone, reply); // marca antes de enviar: ignora o onselfmessage de volta
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, { connId });
     await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, reply, isLidPhone);
   }

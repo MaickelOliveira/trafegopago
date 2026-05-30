@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getHistory, addMessage, getClientId, getAllConversationsByClientId, debugGetRawKeys } from "@/lib/conversations";
+import { markSent } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { sendText } from "@/lib/uazapi";
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     }
   }
 
+  markSent(normalized, message.trim()); // evita duplicidade no onselfmessage
   addMessage(normalized, { role: "assistant", content: message.trim(), ts: Date.now() }, clientId);
 
   return NextResponse.json({ ok: true });

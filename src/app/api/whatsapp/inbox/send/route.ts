@@ -5,6 +5,7 @@ import { sendMessageDirect } from "@/lib/whatsapp-send";
 import { sendText as wppSendText } from "@/lib/wppconnect-api";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { addMessage, setAiPaused } from "@/lib/conversations";
+import { markSent } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, updateLead } from "@/lib/leads";
 
 export const dynamic = "force-dynamic";
@@ -87,7 +88,9 @@ export async function POST(req: NextRequest) {
   if (ok) {
     // Salva no histórico como mensagem do assistente
     const activeConnId = wppSession?.id ?? conn?.id ?? connId ?? "";
-    addMessage(cleanPhone, { role: "assistant", content: type === "text" ? content : `[${type}]`, ts, type: type === "video" ? undefined : type }, clientId, { connId: activeConnId });
+    const savedContent = type === "text" ? content : `[${type}]`;
+    markSent(cleanPhone, savedContent); // evita duplicidade no onselfmessage
+    addMessage(cleanPhone, { role: "assistant", content: savedContent, ts, type: type === "video" ? undefined : type }, clientId, { connId: activeConnId });
     // Pausa a IA nos dois storages
     setAiPaused(cleanPhone, true);
     // Busca o lead real pelo telefone (sem depender de funnelId) e atualiza
