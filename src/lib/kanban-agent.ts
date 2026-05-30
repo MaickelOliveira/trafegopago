@@ -54,8 +54,14 @@ ${listaPermitidas}${listaBloqueadas}
 Regras:
 - PRIORIDADE 1: Se a coluna tiver "Contexto", siga-o à risca — ele define exatamente quando mover
 - PRIORIDADE 2: Se tiver "Gatilhos", mova quando a mensagem for semanticamente equivalente a um deles
-- PRIORIDADE 3: Na ausência de contexto/gatilhos, mova quando houver mudança CLARA e inequívoca de estágio
-- IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou reunião 2 mensagens atrás e depois disse "ok", o estado ainda é "reunião confirmada"
+- PRIORIDADE 3: Na ausência de contexto/gatilhos, mova quando houver indicação clara do estágio atual. Exemplos que DEVEM gerar movimentação:
+    • Lead confirma data, horário ou aceita uma reunião/consulta → mover para coluna de reunião agendada
+    • Lead demonstra interesse explícito no produto/serviço → mover para coluna de interessados
+    • Lead solicita proposta, orçamento ou preço → mover para etapa de proposta
+    • Lead diz que não tem interesse, que vai pensar, ou some por muito tempo → mover para perdidos
+    • Lead confirma pagamento, envia comprovante ou diz que fechou → mover para coluna de clientes
+- IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou reunião há algumas mensagens e depois disse "ok" ou "até lá", o estado ainda é "reunião confirmada"
+- Em caso de dúvida entre mover ou não: SE a conversa mostrar qualquer sinal claro do estágio, MOVA. É melhor mover e o gestor corrigir do que não mover
 - NUNCA mova para colunas bloqueadas
 - Não mova se o lead já está na coluna correta
 - Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante
@@ -128,15 +134,17 @@ async function runKanbanAgent(
     generationConfig: { maxOutputTokens: 512 },
   });
 
-  // Monta bloco de conversa recente (últimas 6 mensagens + última mensagem)
+  // Monta bloco de conversa recente (últimas 12 mensagens + última mensagem)
   // para análise holística — o agente vê o CONTEXTO completo, não só a última frase
-  const recentHistory = history.slice(-6);
+  const recentHistory = history.slice(-12);
   const blocoConversa = recentHistory
     .map((m) => `[${m.role === "assistant" ? "Assistente" : "Lead"}]: ${m.content}`)
     .join("\n");
   const promptAnalise = blocoConversa
     ? `Conversa recente (analise TODO o bloco para determinar o estado atual do lead):\n${blocoConversa}\n\n[Lead] (última mensagem): ${lastMessage}\n\nCom base na conversa COMPLETA acima, execute as ações necessárias no CRM.`
     : `Primeira mensagem do lead: ${lastMessage}\n\nExecute as ações necessárias no CRM.`;
+
+  console.log(`[kanban-agent/prompt] enviando ${recentHistory.length + 1} mensagens para Gemini`);
 
   try {
     const result = await model.generateContent(promptAnalise);
@@ -145,7 +153,9 @@ async function runKanbanAgent(
     const actions: KanbanAction[] = [];
     const allParts = response.candidates?.flatMap((c) => c.content?.parts ?? []) ?? [];
     const fnCalls = allParts.filter((p) => p.functionCall).map((p) => p.functionCall!.name);
-    console.log(`[kanban-agent/gemini] fnCalls=[${fnCalls.join(",")}] text="${(response.text?.() ?? "").slice(0, 100)}"`);
+    const finishReason = response.candidates?.[0]?.finishReason ?? "?";
+    const safetyRatings = response.candidates?.[0]?.safetyRatings?.map((r) => `${r.category}:${r.probability}`).join(",") ?? "";
+    console.log(`[kanban-agent/gemini] finishReason=${finishReason} fnCalls=[${fnCalls.join(",")}] text="${(response.text?.() ?? "").slice(0, 150)}" safety=[${safetyRatings}]`);
 
     for (const candidate of response.candidates ?? []) {
       for (const part of candidate.content?.parts ?? []) {
