@@ -457,17 +457,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
 
               {/* Meta */}
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">📘 Meta Ads</p>
-                  {globalConfig.metaAppId && globalConfig.metaAppSecret && globalConfig.appBaseUrl && (
-                    <a
-                      href="/api/meta/oauth/start"
-                      className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition"
-                    >
-                      Conectar com Meta →
-                    </a>
-                  )}
-                </div>
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">📘 Meta Ads</p>
                 <Field
                   label="App ID"
                   value={globalConfig.metaAppId}
@@ -487,10 +477,17 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                   placeholder="EAAxxxxxxx..."
                 />
                 {globalConfig.metaToken && (
-                  <p className="text-xs text-blue-600">Token configurado. Salve e clique em &quot;Conectar com Meta&quot; para renovar.</p>
+                  <p className="text-xs text-green-700">✅ Token ativo. Clique abaixo para reconectar e renovar.</p>
                 )}
-                {(!globalConfig.metaAppId || !globalConfig.metaAppSecret || !globalConfig.appBaseUrl) && (
-                  <p className="text-xs text-blue-500">Preencha App ID, App Secret e URL da Plataforma (abaixo) para habilitar o botão OAuth.</p>
+                {(globalConfig.metaAppId && globalConfig.metaAppSecret) ? (
+                  <a
+                    href="/api/meta/oauth/start"
+                    className="block w-full rounded-lg bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-700 transition"
+                  >
+                    🔗 Conectar com Facebook (OAuth)
+                  </a>
+                ) : (
+                  <p className="text-xs text-blue-500">Preencha App ID e App Secret acima para habilitar o botão OAuth.</p>
                 )}
               </div>
 
