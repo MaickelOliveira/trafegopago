@@ -76,8 +76,19 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   // Envia pela conexão correta
   if (wppSession) {
     const lead = clientId ? getLeadByPhone(clientId, normalized) : undefined;
-    const isLid = lead?.isLid === true;
-    const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim(), isLid);
+    let isLid = lead?.isLid === true;
+    let ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim(), isLid);
+    // Fallback: se falhou e não tentamos isLid ainda, tenta com isLid:true
+    // (cobre leads criados antes da detecção automática de LID)
+    if (!ok && !isLid) {
+      console.log(`[conversations/send] Retrying with isLid=true phone=${normalized}`);
+      ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim(), true);
+      if (ok && clientId && funnelId) {
+        // Salva isLid:true no lead para envios futuros
+        upsertLeadByPhone(clientId, normalized, { funnelId, isLid: true });
+        isLid = true;
+      }
+    }
     console.log(`[conversations/send] WPPConnect ok=${ok} session=${wppSession.sessionName} phone=${normalized} isLid=${isLid}`);
   } else if (connType === "meta" && metaPhoneNumberId && metaToken) {
     await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
