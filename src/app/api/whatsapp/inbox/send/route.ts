@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
     if (type === "text") {
       const existingLeadForLid = getLeadByPhone(clientId, cleanPhone);
       let isLid = existingLeadForLid?.isLid === true;
+      markSent(cleanPhone, content); // marca ANTES de enviar (evita race condition com onselfmessage)
       ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, cleanPhone, content, isLid);
       // Fallback: se falhou e ainda não tentamos com isLid, tenta com isLid:true
       if (!ok && !isLid) {
@@ -89,7 +90,6 @@ export async function POST(req: NextRequest) {
     // Salva no histórico como mensagem do assistente
     const activeConnId = wppSession?.id ?? conn?.id ?? connId ?? "";
     const savedContent = type === "text" ? content : `[${type}]`;
-    markSent(cleanPhone, savedContent); // evita duplicidade no onselfmessage
     addMessage(cleanPhone, { role: "assistant", content: savedContent, ts, type: type === "video" ? undefined : type }, clientId, { connId: activeConnId });
     // Pausa a IA nos dois storages
     setAiPaused(cleanPhone, true);

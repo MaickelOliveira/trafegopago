@@ -78,6 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   if (wppSession) {
     const lead = clientId ? getLeadByPhone(clientId, normalized) : undefined;
     let isLid = lead?.isLid === true;
+    markSent(normalized, message.trim()); // marca ANTES de enviar (evita race condition com onselfmessage)
     let ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim(), isLid);
     // Fallback: se falhou e não tentamos isLid ainda, tenta com isLid:true
     // (cobre leads criados antes da detecção automática de LID)
@@ -119,7 +120,6 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     }
   }
 
-  markSent(normalized, message.trim()); // evita duplicidade no onselfmessage
   addMessage(normalized, { role: "assistant", content: message.trim(), ts: Date.now() }, clientId);
 
   return NextResponse.json({ ok: true });
