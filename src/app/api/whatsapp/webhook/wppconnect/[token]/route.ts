@@ -6,6 +6,7 @@ import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/cli
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused } from "@/lib/conversations";
 import { markSent, consumeSent } from "@/lib/wppconnect-sent";
+import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText as wppSendText } from "@/lib/wppconnect-api";
 import {
@@ -229,9 +230,17 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
-    markSent(phone, reply); // marca antes de enviar: ignora o onselfmessage de volta
+    const chunks = agentCfg?.splitMessages
+      ? splitMessage(reply, agentCfg.maxMessageLength ?? 300)
+      : [reply];
+    // Marca cada chunk antes de enviar (evita pausar IA no onselfmessage de volta)
+    for (const chunk of chunks) markSent(phone, chunk);
+    // Salva a resposta completa no histórico (uma única vez)
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, { connId });
-    await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, reply, isLidPhone);
+    // Envia cada chunk separadamente
+    for (const chunk of chunks) {
+      await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, chunk, isLidPhone);
+    }
   }
 
   // ── Batching: acumula mensagens antes de responder ──
