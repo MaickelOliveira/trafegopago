@@ -19,16 +19,13 @@ function ClientAgentSelect({ clients, value, onChange, accentColor = "green" }: 
       className={`w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-${accentColor}-400 mb-2`}
     >
       <option value="">— Sem agente —</option>
-      {clients.map(c => {
+      {clients.filter(c => (c.agents ?? []).length > 0).map(c => {
         const agents = c.agents ?? [];
         return (
           <optgroup key={c.id} label={c.name}>
-            {agents.length > 0
-              ? agents.map((a, i) => (
-                  <option key={i} value={c.id}>{a.name ?? `Agente ${i + 1}`}</option>
-                ))
-              : <option value={c.id}>Agente padrão</option>
-            }
+            {agents.map((a, i) => (
+              <option key={i} value={c.id}>{a.name ?? `Agente ${i + 1}`}</option>
+            ))}
           </optgroup>
         );
       })}
