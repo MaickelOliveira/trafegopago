@@ -149,8 +149,13 @@ export async function sendText(
         body: JSON.stringify({ phone: phoneFormatted, message, isGroup: false }),
       },
     );
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[wppconnect-api] sendText FAILED status=${res.status} session=${sessionName} phone=${phoneFormatted} body=${body}`);
+    }
     return res.ok;
-  } catch {
+  } catch (e) {
+    console.error(`[wppconnect-api] sendText EXCEPTION session=${sessionName}`, e);
     return false;
   }
 }

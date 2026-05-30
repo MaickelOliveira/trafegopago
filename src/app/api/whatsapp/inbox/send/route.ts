@@ -35,11 +35,15 @@ export async function POST(req: NextRequest) {
     : allConns[0]; // fallback para primeira conexão disponível
 
   // ── WPPConnect: sessões ficam em store separado (não em funnels[].connections) ──
+  // Busca apenas pelo connId (UUID único) — clientId pode estar null no store
   const wppSession = connId
-    ? getWppSessions().find((s) => s.id === connId && s.clientId === clientId)
+    ? getWppSessions().find((s) => s.id === connId)
     : undefined;
 
+  console.log(`[inbox/send] phone=${cleanPhone} connId=${connId} clientId=${clientId} conn=${conn?.type} wppSession=${wppSession?.sessionName ?? "none"}`);
+
   if (!conn && !wppSession) {
+    console.log(`[inbox/send] ERRO: nenhuma conexão encontrada. allConns=${JSON.stringify(allConns.map(c=>c.id))} wppSessions=${JSON.stringify(getWppSessions().map(s=>s.id))}`);
     return NextResponse.json({ error: "Nenhuma conexão encontrada para este cliente" }, { status: 404 });
   }
 
@@ -50,6 +54,7 @@ export async function POST(req: NextRequest) {
   if (wppSession) {
     if (type === "text") {
       ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, cleanPhone, content);
+      console.log(`[inbox/send] WPPConnect send ok=${ok} session=${wppSession.sessionName} phone=${cleanPhone}`);
     } else {
       return NextResponse.json({ error: "Tipo de mídia não suportado via WPPConnect ainda" }, { status: 400 });
     }
