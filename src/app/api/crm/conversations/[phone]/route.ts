@@ -4,6 +4,8 @@ import { getHistory, addMessage, getClientId, getAllConversationsByClientId, deb
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { sendText } from "@/lib/uazapi";
+import { sendText as wppSendText } from "@/lib/wppconnect-api";
+import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { getConfig, getClientById } from "@/lib/clients";
 
 type Params = Promise<{ phone: string }>;
@@ -43,31 +45,39 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   let metaPhoneNumberId: string | null = null;
   let metaToken: string | null = null;
   let connType: string = "uazapi";
+  let wppSession: ReturnType<typeof getWppSessions>[number] | undefined;
 
   if (clientId) {
     const lead = getLeadByPhone(clientId, normalized);
     funnelId = lead?.funnelId;
     if (funnelId) {
-      const funnel = getFunnelById(funnelId);
-      const conn = funnel?.connections?.[0];
-      if (conn) {
-        connType = conn.type ?? "uazapi";
-        if (conn.type === "meta") {
-          metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
-          metaToken = conn.metaToken ?? null;
-        } else {
-          token = conn.uazapiToken ?? null;
+      // Verifica WPPConnect primeiro (sessões ficam em store separado)
+      wppSession = getWppSessions().find(s => s.funnelId === funnelId);
+      if (!wppSession) {
+        const funnel = getFunnelById(funnelId);
+        const conn = funnel?.connections?.[0];
+        if (conn) {
+          connType = conn.type ?? "uazapi";
+          if (conn.type === "meta") {
+            metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
+            metaToken = conn.metaToken ?? null;
+          } else {
+            token = conn.uazapiToken ?? null;
+          }
         }
       }
     }
   }
-  if (connType !== "meta" && !token) {
+  if (!wppSession && connType !== "meta" && !token) {
     const config = getConfig();
     token = config.uazapiToken ?? null;
   }
 
   // Envia pela conexão correta
-  if (connType === "meta" && metaPhoneNumberId && metaToken) {
+  if (wppSession) {
+    const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim());
+    console.log(`[conversations/send] WPPConnect ok=${ok} session=${wppSession.sessionName} phone=${normalized}`);
+  } else if (connType === "meta" && metaPhoneNumberId && metaToken) {
     await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${metaToken}`, "Content-Type": "application/json" },
