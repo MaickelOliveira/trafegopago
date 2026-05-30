@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { clsx } from "clsx";
 
 type AdAccount = { id: string; name: string; platform: "meta" | "google" };
@@ -55,6 +55,8 @@ type WaConnection = { id: string; phone: string; funnelName: string; type: "uaza
 
 export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections }: { clients: Client[]; appBaseUrl?: string; allConnections?: WaConnection[] }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [metaOAuthMsg, setMetaOAuthMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [clients, setClients] = useState(initial);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
@@ -85,6 +87,23 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
   });
   const [savingConfig, setSavingConfig] = useState(false);
   const [configMsg, setConfigMsg] = useState("");
+
+  useEffect(() => {
+    const success = searchParams.get("meta_success");
+    const err = searchParams.get("meta_error");
+    if (success) {
+      setMetaOAuthMsg({ type: "success", text: "✅ Conta Meta conectada! Clique em 'APIs & Tokens' e depois 'Atualizar' para ver todas as contas." });
+      router.replace("/gestor/configuracoes");
+    } else if (err) {
+      const msgs: Record<string, string> = {
+        cancelled: "Conexão cancelada.",
+        no_app: "Configure o App ID e App Secret antes de conectar.",
+        token_failed: "Falha ao obter token. Verifique o App Secret e a URL da plataforma.",
+      };
+      setMetaOAuthMsg({ type: "error", text: "❌ " + (msgs[err] ?? "Erro ao conectar conta Meta.") });
+      router.replace("/gestor/configuracoes");
+    }
+  }, [searchParams, router]);
   const [wabaTemplates, setWabaTemplates] = useState<{ name: string; status: string }[]>([]);
   const [loadingWabaTemplates, setLoadingWabaTemplates] = useState(false);
 
@@ -284,6 +303,17 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
           </button>
         </div>
       </div>
+
+      {/* OAuth feedback banner */}
+      {metaOAuthMsg && (
+        <div className={clsx(
+          "mb-4 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm",
+          metaOAuthMsg.type === "success" ? "border-green-200 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-800"
+        )}>
+          <span className="flex-1">{metaOAuthMsg.text}</span>
+          <button onClick={() => setMetaOAuthMsg(null)} className="text-slate-400 hover:text-slate-600 shrink-0">✕</button>
+        </div>
+      )}
 
       {/* Client list */}
       <div className="space-y-3">
