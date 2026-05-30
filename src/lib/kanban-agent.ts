@@ -58,7 +58,7 @@ Regras:
 - IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou reunião 2 mensagens atrás e depois disse "ok", o estado ainda é "reunião confirmada"
 - NUNCA mova para colunas bloqueadas
 - Não mova se o lead já está na coluna correta
-- Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante, (c) registrar qualquer valor monetário mencionado (preço, investimento, orçamento)
+- Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante, (c) preencher 'valor' SOMENTE quando o Assistente/vendedor propôs um preço E o lead aceitou explicitamente — nunca preencha se o lead apenas mencionou um número ou se o valor ainda não foi confirmado
 - Se não houver nada a fazer, não chame nenhuma ferramenta
 - Você NÃO responde ao usuário — apenas executa ações no CRM`;
 }
@@ -113,7 +113,7 @@ async function runKanbanAgent(
                 },
                 valor: {
                   type: SchemaType.NUMBER,
-                  description: "Valor monetário mencionado na conversa (ex: 500 para R$ 500). Só preencha se um valor numérico foi claramente mencionado.",
+                  description: "Valor da venda aceito pelo lead. Preencha SOMENTE se: (1) o Assistente ou o vendedor propôs um valor/preço, E (2) o lead explicitamente aceitou (ex: 'ok', 'fechado', 'topo', 'pode ser', 'vamos nessa', 'aceito', 'confirmado'). NÃO preencha se o lead apenas mencionou um valor sem aceitar, ou se foi o lead quem sugeriu o preço.",
                 },
               },
             },
