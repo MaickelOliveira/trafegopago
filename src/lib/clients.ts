@@ -95,6 +95,9 @@ export type AppConfig = {
   // Para UazAPI, a IA compõe a mensagem livremente
   masterMetaTemplateBriefing?: string;  // Nome do template aprovado para notificação de briefing
   masterMetaLanguage?: string;          // Código de idioma do template (ex: pt_BR)
+  // WPPConnect Server
+  wppconnectServer?: string;            // URL base do servidor WPPConnect (ex: https://wpp.meuservidor.com)
+  wppconnectSecretKey?: string;         // Secret key do servidor WPPConnect
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");

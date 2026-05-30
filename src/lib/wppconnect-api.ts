@@ -1,0 +1,160 @@
+import { getConfig } from "./clients";
+
+function base(): string {
+  const url = process.env.WPPCONNECT_SERVER || getConfig().wppconnectServer || "";
+  return url.replace(/\/$/, "");
+}
+
+function secretKey(): string {
+  return process.env.WPPCONNECT_SECRET_KEY || getConfig().wppconnectSecretKey || "";
+}
+
+export function isWppConnectConfigured(): boolean {
+  return !!base() && !!secretKey();
+}
+
+// Gera token JWT para uma sessão — precisa ser chamado UMA VEZ e armazenado
+export async function generateToken(sessionName: string): Promise<string | null> {
+  if (!base()) return null;
+  try {
+    const res = await fetch(`${base()}/api/${secretKey()}/generate-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: sessionName }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as Record<string, unknown>;
+    // WPPConnect retorna: { token, session, full: "Bearer {token}" }
+    return (data.token as string) || ((data.full as string)?.replace("Bearer ", "")) || null;
+  } catch {
+    return null;
+  }
+}
+
+// Inicia (ou reinicia) uma sessão com webhook configurado
+export async function startSession(
+  sessionName: string,
+  token: string,
+  webhookUrl: string,
+): Promise<void> {
+  if (!base()) return;
+  try {
+    await fetch(`${base()}/api/${secretKey()}/${sessionName}/start-session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        webhook: webhookUrl,
+        waitQrCode: false,
+        whatsappVersion: "",
+      }),
+    });
+  } catch { }
+}
+
+// Retorna o QR Code como base64 (data:image/png;base64,...)
+export async function getQrCode(sessionName: string, token: string): Promise<string | null> {
+  if (!base()) return null;
+  try {
+    const res = await fetch(
+      `${base()}/api/${secretKey()}/${sessionName}/qrcode-session`,
+      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as Record<string, unknown>;
+    const qr = (data.qrcode as string) || (data.base64 as string) || null;
+    if (!qr) return null;
+    return qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`;
+  } catch {
+    return null;
+  }
+}
+
+// Status da sessão: CONNECTED | QRCODE | DISCONNECTED | CLOSED | STARTING
+export async function checkConnectionStatus(
+  sessionName: string,
+  token: string,
+): Promise<string> {
+  if (!base()) return "DISCONNECTED";
+  try {
+    const res = await fetch(
+      `${base()}/api/${secretKey()}/${sessionName}/check-connection-session`,
+      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
+    );
+    if (!res.ok) return "DISCONNECTED";
+    const data = await res.json() as Record<string, unknown>;
+    return (data.status as string) || "DISCONNECTED";
+  } catch {
+    return "DISCONNECTED";
+  }
+}
+
+// Fecha a sessão (desconecta sem apagar)
+export async function closeSession(sessionName: string, token: string): Promise<void> {
+  if (!base()) return;
+  try {
+    await fetch(`${base()}/api/${secretKey()}/${sessionName}/close-session`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+  } catch { }
+}
+
+// Logout completo (apaga a sessão)
+export async function logoutSession(sessionName: string, token: string): Promise<void> {
+  if (!base()) return;
+  try {
+    await fetch(`${base()}/api/${secretKey()}/${sessionName}/logout-session`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+  } catch {
+    // Tenta close como fallback
+    await closeSession(sessionName, token).catch(() => {});
+  }
+}
+
+// Envia mensagem de texto
+export async function sendText(
+  sessionName: string,
+  token: string,
+  phone: string,
+  message: string,
+): Promise<boolean> {
+  if (!base()) return false;
+  try {
+    const phoneFormatted = phone.includes("@") ? phone : `${phone}@c.us`;
+    const res = await fetch(
+      `${base()}/api/${secretKey()}/${sessionName}/send-message`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ phone: phoneFormatted, message, isGroup: false }),
+      },
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Lista todas as sessões (se o servidor suportar)
+export async function listSessions(): Promise<{ session: string; status: string }[]> {
+  if (!base()) return [];
+  try {
+    const res = await fetch(
+      `${base()}/api/${secretKey()}/show-all-sessions`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const data = await res.json() as unknown;
+    return Array.isArray(data) ? data as { session: string; status: string }[] : [];
+  } catch {
+    return [];
+  }
+}

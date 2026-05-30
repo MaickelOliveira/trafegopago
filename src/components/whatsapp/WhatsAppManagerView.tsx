@@ -136,7 +136,7 @@ export function WhatsAppManagerView({
   const [deletingToken, setDeletingToken] = useState<string | null>(null);
 
   // Main tab
-  const [mainTab, setMainTab] = useState<"uazapi" | "meta">("uazapi");
+  const [mainTab, setMainTab] = useState<"uazapi" | "wppconnect" | "meta">("uazapi");
 
   const fetchInstances = useCallback(async () => {
     try {
@@ -319,23 +319,26 @@ export function WhatsAppManagerView({
 
   return (
     <div>
-      {/* Tabs: UazAPI | API Oficial Meta */}
+      {/* Tabs: UazAPI | WPPConnect | API Oficial Meta */}
       <div className="border-b border-slate-200 bg-white">
         <div className="flex max-w-6xl mx-auto px-6">
-          {(["uazapi", "meta"] as const).map(tab => (
+          {(["uazapi", "wppconnect", "meta"] as const).map(tab => (
             <button key={tab} onClick={() => setMainTab(tab)}
               className={`py-3 px-5 text-sm font-semibold border-b-2 transition -mb-px ${
                 mainTab === tab
-                  ? tab === "uazapi" ? "border-green-500 text-green-700" : "border-blue-500 text-blue-700"
+                  ? tab === "uazapi" ? "border-green-500 text-green-700"
+                  : tab === "wppconnect" ? "border-violet-500 text-violet-700"
+                  : "border-blue-500 text-blue-700"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}>
-              {tab === "uazapi" ? "⚡ UazAPI" : "🏢 API Oficial Meta"}
+              {tab === "uazapi" ? "⚡ UazAPI" : tab === "wppconnect" ? "🔌 WPPConnect" : "🏢 API Oficial Meta"}
             </button>
           ))}
         </div>
       </div>
 
       {mainTab === "meta" && <MetaApiView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
+      {mainTab === "wppconnect" && <WppConnectView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "uazapi" && (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -1024,6 +1027,356 @@ function ActionBtn({ onClick, title, className, children }: { onClick: () => voi
     <button onClick={onClick} title={title} className={`h-9 w-9 flex items-center justify-center rounded-xl border text-base transition ${className}`}>
       {children}
     </button>
+  );
+}
+
+// ── WppConnectView ─────────────────────────────────────────────────
+import type { EnrichedWppSession } from "@/app/api/whatsapp/wppconnect-manager/route";
+
+type WppModalState =
+  | { type: "none" }
+  | { type: "create"; stage: "name" | "creating" | "created"; id?: string; sessionName?: string }
+  | { type: "qr"; id: string; sessionName: string; forceLogout: boolean }
+  | { type: "link"; id: string; sessionName: string };
+
+function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOption[]; clients: ClientOption[]; appBaseUrl: string }) {
+  const [sessions, setSessions] = useState<EnrichedWppSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [wppModal, setWppModal] = useState<WppModalState>({ type: "none" });
+
+  // Create
+  const [newName, setNewName] = useState("");
+  const [createError, setCreateError] = useState("");
+
+  // QR
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [qrStage, setQrStage] = useState<"generating" | "scanning" | "done">("generating");
+  const qrShownRef = useRef(false);
+
+  // Link
+  const [linkFunnelId, setLinkFunnelId] = useState("");
+  const [linkClientId, setLinkClientId] = useState("");
+  const [linkAgent, setLinkAgent] = useState(false);
+  const [savingLink, setSavingLink] = useState(false);
+
+  // Delete confirm
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/whatsapp/wppconnect-manager");
+      if (res.ok) setSessions(await res.json());
+    } catch { /**/ } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+    const t = setInterval(fetchSessions, 10000);
+    return () => clearInterval(t);
+  }, [fetchSessions]);
+
+  // QR polling
+  useEffect(() => {
+    if (wppModal.type !== "qr") return;
+
+    const { id, forceLogout } = wppModal;
+    qrShownRef.current = false;
+    setQrImage(null);
+    setQrStage("generating");
+
+    let poll: ReturnType<typeof setInterval>;
+    let alive = true;
+
+    const startPolling = () => {
+      poll = setInterval(async () => {
+        if (!alive) return;
+        try {
+          const res = await fetch(`/api/whatsapp/wppconnect-manager/${id}/status`);
+          const d = await res.json() as { connected?: boolean; qr?: string | null };
+          if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true; }
+          if (d.connected && qrShownRef.current) {
+            setQrStage("done"); clearInterval(poll); alive = false;
+            setTimeout(() => { setWppModal({ type: "none" }); fetchSessions(); }, 1500);
+          }
+        } catch { /**/ }
+      }, 3000);
+    };
+
+    const webhookUrl = `${appBaseUrl}/api/whatsapp/webhook/wppconnect/${id}`;
+    fetch(`/api/whatsapp/wppconnect-manager/${id}/connect`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: forceLogout, webhookUrl }),
+    }).then(r => r.json()).then((d: { qr?: string | null }) => {
+      if (!alive) return;
+      if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true; }
+      startPolling();
+    }).catch(() => { if (alive) startPolling(); });
+
+    return () => { alive = false; clearInterval(poll); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wppModal.type === "qr" ? `${(wppModal as { id: string }).id}-${(wppModal as { forceLogout: boolean }).forceLogout}` : null]);
+
+  async function handleCreate() {
+    if (!newName.trim()) { setCreateError("Informe um nome"); return; }
+    setCreateError("");
+    setWppModal({ type: "create", stage: "creating" });
+
+    const res = await fetch("/api/whatsapp/wppconnect-manager", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName.trim() }),
+    });
+    const data = await res.json() as { id?: string; sessionName?: string; error?: string };
+
+    if (!res.ok || !data.id) {
+      setWppModal({ type: "create", stage: "name" });
+      setCreateError(data.error ?? "Erro ao criar sessão");
+      return;
+    }
+
+    setWppModal({ type: "create", stage: "created", id: data.id, sessionName: data.sessionName });
+    fetchSessions();
+  }
+
+  async function handleLink() {
+    if (wppModal.type !== "link") return;
+    setSavingLink(true);
+    await fetch("/api/whatsapp/wppconnect-manager/link", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: wppModal.id, funnelId: linkFunnelId || null, clientId: linkClientId || null, linkAgent }),
+    });
+    setSavingLink(false); setWppModal({ type: "none" }); fetchSessions();
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(null);
+    await fetch(`/api/whatsapp/wppconnect-manager/${id}`, { method: "DELETE" });
+    fetchSessions();
+  }
+
+  const connectedCount = sessions.filter(s => s.status === "connected").length;
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">WPPConnect</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Gerencie suas sessões WPPConnect Server</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm">
+            <span className={`h-2.5 w-2.5 rounded-full ${connectedCount > 0 ? "bg-violet-500 animate-pulse" : "bg-slate-300"}`} />
+            <span className="text-sm font-medium text-slate-700">{connectedCount} / {sessions.length} conectada{sessions.length !== 1 ? "s" : ""}</span>
+          </div>
+          <button
+            onClick={() => { setNewName(""); setCreateError(""); setWppModal({ type: "create", stage: "name" }); }}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition shadow-sm"
+          >
+            <span className="text-lg leading-none">+</span> Nova Sessão
+          </button>
+        </div>
+      </div>
+
+      {/* Info banner */}
+      <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4 mb-5 flex items-start gap-3">
+        <span className="text-xl mt-0.5">🔌</span>
+        <div className="flex-1 text-sm text-violet-700">
+          <p className="font-semibold mb-0.5">WPPConnect Server</p>
+          <p className="text-violet-600 text-xs">Configure <code className="font-mono bg-violet-100 px-1 rounded">WPPCONNECT_SERVER</code> e <code className="font-mono bg-violet-100 px-1 rounded">WPPCONNECT_SECRET_KEY</code> nas variáveis de ambiente. Suporta rastreio CTWa de anúncios via campo <code className="font-mono bg-violet-100 px-1 rounded">referral</code>.</p>
+        </div>
+      </div>
+
+      {/* Sessions list */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin h-8 w-8 border-2 border-slate-200 border-t-violet-500 rounded-full" />
+        </div>
+      ) : sessions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+          <span className="text-5xl mb-4">🔌</span>
+          <p className="text-lg font-semibold text-slate-600 mb-1">Nenhuma sessão encontrada</p>
+          <p className="text-sm mb-6">Crie uma nova sessão WPPConnect para começar</p>
+          <button onClick={() => { setNewName(""); setCreateError(""); setWppModal({ type: "create", stage: "name" }); }}
+            className="bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl px-5 py-2.5 transition">
+            + Nova Sessão
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {sessions.map(s => {
+            const isConnected = s.status === "connected";
+            const isConnecting = s.status === "connecting" || s.status === "qrcode";
+            return (
+              <div key={s.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-4 min-w-0">
+                    <span className={`mt-1.5 flex-shrink-0 h-3 w-3 rounded-full ${isConnected ? "bg-violet-500 animate-pulse" : isConnecting ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-slate-900">{s.sessionName}</h3>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isConnected ? "bg-violet-100 text-violet-700" : isConnecting ? "bg-yellow-100 text-yellow-700" : "bg-slate-100 text-slate-500"}`}>
+                          {isConnected ? "Conectado" : isConnecting ? "Aguardando QR..." : "Desconectado"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        {s.linkedFunnelName
+                          ? <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2.5 py-0.5 font-medium">🎯 {s.linkedFunnelName}{s.linkedClientName ? ` · ${s.linkedClientName}` : ""}</span>
+                          : <span className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-0.5">Sem funil</span>}
+                      </div>
+                      {s.instanceWebhookUrl && (
+                        <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-lg px-2.5 py-1.5 max-w-lg">
+                          <span className="text-xs text-slate-400">🔗</span>
+                          <span className="text-xs font-mono text-slate-500 truncate flex-1">{s.instanceWebhookUrl}</span>
+                          <button onClick={() => navigator.clipboard.writeText(s.instanceWebhookUrl).catch(() => {})}
+                            className="text-xs text-blue-600 font-semibold hover:text-blue-800 whitespace-nowrap">Copiar</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                    {isConnected ? (
+                      <button onClick={() => setWppModal({ type: "qr", id: s.id, sessionName: s.sessionName, forceLogout: true })}
+                        className="text-xs font-semibold border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-xl px-3 py-1.5 transition">
+                        🔄 Trocar
+                      </button>
+                    ) : (
+                      <button onClick={() => setWppModal({ type: "qr", id: s.id, sessionName: s.sessionName, forceLogout: false })}
+                        className="text-xs font-semibold border border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-xl px-3 py-1.5 transition">
+                        🔌 Conectar
+                      </button>
+                    )}
+                    <ActionBtn onClick={() => { setLinkFunnelId(s.linkedFunnelId ?? ""); setLinkClientId(s.linkedClientId ?? ""); setLinkAgent(s.hasAgentLinked); setWppModal({ type: "link", id: s.id, sessionName: s.sessionName }); }}
+                      title="Vincular CRM/Agente" className="border-slate-200 text-slate-600 hover:text-violet-700 hover:bg-violet-50">🔀</ActionBtn>
+                    {deletingId === s.id ? (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleDelete(s.id)} className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">Confirmar</button>
+                        <button onClick={() => setDeletingId(null)} className="text-xs text-slate-400 px-1.5">✕</button>
+                      </div>
+                    ) : (
+                      <ActionBtn onClick={() => setDeletingId(s.id)} title="Excluir" className="border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50">🗑️</ActionBtn>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Overlay */}
+      {wppModal.type !== "none" && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" onClick={() => setWppModal({ type: "none" })} />
+      )}
+
+      {/* CRIAR */}
+      {wppModal.type === "create" && (
+        <Modal title="Nova Sessão WPPConnect" onClose={() => setWppModal({ type: "none" })}>
+          {wppModal.stage === "name" && (
+            <>
+              <p className="text-sm text-slate-500 mb-4">Digite um nome para identificar esta sessão.</p>
+              <input autoFocus value={newName}
+                onChange={e => setNewName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                onKeyDown={e => e.key === "Enter" && handleCreate()}
+                placeholder="ex: vendas, suporte, atendimento"
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 mb-1"
+              />
+              {createError && <p className="text-xs text-red-500 mb-3 mt-1">{createError}</p>}
+              <p className="text-xs text-slate-400 mb-4">Só letras minúsculas, números e hífens.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setWppModal({ type: "none" })} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600">Cancelar</button>
+                <button onClick={handleCreate} disabled={!newName.trim()} className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition">
+                  Criar Sessão →
+                </button>
+              </div>
+            </>
+          )}
+          {wppModal.stage === "creating" && (
+            <div className="py-8 text-center">
+              <div className="animate-spin h-10 w-10 border-2 border-slate-200 border-t-violet-500 rounded-full mx-auto mb-4" />
+              <p className="font-semibold text-slate-700">Criando sessão no WPPConnect...</p>
+            </div>
+          )}
+          {wppModal.stage === "created" && wppModal.id && (
+            <>
+              <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4 mb-5 text-center">
+                <div className="text-3xl mb-2">✅</div>
+                <p className="font-bold text-violet-800">Sessão <span className="font-mono">{wppModal.sessionName}</span> criada!</p>
+                <p className="text-xs text-violet-600 mt-1">Agora conecte um número via QR Code.</p>
+              </div>
+              <button onClick={() => setWppModal({ type: "qr", id: wppModal.id!, sessionName: wppModal.sessionName!, forceLogout: false })}
+                className="w-full rounded-xl bg-violet-600 hover:bg-violet-700 py-2.5 text-sm font-semibold text-white transition">
+                📷 Conectar via QR Code
+              </button>
+            </>
+          )}
+        </Modal>
+      )}
+
+      {/* QR Code */}
+      {wppModal.type === "qr" && (
+        <Modal title={`Conectar — ${wppModal.sessionName}`} onClose={() => setWppModal({ type: "none" })} wide>
+          <div className="text-center">
+            {qrStage === "done" ? (
+              <div className="py-6">
+                <div className="text-5xl mb-2">✅</div>
+                <p className="font-bold text-violet-700 text-lg">Conectado com sucesso!</p>
+              </div>
+            ) : qrImage ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qrImage} alt="QR Code" className="w-64 h-64 mx-auto rounded-2xl border-4 border-violet-100 shadow-md mb-3" />
+                <p className="text-sm font-medium text-slate-700 mb-1">Abra o WhatsApp → <strong>Aparelhos Conectados</strong> → <strong>Vincular</strong></p>
+                <p className="text-xs text-slate-400">Atualiza automaticamente</p>
+              </>
+            ) : (
+              <div className="w-64 h-64 mx-auto rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center mb-3 gap-3">
+                <div className="animate-spin h-8 w-8 border-2 border-slate-200 border-t-violet-500 rounded-full" />
+                <p className="text-xs text-slate-400 px-4">Gerando QR Code...</p>
+              </div>
+            )}
+            {qrStage !== "done" && (
+              <div className="flex items-center justify-center gap-2 mt-3">
+                <span className={`h-2 w-2 rounded-full ${qrImage ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
+                <span className="text-xs text-slate-500">{qrImage ? "Aguardando scan..." : "Gerando QR..."}</span>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Vincular */}
+      {wppModal.type === "link" && (
+        <Modal title={`Vincular — ${wppModal.sessionName}`} onClose={() => setWppModal({ type: "none" })}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
+              <ClientFunnelSelect clients={clients} funnels={funnels} value={linkFunnelId} onChange={setLinkFunnelId} accentColor="green" />
+              <p className="text-xs text-slate-400 mt-1">Mensagens recebidas criarão leads neste funil.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
+              <ClientAgentSelect clients={clients} value={linkClientId} onChange={setLinkClientId} accentColor="green" />
+              {linkClientId && (
+                <label className="flex items-center gap-2.5 cursor-pointer mt-2" onClick={() => setLinkAgent(v => !v)}>
+                  <div className={`relative w-10 rounded-full transition-colors ${linkAgent ? "bg-violet-500" : "bg-slate-300"}`} style={{ height: "22px" }}>
+                    <span className="absolute top-[2px] bg-white shadow rounded-full transition-transform" style={{ width: 18, height: 18, left: 2, transform: linkAgent ? "translateX(18px)" : "translateX(0)" }} />
+                  </div>
+                  <span className="text-sm text-slate-700">Ativar Agente IA nesta sessão</span>
+                </label>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setWppModal({ type: "none" })} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600">Cancelar</button>
+              <button onClick={handleLink} disabled={savingLink} className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                {savingLink ? "Salvando..." : "Salvar Vínculo"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }
 
