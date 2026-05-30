@@ -15,6 +15,7 @@ declare global {
 type InstStatus = { status: string; phone: string | null; name: string | null; qr?: string | null; type?: string };
 type Instances = Record<string, InstStatus>;
 type FunnelInfo = { id: string; name: string; clientId?: string | null; connections?: FunnelConnection[] };
+type WppSession = { id: string; sessionName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
 
 export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }: {
   clients: { id: string; name: string }[];
@@ -25,6 +26,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
   const [instances, setInstances] = useState<Instances>({});
   const [showPanel, setShowPanel] = useState(false);
   const [funnels, setFunnels] = useState<FunnelInfo[]>(funnelsProp);
+  const [wppSessions, setWppSessions] = useState<WppSession[]>([]);
   const [qrData, setQrData] = useState<{ connId: string; qr: string; funnelName: string } | null>(null);
   const [metaAppId, setMetaAppId] = useState<string>("");
   const [metaConfigId, setMetaConfigId] = useState<string>("");
@@ -46,14 +48,15 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
   useEffect(() => {
     fetchInstances();
     fetchFunnels();
-    const t = setInterval(fetchInstances, 8000);
+    fetchWppSessions();
+    const t = setInterval(() => { fetchInstances(); fetchWppSessions(); }, 8000);
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
   // Refetch funis quando painel abre
   useEffect(() => {
-    if (showPanel) fetchFunnels();
+    if (showPanel) { fetchFunnels(); fetchWppSessions(); }
   }, [showPanel]);
 
   // Quando clientId muda, reseta para a prop e busca dados atualizados do servidor
@@ -186,6 +189,13 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
     } catch { /**/ }
   }
 
+  async function fetchWppSessions() {
+    try {
+      const res = await fetch("/api/whatsapp/wppconnect-manager");
+      if (res.ok) setWppSessions(await res.json());
+    } catch { /**/ }
+  }
+
   async function fetchFunnels() {
     try {
       const url = clientId ? `/api/crm/funnels?clientId=${encodeURIComponent(clientId)}` : "/api/crm/funnels";
@@ -261,7 +271,11 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
 
   // Conta apenas instâncias dos funis visíveis (não todas do servidor)
   const funnelConnIds = funnels.flatMap(f => f.connections ?? []).map(c => c.id);
-  const totalConnected = funnelConnIds.filter(id => instances[id]?.status === "connected").length;
+  const clientFunnelIds = new Set(funnels.map(f => f.id));
+  const visibleWppSessions = wppSessions.filter(s => s.linkedFunnelId && clientFunnelIds.has(s.linkedFunnelId));
+  const totalConnected =
+    funnelConnIds.filter(id => instances[id]?.status === "connected").length +
+    visibleWppSessions.filter(s => s.status === "connected").length;
 
   return (
     <div className="relative" ref={panelRef}>
@@ -293,7 +307,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
                 </div>
 
                 {/* Conexões do funil */}
-                {(f.connections ?? []).length === 0 && (
+                {(f.connections ?? []).length === 0 && visibleWppSessions.filter(s => s.linkedFunnelId === f.id).length === 0 && (
                   <p className="text-xs text-slate-400 px-4 py-2 italic">Sem número vinculado</p>
                 )}
                 {(f.connections ?? []).map(conn => {
@@ -317,6 +331,20 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
                     </div>
                   );
                 })}
+                {/* Sessões WPPConnect vinculadas a este funil */}
+                {visibleWppSessions.filter(s => s.linkedFunnelId === f.id).map(wpp => (
+                  <div key={wpp.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <span className={`h-2 w-2 rounded-full flex-shrink-0 ${wpp.status === "connected" ? "bg-green-500" : wpp.status === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800">
+                        📱 WPPConnect · {wpp.sessionName}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {wpp.status === "connected" ? (wpp.phone ? `+${wpp.phone}` : "Conectado") : wpp.status === "connecting" ? "Conectando..." : "Desconectado"}
+                      </p>
+                    </div>
+                  </div>
+                ))}
 
                 {/* Botão adicionar + modal inline */}
                 {addingTo === f.id ? (

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAllConversationsByClientId, setAiPaused } from "@/lib/conversations";
 import { getFunnels } from "@/lib/funnels";
 import { getLeadByPhone } from "@/lib/leads";
+import { getWppSessions } from "@/lib/wppconnect-sessions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,16 @@ export async function GET(req: NextRequest) {
         connIds.add(c.id);
         connections.push({ id: c.id, phone: c.phone || c.id, type: c.type });
       }
+    }
+  }
+
+  // Adiciona sessões WPPConnect vinculadas a funis deste cliente
+  const clientFunnelIds = new Set(funnels.map(f => f.id));
+  const wppSessions = getWppSessions().filter(s => s.funnelId && clientFunnelIds.has(s.funnelId));
+  for (const s of wppSessions) {
+    if (!connIds.has(s.id)) {
+      connIds.add(s.id);
+      connections.push({ id: s.id, phone: s.sessionName, type: "wppconnect" });
     }
   }
 

@@ -1,12 +1,14 @@
 /**
  * Envia mensagem via Meta Cloud API (oficial) quando disponível,
- * com fallback para UazAPI.
+ * com fallback para UazAPI ou WPPConnect.
  */
 
 import { getFunnels } from "./funnels";
 import { sendWhatsApp } from "./whatsapp";
 import { getConfig } from "./clients";
 import { sendText } from "./uazapi";
+import { getWppSessions } from "./wppconnect-sessions";
+import { sendText as wppSendText } from "./wppconnect-api";
 
 export async function sendMessage(
   phone: string,
@@ -19,6 +21,14 @@ export async function sendMessage(
 
   // Se tem connectionId preferido, usa ele primeiro
   if (preferredConnectionId) {
+    // WPPConnect: verifica sessões WPPConnect primeiro (não estão em funnels[].connections)
+    const wppSessions = getWppSessions();
+    const wppSession = wppSessions.find(s => s.id === preferredConnectionId);
+    if (wppSession) {
+      const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message);
+      if (ok) return;
+    }
+
     const preferred = allConns.find((c) => c.id === preferredConnectionId);
     if (preferred) {
       // Meta Cloud API

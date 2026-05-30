@@ -2,8 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 import { getFunnels } from "@/lib/funnels";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
-import { getConfig } from "@/lib/clients";
+import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
+import { getHistory, addMessage } from "@/lib/conversations";
+import { runGeminiAgent } from "@/lib/gemini-agent";
+import { sendText as wppSendText } from "@/lib/wppconnect-api";
+import {
+  upsertPending,
+  getPendingForPhone,
+  markProcessing,
+  markDone,
+  cancelPendingForPhone,
+} from "@/lib/pending-responses";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +38,7 @@ export async function POST(
 
   // WPPConnect envia event = "onmessage" ou outros eventos
   const event = (body.event as string ?? "").toLowerCase();
-  if (event !== "onmessage" && event !== "onanyMessage" && event !== "message") {
+  if (event !== "onmessage" && event !== "onanymessage" && event !== "message") {
     return NextResponse.json({ ok: true });
   }
 
@@ -36,9 +46,6 @@ export async function POST(
   if (!data) return NextResponse.json({ ok: true });
 
   const fromMe = data.fromMe === true || data.self === "out";
-
-  // Ignora mensagens enviadas por nós
-  if (fromMe) return NextResponse.json({ ok: true });
 
   // Ignora grupos
   const isGroupMsg = data.isGroupMsg === true || String(data.from ?? "").endsWith("@g.us");
@@ -67,8 +74,9 @@ export async function POST(
   const funnels = getFunnels();
   const funnel = funnels.find(f => f.id === wppSession.funnelId);
   const funnelId = funnel?.id ?? wppSession.funnelId!;
-  const clientId = funnel?.clientId ?? "sem-cliente";
+  const clientId = wppSession.clientId ?? funnel?.clientId ?? "sem-cliente";
   const entradaColumnId = funnel?.columns?.[0]?.id ?? "entrada";
+  const connId = wppSession.id;
 
   const existingLead = getLeadByPhone(clientId, phone);
   const isNew = !existingLead;
@@ -116,6 +124,85 @@ export async function POST(
 
   if (ctwaAdId) {
     console.log(`[WPPConnect Webhook] CTWa lead phone=${phone} adId=${ctwaAdId} adInfo=${JSON.stringify(adInfo)}`);
+  }
+
+  // ── Salva a mensagem na conversa (sempre) ──
+  if (text.trim()) {
+    const ts = Date.now();
+    addMessage(
+      phone,
+      { role: fromMe ? "assistant" : "user", content: text, ts },
+      clientId,
+      { connId, contactName: !fromMe && pushName !== phone ? pushName : undefined },
+    );
+  }
+
+  // Se foi enviado por nós, não responde via IA
+  if (fromMe || !text.trim()) return NextResponse.json({ ok: true });
+
+  // ── Verifica IA ──
+  const currentLead = getLeadByPhone(clientId, phone);
+  if (currentLead?.aiPaused) return NextResponse.json({ ok: true });
+
+  const activeClient = clientId !== "sem-cliente" ? getClientById(clientId) : null;
+  const agentCfg = activeClient ? getAgentConfigForConnection(activeClient, connId) : undefined;
+  const geminiEnabled = agentCfg?.enabled === true;
+
+  if (!geminiEnabled || clientId === "sem-cliente") {
+    return NextResponse.json({ ok: true });
+  }
+
+  // testPhone: quando configurado, IA responde APENAS este número
+  if (agentCfg?.testPhone) {
+    const testNorm = agentCfg.testPhone.replace(/\D/g, "");
+    if (phone !== testNorm && !phone.endsWith(testNorm.slice(-9))) {
+      return NextResponse.json({ ok: true });
+    }
+  }
+
+  const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
+  const history = getHistory(phone);
+
+  // Helper: envia e registra a resposta da IA
+  async function sendReply(reply: string) {
+    addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, { connId });
+    await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, reply);
+  }
+
+  // ── Batching: acumula mensagens antes de responder ──
+  if (waitSeconds > 0) {
+    const pending = upsertPending(clientId, phone, text, waitSeconds);
+    const _pendingId = pending.id;
+    const _clientId = clientId;
+    const _phone = phone;
+
+    setTimeout(() => {
+      const batch = getPendingForPhone(_clientId, _phone);
+      if (!batch || batch.id !== _pendingId || batch.status !== "pending") return;
+      markProcessing(batch.id);
+      const combined = batch.messages.join("\n");
+      const h = getHistory(_phone);
+      runGeminiAgent(combined, h, _clientId, _phone, connId)
+        .then(async ({ text: geminiText }) => {
+          markDone(batch.id);
+          if (geminiText) await sendReply(geminiText);
+        })
+        .catch((e) => {
+          console.error("[WPPConnect webhook] Erro no batch:", e);
+          markDone(batch.id);
+        });
+    }, waitSeconds * 1000);
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Resposta imediata (sem batching) ──
+  cancelPendingForPhone(clientId, phone);
+  try {
+    const { text: geminiText } = await runGeminiAgent(text, history, clientId, phone, connId);
+    if (geminiText) await sendReply(geminiText);
+  } catch (e) {
+    console.error("[WPPConnect webhook] Erro no Gemini:", e);
   }
 
   return NextResponse.json({ ok: true });
