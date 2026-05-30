@@ -37,11 +37,15 @@ export async function POST(
     return NextResponse.json({ ok: true });
   }
 
-  console.log(`[WPPConnect Webhook] session=${wppSession.sessionName} event=${body.event} from=${body.from}`);
+  console.log(`[WPPConnect Webhook] session=${wppSession.sessionName} event=${body.event} from=${body.from} fromMe=${body.fromMe} chatId=${body.chatId}`);
 
   // WPPConnect envia event = "onmessage" ou outros eventos
   const event = (body.event as string ?? "").toLowerCase();
   if (event !== "onmessage" && event !== "onanymessage" && event !== "message") {
+    // Log de eventos filtrados para diagnóstico (inclui fromMe e outros)
+    if (event) {
+      console.log(`[WPPConnect Webhook] evento filtrado: event=${event} from=${body.from} fromMe=${body.fromMe} chatId=${body.chatId}`);
+    }
     return NextResponse.json({ ok: true });
   }
 
