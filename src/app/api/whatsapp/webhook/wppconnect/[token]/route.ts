@@ -53,6 +53,15 @@ export async function POST(
   const isGroupMsg = body.isGroupMsg === true || String(body.from ?? "").endsWith("@g.us");
   if (isGroupMsg) return NextResponse.json({ ok: true });
 
+  // DEBUG: quando o from tem @lid (contato com LID do WhatsApp), loga o corpo completo
+  if (String(body.from ?? "").endsWith("@lid")) {
+    const senderDebug = body.sender as Record<string, unknown> | undefined;
+    console.log(`[WPPConnect Webhook LID] BODY_KEYS=${JSON.stringify(Object.keys(body))}`);
+    console.log(`[WPPConnect Webhook LID] from=${body.from} chatId=${body.chatId} author=${body.author} notifyName=${body.notifyName}`);
+    console.log(`[WPPConnect Webhook LID] sender=${JSON.stringify(senderDebug)}`);
+    console.log(`[WPPConnect Webhook LID] contact=${JSON.stringify(body.contact)}`);
+  }
+
   // Extrai o número do remetente
   // IMPORTANTE: o campo `from` pode ser um LID interno do WhatsApp (ex: 18983856173090)
   // e não o número real de telefone. Usa sender.number ou sender.id._serialized como prioridade.
