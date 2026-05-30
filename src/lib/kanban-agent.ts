@@ -28,10 +28,15 @@ function buildSystemPrompt(lead: Lead, funnel: Funnel): string {
 
   const listaPermitidas = colunasPermitidas
     .map((c) => {
-      const frases = c.triggerPhrases?.length
-        ? ` [gatilhos: ${c.triggerPhrases.map((f) => `"${f}"`).join(", ")}]`
-        : "";
-      return `• ${c.id} → ${c.label}${c.id === lead.status ? " (atual)" : ""}${frases}`;
+      const linhas: string[] = [];
+      // Contexto IA (descrição configurada pelo gestor)
+      if (c.aiDescription) linhas.push(`  Contexto: ${c.aiDescription}`);
+      // Frases de gatilho
+      if (c.triggerPhrases?.length) {
+        linhas.push(`  Gatilhos: ${c.triggerPhrases.map((f) => `"${f}"`).join(", ")}`);
+      }
+      const detalhe = linhas.length ? "\n" + linhas.join("\n") : "";
+      return `• ${c.id} → ${c.label}${c.id === lead.status ? " (ETAPA ATUAL)" : ""}${detalhe}`;
     })
     .join("\n");
 
@@ -39,20 +44,21 @@ function buildSystemPrompt(lead: Lead, funnel: Funnel): string {
     ? `\nColunas BLOQUEADAS para movimentação automática (preenchidas manualmente):\n${colunasBloqueadas.map((c) => `• ${c.label}`).join("\n")}`
     : "";
 
-  return `Você é um agente silencioso de CRM. Analise a última mensagem do lead e decida se deve atualizar o Kanban.
+  return `Você é um agente silencioso de CRM. Analise a conversa e decida se deve mover o lead no Kanban.
 
 Lead: ${lead.name} | Etapa atual: ${colunaAtual?.label ?? lead.status} | Funil: ${funnel.name}
 
-Colunas disponíveis para mover_lead (use o id):
+Colunas disponíveis para mover_lead (use o id exato):
 ${listaPermitidas}${listaBloqueadas}
 
 Regras:
-- Use mover_lead quando a mensagem contiver (ou for semanticamente equivalente a) um dos gatilhos configurados para uma coluna
-- Use mover_lead também quando houver mudança CLARA de estágio, mesmo sem gatilho exato
-- NUNCA mova para colunas bloqueadas — essas são preenchidas manualmente pelo gestor
+- PRIORIDADE 1: Se a coluna tiver "Contexto", siga-o à risca — ele define exatamente quando mover
+- PRIORIDADE 2: Se tiver "Gatilhos", mova quando a mensagem for semanticamente equivalente a um deles
+- PRIORIDADE 3: Na ausência de contexto/gatilhos, mova quando houver mudança CLARA e inequívoca de estágio
+- NUNCA mova para colunas bloqueadas
 - Não mova se o lead já está na coluna correta
-- Use atualizar_lead para capturar nome real ou resumir contexto relevante
-- Se não houver nada a fazer, não use nenhuma ferramenta
+- Use atualizar_lead para capturar o nome real do lead ou anotações importantes da conversa
+- Se não houver nada a fazer, não chame nenhuma ferramenta
 - Você NÃO responde ao usuário — apenas executa ações no CRM`;
 }
 

@@ -300,6 +300,22 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                     }
                   />
 
+                  {/* Contexto IA — descrição de quando o lead deve ir para esta coluna */}
+                  <div className="mt-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 space-y-1">
+                    <p className="text-[11px] font-semibold text-blue-700">🧠 Contexto IA — quando mover o lead para cá?</p>
+                    <textarea
+                      value={col.aiDescription ?? ""}
+                      onChange={(e) =>
+                        setEditCols((prev) =>
+                          prev.map((c, i) => i === idx ? { ...c, aiDescription: e.target.value || undefined } : c)
+                        )
+                      }
+                      placeholder={`Ex: Mover quando o lead agendou uma reunião ou demonstrou interesse concreto em marcar um horário`}
+                      rows={2}
+                      className="w-full text-xs rounded border border-blue-200 px-2 py-1.5 outline-none focus:border-blue-400 bg-white resize-none text-slate-700 placeholder-slate-400"
+                    />
+                  </div>
+
                   {/* Seletor de evento Meta CAPI */}
                   <div className="flex items-center gap-1.5 pl-1">
                     <span className="text-[10px] text-slate-400 shrink-0 uppercase tracking-wide">Meta</span>
