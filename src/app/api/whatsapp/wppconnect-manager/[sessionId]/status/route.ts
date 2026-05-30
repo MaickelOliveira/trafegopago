@@ -17,9 +17,9 @@ export async function GET(
   const rawStatus = await checkConnectionStatus(wppSession.sessionName, wppSession.sessionToken);
   const connected = rawStatus === "CONNECTED";
 
-  // Se está aguardando QR, retorna a imagem atualizada
+  // Tenta obter QR sempre que não estiver conectado (WPPConnect retorna PNG se disponível)
   let qr: string | null = null;
-  if (rawStatus === "QRCODE") {
+  if (!connected) {
     qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken).catch(() => null);
   }
 

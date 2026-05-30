@@ -26,7 +26,7 @@ export async function POST(
   // Reinicia sessão para gerar QR
   if (body.webhookUrl) {
     await startSession(wppSession.sessionName, wppSession.sessionToken, body.webhookUrl).catch(() => {});
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 3000));
   }
 
   const qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken);

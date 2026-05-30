@@ -63,6 +63,14 @@ export async function getQrCode(sessionName: string, token: string): Promise<str
       { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
     );
     if (!res.ok) return null;
+    // WPPConnect pode retornar PNG binário direto ou JSON com base64
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("image/")) {
+      const buffer = await res.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString("base64");
+      const mime = contentType.split(";")[0].trim();
+      return `data:${mime};base64,${base64}`;
+    }
     const data = await res.json() as Record<string, unknown>;
     const qr = (data.qrcode as string) || (data.base64 as string) || null;
     if (!qr) return null;
@@ -72,7 +80,7 @@ export async function getQrCode(sessionName: string, token: string): Promise<str
   }
 }
 
-// Status da sessão: CONNECTED | QRCODE | DISCONNECTED | CLOSED | STARTING
+// Status da sessão: CONNECTED | DISCONNECTED
 export async function checkConnectionStatus(
   sessionName: string,
   token: string,
@@ -85,6 +93,10 @@ export async function checkConnectionStatus(
     );
     if (!res.ok) return "DISCONNECTED";
     const data = await res.json() as Record<string, unknown>;
+    // WPPConnect retorna { status: true/false } (boolean) ou string
+    if (typeof data.status === "boolean") {
+      return data.status ? "CONNECTED" : "DISCONNECTED";
+    }
     return (data.status as string) || "DISCONNECTED";
   } catch {
     return "DISCONNECTED";
