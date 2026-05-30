@@ -113,7 +113,7 @@ export function LeadModal({
   const [lead, setLead] = useState(initial);
   const [tab, setTab] = useState<"details" | "chat">(initial.source === "whatsapp" ? "chat" : "details");
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ name: initial.name, phone: initial.phone, email: initial.email ?? "", value: initial.value?.toString() ?? "", notes: initial.notes, campaignName: initial.campaignName ?? "" });
+  const [form, setForm] = useState({ name: initial.name, phone: initial.phone, realPhone: initial.realPhone ?? "", email: initial.email ?? "", value: initial.value?.toString() ?? "", notes: initial.notes, campaignName: initial.campaignName ?? "" });
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -171,7 +171,7 @@ export function LeadModal({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: form.name, phone: form.phone, email: form.email || null,
+        name: form.name, phone: form.phone, realPhone: form.realPhone || null, email: form.email || null,
         value: form.value ? Number(form.value) : null, notes: form.notes, campaignName: form.campaignName || null,
       }),
     });
@@ -343,10 +343,22 @@ export function LeadModal({
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Telefone</p>
                 {editing ? (
-                  <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400" />
+                  <div className="flex flex-col gap-1">
+                    {lead.isLid && (
+                      <input value={form.realPhone} onChange={(e) => setForm((f) => ({ ...f, realPhone: e.target.value }))}
+                        placeholder="Número real (ex: 5544...)"
+                        className="w-full rounded-lg border border-blue-300 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500" />
+                    )}
+                    {!lead.isLid && (
+                      <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400" />
+                    )}
+                  </div>
                 ) : (
-                  <a href={`https://wa.me/${lead.realPhone ?? lead.phone}`} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline font-mono">{lead.realPhone ?? lead.phone}</a>
+                  <div>
+                    <a href={`https://wa.me/${lead.realPhone ?? lead.phone}`} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline font-mono">{lead.realPhone ?? lead.phone}</a>
+                    {lead.isLid && !lead.realPhone && <span className="ml-2 text-xs text-amber-600">(LID — edite para inserir o número real)</span>}
+                  </div>
                 )}
               </div>
               <div>
@@ -540,7 +552,7 @@ export function LeadModal({
             <div className="flex gap-2">
               {editing && (
                 <>
-                  <button onClick={() => { setEditing(false); setForm({ name: lead.name, phone: lead.phone, email: lead.email ?? "", value: lead.value?.toString() ?? "", notes: lead.notes, campaignName: lead.campaignName ?? "" }); }}
+                  <button onClick={() => { setEditing(false); setForm({ name: lead.name, phone: lead.phone, realPhone: lead.realPhone ?? "", email: lead.email ?? "", value: lead.value?.toString() ?? "", notes: lead.notes, campaignName: lead.campaignName ?? "" }); }}
                     className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
                     Cancelar
                   </button>
