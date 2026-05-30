@@ -96,14 +96,24 @@ export function getLeadById(id: string): Lead | undefined {
 
 export function getLeadByPhone(clientId: string, phone: string): Lead | undefined {
   const normalized = normalizePhone(phone);
-  return load().find((l) => l.clientId === clientId && normalizePhone(l.phone) === normalized);
+  return load().find(
+    (l) =>
+      l.clientId === clientId &&
+      (normalizePhone(l.phone) === normalized ||
+        (l.realPhone != null && normalizePhone(l.realPhone) === normalized)),
+  );
 }
 
 export function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedAt">): Lead {
   const leads = load();
-  // Evita duplicata por telefone + cliente + funil
+  // Evita duplicata por telefone + cliente + funil (checa também realPhone)
+  const normalizedNew = normalizePhone(data.phone);
   const existing = leads.find(
-    (l) => l.clientId === data.clientId && l.funnelId === data.funnelId && l.phone.replace(/\D/g, "") === data.phone.replace(/\D/g, "")
+    (l) =>
+      l.clientId === data.clientId &&
+      l.funnelId === data.funnelId &&
+      (normalizePhone(l.phone) === normalizedNew ||
+        (l.realPhone != null && normalizePhone(l.realPhone) === normalizedNew)),
   );
   if (existing) return existing;
 
@@ -155,7 +165,11 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
   const normalized = normalizePhone(phone);
   const funnelId = patch.funnelId ?? "default";
   const idx = leads.findIndex(
-    (l) => l.clientId === clientId && l.funnelId === funnelId && normalizePhone(l.phone) === normalized
+    (l) =>
+      l.clientId === clientId &&
+      l.funnelId === funnelId &&
+      (normalizePhone(l.phone) === normalized ||
+        (l.realPhone != null && normalizePhone(l.realPhone) === normalized)),
   );
   const now = new Date().toISOString();
   if (idx >= 0) {
