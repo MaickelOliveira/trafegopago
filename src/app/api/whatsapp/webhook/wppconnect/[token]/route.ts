@@ -8,6 +8,7 @@ import { getHistory, addMessage, setAiPaused } from "@/lib/conversations";
 import { markSent, consumeSent } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
+import { processKanbanActions } from "@/lib/kanban-agent";
 import { sendText as wppSendText, resolveContactPhone } from "@/lib/wppconnect-api";
 import {
   upsertPending,
@@ -235,6 +236,12 @@ export async function POST(
     return NextResponse.json({ ok: true });
   }
   if (!text.trim()) return NextResponse.json({ ok: true });
+
+  // ── Agente Kanban — roda sempre, independente da IA de atendimento (fire-and-forget) ──
+  if (clientId !== "sem-cliente") {
+    const _h = getHistory(phone);
+    processKanbanActions(text, _h, clientId, phone).catch(() => {});
+  }
 
   // ── Verifica IA ──
   const currentLead = getLeadByPhone(clientId, phone);
