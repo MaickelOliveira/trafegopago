@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 import { getFunnels } from "@/lib/funnels";
-import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
+import { getLeadByPhone, upsertLeadByPhone, updateLead } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
-import { getHistory, addMessage } from "@/lib/conversations";
+import { getHistory, addMessage, setAiPaused } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText as wppSendText } from "@/lib/wppconnect-api";
 import {
@@ -177,8 +177,21 @@ export async function POST(
     );
   }
 
-  // Se foi enviado por nós, não responde via IA
-  if (fromMe || !text.trim()) return NextResponse.json({ ok: true });
+  // Se foi enviado por nós, pausa a IA e não responde
+  if (fromMe) {
+    if (text.trim()) {
+      // Pausa a IA quando operador responde manualmente pelo celular
+      const activeClientFM = clientId !== "sem-cliente" ? getClientById(clientId) : null;
+      const agentCfgFM = activeClientFM ? getAgentConfigForConnection(activeClientFM, connId) : undefined;
+      const resumeKeyword = agentCfgFM?.aiResumeKeyword?.trim();
+      const isPausing = !(resumeKeyword && text.trim().toLowerCase() === resumeKeyword.toLowerCase());
+      setAiPaused(phone, isPausing);
+      const freshLead = getLeadByPhone(clientId, phone);
+      if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
+    }
+    return NextResponse.json({ ok: true });
+  }
+  if (!text.trim()) return NextResponse.json({ ok: true });
 
   // ── Verifica IA ──
   const currentLead = getLeadByPhone(clientId, phone);
