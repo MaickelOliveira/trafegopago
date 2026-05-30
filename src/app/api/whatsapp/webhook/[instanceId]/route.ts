@@ -25,6 +25,7 @@ import type { AgentMedia, AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
+import { getAdInfoById } from "@/lib/meta-api";
 
 /**
  * Usa o Gemini para gerar um resumo em texto corrido da conversa.
@@ -549,12 +550,48 @@ export async function POST(
     // Coluna de entrada: primeira coluna do funil (normalmente "entrada" / "novo")
     const entradaColumn = funnel?.columns?.[0]?.id ?? "entrada";
 
+    // ── Rastreio CTWa via referral do UazapiGO ───────────────────────────
+    // UazapiGO repassa o referral de mensagens Click-to-WhatsApp.
+    // Campos: source_id (ad_id), source_url, headline, ctwa_clid, body
+    const ctwaReferral = (
+      firstMsg?.referral ??
+      (body.message as Record<string, unknown> | undefined)?.referral ??
+      body.referral
+    ) as Record<string, unknown> | undefined;
+
+    const ctwaAdId = ctwaReferral?.source_id as string | undefined;
+
+    // Busca info completa do anúncio via Meta Ads API (assíncrono, apenas lead novo)
+    let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
+    if (isNew && ctwaAdId) {
+      const cfg = getConfig();
+      const token = cfg.metaToken;
+      if (token) {
+        adInfo = await getAdInfoById(ctwaAdId, token).catch(() => null);
+        console.log(`[webhook/${instanceId}] CTWa ad lookup adId=${ctwaAdId}`, adInfo);
+      }
+    }
+
     upsertLeadByPhone(cid, phone, {
       clientId: cid,
       funnelId,
       source: "whatsapp",
       ...(shouldUpdateName ? { name: contactName } : {}),
       ...(isNew ? { status: entradaColumn } : {}),
+      ...(adInfo ? {
+        adPlatform: "meta",
+        adId: adInfo.adId,
+        adName: adInfo.adName,
+        adSetId: adInfo.adSetId,
+        adSetName: adInfo.adSetName,
+        campaignId: adInfo.campaignId,
+        campaignName: adInfo.campaignName,
+      } : ctwaReferral ? {
+        // Fallback: sem token Meta mas tem referral — salva o que veio no payload
+        adPlatform: "meta",
+        adId: ctwaAdId ?? null,
+        campaignName: (ctwaReferral.headline as string) ?? null,
+      } : {}),
     });
 
     // Guarda: pula apenas se não há texto, não há tipo e não há URL de mídia

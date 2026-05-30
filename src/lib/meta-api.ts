@@ -303,3 +303,38 @@ export async function getAds(
     };
   });
 }
+
+// ─── Lookup por ad_id (usado para rastreio CTWa via QR/UazapiGO) ──────────────
+
+export type MetaAdInfo = {
+  adId: string;
+  adName: string | null;
+  adSetId: string | null;
+  adSetName: string | null;
+  campaignId: string | null;
+  campaignName: string | null;
+};
+
+/**
+ * Busca nome de campanha, conjunto e anúncio a partir do ad_id recebido no
+ * referral de mensagens Click-to-WhatsApp (CTWa) via UazapiGO.
+ * Requer token com permissão ads_read.
+ */
+export async function getAdInfoById(adId: string, token: string): Promise<MetaAdInfo | null> {
+  try {
+    const data = await metaGet(`/${adId}`, {
+      fields: "name,adset_id,campaign_id,adset{id,name,campaign{id,name}}",
+    }, token);
+    return {
+      adId,
+      adName: (data.name as string) ?? null,
+      adSetId: (data.adset_id as string) ?? (data.adset?.id as string) ?? null,
+      adSetName: (data.adset?.name as string) ?? null,
+      campaignId: (data.campaign_id as string) ?? (data.adset?.campaign?.id as string) ?? null,
+      campaignName: (data.adset?.campaign?.name as string) ?? null,
+    };
+  } catch (err) {
+    console.warn("[getAdInfoById] Falha ao buscar ad info:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
