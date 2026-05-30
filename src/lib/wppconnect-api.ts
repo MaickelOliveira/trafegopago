@@ -17,10 +17,10 @@ export function isWppConnectConfigured(): boolean {
 export async function generateToken(sessionName: string): Promise<string | null> {
   if (!base()) return null;
   try {
-    const res = await fetch(`${base()}/api/${secretKey()}/generate-token`, {
+    const res = await fetch(`${base()}/api/${sessionName}/${secretKey()}/generate-token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session: sessionName }),
+      body: JSON.stringify({}),
     });
     if (!res.ok) return null;
     const data = await res.json() as Record<string, unknown>;
@@ -39,7 +39,7 @@ export async function startSession(
 ): Promise<void> {
   if (!base()) return;
   try {
-    await fetch(`${base()}/api/${secretKey()}/${sessionName}/start-session`, {
+    await fetch(`${base()}/api/${sessionName}/start-session`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -59,7 +59,7 @@ export async function getQrCode(sessionName: string, token: string): Promise<str
   if (!base()) return null;
   try {
     const res = await fetch(
-      `${base()}/api/${secretKey()}/${sessionName}/qrcode-session`,
+      `${base()}/api/${sessionName}/qrcode-session`,
       { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
     );
     if (!res.ok) return null;
@@ -80,7 +80,7 @@ export async function checkConnectionStatus(
   if (!base()) return "DISCONNECTED";
   try {
     const res = await fetch(
-      `${base()}/api/${secretKey()}/${sessionName}/check-connection-session`,
+      `${base()}/api/${sessionName}/check-connection-session`,
       { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
     );
     if (!res.ok) return "DISCONNECTED";
@@ -95,7 +95,7 @@ export async function checkConnectionStatus(
 export async function closeSession(sessionName: string, token: string): Promise<void> {
   if (!base()) return;
   try {
-    await fetch(`${base()}/api/${secretKey()}/${sessionName}/close-session`, {
+    await fetch(`${base()}/api/${sessionName}/close-session`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` },
     });
@@ -106,7 +106,7 @@ export async function closeSession(sessionName: string, token: string): Promise<
 export async function logoutSession(sessionName: string, token: string): Promise<void> {
   if (!base()) return;
   try {
-    await fetch(`${base()}/api/${secretKey()}/${sessionName}/logout-session`, {
+    await fetch(`${base()}/api/${sessionName}/logout-session`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` },
     });
@@ -127,7 +127,7 @@ export async function sendText(
   try {
     const phoneFormatted = phone.includes("@") ? phone : `${phone}@c.us`;
     const res = await fetch(
-      `${base()}/api/${secretKey()}/${sessionName}/send-message`,
+      `${base()}/api/${sessionName}/send-message`,
       {
         method: "POST",
         headers: {
