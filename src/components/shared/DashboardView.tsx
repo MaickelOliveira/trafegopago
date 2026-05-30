@@ -11,7 +11,7 @@ import type { MetaCampaign } from "@/lib/meta-api";
 
 type AdAccount = { id: string; name: string; platform: string };
 type Client   = { id: string; name: string; color: string; cplTarget: number; funnelType?: string; adAccounts: AdAccount[] };
-type CrmLead  = { id: string; name: string; phone: string; status: string; funnelId: string; createdAt: string; updatedAt?: string; value?: number | null };
+type CrmLead  = { id: string; name: string; phone: string; realPhone?: string; status: string; funnelId: string; createdAt: string; updatedAt?: string; value?: number | null };
 
 const PALETTE = ["#818cf8","#34d399","#fb923c","#f472b6","#38bdf8","#a78bfa","#4ade80","#fbbf24","#f87171","#2dd4bf"];
 
