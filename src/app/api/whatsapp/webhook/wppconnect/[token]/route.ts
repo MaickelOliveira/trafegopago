@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 import { getFunnels } from "@/lib/funnels";
-import { getLeadByPhone, upsertLeadByPhone, updateLead } from "@/lib/leads";
+import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused } from "@/lib/conversations";
@@ -149,44 +149,54 @@ export async function POST(
     : {};
 
   // Detecta se o contato usa LID (novo sistema interno do WhatsApp)
-  // Para fromMe=true, o chatId é o destinatário (o LID); para fromMe=false, o from é o remetente LID
   const isLidContact =
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
 
-  // Para contatos LID sem número real resolvido, tenta resolver via API (best-effort)
-  // Roda tanto para leads novos quanto para leads existentes que ainda não têm realPhone
-  let resolvedRealPhone: string | undefined;
-  const needsPhoneResolution = isLidContact && !existingLead?.realPhone;
-  if (needsPhoneResolution) {
-    try {
-      const lidJid = String(body.chatId ?? "").endsWith("@lid")
-        ? String(body.chatId)
-        : String(body.from ?? "").endsWith("@lid")
-          ? String(body.from)
-          : `${phone}@lid`;
-      const realPhone = await resolveContactPhone(wppSession.sessionName, wppSession.sessionToken, lidJid);
-      if (realPhone && realPhone !== phone) {
-        console.log(`[WPPConnect Webhook] LID ${phone} → número real: ${realPhone}`);
-        resolvedRealPhone = realPhone;
-      } else {
-        console.log(`[WPPConnect Webhook] LID ${phone} pn-lid retornou: ${JSON.stringify(realPhone)}`);
-      }
-    } catch (e) {
-      console.log(`[WPPConnect Webhook] LID ${phone} erro ao resolver: ${e}`);
-    }
-  }
-
-  upsertLeadByPhone(clientId, phone, {
+  // ── 1. Grava o lead IMEDIATAMENTE (sem esperar resolução do LID) ──
+  const savedLead = upsertLeadByPhone(clientId, phone, {
     clientId,
     funnelId,
     source: "whatsapp",
     ...(shouldUpdateName ? { name: pushName } : {}),
     ...(isNew ? { status: entradaColumnId } : {}),
     ...(isLidContact ? { isLid: true } : {}),
-    ...(resolvedRealPhone ? { realPhone: resolvedRealPhone } : {}),
     ...adFields,
   });
+
+  // ── 2. Resolve o número real do LID em background (sem bloquear a resposta) ──
+  const needsPhoneResolution = isLidContact && !savedLead.realPhone;
+  if (needsPhoneResolution) {
+    const lidJid = String(body.chatId ?? "").endsWith("@lid")
+      ? String(body.chatId)
+      : String(body.from ?? "").endsWith("@lid")
+        ? String(body.from)
+        : `${phone}@lid`;
+
+    resolveContactPhone(wppSession.sessionName, wppSession.sessionToken, lidJid)
+      .then((realPhone) => {
+        if (realPhone && realPhone !== phone) {
+          console.log(`[WPPConnect Webhook] LID ${phone} → número real: ${realPhone}`);
+          updateLead(savedLead.id, { realPhone });
+
+          // ── Remove duplicatas que possam ter sido criadas durante a resolução ──
+          // Race condition: outro evento com o número real pode ter criado um lead
+          // separado antes de realPhone ser gravado
+          const allLeads = getLeads(clientId);
+          for (const dup of allLeads) {
+            if (dup.id !== savedLead.id && dup.phone.replace(/\D/g, "") === realPhone.replace(/\D/g, "")) {
+              console.log(`[WPPConnect Webhook] Removendo duplicata com phone=${dup.phone} (LID já resolvido)`);
+              deleteLead(dup.id);
+            }
+          }
+        } else {
+          console.log(`[WPPConnect Webhook] LID ${phone} pn-lid retornou: ${JSON.stringify(realPhone)}`);
+        }
+      })
+      .catch((e) => {
+        console.log(`[WPPConnect Webhook] LID ${phone} erro ao resolver: ${e}`);
+      });
+  }
 
   if (ctwaAdId) {
     console.log(`[WPPConnect Webhook] CTWa lead phone=${phone} adId=${ctwaAdId} adInfo=${JSON.stringify(adInfo)}`);
