@@ -16,7 +16,7 @@ import type { Funnel } from "./funnels";
 
 type KanbanAction =
   | { type: "mover_lead"; colunaId: string; motivo: string }
-  | { type: "atualizar_lead"; nome?: string; notas?: string };
+  | { type: "atualizar_lead"; nome?: string; notas?: string; valor?: number };
 
 function buildSystemPrompt(lead: Lead, funnel: Funnel): string {
   const columns = funnel.columns ?? [];
@@ -55,9 +55,10 @@ Regras:
 - PRIORIDADE 1: Se a coluna tiver "Contexto", siga-o à risca — ele define exatamente quando mover
 - PRIORIDADE 2: Se tiver "Gatilhos", mova quando a mensagem for semanticamente equivalente a um deles
 - PRIORIDADE 3: Na ausência de contexto/gatilhos, mova quando houver mudança CLARA e inequívoca de estágio
+- IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou reunião 2 mensagens atrás e depois disse "ok", o estado ainda é "reunião confirmada"
 - NUNCA mova para colunas bloqueadas
 - Não mova se o lead já está na coluna correta
-- Use atualizar_lead para capturar o nome real do lead ou anotações importantes da conversa
+- Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante, (c) registrar qualquer valor monetário mencionado (preço, investimento, orçamento)
 - Se não houver nada a fazer, não chame nenhuma ferramenta
 - Você NÃO responde ao usuário — apenas executa ações no CRM`;
 }
@@ -79,7 +80,7 @@ async function runKanbanAgent(
           {
             name: "mover_lead",
             description:
-              "Move o lead para outra coluna do funil quando ele demonstrar mudança clara de estágio na conversa (ex: demonstrou interesse, pediu orçamento, confirmou compra, disse que não tem interesse).",
+              "Move o lead para outra coluna do funil quando a conversa indicar mudança clara de estágio.",
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
@@ -89,7 +90,7 @@ async function runKanbanAgent(
                 },
                 motivo: {
                   type: SchemaType.STRING,
-                  description: "Motivo resumido da mudança (ex: 'pediu orçamento', 'confirmou interesse')",
+                  description: "Motivo resumido da mudança (ex: 'confirmou reunião', 'fechou negócio')",
                 },
               },
               required: ["coluna_id", "motivo"],
@@ -98,7 +99,7 @@ async function runKanbanAgent(
           {
             name: "atualizar_lead",
             description:
-              "Atualiza dados do lead captados na conversa: nome real quando ele se apresentar, e notas com contexto importante (produto de interesse, objeções, situação).",
+              "Atualiza dados do lead: nome real, notas relevantes da conversa e/ou valor monetário mencionado.",
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
@@ -110,31 +111,37 @@ async function runKanbanAgent(
                   type: SchemaType.STRING,
                   description: "Resumo do interesse, produto/serviço mencionado, objeções e próximos passos",
                 },
+                valor: {
+                  type: SchemaType.NUMBER,
+                  description: "Valor monetário mencionado na conversa (ex: 500 para R$ 500). Só preencha se um valor numérico foi claramente mencionado.",
+                },
               },
             },
           },
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 256 },
+    generationConfig: { maxOutputTokens: 512 },
   });
 
-  // Monta histórico resumido (últimas 8 mensagens) + última mensagem do lead
-  const recentHistory = history.slice(-8);
-  const geminiHistory = recentHistory.map((m) => ({
-    role: m.role === "assistant" ? ("model" as const) : ("user" as const),
-    parts: [{ text: m.content }],
-  }));
+  // Monta bloco de conversa recente (últimas 6 mensagens + última mensagem)
+  // para análise holística — o agente vê o CONTEXTO completo, não só a última frase
+  const recentHistory = history.slice(-6);
+  const blocoConversa = recentHistory
+    .map((m) => `[${m.role === "assistant" ? "Assistente" : "Lead"}]: ${m.content}`)
+    .join("\n");
+  const promptAnalise = blocoConversa
+    ? `Conversa recente (analise TODO o bloco para determinar o estado atual do lead):\n${blocoConversa}\n\n[Lead] (última mensagem): ${lastMessage}\n\nCom base na conversa COMPLETA acima, execute as ações necessárias no CRM.`
+    : `Primeira mensagem do lead: ${lastMessage}\n\nExecute as ações necessárias no CRM.`;
 
   try {
-    const chat = model.startChat({ history: geminiHistory });
-    const result = await chat.sendMessage(lastMessage);
+    const result = await model.generateContent(promptAnalise);
     const response = result.response;
 
     const actions: KanbanAction[] = [];
     const allParts = response.candidates?.flatMap((c) => c.content?.parts ?? []) ?? [];
     const fnCalls = allParts.filter((p) => p.functionCall).map((p) => p.functionCall!.name);
-    console.log(`[kanban-agent/gemini] candidatos=${response.candidates?.length ?? 0} fnCalls=[${fnCalls.join(",")}] text="${(response.text?.() ?? "").slice(0, 100)}"`);
+    console.log(`[kanban-agent/gemini] fnCalls=[${fnCalls.join(",")}] text="${(response.text?.() ?? "").slice(0, 100)}"`);
 
     for (const candidate of response.candidates ?? []) {
       for (const part of candidate.content?.parts ?? []) {
@@ -152,9 +159,9 @@ async function runKanbanAgent(
         }
 
         if (part.functionCall.name === "atualizar_lead") {
-          const args = part.functionCall.args as { nome?: string; notas?: string };
-          if (args.nome || args.notas) {
-            actions.push({ type: "atualizar_lead", nome: args.nome, notas: args.notas });
+          const args = part.functionCall.args as { nome?: string; notas?: string; valor?: number };
+          if (args.nome || args.notas || typeof args.valor === "number") {
+            actions.push({ type: "atualizar_lead", nome: args.nome, notas: args.notas, valor: args.valor });
           }
         }
       }
@@ -287,9 +294,10 @@ export async function processKanbanActions(
     }
 
     if (action.type === "atualizar_lead") {
-      const patch: Record<string, string> = {};
+      const patch: Record<string, unknown> = {};
       if (action.nome) patch.name = action.nome;
       if (action.notas) patch.notes = action.notas;
+      if (typeof action.valor === "number" && action.valor > 0) patch.value = action.valor;
       if (Object.keys(patch).length) {
         updateLead(lead.id, patch);
         console.log(`[kanban-agent] Lead ${lead.id} atualizado:`, patch);
