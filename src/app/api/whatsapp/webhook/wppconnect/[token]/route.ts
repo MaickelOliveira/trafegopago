@@ -54,15 +54,27 @@ export async function POST(
   if (isGroupMsg) return NextResponse.json({ ok: true });
 
   // Extrai o número do remetente
-  const rawFrom = (body.from as string) ?? (body.chatId as string) ?? "";
+  // IMPORTANTE: o campo `from` pode ser um LID interno do WhatsApp (ex: 18983856173090)
+  // e não o número real de telefone. Usa sender.number ou sender.id._serialized como prioridade.
+  const sender = body.sender as Record<string, unknown> | undefined;
+  const senderIdObj = sender?.id as Record<string, unknown> | undefined;
+
+  const rawFrom =
+    (sender?.number as string) ||                       // número real (mais confiável)
+    (senderIdObj?.user as string) ||                    // user part do ID serializado
+    (senderIdObj?._serialized as string) ||             // ID serializado completo
+    (body.from as string) ||                            // fallback: campo from (pode ser LID)
+    (body.chatId as string) ||
+    "";
   const phone = rawFrom.replace(/@.*/, "").replace(/\D/g, "");
   if (!phone) return NextResponse.json({ ok: true });
+
+  console.log(`[WPPConnect Webhook] phone extraído: ${phone} (sender.number=${sender?.number} from=${body.from})`);
 
   // Extrai o texto da mensagem
   const text = (body.body as string) || (body.caption as string) || "";
 
   // Extrai o nome do contato
-  const sender = body.sender as Record<string, unknown> | undefined;
   const pushName = (sender?.pushname as string) || (body.notifyName as string) || phone;
 
   // ── CTWa: referral data (Click-to-WhatsApp) ──
