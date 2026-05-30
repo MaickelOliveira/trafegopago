@@ -183,6 +183,7 @@ export async function listSessions(): Promise<{ session: string; status: string 
 }
 
 // Tenta resolver o número real de um contato LID via API do WPPConnect.
+// Usa o endpoint /contact/pn-lid/{jid} (disponível desde dez/2025).
 // Retorna o número real (ex: "5544XXXXXXXX") ou null se não conseguir resolver.
 export async function resolveContactPhone(
   sessionName: string,
@@ -192,27 +193,25 @@ export async function resolveContactPhone(
   if (!base()) return null;
   // Garante que o JID está no formato completo
   const jid = contactId.includes("@") ? contactId : `${contactId}@lid`;
+  const lidBase = contactId.replace(/@.*/, "").replace(/\D/g, "");
   try {
-    // WPPConnect Server: GET /api/{session}/contact/{jid}
+    // WPPConnect Server: GET /api/{session}/contact/pn-lid/{jid}
+    // Retorna: { lid: { id, _serialized }, phoneNumber: { id, _serialized }, contact: {...} }
     const res = await fetch(
-      `${base()}/api/${sessionName}/contact/${encodeURIComponent(jid)}`,
+      `${base()}/api/${sessionName}/contact/pn-lid/${encodeURIComponent(jid)}`,
       { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
     );
     if (!res.ok) return null;
     const data = await res.json() as Record<string, unknown>;
-    const contact = (data.response ?? data) as Record<string, unknown>;
-    // Extrai o número: pode estar em .number, .phone ou .id.user
-    const candidates = [
-      contact.number as string,
-      contact.phone as string,
-      ((contact.id as Record<string, unknown>)?.user as string),
-    ];
-    for (const c of candidates) {
-      if (c && /^\d{10,15}$/.test(c.replace(/\D/g, "")) && !["lid"].includes(c)) {
-        const digits = c.replace(/\D/g, "");
-        // Rejeita se for idêntico ao LID (não é número real)
-        const lidBase = contactId.replace(/@.*/, "").replace(/\D/g, "");
-        if (digits !== lidBase) return digits;
+    // O endpoint retorna diretamente o objeto (sem wrapper .response)
+    const phoneNumber = data.phoneNumber as Record<string, unknown> | undefined;
+    if (phoneNumber) {
+      // id é o número puro (ex: "5544XXXXXXXX"), _serialized inclui "@c.us"
+      const raw = (phoneNumber.id as string) || (phoneNumber._serialized as string) || "";
+      const digits = raw.replace(/@c\.us$/, "").replace(/@.*/, "").replace(/\D/g, "");
+      if (digits && /^\d{10,15}$/.test(digits) && digits !== lidBase) {
+        console.log(`[WPPConnect] pn-lid resolved: ${jid} → ${digits}`);
+        return digits;
       }
     }
     return null;
