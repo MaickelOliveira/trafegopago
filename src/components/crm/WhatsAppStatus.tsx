@@ -16,8 +16,6 @@ type InstStatus = { status: string; phone: string | null; name: string | null; q
 type Instances = Record<string, InstStatus>;
 type FunnelInfo = { id: string; name: string; clientId?: string | null; connections?: FunnelConnection[] };
 
-const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID ?? "";
-
 export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }: {
   clients: { id: string; name: string }[];
   funnels?: FunnelInfo[];
@@ -28,6 +26,8 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
   const [showPanel, setShowPanel] = useState(false);
   const [funnels, setFunnels] = useState<FunnelInfo[]>(funnelsProp);
   const [qrData, setQrData] = useState<{ connId: string; qr: string; funnelName: string } | null>(null);
+  const [metaAppId, setMetaAppId] = useState<string>("");
+  const [metaConfigId, setMetaConfigId] = useState<string>("");
 
   // Modal adicionar conexão
   const [addingTo, setAddingTo] = useState<string | null>(null);
@@ -76,11 +76,11 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
   }, [qrData]);
 
   // ── Embedded Signup Meta SDK ─────────────────────────────────────────────
-  const loadMetaSDK = useCallback(() => {
+  const loadMetaSDK = useCallback((appId: string) => {
     return new Promise<void>((resolve) => {
       if (typeof window.FB !== "undefined") { resolve(); return; }
       window.fbAsyncInit = () => {
-        window.FB.init({ appId: META_APP_ID, version: "v21.0", xfbml: false, cookie: false });
+        window.FB.init({ appId, version: "v21.0", xfbml: false, cookie: false });
         resolve();
       };
       if (!document.getElementById("facebook-jssdk")) {
@@ -143,25 +143,34 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
   }
 
   async function launchEmbeddedSignup(funnelId: string) {
-    if (!META_APP_ID) {
-      setEmbeddedError("NEXT_PUBLIC_META_APP_ID não configurado");
+    // Busca App ID em runtime via API (evita dependência de NEXT_PUBLIC_ no build)
+    let appId = metaAppId;
+    let configId = metaConfigId;
+    if (!appId) {
+      try {
+        const cfg = await fetch("/api/meta/app-config").then(r => r.json());
+        appId = cfg.appId ?? "";
+        configId = cfg.configId ?? "";
+        setMetaAppId(appId);
+        setMetaConfigId(configId);
+      } catch { /**/ }
+    }
+    if (!appId) {
+      setEmbeddedError("META_APP_ID não configurado no servidor");
       setEmbeddedStatus("error");
       return;
     }
     setEmbeddedStatus("running");
     embeddedFunnelRef.current = funnelId;
-    await loadMetaSDK();
+    await loadMetaSDK(appId);
     window.FB.login(
       (response) => {
-        // Código também pode chegar aqui no authResponse, mas priorizamos o event listener
         if (response.authResponse?.code) {
-          // Se o listener de mensagem não capturou, tenta via FB.login callback
-          // (comportamento depende da versão do flow)
           console.log("[EmbeddedSignup] authResponse code recebido via callback");
         }
       },
       {
-        config_id: process.env.NEXT_PUBLIC_META_EMBEDDED_CONFIG_ID ?? undefined,
+        config_id: configId || undefined,
         response_type: "code",
         override_default_response_type: true,
         scope: "whatsapp_business_management,whatsapp_business_messaging",
