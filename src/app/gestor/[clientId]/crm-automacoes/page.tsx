@@ -4,6 +4,7 @@ import { getFunnels } from "@/lib/funnels";
 import { getAutomations } from "@/lib/crm-automations";
 import { getTemplates } from "@/lib/waba-templates";
 import { getWebhooks } from "@/lib/webhooks";
+import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { CrmAutomationsView } from "@/components/crm/CrmAutomationsView";
 
 type Props = { params: Promise<{ clientId: string }> };
@@ -19,7 +20,7 @@ export default async function CrmAutomacoesPage({ params }: Props) {
   const webhooks = getWebhooks(clientId).filter((w) => w.active);
 
   // Conexões disponíveis (UazapiGO e Meta) de todos os funis
-  const connections = funnels.flatMap((f) =>
+  const funnelConnections = funnels.flatMap((f) =>
     (f.connections ?? []).map((c) => ({
       id: c.id,
       type: c.type,
@@ -28,6 +29,19 @@ export default async function CrmAutomacoesPage({ params }: Props) {
       funnelName: f.name,
     }))
   );
+
+  // Sessões WPPConnect vinculadas a este cliente
+  const wppConnections = getWppSessions()
+    .filter((s) => s.clientId === clientId)
+    .map((s) => ({
+      id: s.id,
+      type: "wppconnect" as const,
+      phone: s.sessionName,
+      funnelId: s.funnelId ?? "",
+      funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "WPPConnect",
+    }));
+
+  const connections = [...funnelConnections, ...wppConnections];
 
   return (
     <CrmAutomationsView

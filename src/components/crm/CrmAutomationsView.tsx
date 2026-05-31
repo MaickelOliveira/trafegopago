@@ -10,7 +10,7 @@ import type { WebhookConfig } from "@/lib/webhooks";
 // ── Props ─────────────────────────────────────────────────────────────────────
 type ConnectionInfo = {
   id: string;
-  type: "uazapi" | "meta";
+  type: "uazapi" | "meta" | "wppconnect";
   phone: string;
   funnelId: string;
   funnelName: string;
@@ -263,9 +263,10 @@ function StepEditor({
   approvedTemplates: WabaTemplate[];
 }) {
   const sel = (field: keyof StepForm, val: unknown) => onChange({ [field]: val } as Partial<StepForm>);
-  const uazapiConns = connections.filter((c) => c.type === "uazapi");
-  const metaConns   = connections.filter((c) => c.type === "meta");
-  const allConns    = [...uazapiConns, ...metaConns];
+  const uazapiConns    = connections.filter((c) => c.type === "uazapi");
+  const metaConns      = connections.filter((c) => c.type === "meta");
+  const wppConns       = connections.filter((c) => c.type === "wppconnect");
+  const allConns       = [...uazapiConns, ...wppConns, ...metaConns];
 
   // ── Unified send message (UazapiGO text OR Meta template) ─────────────────
   if (step.type === "send_message" || step.type === "send_template") {
@@ -302,6 +303,7 @@ function StepEditor({
                     } else {
                       onChange({ connectionId: c.id, type: "send_message" });
                     }
+                    // wppconnect falls into the else branch → send_message
                   }}
                   className={clsx(
                     "flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition",
@@ -310,23 +312,25 @@ function StepEditor({
                       : "border-slate-200 bg-white text-slate-700 hover:border-violet-200 hover:bg-violet-50/50",
                   )}
                 >
-                  <span className="text-base">{c.type === "uazapi" ? "📱" : "🟢"}</span>
+                  <span className="text-base">{c.type === "meta" ? "🟢" : "📱"}</span>
                   <div className="flex-1 min-w-0">
                     <span className="font-semibold">{c.phone}</span>
                     <span className="text-slate-400 ml-2 text-xs">({c.funnelName})</span>
                   </div>
                   <span className={clsx(
                     "rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0",
-                    c.type === "uazapi" ? "bg-emerald-100 text-emerald-700" : "bg-green-100 text-green-700",
+                    c.type === "uazapi" ? "bg-emerald-100 text-emerald-700"
+                    : c.type === "wppconnect" ? "bg-blue-100 text-blue-700"
+                    : "bg-green-100 text-green-700",
                   )}>
-                    {c.type === "uazapi" ? "UazapiGO" : "API Meta"}
+                    {c.type === "uazapi" ? "UazapiGO" : c.type === "wppconnect" ? "WPPConnect" : "API Meta"}
                   </span>
                 </button>
               ))}
             </div>
           )}
           <p className="text-[10px] text-slate-400 mt-1">
-            📱 UazapiGO = texto livre &nbsp;·&nbsp; 🟢 API Meta = templates aprovados
+            📱 UazapiGO / WPPConnect = texto livre &nbsp;·&nbsp; 🟢 API Meta = templates aprovados
           </p>
         </div>
 

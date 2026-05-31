@@ -5,6 +5,8 @@ import type { Lead } from "./leads";
 import { updateLead, getLeads } from "./leads";
 import { getFunnels } from "./funnels";
 import { sendText, sendList, sendMedia } from "./uazapi";
+import { sendText as wppSendText } from "./wppconnect-api";
+import { getWppSessions } from "./wppconnect-sessions";
 import { getTemplates, sendTemplate } from "./waba-templates";
 import type { TemplateComponent } from "./waba-templates";
 
@@ -191,12 +193,21 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
   switch (step.type) {
     case "send_message": {
       const conn = findConn(funnels, step.connectionId ?? "");
-      if (!conn?.uazapiToken) return;
-      const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
-      if (step.imageUrl) {
-        await sendMedia(conn.uazapiToken, lead.phone, "image", step.imageUrl, msg || undefined);
-      } else if (msg) {
-        await sendText(conn.uazapiToken, lead.phone, msg);
+      if (conn?.uazapiToken) {
+        // UazapiGO path
+        const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
+        if (step.imageUrl) {
+          await sendMedia(conn.uazapiToken, lead.phone, "image", step.imageUrl, msg || undefined);
+        } else if (msg) {
+          await sendText(conn.uazapiToken, lead.phone, msg);
+        }
+      } else {
+        // WPPConnect path
+        const wppSess = getWppSessions().find((s) => s.id === step.connectionId);
+        if (wppSess) {
+          const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
+          if (msg) await wppSendText(wppSess.sessionName, wppSess.sessionToken, lead.phone, msg);
+        }
       }
       break;
     }
