@@ -131,7 +131,8 @@ export function LeadModal({
   }, [onClose]);
 
   async function fetchMessages() {
-    const res = await fetch(`/api/crm/conversations/${lead.phone}`);
+    const clientId = lead.clientId ? `?clientId=${encodeURIComponent(lead.clientId)}` : "";
+    const res = await fetch(`/api/crm/conversations/${lead.phone}${clientId}`);
     if (res.ok) {
       const data = await res.json();
       setMessages(data.messages ?? []);

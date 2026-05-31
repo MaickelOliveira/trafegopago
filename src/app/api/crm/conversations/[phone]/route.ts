@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getHistory, addMessage, getClientId, getAllConversationsByClientId, debugGetRawKeys } from "@/lib/conversations";
+import { getHistory, addMessage, getClientId, getAllConversationsByClientId } from "@/lib/conversations";
 import { markSent } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
@@ -19,13 +19,10 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
 
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
-  const messages = getHistory(normalized);
-  // debug: pega chaves brutas do arquivo sem filtro de clientId
-  const rawKeys = debugGetRawKeys(30);
-  const digits = normalized.startsWith("55") ? normalized.slice(2) : normalized;
-  const matching = rawKeys.filter((k) => k.includes(digits));
-  console.log(`[conversations/GET] phone=${normalized} found=${messages.length} matching=${JSON.stringify(matching)} sample=${JSON.stringify(rawKeys.slice(0, 5))}`);
-  return NextResponse.json({ messages, _debug: { phone: normalized, digits, count: messages.length, matching, sampleKeys: rawKeys } });
+  // Usa o clientId passado pelo LeadModal para buscar a conversa correta (chave prefixada clientId:phone)
+  const clientId = req.nextUrl.searchParams.get("clientId") ?? undefined;
+  const messages = getHistory(normalized, clientId);
+  return NextResponse.json({ messages });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Params }) {

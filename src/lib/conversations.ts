@@ -66,8 +66,16 @@ export function getHistory(phone: string, clientId?: string | null): ChatMessage
 
 export function getClientId(phone: string): string | null {
   const all = load();
+  // 1. Chaves simples (formato antigo)
   for (const v of phoneVariants(phone)) {
-    if (all[v]?.clientId) return all[v].clientId;
+    if (all[v]?.clientId) return all[v]?.clientId ?? null;
+  }
+  // 2. Chaves prefixadas (formato novo: clientId:phone)
+  const variants = phoneVariants(phone);
+  for (const [key, conv] of Object.entries(all)) {
+    if (!key.includes(":")) continue;
+    const phonePart = key.slice(key.indexOf(":") + 1);
+    if (variants.includes(phonePart) && conv.clientId) return conv.clientId;
   }
   return null;
 }
