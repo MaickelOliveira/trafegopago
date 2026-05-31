@@ -12,6 +12,7 @@ import { processKanbanActions } from "@/lib/kanban-agent";
 import { sendText as wppSendText, resolveContactPhone } from "@/lib/wppconnect-api";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
+import { transcribeMedia } from "@/lib/media-transcribe";
 import type { AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import {
@@ -186,10 +187,13 @@ export async function POST(
   const msgType = ((body.type as string) ?? "").toLowerCase();
   const isMediaMsg = ["image", "video", "audio", "ptt", "document", "sticker"].includes(msgType);
 
-  // ── Extrai texto e (quando aplicável) dados de mídia inline para o Gemini ──
+  // ── Extrai texto e (para áudio/imagem) buffer para transcrição posterior ──
   let text = "";
   let contentForHistory = "";
-  let mediaDataForAgent: { mimeType: string; data: string } | undefined;
+  // Buffer de mídia para transcrição (preenchido se body.body contiver base64)
+  let mediaBuffer: Buffer | undefined;
+  let mediaMime = "";
+  let mediaKind: "audio" | "image" | "video" | "document" | undefined;
 
   if (isMediaMsg) {
     const caption   = (body.caption as string)  || "";
@@ -203,32 +207,33 @@ export async function POST(
     if (rawBody.startsWith("data:")) {
       const commaIdx = rawBody.indexOf(",");
       if (commaIdx > 0) {
-        const header = rawBody.substring(5, commaIdx); // "image/jpeg;base64" etc.
+        const header = rawBody.substring(5, commaIdx);
         const semiIdx = header.indexOf(";");
         if (!mimeType && semiIdx > 0) mimeType = header.substring(0, semiIdx);
         base64Data = rawBody.substring(commaIdx + 1);
       }
     } else if (rawBody.length > 200 && !rawBody.startsWith("http")) {
-      // Raw base64 sem prefixo data-URI
       base64Data = rawBody;
     }
 
     if (msgType === "ptt" || msgType === "audio") {
       const dur = duration ? ` de ${Math.round(duration)}s` : "";
       contentForHistory = `[Áudio${dur}]${caption ? ` ${caption}` : ""}`;
-      if (base64Data && mimeType) {
-        // Gemini processa o áudio → transcreve e responde
-        text = `[O usuário enviou um áudio${dur}. Transcreva e responda normalmente.]${caption ? `\nLegenda: ${caption}` : ""}`;
-        mediaDataForAgent = { mimeType: mimeType || "audio/ogg", data: base64Data };
+      if (base64Data) {
+        mediaBuffer = Buffer.from(base64Data, "base64");
+        mediaMime   = mimeType || "audio/ogg";
+        mediaKind   = "audio";
+        text = caption || contentForHistory; // placeholder substituído na transcrição
       } else {
-        text = `[O usuário enviou um áudio${dur}. Informe gentilmente que não conseguiu processar e peça para digitar.]`;
+        text = `[O usuário enviou um áudio${dur}. Não foi possível processar — peça para digitar.]`;
       }
     } else if (msgType === "image") {
       contentForHistory = `[Imagem]${caption ? `: ${caption}` : ""}`;
-      if (base64Data && mimeType) {
-        // Gemini analisa a imagem (visão)
-        text = caption || "O usuário enviou uma imagem. Descreva o que você vê e responda ao contexto da conversa.";
-        mediaDataForAgent = { mimeType: mimeType || "image/jpeg", data: base64Data };
+      if (base64Data) {
+        mediaBuffer = Buffer.from(base64Data, "base64");
+        mediaMime   = mimeType || "image/jpeg";
+        mediaKind   = "image";
+        text = caption || contentForHistory;
       } else {
         text = caption || "[O usuário enviou uma imagem]";
       }
@@ -422,6 +427,25 @@ export async function POST(
     }
   }
 
+  // ── Transcreve áudio/imagem ANTES do agente (evita conflito com function calling) ──
+  if (mediaBuffer && mediaMime && mediaKind) {
+    const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
+    if (apiKey) {
+      console.log(`[WPPConnect Webhook] Transcrevendo ${mediaKind} (${mediaBuffer.length} bytes, mime=${mediaMime})`);
+      try {
+        const transcription = await transcribeMedia(mediaBuffer, mediaMime, apiKey, mediaKind);
+        if (transcription) {
+          text = transcription;
+          console.log(`[WPPConnect Webhook] Transcrição OK: "${transcription.slice(0, 120)}"`);
+        } else {
+          console.warn(`[WPPConnect Webhook] Transcrição retornou vazio — usando placeholder`);
+        }
+      } catch (e) {
+        console.error("[WPPConnect Webhook] Erro na transcrição de mídia:", e);
+      }
+    }
+  }
+
   const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
   const history = getHistory(phone, clientId);
 
@@ -449,15 +473,13 @@ export async function POST(
     const _pendingId = pending.id;
     const _clientId = clientId;
     const _phone = phone;
-    const _mediaData = mediaDataForAgent; // captura para o closure
-
     setTimeout(() => {
       const batch = getPendingForPhone(_clientId, _phone);
       if (!batch || batch.id !== _pendingId || batch.status !== "pending") return;
       markProcessing(batch.id);
       const combined = batch.messages.join("\n");
       const h = getHistory(_phone, _clientId);
-      runGeminiAgent(combined, h, _clientId, _phone, connId, _mediaData)
+      runGeminiAgent(combined, h, _clientId, _phone, connId)
         .then(async ({ text: geminiText, actions }) => {
           markDone(batch.id);
           if (geminiText) await sendReply(geminiText);
@@ -477,7 +499,7 @@ export async function POST(
   // ── Resposta imediata (sem batching) ──
   cancelPendingForPhone(clientId, phone);
   try {
-    const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId, mediaDataForAgent);
+    const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId);
     if (geminiText) await sendReply(geminiText);
     if (actions.length && activeClient && agentCfg) {
       await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId).catch(() => {});
