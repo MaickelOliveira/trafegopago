@@ -18,7 +18,7 @@ type KanbanAction =
   | { type: "mover_lead"; colunaId: string; motivo: string }
   | { type: "atualizar_lead"; nome?: string; notas?: string; valor?: number };
 
-function buildSystemPrompt(lead: Lead, funnel: Funnel): string {
+function buildSystemPrompt(lead: Lead, funnel: Funnel, agentSystemPrompt?: string): string {
   const columns = funnel.columns ?? [];
   const colunaAtual = columns.find((c) => c.id === lead.status);
 
@@ -44,9 +44,14 @@ function buildSystemPrompt(lead: Lead, funnel: Funnel): string {
     ? `\nColunas BLOQUEADAS para movimentação automática (preenchidas manualmente):\n${colunasBloqueadas.map((c) => `• ${c.label}`).join("\n")}`
     : "";
 
+  // Extrai as primeiras 400 chars do system prompt como contexto do negócio
+  const contextoNegocio = agentSystemPrompt
+    ? `\n\nContexto do negócio (use para filtrar conversas irrelevantes):\n${agentSystemPrompt.slice(0, 400).replace(/\n+/g, " ").trim()}`
+    : "";
+
   return `Você é um agente silencioso de CRM. Analise a conversa e decida se deve mover o lead no Kanban.
 
-Lead: ${lead.name} | Etapa atual: ${colunaAtual?.label ?? lead.status} | Funil: ${funnel.name}
+Lead: ${lead.name} | Etapa atual: ${colunaAtual?.label ?? lead.status} | Funil: ${funnel.name}${contextoNegocio}
 
 Colunas disponíveis para mover_lead (use o id exato):
 ${listaPermitidas}${listaBloqueadas}
@@ -61,7 +66,8 @@ Regras:
     • Lead diz que não tem interesse, que vai pensar, ou some por muito tempo → mover para perdidos
     • Lead confirma pagamento, envia comprovante ou diz que fechou → mover para coluna de clientes
 - IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou reunião há algumas mensagens e depois disse "ok" ou "até lá", o estado ainda é "reunião confirmada"
-- Em caso de dúvida entre mover ou não: SE a conversa mostrar qualquer sinal claro do estágio, MOVA. É melhor mover e o gestor corrigir do que não mover
+- FILTRO DE NICHO (REGRA MAIS IMPORTANTE): Se a conversa for sobre assuntos pessoais ou de negócios/serviços COMPLETAMENTE DIFERENTES do contexto do negócio acima, NÃO tome nenhuma ação. Exemplo: se o negócio é de tráfego pago e o lead está falando sobre personal trainer, academia, alimentação ou outro serviço não relacionado → NÃO mova, NÃO atualize
+- Em caso de dúvida entre mover ou não: SE a conversa for claramente sobre o negócio E mostrar sinal claro do estágio, MOVA
 - NUNCA mova para colunas bloqueadas
 - Não mova se o lead já está na coluna correta
 - Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante
@@ -78,12 +84,13 @@ async function runKanbanAgent(
   history: ChatMessage[],
   lead: Lead,
   funnel: Funnel,
-  geminiApiKey: string
+  geminiApiKey: string,
+  agentSystemPrompt?: string
 ): Promise<KanbanAction[]> {
   const genAI = new GoogleGenerativeAI(geminiApiKey);
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
-    systemInstruction: buildSystemPrompt(lead, funnel),
+    systemInstruction: buildSystemPrompt(lead, funnel, agentSystemPrompt),
     tools: [
       {
         functionDeclarations: [
@@ -274,9 +281,10 @@ export async function processKanbanActions(
     return;
   }
 
-  console.log(`[kanban-agent] iniciando — lead=${lead.name} status=${lead.status} msg="${lastMessage.slice(0, 80)}"`);
+  const agentSystemPrompt = client?.agentConfig?.systemPrompt ?? undefined;
+  console.log(`[kanban-agent] iniciando — lead=${lead.name} status=${lead.status} msg="${lastMessage.slice(0, 80)}"`)
 
-  const actions = await runKanbanAgent(lastMessage, history, lead, funnel, geminiApiKey);
+  const actions = await runKanbanAgent(lastMessage, history, lead, funnel, geminiApiKey, agentSystemPrompt);
 
   console.log(`[kanban-agent] Gemini retornou ${actions.length} ação(ões):`, JSON.stringify(actions));
 
