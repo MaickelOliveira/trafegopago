@@ -128,6 +128,24 @@ export async function logoutSession(sessionName: string, token: string): Promise
   }
 }
 
+// Normaliza número brasileiro para formato WhatsApp (13 dígitos: 55 + DDD + 9 + 8 dígitos)
+function normalizeBrPhone(raw: string): string {
+  // Remove sufixo @c.us e tudo que não é dígito
+  let d = raw.replace(/@.*$/, "").replace(/\D/g, "");
+  if (!d) return raw;
+
+  if (d.startsWith("55")) {
+    // 12 dígitos → falta o 9 depois do DDD (ex: 554498765432 → 55449 8765432)
+    if (d.length === 12) d = d.slice(0, 4) + "9" + d.slice(4);
+    // 13 dígitos: já correto
+  } else {
+    // Sem código do país
+    if (d.length === 10) d = "55" + d.slice(0, 2) + "9" + d.slice(2); // DDD + 8 dígitos
+    if (d.length === 11) d = "55" + d;                                  // DDD + 9 + 8 dígitos
+  }
+  return `${d}@c.us`;
+}
+
 // Envia mensagem de texto
 // isLid=true: para contatos com LID interno do WhatsApp (ex: 18983856173090@lid)
 export async function sendText(
@@ -140,10 +158,10 @@ export async function sendText(
   if (!base()) return false;
   try {
     // Para contatos LID, envia o número puro (sem @c.us) com isLid:true
-    // Para contatos normais, formata como número@c.us
+    // Para contatos normais, normaliza para formato brasileiro padrão
     const phoneFormatted = isLid
-      ? phone.replace(/@.*/, "")           // remove qualquer sufixo existente
-      : phone.includes("@") ? phone : `${phone}@c.us`;
+      ? phone.replace(/@.*/, "")
+      : normalizeBrPhone(phone);
     const res = await fetch(
       `${base()}/api/${sessionName}/send-message`,
       {

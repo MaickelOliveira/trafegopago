@@ -77,7 +77,15 @@ export async function GET(req: NextRequest) {
     } else {
       try {
         const wppBase = (process.env.WPPCONNECT_SERVER || "").replace(/\/$/, "");
-        const phoneFormatted = phone.includes("@") ? phone : `${phone}@c.us`;
+        // Normaliza telefone brasileiro (mesma lógica do wppconnect-api)
+        let d = phone.replace(/@.*$/, "").replace(/\D/g, "");
+        if (d.startsWith("55")) {
+          if (d.length === 12) d = d.slice(0, 4) + "9" + d.slice(4);
+        } else {
+          if (d.length === 10) d = "55" + d.slice(0, 2) + "9" + d.slice(2);
+          if (d.length === 11) d = "55" + d;
+        }
+        const phoneFormatted = `${d}@c.us`;
         const res = await fetch(`${wppBase}/api/${sess.sessionName}/send-message`, {
           method: "POST",
           headers: {
