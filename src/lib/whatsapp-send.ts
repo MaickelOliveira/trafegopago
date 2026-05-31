@@ -9,6 +9,7 @@ import { getConfig } from "./clients";
 import { sendText } from "./uazapi";
 import { getWppSessions } from "./wppconnect-sessions";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
+import { markSent as markWppSent } from "./wppconnect-sent";
 
 export async function sendMessage(
   phone: string,
@@ -25,6 +26,8 @@ export async function sendMessage(
     const wppSessions = getWppSessions();
     const wppSession = wppSessions.find(s => s.id === preferredConnectionId);
     if (wppSession) {
+      const normalizedPhone = phone.replace(/@.*/, "").replace(/\D/g, "");
+      markWppSent(normalizedPhone, message); // evita que o echo fromMe pause a IA
       const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message);
       if (ok) return;
     }
