@@ -316,6 +316,38 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                     />
                   </div>
 
+                  {/* Whitelist de transições — camada 3 de proteção */}
+                  <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 space-y-1.5">
+                    <p className="text-[11px] font-semibold text-amber-700">🔒 Destinos permitidos (Camada 3)</p>
+                    <p className="text-[10px] text-amber-600">Se marcado, a IA só move leads <b>desta coluna</b> para os destinos selecionados. Vazio = qualquer destino.</p>
+                    <div className="flex flex-col gap-1">
+                      {editCols
+                        .filter((_, i) => i !== idx)
+                        .map((dest) => (
+                          <label key={dest.id} className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={(col.allowedTransitions ?? []).includes(dest.id)}
+                              onChange={(e) => {
+                                setEditCols((prev) =>
+                                  prev.map((c, i) => {
+                                    if (i !== idx) return c;
+                                    const current = c.allowedTransitions ?? [];
+                                    const updated = e.target.checked
+                                      ? [...current, dest.id]
+                                      : current.filter((id) => id !== dest.id);
+                                    return { ...c, allowedTransitions: updated.length ? updated : undefined };
+                                  })
+                                );
+                              }}
+                              className="rounded accent-amber-600"
+                            />
+                            <span className="text-[11px] text-slate-600">{dest.label}</span>
+                          </label>
+                        ))}
+                    </div>
+                  </div>
+
                   {/* Seletor de evento Meta CAPI */}
                   <div className="flex items-center gap-1.5 pl-1">
                     <span className="text-[10px] text-slate-400 shrink-0 uppercase tracking-wide">Meta</span>
