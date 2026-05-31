@@ -64,20 +64,40 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ?phone=&sessId=&msg= → testa envio real
+  // ?phone=&sessId=&msg= → testa envio real (com resposta completa do WPPConnect)
   const phone  = req.nextUrl.searchParams.get("phone");
   const msg    = req.nextUrl.searchParams.get("msg") ?? "Teste de automação CRM";
   const sessId = req.nextUrl.searchParams.get("sessId");
   let sendResult: unknown = null;
   if (phone && sessId) {
-    const freshSessions = getWppSessions();  // lê de novo (pode ter sido atualizado pelo refresh)
+    const freshSessions = getWppSessions();
     const sess = freshSessions.find((s) => s.id === sessId);
     if (!sess) {
       sendResult = { error: "Sessão não encontrada" };
     } else {
-      sendResult = await sendText(sess.sessionName, sess.sessionToken, phone, msg)
-        .then((ok) => ({ success: ok }))
-        .catch((e: unknown) => ({ error: String(e) }));
+      try {
+        const wppBase = (process.env.WPPCONNECT_SERVER || "").replace(/\/$/, "");
+        const phoneFormatted = phone.includes("@") ? phone : `${phone}@c.us`;
+        const res = await fetch(`${wppBase}/api/${sess.sessionName}/send-message`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${sess.sessionToken}`,
+          },
+          body: JSON.stringify({ phone: phoneFormatted, message: msg, isGroup: false }),
+        });
+        const body = await res.text().catch(() => "(sem corpo)");
+        sendResult = {
+          httpStatus: res.status,
+          ok: res.ok,
+          responseBody: body,
+          requestUrl: `${wppBase}/api/${sess.sessionName}/send-message`,
+          phoneFormatted,
+          tokenPreview: sess.sessionToken.slice(0, 30) + "...",
+        };
+      } catch (e: unknown) {
+        sendResult = { error: String(e) };
+      }
     }
   }
 
