@@ -10,6 +10,10 @@ import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import { sendText as wppSendText, resolveContactPhone } from "@/lib/wppconnect-api";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getGeminiApiKey } from "@/lib/whatsapp-send";
+import type { AgentConfig } from "@/lib/clients";
+import type { GeminiAction } from "@/lib/gemini-agent";
 import {
   upsertPending,
   getPendingForPhone,
@@ -19,6 +23,91 @@ import {
 } from "@/lib/pending-responses";
 
 export const dynamic = "force-dynamic";
+
+// ── Resumo de conversa via WPPConnect ──
+
+function buildBasicSummary(history: { role: string; content: string }[]): string {
+  if (history.length === 0) return "Sem histórico de conversa.";
+  const last8 = history.slice(-8);
+  const lines = last8.map((m) => {
+    const role = m.role === "user" ? "Lead" : "Agente";
+    const content = m.content.length > 300 ? m.content.slice(0, 300) + "…" : m.content;
+    return `*${role}:* ${content}`;
+  });
+  return `_Últimas mensagens da conversa:_\n\n${lines.join("\n\n")}`;
+}
+
+async function generateWppSummaryText(
+  clientName: string,
+  agCfg: AgentConfig,
+  phone: string,
+  motivo: string,
+  clientId: string,
+): Promise<string> {
+  const history = getHistory(phone, clientId);
+  if (history.length === 0) return "Sem histórico de conversa.";
+
+  const recent = history.slice(-20);
+  let transcript = recent
+    .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
+    .join("\n");
+  if (transcript.length > 3000) transcript = transcript.slice(-3000);
+
+  const apiKey = getGeminiApiKey(agCfg.geminiApiKey ?? undefined);
+  if (apiKey) {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const prompt =
+      `Você é um assistente que resume conversas de WhatsApp para o gestor.\n\n` +
+      `Cliente/empresa: ${clientName}\n` +
+      `Motivo do resumo: ${motivo}\n\n` +
+      `Conversa:\n${transcript}\n\n` +
+      `Faça um resumo objetivo em texto corrido (máximo 5 linhas) destacando: ` +
+      `o que o lead quer, o estágio da conversa, dúvidas ou objeções levantadas, e próximo passo sugerido. ` +
+      `Não use marcadores ou listas, escreva em parágrafos curtos.`;
+
+    for (const modelId of ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-pro"]) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelId });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().trim();
+        if (text) return text;
+      } catch (e) {
+        console.error(`[wpp-summary] modelo ${modelId} falhou:`, e);
+      }
+    }
+  }
+  return buildBasicSummary(history);
+}
+
+async function processWppActions(
+  actions: GeminiAction[],
+  sessionName: string,
+  sessionToken: string,
+  clientName: string,
+  agCfg: AgentConfig,
+  leadPhone: string,
+  isLid: boolean,
+  clientId: string,
+): Promise<void> {
+  for (const action of actions) {
+    if (action.type === "resumo_solicitado") {
+      const summaryPhone = agCfg.summaryPhone;
+      if (!summaryPhone) {
+        console.log("[wpp-summary] summaryPhone não configurado — resumo ignorado");
+        continue;
+      }
+      const resumo = await generateWppSummaryText(clientName, agCfg, leadPhone, action.motivo, clientId);
+      const waLink = `https://wa.me/${leadPhone.replace(/\D/g, "")}`;
+      const msg =
+        `📋 *Resumo de conversa — ${clientName}*\n\n` +
+        `📞 *Lead:* ${waLink}\n` +
+        `📝 *Motivo:* ${action.motivo}\n\n` +
+        `${resumo}`;
+      console.log(`[wpp-summary] Enviando resumo para ${summaryPhone}`);
+      await wppSendText(sessionName, sessionToken, summaryPhone, msg, false);
+    }
+  }
+}
 
 export async function POST(
   req: NextRequest,
@@ -369,9 +458,12 @@ export async function POST(
       const combined = batch.messages.join("\n");
       const h = getHistory(_phone, _clientId);
       runGeminiAgent(combined, h, _clientId, _phone, connId, _mediaData)
-        .then(async ({ text: geminiText }) => {
+        .then(async ({ text: geminiText, actions }) => {
           markDone(batch.id);
           if (geminiText) await sendReply(geminiText);
+          if (actions.length && activeClient && agentCfg) {
+            await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, _phone, isLidPhone, _clientId).catch(() => {});
+          }
         })
         .catch((e) => {
           console.error("[WPPConnect webhook] Erro no batch:", e);
@@ -385,8 +477,11 @@ export async function POST(
   // ── Resposta imediata (sem batching) ──
   cancelPendingForPhone(clientId, phone);
   try {
-    const { text: geminiText } = await runGeminiAgent(text, history, clientId, phone, connId, mediaDataForAgent);
+    const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId, mediaDataForAgent);
     if (geminiText) await sendReply(geminiText);
+    if (actions.length && activeClient && agentCfg) {
+      await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId).catch(() => {});
+    }
   } catch (e) {
     console.error("[WPPConnect webhook] Erro no Gemini:", e);
   }
