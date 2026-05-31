@@ -164,10 +164,11 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
   const leads = load();
   const normalized = normalizePhone(phone);
   const funnelId = patch.funnelId ?? "default";
+  // Busca APENAS por clientId + telefone normalizado, sem restringir por funnelId.
+  // Isso evita duplicatas quando o mesmo número chega via canais/funis diferentes.
   const idx = leads.findIndex(
     (l) =>
       l.clientId === clientId &&
-      l.funnelId === funnelId &&
       (normalizePhone(l.phone) === normalized ||
         (l.realPhone != null && normalizePhone(l.realPhone) === normalized)),
   );
