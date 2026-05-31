@@ -90,7 +90,14 @@ export function getAllConversationsByClientId(clientId: string): Array<{
   const result = [];
   const prefix = `${clientId}:`;
   for (const [key, conv] of Object.entries(all)) {
-    if (conv.clientId !== clientId) continue;
+    // Inclui se clientId bate explicitamente, se a chave tem o prefixo do cliente,
+    // ou se clientId não foi registrado (conversas antigas antes do isolamento — o
+    // filtro por connId na camada de API garante a separação entre clientes)
+    const belongs =
+      conv.clientId === clientId ||
+      key.startsWith(prefix) ||
+      conv.clientId == null;
+    if (!belongs) continue;
     if (Date.now() - conv.lastActivity > MAX_AGE_MS) continue;
     // Remove prefixo clientId: da chave para retornar o número de telefone limpo
     const phone = key.startsWith(prefix) ? key.slice(prefix.length) : key;
