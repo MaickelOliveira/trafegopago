@@ -190,12 +190,15 @@ function findConn(funnels: FunnelLike[], connId: string) {
 }
 
 async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], funnelName?: string) {
+  console.log(`[crm-auto] executeStep type=${step.type} stepId=${step.id} leadId=${lead.id} phone=${lead.phone} connId=${step.connectionId ?? "(none)"}`);
   switch (step.type) {
     case "send_message": {
       const conn = findConn(funnels, step.connectionId ?? "");
+      console.log(`[crm-auto] send_message: findConn result=${conn ? `id=${conn.id} hasUazapi=${!!conn.uazapiToken}` : "NOT_FOUND"}`);
       if (conn?.uazapiToken) {
         // UazapiGO path
         const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
+        console.log(`[crm-auto] UazapiGO send: phone=${lead.phone} msg="${msg.slice(0,50)}" imageUrl=${step.imageUrl ?? "none"}`);
         if (step.imageUrl) {
           await sendMedia(conn.uazapiToken, lead.phone, "image", step.imageUrl, msg || undefined);
         } else if (msg) {
@@ -203,10 +206,20 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
         }
       } else {
         // WPPConnect path
-        const wppSess = getWppSessions().find((s) => s.id === step.connectionId);
+        const allWppSessions = getWppSessions();
+        console.log(`[crm-auto] WPP path: looking for sessId=${step.connectionId} among ${allWppSessions.length} sessions: ${allWppSessions.map(s => `${s.id}(${s.sessionName})`).join(", ")}`);
+        const wppSess = allWppSessions.find((s) => s.id === step.connectionId);
         if (wppSess) {
           const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
-          if (msg) await wppSendText(wppSess.sessionName, wppSess.sessionToken, lead.phone, msg);
+          console.log(`[crm-auto] WPP send: session=${wppSess.sessionName} phone=${lead.phone} msg="${msg.slice(0,50)}"`);
+          if (msg) {
+            const ok = await wppSendText(wppSess.sessionName, wppSess.sessionToken, lead.phone, msg);
+            console.log(`[crm-auto] WPP sendText result=${ok}`);
+          } else {
+            console.log(`[crm-auto] WPP send skipped: message is empty after interpolation`);
+          }
+        } else {
+          console.log(`[crm-auto] WPP send skipped: session NOT found for connId=${step.connectionId}`);
         }
       }
       break;
@@ -325,15 +338,19 @@ export function runAutomationsForEvent(
   lead: Lead,
   opts?: { toColumnId?: string; webhookId?: string },
 ) {
-  const all = getAutomations(lead.clientId).filter((a) => {
-    if (!a.active) return false;
-    if (a.trigger !== trigger) return false;
-    if (a.funnelId && a.funnelId !== lead.funnelId) return false;
-    if (trigger === "lead_created" && a.triggerWebhookId && a.triggerWebhookId !== opts?.webhookId) return false;
-    if (trigger === "column_changed" && a.triggerColumnId && a.triggerColumnId !== opts?.toColumnId) return false;
-    if (trigger === "column_entered" && a.triggerColumnId && a.triggerColumnId !== opts?.toColumnId) return false;
+  const allForClient = getAutomations(lead.clientId);
+  console.log(`[crm-auto] runAutomationsForEvent trigger=${trigger} leadId=${lead.id} phone=${lead.phone} funnelId=${lead.funnelId} toColumnId=${opts?.toColumnId ?? "(none)"} totalAutomations=${allForClient.length}`);
+  const all = allForClient.filter((a) => {
+    if (!a.active) { console.log(`[crm-auto] skip auto "${a.name}" (${a.id}): inactive`); return false; }
+    if (a.trigger !== trigger) { console.log(`[crm-auto] skip auto "${a.name}": trigger mismatch (${a.trigger} != ${trigger})`); return false; }
+    if (a.funnelId && a.funnelId !== lead.funnelId) { console.log(`[crm-auto] skip auto "${a.name}": funnelId mismatch (${a.funnelId} != ${lead.funnelId})`); return false; }
+    if (trigger === "lead_created" && a.triggerWebhookId && a.triggerWebhookId !== opts?.webhookId) { console.log(`[crm-auto] skip auto "${a.name}": webhookId mismatch`); return false; }
+    if (trigger === "column_changed" && a.triggerColumnId && a.triggerColumnId !== opts?.toColumnId) { console.log(`[crm-auto] skip auto "${a.name}": columnId mismatch (${a.triggerColumnId} != ${opts?.toColumnId})`); return false; }
+    if (trigger === "column_entered" && a.triggerColumnId && a.triggerColumnId !== opts?.toColumnId) { console.log(`[crm-auto] skip auto "${a.name}": columnId mismatch (${a.triggerColumnId} != ${opts?.toColumnId})`); return false; }
+    console.log(`[crm-auto] MATCH auto "${a.name}" (${a.id}) steps=${a.steps?.length ?? 0}`);
     return true;
   });
+  console.log(`[crm-auto] matched ${all.length} automation(s) for trigger=${trigger}`);
   for (const auto of all) scheduleSteps(auto, lead);
 }
 
