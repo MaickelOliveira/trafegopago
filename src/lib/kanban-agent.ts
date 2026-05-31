@@ -131,7 +131,7 @@ async function runKanbanAgent(
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig: { maxOutputTokens: 2048 },
   });
 
   // Monta bloco de conversa recente (últimas 12 mensagens + última mensagem)
