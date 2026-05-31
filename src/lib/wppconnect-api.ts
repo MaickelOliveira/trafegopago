@@ -142,6 +142,7 @@ function normalizeBrPhone(raw: string): string {
     // Sem código do país
     if (d.length === 10) d = "55" + d.slice(0, 2) + "9" + d.slice(2); // DDD + 8 dígitos
     if (d.length === 11) d = "55" + d;                                  // DDD + 9 + 8 dígitos
+    // ≥13 dígitos sem "55" → provavelmente LID (tratado em sendText com isLid=true)
   }
   return `${d}@c.us`;
 }

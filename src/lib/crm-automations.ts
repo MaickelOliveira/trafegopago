@@ -205,15 +205,19 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
           await sendText(conn.uazapiToken, lead.phone, msg);
         }
       } else {
-        // WPPConnect path
+        // WPPConnect path — procura por UUID e também por sessionName (fallback)
         const allWppSessions = getWppSessions();
         console.log(`[crm-auto] WPP path: looking for sessId=${step.connectionId} among ${allWppSessions.length} sessions: ${allWppSessions.map(s => `${s.id}(${s.sessionName})`).join(", ")}`);
-        const wppSess = allWppSessions.find((s) => s.id === step.connectionId);
+        const wppSess = allWppSessions.find((s) => s.id === step.connectionId)
+          ?? allWppSessions.find((s) => s.sessionName === step.connectionId);
         if (wppSess) {
           const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
-          console.log(`[crm-auto] WPP send: session=${wppSess.sessionName} phone=${lead.phone} msg="${msg.slice(0,50)}"`);
+          // Detecta WhatsApp LID: número com 13+ dígitos que não começa com 55
+          const rawPhone = lead.phone.replace(/@.*$/, "").replace(/\D/g, "");
+          const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+          console.log(`[crm-auto] WPP send: session=${wppSess.sessionName} phone=${lead.phone} isLid=${isLid} msg="${msg.slice(0,50)}"`);
           if (msg) {
-            const ok = await wppSendText(wppSess.sessionName, wppSess.sessionToken, lead.phone, msg);
+            const ok = await wppSendText(wppSess.sessionName, wppSess.sessionToken, lead.phone, msg, isLid);
             console.log(`[crm-auto] WPP sendText result=${ok}`);
           } else {
             console.log(`[crm-auto] WPP send skipped: message is empty after interpolation`);
