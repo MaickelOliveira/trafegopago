@@ -35,6 +35,13 @@ function buildSystemPrompt(lead: Lead, funnel: Funnel, agentSystemPrompt?: strin
       if (c.triggerPhrases?.length) {
         linhas.push(`  Gatilhos: ${c.triggerPhrases.map((f) => `"${f}"`).join(", ")}`);
       }
+      // Whitelist de transições (camada 3)
+      if (c.allowedTransitions?.length) {
+        const labels = c.allowedTransitions
+          .map((id) => columns.find((x) => x.id === id)?.label ?? id)
+          .join(", ");
+        linhas.push(`  Pode receber leads vindos de: ${labels}`);
+      }
       const detalhe = linhas.length ? "\n" + linhas.join("\n") : "";
       return `• ${c.id} → ${c.label}${c.id === lead.status ? " (ETAPA ATUAL)" : ""}${detalhe}`;
     })
@@ -75,6 +82,7 @@ Regras:
     1. O Assistente (ou vendedor) propôs explicitamente um preço/valor na conversa
     2. O lead aceitou — disse algo como "ok", "fechado", "topo", "pode ser", "vamos nessa", "aceito", "confirmado", "tá bom", "feito"
   Se o lead apenas perguntou o preço, mencionou um número sem contexto, ou ainda não confirmou → NÃO preencha 'valor'
+- CONFIANÇA: sempre informe o campo 'confianca' (0.0 a 1.0) ao chamar mover_lead. Abaixo de 0.75 a movimentação será bloqueada automaticamente. Use 0.9+ apenas quando a evidência for explícita e inequívoca. Dúvidas → use valor baixo.
 - Se não houver nada a fazer, não chame nenhuma ferramenta
 - Você NÃO responde ao usuário — apenas executa ações no CRM`;
 }
@@ -87,6 +95,14 @@ async function runKanbanAgent(
   geminiApiKey: string,
   agentSystemPrompt?: string
 ): Promise<KanbanAction[]> {
+  // ── CAMADA 5: Mínimo de mensagens ────────────────────────────────────────
+  // Evita decisões prematuras com apenas 1 mensagem
+  const totalMsgs = history.length + 1; // +1 pela lastMessage
+  if (totalMsgs < 2) {
+    console.log(`[kanban-agent/layer5] bloqueado — menos de 2 mensagens (total=${totalMsgs})`);
+    return [];
+  }
+
   const genAI = new GoogleGenerativeAI(geminiApiKey);
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
@@ -109,8 +125,12 @@ async function runKanbanAgent(
                   type: SchemaType.STRING,
                   description: "Motivo resumido da mudança (ex: 'confirmou reunião', 'fechou negócio')",
                 },
+                confianca: {
+                  type: SchemaType.NUMBER,
+                  description: "Score de confiança de 0.0 a 1.0. Use 0.9+ quando a evidência for explícita e inequívoca (lead disse 'fechei', confirmou data/hora, etc.). Use 0.7-0.89 quando há forte indicação mas alguma ambiguidade. Use abaixo de 0.7 se houver dúvida — a movimentação será bloqueada automaticamente pelo sistema.",
+                },
               },
-              required: ["coluna_id", "motivo"],
+              required: ["coluna_id", "motivo", "confianca"],
             },
           },
           {
@@ -169,11 +189,38 @@ async function runKanbanAgent(
         if (!part.functionCall) continue;
 
         if (part.functionCall.name === "mover_lead") {
-          const args = part.functionCall.args as { coluna_id?: string; motivo?: string };
+          const args = part.functionCall.args as { coluna_id?: string; motivo?: string; confianca?: number };
           const colunaId = args.coluna_id ?? "";
+          const confianca = typeof args.confianca === "number" ? args.confianca : 1;
+
+          // ── CAMADA 2: Validação de args ──────────────────────────────────
+          if (!colunaId || typeof colunaId !== "string") {
+            console.log(`[kanban-agent/layer2] mover_lead rejeitado — coluna_id inválido: ${JSON.stringify(colunaId)}`);
+            continue;
+          }
+          if (!args.motivo || typeof args.motivo !== "string" || args.motivo.trim().length < 3) {
+            console.log(`[kanban-agent/layer2] mover_lead rejeitado — motivo ausente ou vazio`);
+            continue;
+          }
+
+          // ── CAMADA 3: Whitelist de transições ────────────────────────────
+          const colunaAtual = (funnel.columns ?? []).find((c) => c.id === lead.status);
+          const whitelist = colunaAtual?.allowedTransitions;
+          if (whitelist && whitelist.length > 0 && !whitelist.includes(colunaId)) {
+            console.log(`[kanban-agent/layer3] mover_lead bloqueado — ${colunaId} não está na whitelist de ${lead.status}: [${whitelist.join(",")}]`);
+            continue;
+          }
+
+          // ── CAMADA 4: Threshold de confiança (75%) ───────────────────────
+          if (confianca < 0.75) {
+            console.log(`[kanban-agent/layer4] mover_lead bloqueado — confiança ${confianca.toFixed(2)} < 0.75`);
+            continue;
+          }
+
           const colunaValida = (funnel.columns ?? []).find((c) => c.id === colunaId);
           if (colunaValida && !colunaValida.blockAutoMove && colunaId !== lead.status) {
             actions.push({ type: "mover_lead", colunaId, motivo: args.motivo ?? "" });
+            console.log(`[kanban-agent/layers-ok] mover_lead aprovado → ${colunaId} (confiança=${confianca.toFixed(2)})`);
           } else {
             console.log(`[kanban-agent/gemini] mover_lead ignorado: colunaId=${colunaId} valida=${!!colunaValida} blockAutoMove=${colunaValida?.blockAutoMove} jaEsta=${colunaId === lead.status}`);
           }

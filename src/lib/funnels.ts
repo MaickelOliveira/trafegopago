@@ -11,6 +11,7 @@ export type FunnelColumn = {
   askValueOnMove?: boolean;     // abre modal pedindo valor + data quando lead entra aqui
   triggerPhrases?: string[];    // frases que indicam que o lead deve ser movido para esta coluna
   aiDescription?: string;       // contexto para o agente IA: quando mover o lead para esta coluna
+  allowedTransitions?: string[]; // camada 3: whitelist de IDs de colunas de destino permitidas (vazio = todas)
 };
 
 export type ConnectionType = "meta" | "uazapi";
