@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
-import { getHistory, addMessage } from "@/lib/conversations";
+import { getHistory, addMessage, sanitizeContactName } from "@/lib/conversations";
 import { generateResponse } from "@/lib/ai-agent";
 import { sendWhatsApp } from "@/lib/whatsapp";
 import { sendMessage as sendMessageUnified } from "@/lib/whatsapp-send";
@@ -178,13 +178,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Auto-captura lead no CRM — qualquer conversa (iniciada por você ou pelo lead)
-    const contactName =
+    const rawContactName =
       (body.chatName as string) ||
       (body.senderName as string) ||
       (body.pushName as string) ||
       (chatObj?.wa_contactName as string) ||
       (chatObj?.name as string) ||
       phone;
+    const contactName = sanitizeContactName(rawContactName, phone) ?? phone;
 
     const cid = clientId ?? "sem-cliente";
     const existingLead = getLeadByPhone(cid, phone);

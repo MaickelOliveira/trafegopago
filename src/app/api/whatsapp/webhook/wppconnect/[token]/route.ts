@@ -4,7 +4,7 @@ import { getFunnels } from "@/lib/funnels";
 import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
-import { getHistory, addMessage, setAiPaused } from "@/lib/conversations";
+import { getHistory, addMessage, setAiPaused, sanitizeContactName } from "@/lib/conversations";
 import { markSent, consumeSent } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
@@ -212,7 +212,7 @@ export async function POST(
       phone,
       { role: "user", content: text, ts },
       clientId,
-      { connId, contactName: pushName !== phone ? pushName : undefined },
+      { connId, contactName: sanitizeContactName(pushName !== phone ? pushName : undefined, phone) },
     );
   }
 

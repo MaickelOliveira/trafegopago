@@ -173,6 +173,20 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
   );
   const now = new Date().toISOString();
   if (idx >= 0) {
+    // Proteção: nome automático (webhook) nunca sobrescreve um nome real já definido.
+    // "Nome real" = não é número de telefone e não é "Desconhecido".
+    // Edições manuais via CRM usam updateLead() — não passam por aqui.
+    const existingName = leads[idx].name;
+    const existingIsReal =
+      existingName &&
+      existingName !== leads[idx].phone &&
+      existingName !== "Desconhecido" &&
+      !/^[\d\s+\-().]{7,}$/.test(existingName);
+    if (existingIsReal && patch.name && patch.name !== existingName) {
+      console.log(`[leads] bloqueado sobrescrita de nome: "${existingName}" → "${patch.name}" para phone=${phone}`);
+      patch = { ...patch };
+      delete (patch as Partial<Lead> & { name?: string }).name;
+    }
     leads[idx] = { ...leads[idx], ...patch, updatedAt: now };
     save(leads);
     return leads[idx];

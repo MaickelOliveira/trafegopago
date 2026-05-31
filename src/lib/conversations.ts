@@ -218,18 +218,50 @@ export function addMessage(
   conv.lastActivity = Date.now();
   conv.clientId = clientId;
   if (opts?.connId) conv.connId = opts.connId;
-  if (opts?.contactName) conv.contactName = opts.contactName;
+  // Proteção: só sobrescreve o nome se o novo nome for válido e o existente não for real
+  if (opts?.contactName) {
+    const sanitized = sanitizeContactName(opts.contactName, phone);
+    const existingName = conv.contactName;
+    const existingIsReal = existingName && existingName !== phone && !/^[\d\s+\-().]{7,}$/.test(existingName);
+    if (sanitized && !existingIsReal) conv.contactName = sanitized;
+  }
   // Marca como não lida quando chega mensagem do contato
   if (msg.role === "user") conv.unread = true;
   all[existingKey] = conv;
   save(all);
 }
 
+/**
+ * Valida e sanitiza o nome de contato vindo de fontes externas (WhatsApp, webhooks).
+ * Retorna undefined se o nome parecer um número de telefone, for muito longo ou vazio.
+ * Use sempre antes de salvar um nome recebido automaticamente.
+ */
+export function sanitizeContactName(raw: string | null | undefined, phone?: string): string | undefined {
+  if (!raw) return undefined;
+  const s = raw.trim();
+  if (!s) return undefined;
+  // Parece número de telefone (só dígitos, espaços e símbolos telefônicos)
+  if (/^[\d\s+\-().]{7,}$/.test(s)) return undefined;
+  // Igual ao número de telefone → sem informação nova
+  if (phone && s === phone) return undefined;
+  // Muito longo → provavelmente erro de parsing (mensagem caiu no campo de nome)
+  if (s.length > 80) return undefined;
+  return s;
+}
+
 /** Atualiza a última mensagem de uma conversa (ex: substituir [audio] pela transcrição). */
-export function updateLastMessage(phone: string, patch: Partial<ChatMessage>) {
+export function updateLastMessage(phone: string, patch: Partial<ChatMessage>, clientId?: string | null) {
   const all = load();
-  const conv = all[phone];
-  if (!conv || conv.messages.length === 0) return;
-  Object.assign(conv.messages[conv.messages.length - 1], patch);
-  save(all);
+  // Tenta chave prefixada primeiro para garantir isolamento por cliente
+  const keys = clientId
+    ? [...clientPhoneVariants(phone, clientId), ...phoneVariants(phone)]
+    : phoneVariants(phone);
+  for (const key of keys) {
+    const conv = all[key];
+    if (conv && conv.messages.length > 0) {
+      Object.assign(conv.messages[conv.messages.length - 1], patch);
+      save(all);
+      return;
+    }
+  }
 }

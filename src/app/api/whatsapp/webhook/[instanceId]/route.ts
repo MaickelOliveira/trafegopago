@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
-import { getHistory, addMessage, getAiPaused, setAiPaused } from "@/lib/conversations";
+import { getHistory, addMessage, getAiPaused, setAiPaused, sanitizeContactName } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone, updateLead } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
@@ -533,13 +533,14 @@ export async function POST(
     // Nome do contato: UazapiGO envia em messages[0].pushName ou chat.name
     const firstMsg = (Array.isArray(body.messages) ? (body.messages as Record<string, unknown>[])[0] : null);
     const chatObj  = body.chat as Record<string, unknown> | undefined;
-    const contactName =
+    const rawContactName =
       (firstMsg?.pushName as string) ||
       (chatObj?.name as string) ||
       (body.chatName as string) ||
       (body.senderName as string) ||
       (body.pushName as string) ||
       phone;
+    const contactName = sanitizeContactName(rawContactName, phone) ?? phone;
 
     const cid = clientId ?? "sem-cliente";
     const funnelId = funnel?.id ?? "default";
