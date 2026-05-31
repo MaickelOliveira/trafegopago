@@ -5,7 +5,7 @@ import type { Lead } from "./leads";
 import { updateLead, getLeads } from "./leads";
 import { getFunnels } from "./funnels";
 import { sendText, sendList, sendMedia } from "./uazapi";
-import { sendText as wppSendText } from "./wppconnect-api";
+import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
 import { getWppSessions } from "./wppconnect-sessions";
 import { getTemplates, sendTemplate } from "./waba-templates";
 import type { TemplateComponent } from "./waba-templates";
@@ -215,8 +215,12 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
           // Detecta WhatsApp LID: número com 13+ dígitos que não começa com 55
           const rawPhone = lead.phone.replace(/@.*$/, "").replace(/\D/g, "");
           const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
-          console.log(`[crm-auto] WPP send: session=${wppSess.sessionName} phone=${lead.phone} isLid=${isLid} msg="${msg.slice(0,50)}"`);
-          if (msg) {
+          console.log(`[crm-auto] WPP send: session=${wppSess.sessionName} phone=${lead.phone} isLid=${isLid} imageUrl=${step.imageUrl ?? "none"} msg="${msg.slice(0,50)}"`);
+          if (step.imageUrl) {
+            // Envia mídia com legenda (foto/vídeo/documento)
+            const ok = await wppSendMedia(wppSess.sessionName, wppSess.sessionToken, lead.phone, step.imageUrl, msg || undefined, isLid);
+            console.log(`[crm-auto] WPP sendMedia result=${ok}`);
+          } else if (msg) {
             const ok = await wppSendText(wppSess.sessionName, wppSess.sessionToken, lead.phone, msg, isLid);
             console.log(`[crm-auto] WPP sendText result=${ok}`);
           } else {

@@ -185,6 +185,118 @@ export async function sendText(
   }
 }
 
+// Detecta MIME type e extensão a partir de URL ou content-type
+function detectMime(url: string, contentType: string): { mime: string; ext: string; type: "image" | "video" | "audio" | "document" } {
+  const ct = contentType.split(";")[0].trim().toLowerCase();
+  if (ct && ct !== "application/octet-stream") {
+    if (ct.startsWith("image/")) return { mime: ct, ext: ct.split("/")[1] ?? "jpg", type: "image" };
+    if (ct.startsWith("video/")) return { mime: ct, ext: ct.split("/")[1] ?? "mp4", type: "video" };
+    if (ct.startsWith("audio/")) return { mime: ct, ext: ct.split("/")[1] ?? "ogg", type: "audio" };
+  }
+  // Fallback: detecta pela extensão da URL
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+  const extMap: Record<string, { mime: string; type: "image" | "video" | "audio" | "document" }> = {
+    jpg: { mime: "image/jpeg", type: "image" }, jpeg: { mime: "image/jpeg", type: "image" },
+    png: { mime: "image/png", type: "image" }, gif: { mime: "image/gif", type: "image" },
+    webp: { mime: "image/webp", type: "image" },
+    mp4: { mime: "video/mp4", type: "video" }, mov: { mime: "video/quicktime", type: "video" },
+    mp3: { mime: "audio/mpeg", type: "audio" }, ogg: { mime: "audio/ogg", type: "audio" },
+    wav: { mime: "audio/wav", type: "audio" }, m4a: { mime: "audio/mp4", type: "audio" },
+    pdf: { mime: "application/pdf", type: "document" },
+    doc: { mime: "application/msword", type: "document" },
+    docx: { mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", type: "document" },
+  };
+  const info = extMap[ext];
+  if (info) return { ...info, ext };
+  return { mime: "application/octet-stream", ext: ext || "bin", type: "document" };
+}
+
+// Envia mídia (imagem, vídeo, documento ou áudio) via WPPConnect
+// Baixa da URL, converte para base64 e envia pelo endpoint correto
+export async function sendMedia(
+  sessionName: string,
+  token: string,
+  phone: string,
+  mediaUrl: string,
+  caption?: string,
+  isLid = false,
+): Promise<boolean> {
+  if (!base()) return false;
+  try {
+    const phoneFormatted = isLid
+      ? phone.replace(/@.*/, "")
+      : normalizeBrPhone(phone);
+
+    // Baixa o arquivo
+    const fileRes = await fetch(mediaUrl);
+    if (!fileRes.ok) {
+      console.error(`[wppconnect-api] sendMedia: failed to download ${mediaUrl} status=${fileRes.status}`);
+      return false;
+    }
+    const contentType = fileRes.headers.get("content-type") ?? "";
+    const { mime, ext, type } = detectMime(mediaUrl, contentType);
+    const buffer = await fileRes.arrayBuffer();
+    const base64Data = `data:${mime};base64,${Buffer.from(buffer).toString("base64")}`;
+    const filename = `file.${ext}`;
+
+    // Áudio → send-voice
+    if (type === "audio") {
+      const res = await fetch(`${base()}/api/${sessionName}/send-voice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted,
+          base64: base64Data,
+          ...(isLid ? { isLid: true } : {}),
+        }),
+      });
+      if (!res.ok) console.error(`[wppconnect-api] send-voice FAILED status=${res.status} body=${await res.text().catch(() => "")}`);
+      return res.ok;
+    }
+
+    // Imagem → send-image (melhor preview)
+    if (type === "image") {
+      const res = await fetch(`${base()}/api/${sessionName}/send-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted,
+          base64: base64Data,
+          filename,
+          caption: caption ?? "",
+          ...(isLid ? { isLid: true } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        console.error(`[wppconnect-api] send-image FAILED status=${res.status} body=${body}`);
+      }
+      return res.ok;
+    }
+
+    // Vídeo e Documento → send-file-base64
+    const res = await fetch(`${base()}/api/${sessionName}/send-file-base64`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({
+        phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted,
+        base64: base64Data,
+        filename,
+        caption: caption ?? "",
+        ...(isLid ? { isLid: true } : {}),
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[wppconnect-api] send-file-base64 FAILED status=${res.status} body=${body}`);
+    }
+    return res.ok;
+  } catch (e) {
+    console.error(`[wppconnect-api] sendMedia EXCEPTION session=${sessionName}`, e);
+    return false;
+  }
+}
+
 // Lista todas as sessões (se o servidor suportar)
 export async function listSessions(): Promise<{ session: string; status: string }[]> {
   if (!base()) return [];

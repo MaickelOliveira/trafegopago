@@ -8,7 +8,7 @@ import { sendWhatsApp } from "./whatsapp";
 import { getConfig } from "./clients";
 import { sendText } from "./uazapi";
 import { getWppSessions } from "./wppconnect-sessions";
-import { sendText as wppSendText } from "./wppconnect-api";
+import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
 
 export async function sendMessage(
   phone: string,
@@ -96,4 +96,40 @@ export function getGeminiApiKey(clientGeminiKey?: string): string | null {
     process.env.GOOGLE_IMAGEN_API_KEY ||
     null
   );
+}
+
+/**
+ * Envia mídia (foto, vídeo, documento, áudio) via WPPConnect.
+ * Usado pela IA para enviar arquivos de mídia na mesma conexão WPPConnect.
+ */
+export async function sendMediaMessage(
+  phone: string,
+  mediaUrl: string,
+  clientId: string,
+  caption?: string,
+  preferredConnectionId?: string,
+): Promise<void> {
+  const wppSessions = getWppSessions().filter(s => s.clientId === clientId);
+
+  // Sessão preferida
+  if (preferredConnectionId) {
+    const wppSession = wppSessions.find(
+      s => s.id === preferredConnectionId || s.sessionName === preferredConnectionId,
+    );
+    if (wppSession) {
+      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
+      const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+      const ok = await wppSendMedia(wppSession.sessionName, wppSession.sessionToken, phone, mediaUrl, caption, isLid);
+      if (ok) return;
+    }
+  }
+
+  // Fallback: qualquer sessão WPPConnect do cliente
+  for (const s of wppSessions) {
+    const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
+    const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+    const ok = await wppSendMedia(s.sessionName, s.sessionToken, phone, mediaUrl, caption, isLid);
+    if (ok) return;
+  }
+  console.error(`[whatsapp-send] sendMediaMessage: no WPPConnect session for clientId=${clientId}`);
 }
