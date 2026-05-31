@@ -28,7 +28,7 @@ export default async function GestorInboxPage({ params }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-full">
       <div className="px-6 py-3 bg-slate-900 border-b border-slate-700 flex items-center gap-3">
         <h1 className="text-white font-semibold text-base">
           💬 Mensagens — {client.name}
