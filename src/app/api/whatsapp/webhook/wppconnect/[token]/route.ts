@@ -229,7 +229,7 @@ export async function POST(
       const agentCfgFM = activeClientFM ? getAgentConfigForConnection(activeClientFM, connId) : undefined;
       const resumeKeyword = agentCfgFM?.aiResumeKeyword?.trim();
       const isPausing = !(resumeKeyword && text.trim().toLowerCase() === resumeKeyword.toLowerCase());
-      setAiPaused(phone, isPausing);
+      setAiPaused(phone, isPausing, clientId);
       const freshLead = getLeadByPhone(clientId, phone);
       if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
     }
@@ -241,7 +241,7 @@ export async function POST(
   // NOTA: getHistory já inclui a mensagem recém adicionada, então removemos o último
   // item para não duplicar (runKanbanAgent envia lastMessage separadamente)
   if (clientId !== "sem-cliente") {
-    const _h = getHistory(phone);
+    const _h = getHistory(phone, clientId);
     const historyForKanban = _h.length > 1 ? _h.slice(0, -1) : [];
     processKanbanActions(text, historyForKanban, clientId, phone).catch(() => {});
   }
@@ -267,7 +267,7 @@ export async function POST(
   }
 
   const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
-  const history = getHistory(phone);
+  const history = getHistory(phone, clientId);
 
   // Helper: envia e registra a resposta da IA
   const isLidPhone =
@@ -299,7 +299,7 @@ export async function POST(
       if (!batch || batch.id !== _pendingId || batch.status !== "pending") return;
       markProcessing(batch.id);
       const combined = batch.messages.join("\n");
-      const h = getHistory(_phone);
+      const h = getHistory(_phone, _clientId);
       runGeminiAgent(combined, h, _clientId, _phone, connId)
         .then(async ({ text: geminiText }) => {
           markDone(batch.id);

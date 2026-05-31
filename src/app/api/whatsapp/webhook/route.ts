@@ -281,7 +281,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Histórico da conversa
-    const history = getHistory(phone);
+    const history = getHistory(phone, cid);
 
     // Agente Kanban — roda sempre, independente da IA de atendimento (fire-and-forget)
     // NOTA: history já inclui a mensagem recém adicionada; removemos o último item
@@ -333,7 +333,7 @@ export async function POST(req: NextRequest) {
         if (!batch || batch.id !== _pendingId || batch.status !== "pending") return;
         markProcessing(batch.id);
         const combined = batch.messages.join("\n");
-        const h = getHistory(_phone);
+        const h = getHistory(_phone, _cid);
         console.log(`[webhook] Processando batch ${batch.id} (${batch.messages.length} msg) para ${_phone}`);
         runGeminiAgent(combined, h, _cid, _phone, _connectionId ?? undefined)
           .then(async ({ text: geminiText }) => {

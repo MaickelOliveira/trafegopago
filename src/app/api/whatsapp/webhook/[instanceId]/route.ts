@@ -788,7 +788,7 @@ export async function POST(
         } else {
           upsertLeadByPhone(cid, phone, { funnelId, aiPaused: isPausing });
         }
-        setAiPaused(phone, isPausing);
+        setAiPaused(phone, isPausing, cid);
         console.log(`[webhook/${instanceId}] IA ${isPausing ? "PAUSADA" : "REATIVADA"} para phone=${phone} (mensagem do gestor via WhatsApp)`);
       }
       return NextResponse.json({ ok: true });
@@ -817,7 +817,7 @@ export async function POST(
       }
     }
 
-    const history = getHistory(phone);
+    const history = getHistory(phone, cid);
 
     // Verifica se IA está pausada para esta conversa
     const currentLead = getLeadByPhone(cid, phone);
@@ -866,7 +866,7 @@ export async function POST(
         if (!batch || batch.id !== _pendingId || batch.status !== "pending") return;
         markProcessing(batch.id);
         const combined = batch.messages.join("\n");
-        const h = getHistory(phone);
+        const h = getHistory(phone, cid);
         console.log(`[webhook/${instanceId}] Gemini batch iniciando para phone=${phone} cid=${cid} msgs=${batch.messages.length}`);
         runGeminiAgent(combined, h, cid, phone, connId)
           .then(async ({ text: geminiText, actions }) => {

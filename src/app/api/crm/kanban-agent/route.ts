@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
         const funnel = getFunnelById(lead.funnelId);
         if (!funnel) return;
 
-        const history = getHistory(lead.realPhone ?? lead.phone);
+        const history = getHistory(lead.realPhone ?? lead.phone, lead.clientId);
         if (history.length === 0) return;
 
         processed++;

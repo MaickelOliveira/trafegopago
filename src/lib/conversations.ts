@@ -34,11 +34,29 @@ function save(data: ConversationStore) {
   writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
-export function getHistory(phone: string): ChatMessage[] {
+/** Gera variantes prefixadas por clientId para isolamento de histórico entre clientes */
+function clientPhoneVariants(phone: string, clientId: string): string[] {
+  return phoneVariants(phone).map((v) => `${clientId}:${v}`);
+}
+
+export function getHistory(phone: string, clientId?: string | null): ChatMessage[] {
   const all = load();
+  // Se clientId fornecido, tenta chaves prefixadas primeiro (conversations isoladas)
+  if (clientId) {
+    for (const v of clientPhoneVariants(phone, clientId)) {
+      const conv = all[v];
+      if (conv) {
+        if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
+        return conv.messages;
+      }
+    }
+  }
+  // Fallback: chaves sem prefixo (dados antigos ou sem clientId)
   for (const v of phoneVariants(phone)) {
     const conv = all[v];
     if (conv) {
+      // Se clientId foi informado e a conversa pertence a outro cliente, pula
+      if (clientId && conv.clientId && conv.clientId !== clientId) continue;
       if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
       return conv.messages;
     }
@@ -70,9 +88,12 @@ export function getAllConversationsByClientId(clientId: string): Array<{
 }> {
   const all = load();
   const result = [];
-  for (const [phone, conv] of Object.entries(all)) {
+  const prefix = `${clientId}:`;
+  for (const [key, conv] of Object.entries(all)) {
     if (conv.clientId !== clientId) continue;
     if (Date.now() - conv.lastActivity > MAX_AGE_MS) continue;
+    // Remove prefixo clientId: da chave para retornar o número de telefone limpo
+    const phone = key.startsWith(prefix) ? key.slice(prefix.length) : key;
     const lastMessage = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
     result.push({
       phone,
@@ -87,11 +108,17 @@ export function getAllConversationsByClientId(clientId: string): Array<{
   return result.sort((a, b) => b.lastActivity - a.lastActivity);
 }
 
-export function markAsRead(phone: string) {
+export function markAsRead(phone: string, clientId?: string | null) {
   const all = load();
-  if (all[phone]) {
-    all[phone].unread = false;
-    save(all);
+  // Tenta chave prefixada primeiro
+  if (clientId) {
+    for (const v of clientPhoneVariants(phone, clientId)) {
+      if (all[v]) { all[v].unread = false; save(all); return; }
+    }
+  }
+  // Fallback: chave sem prefixo
+  for (const v of phoneVariants(phone)) {
+    if (all[v]) { all[v].unread = false; save(all); return; }
   }
 }
 
@@ -131,21 +158,27 @@ function phoneVariants(phone: string): string[] {
   return [...new Set([...variants, digits])];
 }
 
-export function setAiPaused(phone: string, paused: boolean) {
+export function setAiPaused(phone: string, paused: boolean, clientId?: string | null) {
   const all = load();
-  const variants = phoneVariants(phone);
   let changed = false;
-  for (const v of variants) {
-    if (all[v]) {
-      all[v].aiPaused = paused;
-      changed = true;
+  // Atualiza chaves prefixadas se clientId fornecido
+  if (clientId) {
+    for (const v of clientPhoneVariants(phone, clientId)) {
+      if (all[v]) { all[v].aiPaused = paused; changed = true; }
     }
+  }
+  // Também atualiza chaves sem prefixo (dados antigos)
+  for (const v of phoneVariants(phone)) {
+    if (all[v]) { all[v].aiPaused = paused; changed = true; }
   }
   if (changed) save(all);
 }
 
-export function getAiPaused(phone: string): boolean {
+export function getAiPaused(phone: string, clientId?: string | null): boolean {
   const all = load();
+  if (clientId) {
+    if (clientPhoneVariants(phone, clientId).some((v) => all[v]?.aiPaused === true)) return true;
+  }
   return phoneVariants(phone).some((v) => all[v]?.aiPaused === true);
 }
 
@@ -156,8 +189,20 @@ export function addMessage(
   opts?: { connId?: string; contactName?: string }
 ) {
   const all = load();
-  // Usa a chave existente se já houver conversa em outro formato (ex: antigo sem 9º dígito)
-  const existingKey = phoneVariants(phone).find((v) => all[v]) ?? phone;
+  // Procura chave existente: primeiro com prefixo clientId, depois sem prefixo
+  let existingKey: string | undefined;
+  if (clientId) {
+    existingKey = clientPhoneVariants(phone, clientId).find((v) => all[v]);
+  }
+  if (!existingKey) {
+    // Só reutiliza chave sem prefixo se pertence ao mesmo clientId (evita contaminar)
+    existingKey = phoneVariants(phone).find(
+      (v) => all[v] && (!clientId || !all[v].clientId || all[v].clientId === clientId)
+    );
+  }
+  // Chave padrão: prefixada quando clientId disponível
+  const defaultKey = clientId ? `${clientId}:${phone}` : phone;
+  existingKey = existingKey ?? defaultKey;
   const conv: Conversation = all[existingKey] ?? { messages: [], clientId, lastActivity: 0 };
   conv.messages.push(msg);
   if (conv.messages.length > MAX_MESSAGES) {
