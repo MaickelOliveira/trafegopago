@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration, type Part } from "@google/generative-ai";
 import { getClientById, getAgentConfigForConnection, type AgentMedia } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp } from "./followups";
@@ -116,9 +116,14 @@ Você pode:
 - Verificar horários disponíveis e agendar compromissos no Google Calendar
 - Registrar follow-ups automáticos
 - Enviar resumos da conversa para o gestor
+- Ler e interpretar imagens enviadas pelo usuário (visão)
+- Transcrever e compreender áudios enviados pelo usuário
 
 Regras:
 - Sempre responda em português, mensagens curtas e amigáveis
+- Ao receber áudio: transcreva internamente e responda com base no conteúdo do áudio
+- Ao receber imagem: descreva brevemente o que vê e responda ao contexto da conversa
+- Ao receber vídeo ou documento: reconheça o recebimento e pergunte como pode ajudar
 - Ao agendar, confirme: data, hora e nome do lead
 - Use listar_horarios_disponiveis antes de agendar para verificar disponibilidade
 - Ao receber mensagem nova, cancele follow-ups pendentes deste contato`;
@@ -144,7 +149,8 @@ export async function runGeminiAgent(
   history: ChatMessage[],
   clientId: string,
   phone: string,
-  connectionId?: string
+  connectionId?: string,
+  mediaData?: { mimeType: string; data: string },
 ): Promise<{ text: string; actions: GeminiAction[] }> {
   const client = getClientById(clientId);
   if (!client) return { text: "", actions: [] };
@@ -213,7 +219,12 @@ export async function runGeminiAgent(
     const chat = model.startChat({ history: geminiHistory });
 
     try {
-    let response = await chat.sendMessage(userMessage);
+    // Monta as partes da mensagem (texto + mídia inline se disponível)
+    const messageParts: Part[] = [{ text: userMessage }];
+    if (mediaData?.data && mediaData?.mimeType) {
+      messageParts.push({ inlineData: { mimeType: mediaData.mimeType, data: mediaData.data } });
+    }
+    let response = await chat.sendMessage(messageParts);
     let candidate = response.response;
 
     // Loop para processar tool calls

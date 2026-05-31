@@ -93,8 +93,75 @@ export async function POST(
 
   console.log(`[WPPConnect Webhook] phone extraído: ${phone} (sender.number=${sender?.number} from=${body.from})`);
 
-  // Extrai o texto da mensagem
-  const text = (body.body as string) || (body.caption as string) || "";
+  // Detecta tipo de mensagem (chat, image, ptt, audio, video, document, sticker…)
+  const msgType = ((body.type as string) ?? "").toLowerCase();
+  const isMediaMsg = ["image", "video", "audio", "ptt", "document", "sticker"].includes(msgType);
+
+  // ── Extrai texto e (quando aplicável) dados de mídia inline para o Gemini ──
+  let text = "";
+  let contentForHistory = "";
+  let mediaDataForAgent: { mimeType: string; data: string } | undefined;
+
+  if (isMediaMsg) {
+    const caption   = (body.caption as string)  || "";
+    const filename  = (body.filename as string)  || "";
+    const duration  = body.duration as number | undefined;
+    const rawBody   = (body.body   as string)    || "";
+
+    // Extrai mimeType e base64 puro do data-URI (formato "data:<mime>;base64,<data>")
+    let mimeType = ((body.mimetype as string) || "").split(";")[0].trim();
+    let base64Data = "";
+    if (rawBody.startsWith("data:")) {
+      const commaIdx = rawBody.indexOf(",");
+      if (commaIdx > 0) {
+        const header = rawBody.substring(5, commaIdx); // "image/jpeg;base64" etc.
+        const semiIdx = header.indexOf(";");
+        if (!mimeType && semiIdx > 0) mimeType = header.substring(0, semiIdx);
+        base64Data = rawBody.substring(commaIdx + 1);
+      }
+    } else if (rawBody.length > 200 && !rawBody.startsWith("http")) {
+      // Raw base64 sem prefixo data-URI
+      base64Data = rawBody;
+    }
+
+    if (msgType === "ptt" || msgType === "audio") {
+      const dur = duration ? ` de ${Math.round(duration)}s` : "";
+      contentForHistory = `[Áudio${dur}]${caption ? ` ${caption}` : ""}`;
+      if (base64Data && mimeType) {
+        // Gemini processa o áudio → transcreve e responde
+        text = `[O usuário enviou um áudio${dur}. Transcreva e responda normalmente.]${caption ? `\nLegenda: ${caption}` : ""}`;
+        mediaDataForAgent = { mimeType: mimeType || "audio/ogg", data: base64Data };
+      } else {
+        text = `[O usuário enviou um áudio${dur}. Informe gentilmente que não conseguiu processar e peça para digitar.]`;
+      }
+    } else if (msgType === "image") {
+      contentForHistory = `[Imagem]${caption ? `: ${caption}` : ""}`;
+      if (base64Data && mimeType) {
+        // Gemini analisa a imagem (visão)
+        text = caption || "O usuário enviou uma imagem. Descreva o que você vê e responda ao contexto da conversa.";
+        mediaDataForAgent = { mimeType: mimeType || "image/jpeg", data: base64Data };
+      } else {
+        text = caption || "[O usuário enviou uma imagem]";
+      }
+    } else if (msgType === "video") {
+      contentForHistory = `[Vídeo]${caption ? `: ${caption}` : ""}`;
+      text = caption || "[O usuário enviou um vídeo]";
+    } else if (msgType === "document") {
+      const fname = filename || caption || "arquivo";
+      contentForHistory = `[Documento: ${fname}]`;
+      text = `[O usuário enviou um documento: ${fname}${caption && caption !== fname ? ` — ${caption}` : ""}]`;
+    } else if (msgType === "sticker") {
+      contentForHistory = "[Sticker]";
+      text = "[O usuário enviou um sticker/figurinha]";
+    } else {
+      contentForHistory = `[Mídia: ${msgType}]${caption ? `: ${caption}` : ""}`;
+      text = caption || `[O usuário enviou ${msgType}]`;
+    }
+  } else {
+    // Mensagem de texto comum
+    text = (body.body as string) || (body.caption as string) || "";
+    contentForHistory = text;
+  }
 
   // Extrai o nome do contato
   const pushName = (sender?.pushname as string) || (body.notifyName as string) || phone;
@@ -206,11 +273,11 @@ export async function POST(
   // ── Salva a mensagem na conversa (somente mensagens recebidas do lead) ──
   // Mensagens fromMe (IA ou plataforma) já são salvas por quem as envia.
   // Mensagens do celular do operador são salvas no bloco fromMe abaixo.
-  if (text.trim() && !fromMe) {
+  if (contentForHistory.trim() && !fromMe) {
     const ts = Date.now();
     addMessage(
       phone,
-      { role: "user", content: text, ts },
+      { role: "user", content: contentForHistory, ts },
       clientId,
       { connId, contactName: sanitizeContactName(pushName !== phone ? pushName : undefined, phone) },
     );
@@ -235,7 +302,7 @@ export async function POST(
     }
     return NextResponse.json({ ok: true });
   }
-  if (!text.trim()) return NextResponse.json({ ok: true });
+  if (!text.trim() && !contentForHistory.trim()) return NextResponse.json({ ok: true });
 
   // ── Agente Kanban — roda sempre, independente da IA de atendimento (fire-and-forget) ──
   // NOTA: getHistory já inclui a mensagem recém adicionada, então removemos o último
@@ -293,6 +360,7 @@ export async function POST(
     const _pendingId = pending.id;
     const _clientId = clientId;
     const _phone = phone;
+    const _mediaData = mediaDataForAgent; // captura para o closure
 
     setTimeout(() => {
       const batch = getPendingForPhone(_clientId, _phone);
@@ -300,7 +368,7 @@ export async function POST(
       markProcessing(batch.id);
       const combined = batch.messages.join("\n");
       const h = getHistory(_phone, _clientId);
-      runGeminiAgent(combined, h, _clientId, _phone, connId)
+      runGeminiAgent(combined, h, _clientId, _phone, connId, _mediaData)
         .then(async ({ text: geminiText }) => {
           markDone(batch.id);
           if (geminiText) await sendReply(geminiText);
@@ -317,7 +385,7 @@ export async function POST(
   // ── Resposta imediata (sem batching) ──
   cancelPendingForPhone(clientId, phone);
   try {
-    const { text: geminiText } = await runGeminiAgent(text, history, clientId, phone, connId);
+    const { text: geminiText } = await runGeminiAgent(text, history, clientId, phone, connId, mediaDataForAgent);
     if (geminiText) await sendReply(geminiText);
   } catch (e) {
     console.error("[WPPConnect webhook] Erro no Gemini:", e);
