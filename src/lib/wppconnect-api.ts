@@ -1,4 +1,5 @@
 import { getConfig } from "./clients";
+import { markSent } from "./wppconnect-sent";
 
 function base(): string {
   const url = process.env.WPPCONNECT_SERVER || getConfig().wppconnectServer || "";
@@ -163,6 +164,9 @@ export async function sendText(
     const phoneFormatted = isLid
       ? phone.replace(/@.*/, "")
       : normalizeBrPhone(phone);
+    // Marca ANTES de enviar para que o eco fromMe seja ignorado pelo webhook
+    const phoneKey = phoneFormatted.replace(/@.*/, "").replace(/\D/g, "");
+    markSent(phoneKey, message);
     const res = await fetch(
       `${base()}/api/${sessionName}/send-message`,
       {

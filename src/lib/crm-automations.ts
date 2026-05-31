@@ -6,7 +6,6 @@ import { updateLead, getLeads } from "./leads";
 import { getFunnels } from "./funnels";
 import { sendText, sendList, sendMedia } from "./uazapi";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
-import { markSent } from "./wppconnect-sent";
 import { getWppSessions } from "./wppconnect-sessions";
 import { getTemplates, sendTemplate } from "./waba-templates";
 import type { TemplateComponent } from "./waba-templates";
@@ -222,7 +221,6 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
             const ok = await wppSendMedia(wppSess.sessionName, wppSess.sessionToken, lead.phone, step.imageUrl, msg || undefined, isLid);
             console.log(`[crm-auto] WPP sendMedia result=${ok}`);
           } else if (msg) {
-            markSent(rawPhone, msg); // evita que o echo fromMe pause a IA
             const ok = await wppSendText(wppSess.sessionName, wppSess.sessionToken, lead.phone, msg, isLid);
             console.log(`[crm-auto] WPP sendText result=${ok}`);
           } else {
