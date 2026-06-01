@@ -776,7 +776,8 @@ export function CrmAutomationsView({
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [showPicker, setShowPicker]     = useState(false);
 
-  const uazapiConnId = connections.find((c) => c.type === "uazapi")?.id ?? "";
+  const defaultConnId = (connections.find((c) => c.type === "uazapi") ?? connections.find((c) => c.type === "wppconnect") ?? connections[0])?.id ?? "";
+  const uazapiConnId = defaultConnId;
   const firstTplId   = approvedTemplates[0]?.id ?? "";
 
   const blankFormFn = (): FormState => ({

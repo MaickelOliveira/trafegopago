@@ -30,9 +30,10 @@ export default async function CrmAutomacoesPage({ params }: Props) {
     }))
   );
 
-  // Sessões WPPConnect vinculadas a este cliente
+  // Sessões WPPConnect vinculadas a este cliente (por clientId ou por funnelId)
+  const clientFunnelIds = new Set(funnels.map((f) => f.id));
   const wppConnections = getWppSessions()
-    .filter((s) => s.clientId === clientId)
+    .filter((s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId)))
     .map((s) => ({
       id: s.id,
       type: "wppconnect" as const,

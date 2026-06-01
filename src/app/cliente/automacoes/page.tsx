@@ -33,8 +33,9 @@ export default async function ClienteAutomacoesPage() {
     }))
   );
 
+  const clientFunnelIds = new Set(funnels.map((f) => f.id));
   const wppConnections = getWppSessions()
-    .filter((s) => s.clientId === clientId)
+    .filter((s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId)))
     .map((s) => ({
       id: s.id,
       type: "wppconnect" as const,
