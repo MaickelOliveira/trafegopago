@@ -1,5 +1,5 @@
 import { getConfig } from "./clients";
-import { markSent } from "./wppconnect-sent";
+import { markSent, markMediaSending } from "./wppconnect-sent";
 
 function base(): string {
   const url = process.env.WPPCONNECT_SERVER || getConfig().wppconnectServer || "";
@@ -232,11 +232,10 @@ export async function sendMedia(
       : normalizeBrPhone(phone);
     const phoneKey = phoneFormatted.replace(/@.*/, "").replace(/\D/g, "");
 
-    // Marca a legenda antes de enviar para que o eco onselfmessage não pause a IA
-    if (caption?.trim()) {
-      markSent(phoneKey, caption.trim());
-      console.log(`[wppconnect-api] sendMedia markSent phone=${phoneKey} caption="${caption.slice(0, 60)}"`);
-    }
+    // Marca antes de enviar: impede que o eco onselfmessage pause a IA
+    markMediaSending(phoneKey);
+    if (caption?.trim()) markSent(phoneKey, caption.trim());
+    console.log(`[wppconnect-api] sendMedia markMediaSending phone=${phoneKey} caption="${(caption ?? "").slice(0, 60)}"`);
 
     // Baixa o arquivo
     const fileRes = await fetch(mediaUrl);

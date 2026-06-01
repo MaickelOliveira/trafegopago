@@ -1,5 +1,5 @@
 import { getConfig } from "./clients";
-import { markSent as markSentRegistry } from "./wppconnect-sent";
+import { markSent as markSentRegistry, markMediaSending } from "./wppconnect-sent";
 
 function base(): string {
   const url = process.env.UAZAPI_SERVER
@@ -314,6 +314,12 @@ export async function sendMedia(
   filename?: string,
 ): Promise<boolean> {
   try {
+    // Marca antes de enviar: impede que o eco fromMe pause a IA
+    const phoneKey = phone.replace(/\D/g, "");
+    markMediaSending(phoneKey);
+    if (caption?.trim()) markSentRegistry(phoneKey, caption.trim());
+    console.log(`[uazapi/sendMedia] markMediaSending phone=${phoneKey} caption="${(caption ?? "").slice(0, 60)}"`);
+
     // UazapiGO nexopro: endpoint /send/media com {number, file, text, type}
     // "file" aceita URL pública ou data URI base64
     // "type" é obrigatório para enviar como mídia (image/video/audio/document)
