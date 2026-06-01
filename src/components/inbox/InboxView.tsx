@@ -120,7 +120,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const fetchMessages = useCallback(async (phone: string) => {
     setLoadingMessages(true);
     try {
-      const res = await fetch(`/api/whatsapp/inbox/messages?phone=${encodeURIComponent(phone)}`);
+      const res = await fetch(`/api/whatsapp/inbox/messages?phone=${encodeURIComponent(phone)}&clientId=${encodeURIComponent(clientId)}`);
       if (!res.ok) return;
       const data = await res.json();
       setMessages(data.messages ?? []);

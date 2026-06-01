@@ -42,11 +42,22 @@ export async function GET(req: NextRequest) {
       // Sincroniza aiPaused com o lead — CRM é a fonte de verdade
       const lead = getLeadByPhone(clientId, c.phone);
       const realPhone = lead?.realPhone;
+      // Enriquece o contactName com o nome do lead quando a conversa não tem nome
+      // (ocorre em contatos LID ou quando o operador mandou primeiro)
+      const leadName = lead?.name;
+      const validLeadName =
+        leadName &&
+        leadName !== c.phone &&
+        leadName !== (realPhone ?? "") &&
+        !/^\d+$/.test(leadName)
+          ? leadName
+          : undefined;
+      const contactName = c.contactName ?? validLeadName ?? null;
       if (lead && lead.aiPaused !== undefined && lead.aiPaused !== c.aiPaused) {
         setAiPaused(c.phone, lead.aiPaused); // corrige conversations.json
-        return { ...c, aiPaused: lead.aiPaused, ...(realPhone ? { realPhone } : {}) };
+        return { ...c, contactName, aiPaused: lead.aiPaused, ...(realPhone ? { realPhone } : {}) };
       }
-      return { ...c, ...(realPhone ? { realPhone } : {}) };
+      return { ...c, contactName, ...(realPhone ? { realPhone } : {}) };
     });
 
   return NextResponse.json({ conversations: filtered, connections });
