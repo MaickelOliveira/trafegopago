@@ -34,7 +34,7 @@ export default async function GestorInboxPage({ params }: Props) {
           💬 Mensagens — {client.name}
         </h1>
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden min-h-0 h-full">
         <InboxView clientId={clientId} initialConversations={conversations} initialConnections={connections} />
       </div>
     </div>

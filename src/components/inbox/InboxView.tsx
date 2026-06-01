@@ -249,9 +249,9 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const activeConn = connections.find((c) => c.id === selectedConn);
 
   return (
-    <div className="flex h-full bg-[#111b21] text-white overflow-hidden">
+    <div className="flex h-full min-h-0 bg-[#111b21] text-white overflow-hidden">
       {/* ── Sidebar esquerda ── */}
-      <div className="w-[340px] min-w-[260px] flex flex-col border-r border-[#2a3942] bg-[#111b21]">
+      <div className="w-[340px] min-w-[260px] shrink-0 flex flex-col border-r border-[#2a3942] bg-[#111b21]">
         {/* Header sidebar */}
         <div className="flex items-center justify-between px-4 py-3 bg-[#202c33]">
           <div className="flex items-center gap-2">
@@ -384,7 +384,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col bg-[#0b141a] relative">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[#0b141a] relative">
           {/* Header do chat */}
           <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] border-b border-[#2a3942]">
             <div className="w-10 h-10 rounded-full bg-[#6b7280] flex items-center justify-center text-white font-semibold text-sm">
