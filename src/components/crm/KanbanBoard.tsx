@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
-import { LeadModal } from "./LeadModal";
+import { LeadModal, prefetchConversation } from "./LeadModal";
 import type { Lead } from "@/lib/leads";
 import type { Funnel, FunnelColumn } from "@/lib/funnels";
 
@@ -928,6 +928,7 @@ export function KanbanBoard({
                       key={lead.id}
                       draggable
                       onDragStart={() => onDragStart(lead.id)}
+                      onMouseEnter={() => { if (lead.source === "whatsapp") prefetchConversation(lead.phone, lead.clientId); }}
                       onClick={() => setSelected(lead)}
                       className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm cursor-pointer hover:shadow-md hover:border-blue-300 transition select-none"
                     >

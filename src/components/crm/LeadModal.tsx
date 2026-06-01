@@ -6,6 +6,22 @@ import type { Lead } from "@/lib/leads";
 import type { Funnel } from "@/lib/funnels";
 import type { ChatMessage } from "@/lib/conversations";
 
+// ── Cache de prefetch (módulo-level, persiste enquanto a página está aberta) ──
+type CacheEntry = { messages: ChatMessage[]; fetchedAt: number };
+const _convCache = new Map<string, CacheEntry>();
+const CACHE_TTL = 30_000; // 30s
+
+export function prefetchConversation(phone: string, clientId: string | null) {
+  const key = `${clientId ?? ""}:${phone}`;
+  const cached = _convCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return;
+  const qs = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
+  fetch(`/api/crm/conversations/${phone}${qs}`)
+    .then((r) => r.ok ? r.json() : null)
+    .then((data) => { if (data) _convCache.set(key, { messages: data.messages ?? [], fetchedAt: Date.now() }); })
+    .catch(() => {});
+}
+
 const SCORE_COLOR = (s: number) =>
   s >= 8 ? "text-green-700 bg-green-100 border-green-200" :
   s >= 5 ? "text-yellow-700 bg-yellow-100 border-yellow-200" :
@@ -137,13 +153,24 @@ export function LeadModal({
   }, [onClose]);
 
   async function fetchMessages(silent = false) {
-    if (!silent) setLoadingChat(true);
+    const cacheKey = `${lead.clientId ?? ""}:${lead.phone}`;
+    // Se não é polling silencioso, verifica cache primeiro (hit = sem loading)
+    if (!silent) {
+      const cached = _convCache.get(cacheKey);
+      if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+        setMessages(cached.messages);
+        return; // sem loading, sem fetch
+      }
+      setLoadingChat(true);
+    }
     try {
-      const clientId = lead.clientId ? `?clientId=${encodeURIComponent(lead.clientId)}` : "";
-      const res = await fetch(`/api/crm/conversations/${lead.phone}${clientId}`);
+      const qs = lead.clientId ? `?clientId=${encodeURIComponent(lead.clientId)}` : "";
+      const res = await fetch(`/api/crm/conversations/${lead.phone}${qs}`);
       if (res.ok) {
         const data = await res.json();
-        setMessages(data.messages ?? []);
+        const msgs = data.messages ?? [];
+        _convCache.set(cacheKey, { messages: msgs, fetchedAt: Date.now() });
+        setMessages(msgs);
       }
     } finally {
       if (!silent) setLoadingChat(false);
