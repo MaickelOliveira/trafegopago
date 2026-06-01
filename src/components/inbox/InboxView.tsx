@@ -83,6 +83,8 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const lastMsgCountRef = useRef(0);
   const isAtBottomRef = useRef(true);
+  // true enquanto o usuário estiver rolado para cima — impede auto-scroll em polls
+  const userScrolledUpRef = useRef(false);
 
   const selectedConv = conversations.find((c) => c.phone === selected);
 
@@ -91,8 +93,8 @@ export default function InboxView({ clientId, initialConversations = [], initial
     const newCount = messages.length;
     lastMsgCountRef.current = newCount;
     if (newCount === 0) return;
-    // Só rola se for carregamento inicial ou nova mensagem E usuário está no final
-    if (prevCount === 0 || (newCount > prevCount && isAtBottomRef.current)) {
+    // Rola só no carregamento inicial ou quando chega msg nova E usuário não rolou p/ cima
+    if (prevCount === 0 || (newCount > prevCount && !userScrolledUpRef.current)) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
@@ -117,8 +119,8 @@ export default function InboxView({ clientId, initialConversations = [], initial
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchConversations]);
 
-  const fetchMessages = useCallback(async (phone: string) => {
-    setLoadingMessages(true);
+  const fetchMessages = useCallback(async (phone: string, silent = false) => {
+    if (!silent) setLoadingMessages(true);
     try {
       const res = await fetch(`/api/whatsapp/inbox/messages?phone=${encodeURIComponent(phone)}&clientId=${encodeURIComponent(clientId)}`);
       if (!res.ok) return;
@@ -126,16 +128,17 @@ export default function InboxView({ clientId, initialConversations = [], initial
       setMessages(data.messages ?? []);
       setConversations((prev) => prev.map((c) => c.phone === phone ? { ...c, unread: false } : c));
     } catch {} finally {
-      setLoadingMessages(false);
+      if (!silent) setLoadingMessages(false);
     }
   }, []);
 
   useEffect(() => {
     if (!selected) { setMessages([]); return; }
     isAtBottomRef.current = true;
+    userScrolledUpRef.current = false;
     lastMsgCountRef.current = 0;
-    fetchMessages(selected);
-    msgPollRef.current = setInterval(() => fetchMessages(selected), 3000);
+    fetchMessages(selected);                                              // inicial: mostra loading
+    msgPollRef.current = setInterval(() => fetchMessages(selected, true), 3000); // polls: silencioso
     return () => { if (msgPollRef.current) clearInterval(msgPollRef.current); };
   }, [selected, fetchMessages]);
 
@@ -446,7 +449,9 @@ export default function InboxView({ clientId, initialConversations = [], initial
             onScroll={() => {
               const el = messagesContainerRef.current;
               if (!el) return;
-              isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+              const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+              isAtBottomRef.current = distFromBottom < 100;
+              userScrolledUpRef.current = distFromBottom > 150; // usuário rolou p/ cima: trava auto-scroll
             }}
             className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1"
           >
