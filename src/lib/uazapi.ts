@@ -1,5 +1,5 @@
 import { getConfig } from "./clients";
-import { markSent as markSentRegistry, markMediaSending } from "./wppconnect-sent";
+import { markSent as markSentRegistry, markPhoneSending } from "./wppconnect-sent";
 
 function base(): string {
   const url = process.env.UAZAPI_SERVER
@@ -251,8 +251,9 @@ function typingDelay(text: string): number {
 export async function sendText(token: string, phone: string, message: string, delay?: number): Promise<boolean> {
   // Marca antes de enviar para que o eco fromMe não pause a IA
   const phoneKey = phone.replace(/\D/g, "");
+  markPhoneSending(phoneKey); // janela 30s: cobre double-event do UazapiGO
   markSentRegistry(phoneKey, message);
-  console.log(`[uazapi/sendText] markSent phone=${phoneKey} msg="${message.slice(0, 60)}"`);
+  console.log(`[uazapi/sendText] markPhoneSending+markSent phone=${phoneKey} msg="${message.slice(0, 60)}"`);
 
   const url = `${base()}/send/text`;
   const ms = delay !== undefined ? delay : typingDelay(message);
@@ -316,9 +317,9 @@ export async function sendMedia(
   try {
     // Marca antes de enviar: impede que o eco fromMe pause a IA
     const phoneKey = phone.replace(/\D/g, "");
-    markMediaSending(phoneKey);
+    markPhoneSending(phoneKey); // janela 30s
     if (caption?.trim()) markSentRegistry(phoneKey, caption.trim());
-    console.log(`[uazapi/sendMedia] markMediaSending phone=${phoneKey} caption="${(caption ?? "").slice(0, 60)}"`);
+    console.log(`[uazapi/sendMedia] markPhoneSending phone=${phoneKey} caption="${(caption ?? "").slice(0, 60)}"`);
 
     // UazapiGO nexopro: endpoint /send/media com {number, file, text, type}
     // "file" aceita URL pública ou data URI base64

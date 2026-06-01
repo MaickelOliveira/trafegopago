@@ -5,28 +5,36 @@
 const sentRegistry = new Map<string, string[]>(); // phone → conteúdos recentes
 
 /**
- * Registry de mídias enviadas pela plataforma (janela de 30s).
- * Impede que o eco onselfmessage de áudio/vídeo/documento pause a IA.
+ * Registry de envios recentes da plataforma (janela de 30s).
+ * Impede que ecos onselfmessage/onanymessage de qualquer tipo (texto ou mídia) pausem a IA.
+ * O WPPConnect pode disparar 2 eventos para a mesma mensagem (onanymessage + onselfmessage),
+ * e o consumeSent remove a entrada no primeiro — o segundo ficaria sem correspondência.
+ * A janela de tempo cobre ambos os eventos sem depender de match exato.
  */
-const mediaSendingRegistry = new Map<string, number>(); // phone → timestamp de expiração
+const phoneSendingRegistry = new Map<string, number>(); // phone → timestamp de expiração
 
-export function markMediaSending(phone: string) {
+export function markPhoneSending(phone: string) {
   const expiry = Date.now() + 30_000;
-  mediaSendingRegistry.set(phone, expiry);
-  console.log(`[wppconnect-sent] markMediaSending phone=${phone} expiry=${expiry}`);
+  phoneSendingRegistry.set(phone, expiry);
+  console.log(`[wppconnect-sent] markPhoneSending phone=${phone} expiry_in=30s`);
   setTimeout(() => {
-    const stored = mediaSendingRegistry.get(phone);
-    if (stored && stored <= Date.now()) mediaSendingRegistry.delete(phone);
+    const stored = phoneSendingRegistry.get(phone);
+    if (stored && stored <= Date.now()) phoneSendingRegistry.delete(phone);
   }, 30_000);
 }
 
-export function isMediaSending(phone: string): boolean {
-  const expiry = mediaSendingRegistry.get(phone);
+export function isPhoneSending(phone: string): boolean {
+  const expiry = phoneSendingRegistry.get(phone);
   if (!expiry) return false;
   if (Date.now() < expiry) return true;
-  mediaSendingRegistry.delete(phone);
+  phoneSendingRegistry.delete(phone);
   return false;
 }
+
+/** @deprecated use markPhoneSending */
+export const markMediaSending = markPhoneSending;
+/** @deprecated use isPhoneSending */
+export const isMediaSending = isPhoneSending;
 
 export function markSent(phone: string, content: string) {
   const list = sentRegistry.get(phone) ?? [];

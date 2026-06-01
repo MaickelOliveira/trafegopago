@@ -5,7 +5,7 @@ import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead } f
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused, sanitizeContactName } from "@/lib/conversations";
-import { markSent, consumeSent, isMediaSending } from "@/lib/wppconnect-sent";
+import { markSent, consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
@@ -379,13 +379,14 @@ export async function POST(
 
   // Se foi enviado por nós (fromMe = IA, plataforma ou operador pelo celular)
   if (fromMe) {
-    // Mídia enviada pela plataforma (automação) — o eco não deve pausar a IA
-    if (isMediaMsg && isMediaSending(phone)) {
-      console.log(`[WPPConnect fromMe] phone=${phone} mídia da plataforma (janela ativa) — não pausa IA`);
+    // Janela de envio ativa: qualquer eco (texto ou mídia, onanymessage ou onselfmessage)
+    // não deve pausar a IA. O WPPConnect pode disparar 2 eventos para 1 mensagem enviada.
+    if (isPhoneSending(phone)) {
+      console.log(`[WPPConnect fromMe] phone=${phone} janela de envio ativa — não pausa IA`);
       return NextResponse.json({ ok: true });
     }
     if (text.trim()) {
-      // Se já foi salvo pela IA ou pela plataforma, apenas ignora
+      // Fora da janela: tenta match exato no registry (mensagens da IA/plataforma)
       const consumed = consumeSent(phone, text.trim());
       console.log(`[WPPConnect fromMe] phone=${phone} consumed=${consumed} text="${text.trim().slice(0, 80)}"`);
       if (consumed) {

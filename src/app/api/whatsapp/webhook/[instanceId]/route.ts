@@ -20,7 +20,7 @@ import { getHistory, addMessage, getAiPaused, setAiPaused, sanitizeContactName }
 import { upsertLeadByPhone, getLeadByPhone, updateLead } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
-import { consumeSent, isMediaSending } from "@/lib/wppconnect-sent";
+import { consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
 import { downloadAndDecryptMedia, transcribeMedia, saveDecryptedMedia } from "@/lib/media-transcribe";
 import type { AgentMedia, AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
@@ -779,9 +779,9 @@ export async function POST(
 
     // Mensagem enviada por você (gestor via WhatsApp ou automação/IA)
     if (fromMe) {
-      // Mídia enviada pela plataforma (automação) — o eco não deve pausar a IA
-      if (msgType && isMediaSending(phone)) {
-        console.log(`[webhook/${instanceId}] fromMe mídia da plataforma (janela ativa) phone=${phone} msgType=${msgType} — não pausa IA`);
+      // Janela de envio ativa: qualquer eco (texto ou mídia) não deve pausar a IA
+      if (isPhoneSending(phone)) {
+        console.log(`[webhook/${instanceId}] fromMe janela de envio ativa phone=${phone} msgType=${msgType} — não pausa IA`);
         return NextResponse.json({ ok: true });
       }
       // Se a mensagem foi enviada pela própria plataforma (automação/IA), o eco não deve pausar a IA

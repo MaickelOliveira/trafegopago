@@ -1,5 +1,5 @@
 import { getConfig } from "./clients";
-import { markSent, markMediaSending } from "./wppconnect-sent";
+import { markSent, markPhoneSending } from "./wppconnect-sent";
 
 function base(): string {
   const url = process.env.WPPCONNECT_SERVER || getConfig().wppconnectServer || "";
@@ -166,7 +166,8 @@ export async function sendText(
       : normalizeBrPhone(phone);
     // Marca ANTES de enviar para que o eco fromMe seja ignorado pelo webhook
     const phoneKey = phoneFormatted.replace(/@.*/, "").replace(/\D/g, "");
-    markSent(phoneKey, message);
+    markPhoneSending(phoneKey); // janela 30s: cobre onanymessage + onselfmessage
+    markSent(phoneKey, message); // match exato: fallback preciso
     const res = await fetch(
       `${base()}/api/${sessionName}/send-message`,
       {
@@ -233,9 +234,9 @@ export async function sendMedia(
     const phoneKey = phoneFormatted.replace(/@.*/, "").replace(/\D/g, "");
 
     // Marca antes de enviar: impede que o eco onselfmessage pause a IA
-    markMediaSending(phoneKey);
-    if (caption?.trim()) markSent(phoneKey, caption.trim());
-    console.log(`[wppconnect-api] sendMedia markMediaSending phone=${phoneKey} caption="${(caption ?? "").slice(0, 60)}"`);
+    markPhoneSending(phoneKey); // janela 30s: cobre onanymessage + onselfmessage
+    if (caption?.trim()) markSent(phoneKey, caption.trim()); // match exato para legenda
+    console.log(`[wppconnect-api] sendMedia markPhoneSending phone=${phoneKey} caption="${(caption ?? "").slice(0, 60)}"`);
 
     // Baixa o arquivo
     const fileRes = await fetch(mediaUrl);
