@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getLeads, upsertLeadByPhone, type LeadSource } from "@/lib/leads";
+import { runAutomationsForEvent } from "@/lib/crm-automations";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -45,6 +46,10 @@ export async function POST(req: NextRequest) {
     notes: notes || "",
     ai: null,
   });
+
+  // Dispara automações CRM (fire-and-forget)
+  runAutomationsForEvent("lead_created", lead);
+  runAutomationsForEvent("column_entered", lead, { toColumnId: lead.status });
 
   return NextResponse.json(lead, { status: 201 });
 }
