@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, statSync } from "fs";
 import path from "path";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string; ts: number; type?: "text" | "audio" | "image"; mediaUrl?: string };
@@ -19,12 +19,19 @@ const FILE = path.join(process.cwd(), "data", "conversations.json");
 const MAX_MESSAGES = 200;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 
+// Cache em memória — só relê o disco quando o arquivo muda (mtime)
+let _cache: ConversationStore | null = null;
+let _cacheMtime = 0;
+
 function load(): ConversationStore {
   try {
     if (!existsSync(FILE)) return {};
+    const mtime = statSync(FILE).mtimeMs;
+    if (_cache && mtime === _cacheMtime) return _cache;
     const parsed = JSON.parse(readFileSync(FILE, "utf-8"));
-    // garante que seja objeto e não array
-    return Array.isArray(parsed) ? {} : parsed;
+    _cache = Array.isArray(parsed) ? {} : parsed;
+    _cacheMtime = mtime;
+    return _cache;
   } catch {
     return {};
   }
@@ -32,6 +39,9 @@ function load(): ConversationStore {
 
 function save(data: ConversationStore) {
   writeFileSync(FILE, JSON.stringify(data, null, 2));
+  // Atualiza cache imediatamente para evitar releitura desnecessária
+  _cache = data;
+  try { _cacheMtime = statSync(FILE).mtimeMs; } catch { /* ignore */ }
 }
 
 /** Gera variantes prefixadas por clientId para isolamento de histórico entre clientes */

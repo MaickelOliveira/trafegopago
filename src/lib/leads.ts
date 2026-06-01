@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, renameSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, renameSync, mkdirSync, statSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -53,12 +53,22 @@ const FILE = path.join(DIR, "leads.json");
 const BAK  = FILE + ".bak";
 const TMP  = FILE + ".tmp";
 
+// Cache em memória — só relê o disco quando o arquivo muda (mtime)
+let _cache: Lead[] | null = null;
+let _cacheMtime = 0;
+
 function load(): Lead[] {
   // Tenta arquivo principal
   try {
     if (existsSync(FILE)) {
+      const mtime = statSync(FILE).mtimeMs;
+      if (_cache && mtime === _cacheMtime) return _cache;
       const raw = readFileSync(FILE, "utf-8");
-      if (raw.trim()) return JSON.parse(raw);
+      if (raw.trim()) {
+        _cache = JSON.parse(raw);
+        _cacheMtime = mtime;
+        return _cache!;
+      }
     }
   } catch {
     console.warn("[leads] leads.json corrompido, tentando backup...");
@@ -83,6 +93,9 @@ function save(leads: Lead[]) {
   if (existsSync(FILE)) renameSync(FILE, BAK);
   // 3. Rename atômico: tmp → principal
   renameSync(TMP, FILE);
+  // 4. Atualiza cache imediatamente
+  _cache = leads;
+  try { _cacheMtime = statSync(FILE).mtimeMs; } catch { /* ignore */ }
 }
 
 export function getLeads(clientId?: string): Lead[] {
