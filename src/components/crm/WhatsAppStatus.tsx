@@ -17,10 +17,11 @@ type Instances = Record<string, InstStatus>;
 type FunnelInfo = { id: string; name: string; clientId?: string | null; connections?: FunnelConnection[] };
 type WppSession = { id: string; sessionName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
 
-export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }: {
+export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, readOnly = false }: {
   clients: { id: string; name: string }[];
   funnels?: FunnelInfo[];
   clientId?: string;
+  readOnly?: boolean;
   server?: string; token?: string;
 }) {
   const [instances, setInstances] = useState<Instances>({});
@@ -347,7 +348,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
                 ))}
 
                 {/* Botão adicionar + modal inline */}
-                {addingTo === f.id ? (
+                {!readOnly && (addingTo === f.id ? (
                   <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 space-y-3">
                     <p className="text-xs font-semibold text-slate-700">Escolha o tipo de conexão:</p>
 
@@ -406,7 +407,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId }:
                       + Adicionar número
                     </button>
                   </div>
-                )}
+                ))}
               </div>
             ))}
           </div>

@@ -36,14 +36,24 @@ function detectBase(req: NextRequest): string {
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "manager") {
+  if (!session || (session.role !== "manager" && session.role !== "client" && session.role !== "employee")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const baseUrl = detectBase(req);
-  const storedSessions = getWppSessions();
+  let storedSessions = getWppSessions();
   const funnels = getFunnels();
   const clients = getClients();
+
+  // For non-managers: filter to sessions belonging to their clientId
+  if (session.role !== "manager" && session.clientId) {
+    const clientFunnelIds = new Set(
+      funnels.filter(f => f.clientId === session.clientId).map(f => f.id)
+    );
+    storedSessions = storedSessions.filter(
+      s => s.clientId === session.clientId || (s.funnelId && clientFunnelIds.has(s.funnelId))
+    );
+  }
 
   // Build client lookup: connectionId → client info
   const connIdToClient = new Map<string, { clientId: string; clientName: string; agentEnabled: boolean }>();
@@ -73,7 +83,8 @@ export async function GET(req: NextRequest) {
       return {
         id: s.id,
         sessionName: s.sessionName,
-        sessionToken: s.sessionToken,
+        // Omit sessionToken for non-manager roles
+        sessionToken: session.role === "manager" ? s.sessionToken : "",
         status: connected ? "connected" : connecting ? "connecting" : "disconnected",
         phone: null,
         linkedFunnelId: s.funnelId,
@@ -82,7 +93,7 @@ export async function GET(req: NextRequest) {
         linkedClientName,
         hasAgentLinked: !!clientInfo,
         agentEnabled: clientInfo?.agentEnabled ?? false,
-        instanceWebhookUrl: `${baseUrl}/api/whatsapp/webhook/wppconnect/${s.id}`,
+        instanceWebhookUrl: session.role === "manager" ? `${baseUrl}/api/whatsapp/webhook/wppconnect/${s.id}` : "",
       };
     })
   );

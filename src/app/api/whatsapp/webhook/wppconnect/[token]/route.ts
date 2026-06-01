@@ -98,7 +98,9 @@ async function processWppActions(
         continue;
       }
       const resumo = await generateWppSummaryText(clientName, agCfg, leadPhone, action.motivo, clientId);
-      const waLink = `https://wa.me/${leadPhone.replace(/\D/g, "")}`;
+      const lead = getLeadByPhone(clientId, leadPhone);
+      const displayPhone = (lead?.realPhone ?? leadPhone).replace(/\D/g, "");
+      const waLink = `https://wa.me/${displayPhone}`;
       const msg =
         `📋 *Resumo de conversa — ${clientName}*\n\n` +
         `📞 *Lead:* ${waLink}\n` +

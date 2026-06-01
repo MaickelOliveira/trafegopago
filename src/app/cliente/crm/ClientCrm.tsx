@@ -46,6 +46,7 @@ export function ClientCrm({ clientId, clientName, clientColor, initialLeads, ini
         <WhatsAppStatus
           clients={client}
           clientId={clientId}
+          readOnly
           funnels={funnels.map(f => ({ id: f.id, name: f.name, clientId: f.clientId, connections: f.connections }))}
         />
       </div>
