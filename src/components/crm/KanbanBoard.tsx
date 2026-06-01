@@ -150,6 +150,7 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newName, clientId: clientId ?? null }),
     });
+    if (!res.ok) { setSaving(false); alert("Erro ao criar funil."); return; }
     const created = await res.json();
     onUpdated([...funnels, created]);
     setNewName(""); setCreating(false); setSaving(false);

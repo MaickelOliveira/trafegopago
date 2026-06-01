@@ -13,11 +13,17 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "manager") {
+  if (!session || (session.role !== "manager" && session.role !== "client" && session.role !== "employee")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { name, columns, clientId } = await req.json();
   if (!name) return NextResponse.json({ error: "name obrigatório" }, { status: 400 });
+
+  // Clientes e funcionários só podem criar funis para o seu próprio clientId
+  if (session.role !== "manager" && session.clientId && clientId && session.clientId !== clientId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   const funnel = createFunnel(name, columns);
   if (clientId) {
     const { updateFunnel } = await import("@/lib/funnels");
