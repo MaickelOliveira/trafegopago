@@ -20,6 +20,7 @@ import { getHistory, addMessage, getAiPaused, setAiPaused, sanitizeContactName }
 import { upsertLeadByPhone, getLeadByPhone, updateLead } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
+import { consumeSent } from "@/lib/wppconnect-sent";
 import { downloadAndDecryptMedia, transcribeMedia, saveDecryptedMedia } from "@/lib/media-transcribe";
 import type { AgentMedia, AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
@@ -776,8 +777,17 @@ export async function POST(
     const savedType = msgType === "audio" ? "audio" as const : msgType === "image" ? "image" as const : undefined;
     addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: savedType, mediaUrl: localMediaUrl ?? mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
 
-    // Mensagem enviada por você (gestor via WhatsApp)
+    // Mensagem enviada por você (gestor via WhatsApp ou automação/IA)
     if (fromMe) {
+      // Se a mensagem foi enviada pela própria plataforma (automação/IA), o eco não deve pausar a IA
+      if (text.trim()) {
+        const consumed = consumeSent(phone, text.trim());
+        console.log(`[webhook/${instanceId}] fromMe consumed=${consumed} phone=${phone} text="${text.trim().slice(0, 80)}"`);
+        if (consumed) {
+          return NextResponse.json({ ok: true }); // eco da plataforma — não pausa IA
+        }
+      }
+      // Mensagem do gestor via celular → pausa a IA
       if (cid !== "sem-cliente") {
         const agCfg = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
         const resumeKeyword = agCfg?.aiResumeKeyword?.trim();

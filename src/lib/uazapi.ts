@@ -248,6 +248,10 @@ function typingDelay(text: string): number {
 }
 
 export async function sendText(token: string, phone: string, message: string, delay?: number): Promise<boolean> {
+  // Marca antes de enviar para que o eco fromMe não pause a IA
+  const { markSent } = await import("./wppconnect-sent");
+  markSent(phone.replace(/\D/g, ""), message);
+
   const url = `${base()}/send/text`;
   const ms = delay !== undefined ? delay : typingDelay(message);
   // Formato correto da uazapi: { number, text } — demais são fallback por compatibilidade
