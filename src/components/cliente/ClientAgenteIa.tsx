@@ -102,7 +102,8 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
     setSendingChange(false);
   }
 
-  const mainAgent = agentConfigs[0];
+  // Prefere o primeiro agentConfig ativado; fallback para o primeiro da lista
+  const mainAgent = agentConfigs.find((c) => c.enabled) ?? agentConfigs[0];
   const allConnected = connections.length > 0 && connections.every((c) => c.connected);
   const anyConnected = connections.some((c) => c.connected);
 
