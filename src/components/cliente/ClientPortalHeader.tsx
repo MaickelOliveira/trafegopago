@@ -63,6 +63,19 @@ export function ClientPortalHeader({
           )}
         </div>
         <nav className="flex items-center gap-1">
+          {/* Dashboard — sempre visível */}
+          <Link
+            href="/cliente"
+            className={clsx(
+              "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
+              pathname === "/cliente"
+                ? "bg-slate-800 text-white font-medium"
+                : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            🖤 Campanhas
+          </Link>
+
           {/* CRM — sempre visível */}
           <Link
             href="/cliente/crm"
