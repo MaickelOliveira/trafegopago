@@ -62,9 +62,6 @@ export type Client = {
   adAccounts: AdAccount[];
   whatsappPhone?: string;
   automations?: AutomationsConfig;
-  tintimCode?: string;
-  tintimToken?: string;
-  tintimWebhookForward?: string;
   pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
   capiToken?: string;           // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
   googleAdsId?: string;         // ID de conta Google Ads  (ex: AW-123456789)

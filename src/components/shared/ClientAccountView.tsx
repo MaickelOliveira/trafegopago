@@ -9,30 +9,9 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics";
 import { getPrimaryResult, getFunnelSteps, type FunnelType } from "@/lib/result";
 import { StatusToggle } from "@/components/shared/StatusToggle";
 import type { MetaCampaign } from "@/lib/meta-api";
-import type { CampaignSalesStats } from "@/lib/sales-types";
-import { normalizeCampaignName } from "@/lib/sales-types";
 
 type AdAccount = { id: string; name: string; platform: string };
-type Client = { id: string; name: string; color: string; logoUrl?: string; cplTarget: number; funnelType?: FunnelType; adAccounts: AdAccount[]; tintimCode?: string };
-
-type TintimData = {
-  byCampaign: Record<string, CampaignSalesStats>;
-  totalCount: number;
-  totalRevenue: number;
-};
-
-function getTintimForCampaign(
-  campaignName: string,
-  byCampaign: Record<string, CampaignSalesStats>
-): CampaignSalesStats | null {
-  const norm = normalizeCampaignName(campaignName);
-  for (const [key, val] of Object.entries(byCampaign)) {
-    if (key === norm) return val;
-    // Correspondência parcial: nome da campanha contém o utm_campaign ou vice-versa
-    if (norm.includes(key) || key.includes(norm)) return val;
-  }
-  return null;
-}
+type Client = { id: string; name: string; color: string; logoUrl?: string; cplTarget: number; funnelType?: FunnelType; adAccounts: AdAccount[] };
 
 const DATE_PRESETS = [
   { label: "Hoje",        value: "today" },
@@ -70,10 +49,6 @@ export function ClientAccountView({
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "PAUSED">("ALL");
   const [budgetModal, setBudgetModal] = useState<{ id: string; name: string; current: number | null } | null>(null);
-  const [tintim, setTintim] = useState<TintimData | null>(null);
-  const [syncPhones, setSyncPhones] = useState("");
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; total: number } | null>(null);
 
   const basePath =
     role === "manager"
@@ -88,12 +63,10 @@ export function ClientAccountView({
     Promise.all([
       fetch(`/api/meta/${selectedAccount.id}/campaigns?${qs}`).then((r) => r.json()),
       fetchDailyData(selectedAccount.id, datePreset),
-      fetch(`/api/tintim/sales?${qs}&clientId=${client.id}`).then((r) => r.ok ? r.json() : null),
     ])
-      .then(([camps, daily, tintimRes]) => {
+      .then(([camps, daily]) => {
         setCampaigns(Array.isArray(camps) ? camps : []);
         setDailyData(daily);
-        setTintim(tintimRes ?? null);
       })
       .finally(() => setLoading(false));
   }, [selectedAccount, datePreset]);
@@ -111,31 +84,6 @@ export function ClientAccountView({
 
     const res = await fetch(`/api/meta/${accountId}/insights?since=${since}&until=${until}&daily=1`);
     return res.ok ? res.json() : [];
-  }
-
-  async function handleSync() {
-    const phones = syncPhones
-      .split(/[\n,;]+/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-    if (!phones.length) return;
-    setSyncing(true);
-    setSyncResult(null);
-    try {
-      const res = await fetch(`/api/tintim/sync?clientId=${client.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phones }),
-      });
-      const data = await res.json();
-      setSyncResult(data);
-      // Recarrega os dados do Tintim após sync
-      const qs = new URLSearchParams({ datePreset });
-      const updated = await fetch(`/api/tintim/sales?${qs}&clientId=${client.id}`).then((r) => r.ok ? r.json() : null);
-      setTintim(updated);
-    } finally {
-      setSyncing(false);
-    }
   }
 
   function sortCampaigns(list: MetaCampaign[]) {
@@ -268,97 +216,6 @@ export function ClientAccountView({
         )}
       </div>
 
-      {/* Tintim panel */}
-      {client.tintimCode && (() => {
-        const tintimRoas = tintim && totalSpend > 0 && tintim.totalRevenue > 0
-          ? tintim.totalRevenue / totalSpend : null;
-        const hasData = tintim && tintim.totalCount > 0;
-
-        return (
-          <div className={clsx(
-            "mb-6 rounded-xl border",
-            hasData ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"
-          )}>
-            {/* Header com métricas */}
-            <div className="flex items-center justify-between flex-wrap gap-3 p-4">
-              <div className="flex items-center gap-2">
-                <span className={clsx("h-2 w-2 rounded-full", hasData ? "bg-emerald-500 animate-pulse" : "bg-slate-300")} />
-                <span className="text-sm font-semibold text-slate-700">Tintim</span>
-                <span className={clsx("rounded-full px-2 py-0.5 text-xs font-medium",
-                  hasData ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-                )}>
-                  {hasData ? "Com dados" : "Sem dados"}
-                </span>
-              </div>
-
-              {hasData && (
-                <div className="flex items-center gap-6">
-                  <div className="text-center">
-                    <p className="text-lg font-bold text-emerald-700">{formatNumber(tintim!.totalCount)}</p>
-                    <p className="text-xs text-slate-500">{tintim!.totalCount === 1 ? "venda" : "vendas"}</p>
-                  </div>
-                  {tintim!.totalRevenue > 0 && (
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-emerald-700">{formatCurrency(tintim!.totalRevenue)}</p>
-                      <p className="text-xs text-slate-500">receita</p>
-                    </div>
-                  )}
-                  {tintimRoas && (
-                    <div className="text-center">
-                      <p className={clsx("text-lg font-bold", tintimRoas >= 2 ? "text-green-700" : "text-orange-600")}>
-                        {tintimRoas.toFixed(2)}x
-                      </p>
-                      <p className="text-xs text-slate-500">ROAS real</p>
-                    </div>
-                  )}
-                  {tintim!.totalRevenue > 0 && totalSpend > 0 && (
-                    <div className="text-center">
-                      <p className={clsx("text-lg font-bold", tintim!.totalRevenue > totalSpend ? "text-green-700" : "text-red-600")}>
-                        {formatCurrency(tintim!.totalRevenue - totalSpend)}
-                      </p>
-                      <p className="text-xs text-slate-500">lucro líquido</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Sync manual */}
-            {role === "manager" && (
-              <div className="border-t border-slate-200 px-4 py-3 bg-white rounded-b-xl">
-                <p className="text-xs font-medium text-slate-600 mb-2">
-                  Sincronizar leads — cole os telefones do Tintim (um por linha ou separados por vírgula):
-                </p>
-                <div className="flex gap-2 items-start">
-                  <textarea
-                    value={syncPhones}
-                    onChange={(e) => setSyncPhones(e.target.value)}
-                    placeholder={"5511999990001\n5511999990002\n5511999990003"}
-                    rows={3}
-                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-mono outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 resize-none"
-                  />
-                  <button
-                    onClick={handleSync}
-                    disabled={syncing || !syncPhones.trim()}
-                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition whitespace-nowrap"
-                  >
-                    {syncing ? "Consultando..." : "Sincronizar"}
-                  </button>
-                </div>
-                {syncResult && (
-                  <p className={clsx("mt-2 text-xs", syncResult.synced > 0 ? "text-emerald-700" : "text-slate-500")}>
-                    {syncResult.synced > 0
-                      ? `${syncResult.synced} venda(s) encontrada(s) e registrada(s) de ${syncResult.total} telefone(s).`
-                      : `Nenhuma venda encontrada nos ${syncResult.total} telefone(s) consultado(s).`}
-                    {syncResult.skipped > 0 && ` (${syncResult.skipped} sem status de venda)`}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
       {/* Chart */}
       {dailyData.length > 1 && (
         <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -410,7 +267,6 @@ export function ClientAccountView({
                   <th className="px-4 py-3 text-right">CTR</th>
                   <th className="px-4 py-3 text-right">Funil</th>
                   <th className="px-4 py-3 text-right">Custo/result.</th>
-                  {client.tintimCode && <th className="px-4 py-3 text-right text-emerald-600">Tintim</th>}
                   {role === "manager" && <th className="px-4 py-3" />}
                 </tr>
               </thead>
@@ -420,10 +276,6 @@ export function ClientAccountView({
                   const result = getPrimaryResult(c.insights ?? null, funnelType);
                   const steps = getFunnelSteps(c.insights ?? null, funnelType, client.cplTarget);
                   const costBad = result.cost !== null && result.cost > client.cplTarget;
-                  const tintimStats = tintim ? getTintimForCampaign(c.name, tintim.byCampaign) : null;
-                  const tintimRoas = tintimStats && tintimStats.revenue > 0 && c.insights?.spend
-                    ? tintimStats.revenue / c.insights.spend
-                    : null;
                   return (
                     <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
                       {role === "manager" && (
@@ -488,26 +340,6 @@ export function ClientAccountView({
                       )}>
                         {result.cost !== null ? formatCurrency(result.cost) : "—"}
                       </td>
-                      {client.tintimCode && (
-                        <td className="px-4 py-3.5 text-right">
-                          {tintimStats ? (
-                            <div className="text-right">
-                              <p className={clsx("font-semibold text-sm",
-                                tintimRoas ? (tintimRoas >= 2 ? "text-green-600" : "text-orange-500") : "text-emerald-700"
-                              )}>
-                                {tintimStats.count} {tintimStats.count === 1 ? "venda" : "vendas"}
-                              </p>
-                              <p className="text-xs text-slate-400">
-                                {tintimStats.revenue > 0
-                                  ? `${formatCurrency(tintimStats.revenue)}${tintimRoas ? ` · ${tintimRoas.toFixed(2)}x` : ""}`
-                                  : "sem valor"}
-                              </p>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-300 italic">sem dados</span>
-                          )}
-                        </td>
-                      )}
                       {role === "manager" && (
                         <td className="px-3 py-3.5">
                           <button
@@ -613,21 +445,19 @@ function KPI({
   label: string;
   value: string;
   sub?: string;
-  variant?: "default" | "success" | "danger" | "warning" | "tintim";
+  variant?: "default" | "success" | "danger" | "warning";
 }) {
   const variantStyles = {
     default:  "border-slate-200 bg-white",
     success:  "border-green-200 bg-green-50",
     danger:   "border-red-200 bg-red-50",
     warning:  "border-orange-200 bg-orange-50",
-    tintim:   "border-emerald-200 bg-emerald-50",
   };
   const valueStyles = {
     default:  "text-slate-900",
     success:  "text-green-700",
     danger:   "text-red-700",
     warning:  "text-orange-700",
-    tintim:   "text-emerald-700",
   };
 
   return (

@@ -14,9 +14,6 @@ type Client = {
   cplTarget: number;
   funnelType: FunnelType;
   adAccounts: AdAccount[];
-  tintimCode?: string;
-  tintimToken?: string;
-  tintimWebhookForward?: string;
   pixelId?: string;
   capiToken?: string;
   metaPageId?: string;
@@ -198,7 +195,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
 
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
-    tintimCode: "", tintimToken: "", tintimWebhookForward: "", pixelId: "", capiToken: "", metaPageId: "", googleAdsId: "", googleConvLabel: "",
+    pixelId: "", capiToken: "", metaPageId: "", googleAdsId: "", googleConvLabel: "",
   });
   const [form, setForm] = useState(empty());
 
@@ -331,11 +328,6 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                   {FUNNEL_OPTIONS.find(f => f.value === c.funnelType)?.icon} {FUNNEL_OPTIONS.find(f => f.value === c.funnelType)?.label ?? "Leads"}
                 </span>
-                {c.tintimCode && (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 font-medium">
-                    Tintim ativo
-                  </span>
-                )}
               </div>
               <p className="text-sm text-slate-500">{c.email}</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -870,42 +862,6 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                     )}
                   </div>
                 </div>
-              </div>
-
-              {/* Tintim */}
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
-                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Tintim (opcional)</p>
-                <Field
-                  label="Código do cliente"
-                  value={form.tintimCode ?? ""}
-                  onChange={(v) => setForm((f) => ({ ...f, tintimCode: v }))}
-                  placeholder="e8a7482a-87f4-4f50-..."
-                />
-                <Field
-                  label="Token de segurança"
-                  value={form.tintimToken ?? ""}
-                  onChange={(v) => setForm((f) => ({ ...f, tintimToken: v }))}
-                  placeholder="q9ifPiV3gfs92D-..."
-                />
-                <Field
-                  label="URL original do webhook (proxy)"
-                  value={form.tintimWebhookForward ?? ""}
-                  onChange={(v) => setForm((f) => ({ ...f, tintimWebhookForward: v }))}
-                  placeholder="https://... (URL que estava configurada antes)"
-                />
-                {editing && (form.tintimCode || editing.tintimCode) && (
-                  <div className="rounded-lg bg-white border border-emerald-200 px-3 py-2 space-y-1">
-                    <p className="text-xs font-medium text-slate-600">Substitua o webhook no Tintim por esta URL:</p>
-                    <code className="text-xs text-emerald-700 break-all block">
-                      /api/tintim/webhook?clientId={editing.id}
-                    </code>
-                    {(form.tintimWebhookForward || editing.tintimWebhookForward) && (
-                      <p className="text-xs text-slate-400">
-                        O payload sera reencaminhado automaticamente para a URL original.
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* Meta Pixel + CAPI */}
