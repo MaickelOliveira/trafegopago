@@ -31,6 +31,13 @@ function formatPhone(phone: string) {
   return phone;
 }
 
+// Se o identificador não parece um telefone real (ex: nome interno de sessão), retorna um label genérico
+function displayConnection(phone: string, type: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length >= 8) return formatPhone(phone);
+  return type === "wppconnect" ? "Linha WhatsApp" : phone;
+}
+
 export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -488,7 +495,7 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
                         📱
                       </div>
                       <div>
-                        <p className="font-medium text-slate-800 text-sm">{formatPhone(conn.phone)}</p>
+                        <p className="font-medium text-slate-800 text-sm">{displayConnection(conn.phone, conn.type)}</p>
                         <p className="text-xs text-slate-400 capitalize">{conn.type === "wppconnect" ? "WhatsApp" : conn.type}</p>
                       </div>
                     </div>
