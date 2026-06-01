@@ -45,7 +45,7 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    if (isCliente && role !== "client") {
+    if (isCliente && role !== "client" && role !== "employee") {
       const url = request.nextUrl.clone();
       url.pathname = "/gestor";
       return NextResponse.redirect(url);
