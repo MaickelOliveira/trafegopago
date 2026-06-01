@@ -367,3 +367,41 @@ export async function resolveContactPhone(
     return null;
   }
 }
+
+// Busca o nome (pushname) de um contato via WPPConnect.
+// Usado quando o operador envia a primeira mensagem para o lead:
+// nesse caso não há pushName no webhook (fromMe=true), então buscamos via API.
+// Retorna o pushname do contato ou null se não encontrado.
+export async function getContactName(
+  sessionName: string,
+  token: string,
+  phone: string, // dígitos puros, ex: "5544998841285"
+): Promise<string | null> {
+  if (!base()) return null;
+  try {
+    const jid = `${phone}@c.us`;
+    const res = await fetch(
+      `${base()}/api/${sessionName}/contact/${encodeURIComponent(jid)}`,
+      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as Record<string, unknown>;
+    // WPPConnect retorna: { status: "success", response: { pushname, name, ... } }
+    // ou às vezes: { response: { contact: { pushname, ... } } }
+    const resp = (data.response ?? data) as Record<string, unknown>;
+    const contact = (resp.contact as Record<string, unknown>) ?? resp;
+    const name =
+      (contact.pushname as string) ||
+      (contact.name as string) ||
+      (resp.pushname as string) ||
+      (resp.name as string) ||
+      null;
+    if (name && name.trim() && !/^\d+$/.test(name.trim())) {
+      console.log(`[WPPConnect] getContactName ${phone} → "${name}"`);
+      return name.trim();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

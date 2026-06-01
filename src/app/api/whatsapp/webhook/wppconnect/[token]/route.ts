@@ -9,7 +9,7 @@ import { markSent, consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
-import { sendText as wppSendText, resolveContactPhone } from "@/lib/wppconnect-api";
+import { sendText as wppSendText, resolveContactPhone, getContactName } from "@/lib/wppconnect-api";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
@@ -283,6 +283,16 @@ export async function POST(
   // Quando fromMe=true, o pushName é o do operador — não do lead.
   const shouldUpdateName = !fromMe && (isNew || existingLead?.name === phone);
 
+  // Quando o operador manda primeiro (fromMe=true) e o lead é novo,
+  // buscamos o nome do contato diretamente via API do WPPConnect.
+  let contactNameFromApi: string | undefined;
+  if (fromMe && isNew) {
+    const fetched = await getContactName(wppSession.sessionName, wppSession.sessionToken, phone);
+    if (fetched) contactNameFromApi = fetched;
+  }
+  // Nome final a salvar: API do contato (fromMe) > pushName (fromMe=false) > nada
+  const nameToSave = contactNameFromApi ?? (shouldUpdateName ? pushName : undefined);
+
   // ── Lookup no Meta Ads API para enriquecer dados de campanha ──
   let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
   if (isNew && ctwaAdId) {
@@ -324,7 +334,7 @@ export async function POST(
     clientId,
     funnelId,
     source: "whatsapp",
-    ...(shouldUpdateName ? { name: pushName } : {}),
+    ...(nameToSave ? { name: nameToSave } : {}),
     ...(isNew ? { status: entradaColumnId } : {}),
     ...(isLidContact ? { isLid: true } : {}),
     ...adFields,
