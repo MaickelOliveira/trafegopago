@@ -14,10 +14,14 @@ export default async function ClienteLayout({ children }: { children: React.Reac
   // Para funcionários, carrega as permissões atuais do banco
   const isEmployee = session.role === "employee";
   let permissions = DEFAULT_PERMISSIONS;
+  let employeeLogoUrl: string | null = null;
+  let employeeName: string | undefined;
   if (isEmployee && session.employeeId) {
     const emp = getEmployeeById(session.employeeId);
     if (!emp || !emp.active) redirect("/login");
     permissions = { ...DEFAULT_PERMISSIONS, ...emp.permissions };
+    employeeLogoUrl = emp.logoUrl ?? null;
+    employeeName = emp.name;
   }
 
   return (
@@ -27,6 +31,8 @@ export default async function ClienteLayout({ children }: { children: React.Reac
         clientColor={client.color}
         isEmployee={isEmployee}
         permissions={permissions}
+        employeeLogoUrl={employeeLogoUrl}
+        employeeName={employeeName}
       />
       <main>{children}</main>
     </div>

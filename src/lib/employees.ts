@@ -32,6 +32,7 @@ export type Employee = {
   active: boolean;               // false = bloqueado
   allowedFunnelIds: string[];    // lista de IDs; ["*"] = todos os funis
   permissions: EmployeePermissions;
+  logoUrl?: string;              // foto/logo do funcionário
   createdAt: number;
 };
 

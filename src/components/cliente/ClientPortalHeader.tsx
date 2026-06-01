@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { clsx } from "clsx";
 import type { EmployeePermissions } from "@/lib/employees";
 
@@ -11,11 +12,15 @@ export function ClientPortalHeader({
   clientColor,
   isEmployee = false,
   permissions,
+  employeeLogoUrl,
+  employeeName,
 }: {
   clientName: string;
   clientColor: string;
   isEmployee?: boolean;
   permissions?: EmployeePermissions;
+  employeeLogoUrl?: string | null;
+  employeeName?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -50,12 +55,18 @@ export function ClientPortalHeader({
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
           <div
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-sm font-bold text-white"
-            style={{ backgroundColor: clientColor }}
+            className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white overflow-hidden"
+            style={employeeLogoUrl ? undefined : { backgroundColor: clientColor }}
           >
-            {clientName.charAt(0)}
+            {isEmployee && employeeLogoUrl ? (
+              <Image src={employeeLogoUrl} alt="Logo" fill className="object-cover" />
+            ) : (
+              clientName.charAt(0)
+            )}
           </div>
-          <span className="font-semibold text-slate-900">{clientName}</span>
+          <span className="font-semibold text-slate-900">
+            {isEmployee && employeeName ? employeeName : clientName}
+          </span>
           {isEmployee && (
             <span className="rounded-full bg-violet-100 text-violet-700 text-xs font-medium px-2 py-0.5">
               Funcionário
@@ -164,6 +175,21 @@ export function ClientPortalHeader({
               )}
             >
               👥 Funcionários
+            </Link>
+          )}
+
+          {/* Configurações — somente funcionários */}
+          {isEmployee && (
+            <Link
+              href="/cliente/configuracoes"
+              className={clsx(
+                "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
+                pathname.startsWith("/cliente/configuracoes")
+                  ? "bg-slate-800 text-white font-medium"
+                  : "text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              ⚙️ Configurações
             </Link>
           )}
         </nav>
