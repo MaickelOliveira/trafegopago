@@ -74,7 +74,8 @@ export function ClientPortalHeader({
           )}
         </div>
         <nav className="flex items-center gap-1">
-          {/* Dashboard — sempre visível */}
+          {/* Dashboard — somente cliente dono (não funcionário) */}
+          {!isEmployee && (
           <Link
             href="/cliente"
             className={clsx(
@@ -86,6 +87,7 @@ export function ClientPortalHeader({
           >
             🖤 Campanhas
           </Link>
+          )}
 
           {/* CRM — sempre visível */}
           <Link
