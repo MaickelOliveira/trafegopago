@@ -121,6 +121,7 @@ export function LeadModal({
 
   // Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loadingChat, setLoadingChat] = useState(false);
   const [msgInput, setMsgInput] = useState("");
   const [sending, setSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -135,12 +136,17 @@ export function LeadModal({
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  async function fetchMessages() {
-    const clientId = lead.clientId ? `?clientId=${encodeURIComponent(lead.clientId)}` : "";
-    const res = await fetch(`/api/crm/conversations/${lead.phone}${clientId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setMessages(data.messages ?? []);
+  async function fetchMessages(silent = false) {
+    if (!silent) setLoadingChat(true);
+    try {
+      const clientId = lead.clientId ? `?clientId=${encodeURIComponent(lead.clientId)}` : "";
+      const res = await fetch(`/api/crm/conversations/${lead.phone}${clientId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages ?? []);
+      }
+    } finally {
+      if (!silent) setLoadingChat(false);
     }
   }
 
@@ -149,7 +155,7 @@ export function LeadModal({
       isAtBottomRef.current = true;
       lastMsgCountRef.current = 0;
       fetchMessages();
-      pollRef.current = setInterval(fetchMessages, 4000);
+      pollRef.current = setInterval(() => fetchMessages(true), 4000);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -481,7 +487,14 @@ export function LeadModal({
               className="flex-1 overflow-y-auto p-4 space-y-1"
               style={{ background: "#f0f2f5" }}
             >
-              {messages.length === 0 ? (
+              {loadingChat ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-6 h-6 border-2 border-slate-300 border-t-green-500 rounded-full animate-spin" />
+                    <p className="text-xs text-slate-400">Carregando mensagens...</p>
+                  </div>
+                </div>
+              ) : messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-sm text-slate-400 text-center py-8">Nenhuma mensagem ainda.<br/>Inicie a conversa abaixo.</p>
                 </div>
