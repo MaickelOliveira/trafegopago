@@ -165,11 +165,13 @@ export default function InboxView({ clientId, initialConversations = [], initial
     setText("");
 
     const optimistic: ChatMessage = { role: "assistant", content: t, ts: Date.now(), type: "text" };
+    // Garante que o chat role para baixo ao enviar, independente de onde o usuário estava
     isAtBottomRef.current = true;
+    userScrolledUpRef.current = false;
     setMessages((prev) => [...prev, optimistic]);
 
     try {
-      await fetch("/api/whatsapp/inbox/send", {
+      const res = await fetch("/api/whatsapp/inbox/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -180,10 +182,22 @@ export default function InboxView({ clientId, initialConversations = [], initial
           connId: selectedConv?.connId ?? selectedConn ?? undefined,
         }),
       });
-    } catch {} finally {
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !data.ok) {
+        // Envio falhou — mantém a mensagem otimista e avisa o usuário
+        console.error("[handleSend] falhou", data);
+        alert(`Erro ao enviar mensagem: ${data?.error ?? "verifique a conexão"}`);
+        setSending(false);
+        return;
+      }
+    } catch (err) {
+      console.error("[handleSend] exception", err);
+      alert("Erro ao enviar mensagem. Verifique sua conexão.");
       setSending(false);
-      fetchMessages(selected);
+      return;
     }
+    setSending(false);
+    fetchMessages(selected, true); // poll silencioso para confirmar sem resetar scroll
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
