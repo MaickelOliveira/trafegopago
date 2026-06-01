@@ -12,7 +12,7 @@ export type CreativeCopy = {
 };
 
 export type CreativeComment = {
-  by: "manager" | "client";
+  by: "manager" | "client" | "employee";
   text: string;
   at: string;
 };
