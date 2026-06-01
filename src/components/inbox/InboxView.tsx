@@ -80,11 +80,21 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const audioChunksRef = useRef<Blob[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const msgPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const lastMsgCountRef = useRef(0);
+  const isAtBottomRef = useRef(true);
 
   const selectedConv = conversations.find((c) => c.phone === selected);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const prevCount = lastMsgCountRef.current;
+    const newCount = messages.length;
+    lastMsgCountRef.current = newCount;
+    if (newCount === 0) return;
+    // Só rola se for carregamento inicial ou nova mensagem E usuário está no final
+    if (prevCount === 0 || (newCount > prevCount && isAtBottomRef.current)) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   const fetchConversations = useCallback(async () => {
@@ -122,6 +132,8 @@ export default function InboxView({ clientId, initialConversations = [], initial
 
   useEffect(() => {
     if (!selected) { setMessages([]); return; }
+    isAtBottomRef.current = true;
+    lastMsgCountRef.current = 0;
     fetchMessages(selected);
     msgPollRef.current = setInterval(() => fetchMessages(selected), 3000);
     return () => { if (msgPollRef.current) clearInterval(msgPollRef.current); };
@@ -150,6 +162,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
     setText("");
 
     const optimistic: ChatMessage = { role: "assistant", content: t, ts: Date.now(), type: "text" };
+    isAtBottomRef.current = true;
     setMessages((prev) => [...prev, optimistic]);
 
     try {
@@ -213,6 +226,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
       });
 
       const optimistic: ChatMessage = { role: "assistant", content: "[áudio]", ts: Date.now(), type: "audio" };
+      isAtBottomRef.current = true;
       setMessages((prev) => [...prev, optimistic]);
 
       await fetch("/api/whatsapp/inbox/send", {
@@ -427,7 +441,15 @@ export default function InboxView({ clientId, initialConversations = [], initial
           )}
 
           {/* Mensagens */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1">
+          <div
+            ref={messagesContainerRef}
+            onScroll={() => {
+              const el = messagesContainerRef.current;
+              if (!el) return;
+              isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+            }}
+            className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1"
+          >
             {loadingMessages && (
               <div className="text-center text-[#8696a0] text-sm py-4">Carregando...</div>
             )}
