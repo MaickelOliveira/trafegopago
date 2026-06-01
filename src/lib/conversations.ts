@@ -31,7 +31,7 @@ function load(): ConversationStore {
     const parsed = JSON.parse(readFileSync(FILE, "utf-8"));
     _cache = Array.isArray(parsed) ? {} : parsed;
     _cacheMtime = mtime;
-    return _cache;
+    return _cache!;
   } catch {
     return {};
   }
