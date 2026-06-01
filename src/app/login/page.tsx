@@ -37,7 +37,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <img src="/nexo-logo.png" alt="Nexo" className="mx-auto mb-4 h-12 w-auto object-contain" />
+          <img src="/nexo-logo.png" alt="Nexo" className="mx-auto mb-4 w-full h-auto object-contain" />
           <p className="mt-1 text-sm text-slate-500">Entre com suas credenciais</p>
         </div>
 
