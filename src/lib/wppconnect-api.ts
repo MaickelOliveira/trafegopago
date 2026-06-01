@@ -230,6 +230,13 @@ export async function sendMedia(
     const phoneFormatted = isLid
       ? phone.replace(/@.*/, "")
       : normalizeBrPhone(phone);
+    const phoneKey = phoneFormatted.replace(/@.*/, "").replace(/\D/g, "");
+
+    // Marca a legenda antes de enviar para que o eco onselfmessage não pause a IA
+    if (caption?.trim()) {
+      markSent(phoneKey, caption.trim());
+      console.log(`[wppconnect-api] sendMedia markSent phone=${phoneKey} caption="${caption.slice(0, 60)}"`);
+    }
 
     // Baixa o arquivo
     const fileRes = await fetch(mediaUrl);
