@@ -279,7 +279,9 @@ export async function POST(
 
   const existingLead = getLeadByPhone(clientId, phone);
   const isNew = !existingLead;
-  const shouldUpdateName = isNew || existingLead?.name === phone;
+  // Só atualiza o nome a partir de mensagens RECEBIDAS do lead (fromMe=false).
+  // Quando fromMe=true, o pushName é o do operador — não do lead.
+  const shouldUpdateName = !fromMe && (isNew || existingLead?.name === phone);
 
   // ── Lookup no Meta Ads API para enriquecer dados de campanha ──
   let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
