@@ -49,15 +49,15 @@ export function ClientPortalHeader({
         </div>
         <nav className="flex items-center gap-1">
           <Link
-            href="/cliente"
+            href="/cliente/crm"
             className={clsx(
-              "rounded-lg px-3 py-1.5 text-sm transition",
-              pathname === "/cliente" || (!pathname.startsWith("/cliente/criativos") && !pathname.startsWith("/cliente/automacoes") && !pathname.startsWith("/cliente/crm"))
-                ? "bg-slate-100 text-slate-900 font-medium"
+              "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
+              pathname.startsWith("/cliente/crm")
+                ? "bg-blue-50 text-blue-700 font-medium"
                 : "text-slate-500 hover:bg-slate-50"
             )}
           >
-            Campanhas
+            📋 CRM
           </Link>
           <Link
             href="/cliente/criativos"
@@ -87,17 +87,6 @@ export function ClientPortalHeader({
             ⚡ Automações
           </Link>
           <Link
-            href="/cliente/crm"
-            className={clsx(
-              "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
-              pathname.startsWith("/cliente/crm")
-                ? "bg-blue-50 text-blue-700 font-medium"
-                : "text-slate-500 hover:bg-slate-50"
-            )}
-          >
-            📋 CRM
-          </Link>
-          <Link
             href="/cliente/inbox"
             className={clsx(
               "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
@@ -107,6 +96,17 @@ export function ClientPortalHeader({
             )}
           >
             💬 Mensagens
+          </Link>
+          <Link
+            href="/cliente/agente-ia"
+            className={clsx(
+              "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
+              pathname.startsWith("/cliente/agente-ia")
+                ? "bg-violet-50 text-violet-700 font-medium"
+                : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            🤖 Agente de IA
           </Link>
         </nav>
       </div>
