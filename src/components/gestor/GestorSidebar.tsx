@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { clsx } from "clsx";
 import { useState, useEffect } from "react";
@@ -17,6 +18,7 @@ type Client = {
   name: string;
   email: string;
   color: string;
+  logoUrl?: string;
   cplTarget: number;
   adAccounts: AdAccount[];
 };
@@ -137,10 +139,14 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
           <div className="px-5 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
               <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-black"
-                style={{ backgroundColor: NEXO_GREEN }}
+                className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-black overflow-hidden"
+                style={activeClient.logoUrl ? undefined : { backgroundColor: NEXO_GREEN }}
               >
-                {activeClient.name.charAt(0).toUpperCase()}
+                {activeClient.logoUrl ? (
+                  <Image src={activeClient.logoUrl} alt={activeClient.name} fill className="object-cover" />
+                ) : (
+                  activeClient.name.charAt(0).toUpperCase()
+                )}
               </span>
               <div className="min-w-0">
                 <p className="font-semibold text-slate-900 truncate text-sm">{activeClient.name}</p>
