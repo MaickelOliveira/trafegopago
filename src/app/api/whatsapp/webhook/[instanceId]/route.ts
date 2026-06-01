@@ -780,9 +780,11 @@ export async function POST(
     // Mensagem enviada por você (gestor via WhatsApp ou automação/IA)
     if (fromMe) {
       // Se a mensagem foi enviada pela própria plataforma (automação/IA), o eco não deve pausar a IA
-      if (text.trim()) {
-        const consumed = consumeSent(phone, text.trim());
-        console.log(`[webhook/${instanceId}] fromMe consumed=${consumed} phone=${phone} text="${text.trim().slice(0, 80)}"`);
+      const textTrimmed = text.trim();
+      console.log(`[webhook/${instanceId}] fromMe=true phone=${phone} textLen=${textTrimmed.length} text="${textTrimmed.slice(0, 80)}"`);
+      if (textTrimmed) {
+        const consumed = consumeSent(phone, textTrimmed);
+        console.log(`[webhook/${instanceId}] consumeSent result=${consumed} phone=${phone} text="${textTrimmed.slice(0, 80)}"`);
         if (consumed) {
           return NextResponse.json({ ok: true }); // eco da plataforma — não pausa IA
         }

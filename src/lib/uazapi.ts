@@ -1,4 +1,5 @@
 import { getConfig } from "./clients";
+import { markSent as markSentRegistry } from "./wppconnect-sent";
 
 function base(): string {
   const url = process.env.UAZAPI_SERVER
@@ -249,8 +250,9 @@ function typingDelay(text: string): number {
 
 export async function sendText(token: string, phone: string, message: string, delay?: number): Promise<boolean> {
   // Marca antes de enviar para que o eco fromMe não pause a IA
-  const { markSent } = await import("./wppconnect-sent");
-  markSent(phone.replace(/\D/g, ""), message);
+  const phoneKey = phone.replace(/\D/g, "");
+  markSentRegistry(phoneKey, message);
+  console.log(`[uazapi/sendText] markSent phone=${phoneKey} msg="${message.slice(0, 60)}"`);
 
   const url = `${base()}/send/text`;
   const ms = delay !== undefined ? delay : typingDelay(message);
