@@ -1,23 +1,23 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getEmployeeById } from "@/lib/employees";
+import { getClientById } from "@/lib/clients";
 import { ConfiguracoesView } from "@/components/cliente/ConfiguracoesView";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClienteConfiguracoesPage() {
   const session = await getSession();
-  if (!session || session.role !== "employee" || !session.employeeId) {
-    redirect("/cliente/crm");
+  if (!session || session.role !== "client" || !session.clientId) {
+    redirect("/cliente");
   }
 
-  const emp = getEmployeeById(session.employeeId);
-  if (!emp || !emp.active) redirect("/login");
+  const client = getClientById(session.clientId);
+  if (!client) redirect("/login");
 
   return (
     <ConfiguracoesView
-      employeeName={emp.name}
-      currentLogoUrl={emp.logoUrl ?? null}
+      name={client.name}
+      currentLogoUrl={client.logoUrl ?? null}
     />
   );
 }

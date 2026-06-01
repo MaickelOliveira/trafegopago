@@ -4,11 +4,11 @@ import { useState, useRef } from "react";
 import Image from "next/image";
 
 type Props = {
-  employeeName: string;
+  name: string;
   currentLogoUrl?: string | null;
 };
 
-export function ConfiguracoesView({ employeeName, currentLogoUrl }: Props) {
+export function ConfiguracoesView({ name, currentLogoUrl }: Props) {
   // ── Logo ──────────────────────────────────────────────────────────────────
   const [logoUrl, setLogoUrl] = useState<string | null>(currentLogoUrl ?? null);
   const [logoUploading, setLogoUploading] = useState(false);
@@ -111,7 +111,7 @@ export function ConfiguracoesView({ employeeName, currentLogoUrl }: Props) {
     }
   }
 
-  const initials = employeeName.charAt(0).toUpperCase();
+  const initials = name.charAt(0).toUpperCase();
 
   return (
     <div className="max-w-lg mx-auto py-8 px-4 space-y-8">

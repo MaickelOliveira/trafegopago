@@ -12,14 +12,14 @@ export function ClientPortalHeader({
   clientColor,
   isEmployee = false,
   permissions,
-  employeeLogoUrl,
+  clientLogoUrl,
   employeeName,
 }: {
   clientName: string;
   clientColor: string;
   isEmployee?: boolean;
   permissions?: EmployeePermissions;
-  employeeLogoUrl?: string | null;
+  clientLogoUrl?: string | null;
   employeeName?: string;
 }) {
   const router = useRouter();
@@ -56,10 +56,10 @@ export function ClientPortalHeader({
         <div className="flex items-center gap-3">
           <div
             className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white overflow-hidden"
-            style={employeeLogoUrl ? undefined : { backgroundColor: clientColor }}
+            style={!isEmployee && clientLogoUrl ? undefined : { backgroundColor: clientColor }}
           >
-            {isEmployee && employeeLogoUrl ? (
-              <Image src={employeeLogoUrl} alt="Logo" fill className="object-cover" />
+            {!isEmployee && clientLogoUrl ? (
+              <Image src={clientLogoUrl} alt="Logo" fill className="object-cover" />
             ) : (
               clientName.charAt(0)
             )}
@@ -178,8 +178,8 @@ export function ClientPortalHeader({
             </Link>
           )}
 
-          {/* Configurações — somente funcionários */}
-          {isEmployee && (
+          {/* Configurações — somente clientes donos */}
+          {!isEmployee && (
             <Link
               href="/cliente/configuracoes"
               className={clsx(

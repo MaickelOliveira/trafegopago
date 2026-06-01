@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getEmployeeById, updateEmployee } from "@/lib/employees";
+import { getClientById, upsertClient } from "@/lib/clients";
 import { createHash } from "crypto";
 
 function hash(pw: string) {
@@ -9,13 +9,13 @@ function hash(pw: string) {
 
 export async function PATCH(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "employee" || !session.employeeId) {
+  if (!session || session.role !== "client" || !session.clientId) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
-  const emp = getEmployeeById(session.employeeId);
-  if (!emp || !emp.active) {
-    return NextResponse.json({ error: "Funcionário não encontrado ou bloqueado" }, { status: 403 });
+  const client = getClientById(session.clientId);
+  if (!client) {
+    return NextResponse.json({ error: "Cliente não encontrado" }, { status: 403 });
   }
 
   const body = await req.json();
@@ -27,7 +27,7 @@ export async function PATCH(req: NextRequest) {
     if (!currentPassword || !newPassword) {
       return NextResponse.json({ error: "Informe a senha atual e a nova senha" }, { status: 400 });
     }
-    if (hash(currentPassword) !== emp.passwordHash) {
+    if (hash(currentPassword) !== client.passwordHash) {
       return NextResponse.json({ error: "Senha atual incorreta" }, { status: 400 });
     }
     if (newPassword.length < 6) {
@@ -45,6 +45,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Nada para atualizar" }, { status: 400 });
   }
 
-  const updated = updateEmployee(emp.id, patch);
-  return NextResponse.json({ ok: true, logoUrl: updated?.logoUrl ?? null });
+  upsertClient({ ...client, ...patch });
+  return NextResponse.json({ ok: true, logoUrl: patch.logoUrl ?? client.logoUrl ?? null });
 }

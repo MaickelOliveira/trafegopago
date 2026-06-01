@@ -55,6 +55,7 @@ export type Client = {
   name: string;
   email: string;
   passwordHash: string;
+  logoUrl?: string;
   color: string;
   cplTarget: number;
   funnelType: FunnelType;
