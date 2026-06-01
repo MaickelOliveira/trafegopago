@@ -9,8 +9,17 @@ import QRCode from "qrcode";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "client") {
+  if (!session || (session.role !== "client" && session.role !== "employee")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Funcionários precisam da permissão canManageQR
+  if (session.role === "employee") {
+    const { getEmployeeById } = await import("@/lib/employees");
+    const emp = session.employeeId ? getEmployeeById(session.employeeId) : null;
+    if (!emp || !emp.active || !emp.permissions?.canManageQR) {
+      return NextResponse.json({ error: "Sem permissão para gerar QR Code" }, { status: 403 });
+    }
   }
 
   const clientId = session.clientId!;

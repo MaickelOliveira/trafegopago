@@ -6,12 +6,13 @@ import { WhatsAppStatus } from "@/components/crm/WhatsAppStatus";
 import type { Lead } from "@/lib/leads";
 import type { Funnel } from "@/lib/funnels";
 
-export function ClientCrm({ clientId, clientName, clientColor, initialLeads, initialFunnels }: {
+export function ClientCrm({ clientId, clientName, clientColor, initialLeads, initialFunnels, canDeleteLeads = true }: {
   clientId: string;
   clientName: string;
   clientColor: string;
   initialLeads: Lead[];
   initialFunnels: Funnel[];
+  canDeleteLeads?: boolean;
 }) {
   const [funnels, setFunnels] = useState<Funnel[]>(initialFunnels);
   const [creating, setCreating] = useState(false);
@@ -64,6 +65,7 @@ export function ClientCrm({ clientId, clientName, clientColor, initialLeads, ini
             initialFunnels={funnels}
             clients={client}
             selectedClient={clientId}
+            canDeleteLeads={canDeleteLeads}
           />
         )}
       </div>

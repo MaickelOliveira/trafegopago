@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ClienteInboxPage() {
   const session = await getSession();
-  if (!session || session.role !== "client" || !session.clientId) redirect("/login");
+  if (!session || (session.role !== "client" && session.role !== "employee") || !session.clientId) redirect("/login");
 
   const clientId = session.clientId;
   const conversations = getAllConversationsByClientId(clientId);

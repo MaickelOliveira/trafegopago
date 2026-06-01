@@ -8,9 +8,10 @@ const COOKIE = "tp_session";
 
 export type JWTPayload = {
   sub: string;
-  role: "manager" | "client";
+  role: "manager" | "client" | "employee";
   name: string;
   clientId?: string;
+  employeeId?: string;       // presente quando role === "employee"
 };
 
 export async function signToken(payload: JWTPayload): Promise<string> {

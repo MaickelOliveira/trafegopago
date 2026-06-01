@@ -103,12 +103,14 @@ export function LeadModal({
   onClose,
   onUpdated,
   onDeleted,
+  canDeleteLeads = true,
 }: {
   lead: Lead;
   funnel: Funnel;
   onClose: () => void;
   onUpdated: (lead: Lead) => void;
   onDeleted: (id: string) => void;
+  canDeleteLeads?: boolean;
 }) {
   const [lead, setLead] = useState(initial);
   const [tab, setTab] = useState<"details" | "chat">(initial.source === "whatsapp" ? "chat" : "details");
@@ -571,7 +573,11 @@ export function LeadModal({
         {/* Footer (only on details tab) */}
         {tab === "details" && (
           <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 shrink-0">
-            <button onClick={remove} className="text-sm text-red-500 hover:text-red-700 transition">Remover lead</button>
+            {canDeleteLeads ? (
+              <button onClick={remove} className="text-sm text-red-500 hover:text-red-700 transition">Remover lead</button>
+            ) : (
+              <span />
+            )}
             <div className="flex gap-2">
               {editing && (
                 <>

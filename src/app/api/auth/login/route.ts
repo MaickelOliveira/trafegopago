@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { signToken, setSessionCookie } from "@/lib/auth";
 import { getConfig, getClientByEmail } from "@/lib/clients";
+import { getEmployeeByEmail } from "@/lib/employees";
 
 export async function POST(req: NextRequest) {
   const { email, password } = await req.json();
@@ -47,7 +48,28 @@ export async function POST(req: NextRequest) {
   }
 
   const client = getClientByEmail(email);
-  if (!client) return NextResponse.json({ error: "Credenciais inválidas" }, { status: 401 });
+  if (!client) {
+    // Tenta como funcionário
+    const employee = getEmployeeByEmail(email);
+    if (!employee) return NextResponse.json({ error: "Credenciais inválidas" }, { status: 401 });
+
+    const validEmp = bcrypt.compareSync(password, employee.passwordHash);
+    if (!validEmp) return NextResponse.json({ error: "Credenciais inválidas" }, { status: 401 });
+
+    if (!employee.active) {
+      return NextResponse.json({ error: "Acesso bloqueado. Contate seu gestor." }, { status: 403 });
+    }
+
+    const token = await signToken({
+      sub: employee.id,
+      role: "employee",
+      name: employee.name,
+      clientId: employee.clientId,
+      employeeId: employee.id,
+    });
+    await setSessionCookie(token);
+    return NextResponse.json({ role: "employee", redirect: "/cliente" });
+  }
 
   const valid = bcrypt.compareSync(password, client.passwordHash);
   if (!valid) return NextResponse.json({ error: "Credenciais inválidas" }, { status: 401 });

@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
-  if (!session || session.role !== "manager") {
+  if (!session || (session.role !== "manager" && session.role !== "client" && session.role !== "employee")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
@@ -62,9 +62,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
-  if (!session || session.role !== "manager") {
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Funcionários só podem apagar se tiverem permissão canDeleteLeads
+  if (session.role === "employee") {
+    const { getEmployeeById } = await import("@/lib/employees");
+    const emp = session.employeeId ? getEmployeeById(session.employeeId) : null;
+    if (!emp || !emp.active || !emp.permissions?.canDeleteLeads) {
+      return NextResponse.json({ error: "Sem permissão para apagar leads" }, { status: 403 });
+    }
+  } else if (session.role !== "manager" && session.role !== "client") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
   const { id } = await params;
   const ok = deleteLead(id);
   if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });

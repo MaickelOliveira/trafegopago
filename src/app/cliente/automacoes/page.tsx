@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ClienteAutomacoesPage() {
   const session = await getSession();
-  if (!session || session.role !== "client") redirect("/login");
+  if (!session || session.role !== "client") redirect("/cliente/crm"); // funcionários sem permissão vão ao CRM
 
   const clientId = session.clientId!;
   const client = getClientById(clientId);

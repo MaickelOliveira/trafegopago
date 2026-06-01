@@ -9,7 +9,7 @@ import QRCode from "qrcode";
 
 export async function GET() {
   const session = await getSession();
-  if (!session || session.role !== "client") {
+  if (!session || (session.role !== "client" && session.role !== "employee")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
