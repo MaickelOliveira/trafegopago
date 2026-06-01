@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { clsx } from "clsx";
 import { MetricsChart } from "@/components/dashboard/MetricsChart";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics";
@@ -12,7 +13,7 @@ import type { CampaignSalesStats } from "@/lib/sales-types";
 import { normalizeCampaignName } from "@/lib/sales-types";
 
 type AdAccount = { id: string; name: string; platform: string };
-type Client = { id: string; name: string; color: string; cplTarget: number; funnelType?: FunnelType; adAccounts: AdAccount[]; tintimCode?: string };
+type Client = { id: string; name: string; color: string; logoUrl?: string; cplTarget: number; funnelType?: FunnelType; adAccounts: AdAccount[]; tintimCode?: string };
 
 type TintimData = {
   byCampaign: Record<string, CampaignSalesStats>;
@@ -186,10 +187,14 @@ export function ClientAccountView({
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <span
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-bold text-white"
-            style={{ backgroundColor: client.color }}
+            className="relative flex h-10 w-10 items-center justify-center rounded-xl text-lg font-bold text-white overflow-hidden"
+            style={client.logoUrl ? undefined : { backgroundColor: client.color }}
           >
-            {client.name.charAt(0)}
+            {client.logoUrl ? (
+              <Image src={client.logoUrl} alt={client.name} fill className="object-cover" />
+            ) : (
+              client.name.charAt(0)
+            )}
           </span>
           <div>
             <h1 className="text-xl font-bold text-slate-900">{client.name}</h1>

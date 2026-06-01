@@ -1,5 +1,6 @@
 import { getClients } from "@/lib/clients";
 import Link from "next/link";
+import Image from "next/image";
 
 export default async function GestorHome() {
   const clients = getClients().map(({ passwordHash: _, ...c }) => c);
@@ -22,10 +23,14 @@ export default async function GestorHome() {
           >
             <div className="flex items-start gap-4">
               <span
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-white"
-                style={{ backgroundColor: client.color }}
+                className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-white overflow-hidden"
+                style={client.logoUrl ? undefined : { backgroundColor: client.color }}
               >
-                {client.name.charAt(0).toUpperCase()}
+                {client.logoUrl ? (
+                  <Image src={client.logoUrl} alt={client.name} fill className="object-cover" />
+                ) : (
+                  client.name.charAt(0).toUpperCase()
+                )}
               </span>
               <div className="flex-1 min-w-0">
                 <h2 className="font-semibold text-slate-900 group-hover:text-blue-600 transition truncate">
