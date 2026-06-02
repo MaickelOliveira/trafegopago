@@ -94,7 +94,7 @@ export function CrmClient({ clients, initialLeads, initialFunnels, selectedClien
   }, [selectedClient]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex flex-col min-h-full">
       <div className="flex items-center justify-between px-6 lg:px-8 pt-6 pb-0 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">CRM</h1>
@@ -115,7 +115,7 @@ export function CrmClient({ clients, initialLeads, initialFunnels, selectedClien
         </div>
       )}
 
-      <div className="flex-1 min-h-0 p-6 lg:p-8 pt-4">
+      <div className="p-6 lg:p-8 pt-4">
         {creating ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">

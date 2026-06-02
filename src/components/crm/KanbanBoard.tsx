@@ -674,7 +674,7 @@ export function KanbanBoard({
   if (!funnel) return <p className="text-slate-400 text-sm">Nenhum funil encontrado.</p>;
 
   return (
-    <div className="flex flex-col h-full gap-3">
+    <div className="flex flex-col gap-3">
 
       {/* Stats bar */}
       <div className="grid grid-cols-4 gap-3 flex-shrink-0">
@@ -889,7 +889,7 @@ export function KanbanBoard({
       )}
 
       {/* Kanban */}
-      <div className="flex gap-3 overflow-x-auto flex-1 min-h-0 pb-2">
+      <div className="flex gap-3 overflow-x-auto pb-4">
         {funnel.columns.map((col) => {
           const colLeads = byCol(col.id);
           const colValue = colLeads.reduce((s, l) => s + (l.value ?? 0), 0);
@@ -923,7 +923,7 @@ export function KanbanBoard({
 
               {/* Cards */}
               <div
-                className="flex-1 rounded-b-xl border-x border-b p-2 space-y-2 overflow-y-auto"
+                className="rounded-b-xl border-x border-b p-2 space-y-2"
                 style={{ background: hexToLight(col.color) + "88", borderColor: col.color + "55" }}
               >
                 {colLeads.map((lead) => {
