@@ -460,8 +460,8 @@ export function KanbanBoard({
   const draggingId = useRef<string | null>(null);
 
   // Multi-seleção de leads
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkAction, setBulkAction] = useState(false); // mostra toolbar
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [bulkMoveCol, setBulkMoveCol] = useState("");
 
@@ -478,6 +478,7 @@ export function KanbanBoard({
   function clearSelection() {
     setSelectedIds(new Set());
     setBulkMoveCol("");
+    setSelectionMode(false);
   }
 
   function selectAll() {
@@ -902,6 +903,24 @@ export function KanbanBoard({
           )}
         </button>
 
+        {/* Selecionar vários */}
+        <button
+          onClick={() => {
+            setSelectionMode((v) => {
+              if (v) clearSelection();
+              return !v;
+            });
+          }}
+          className={clsx(
+            "rounded-lg border px-3 py-1.5 text-xs font-semibold transition shrink-0",
+            selectionMode
+              ? "border-blue-400 bg-blue-100 text-blue-700"
+              : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+          )}
+        >
+          ☑ {selectionMode ? "Cancelar seleção" : "Selecionar vários"}
+        </button>
+
         <button
           onClick={() => setShowNewForm(true)}
           className="ml-auto rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition shrink-0"
@@ -1056,10 +1075,10 @@ export function KanbanBoard({
                   return (
                     <div
                       key={lead.id}
-                      draggable={selectedIds.size === 0}
+                      draggable={!selectionMode}
                       onDragStart={() => onDragStart(lead.id)}
                       onMouseEnter={() => { if (lead.source === "whatsapp") prefetchConversation(lead.phone, lead.clientId); }}
-                      onClick={() => { if (selectedIds.size > 0) { toggleSelect(lead.id, { stopPropagation: () => {} } as React.MouseEvent); } else { setSelected(lead); } }}
+                      onClick={() => { if (selectionMode) { toggleSelect(lead.id, { stopPropagation: () => {} } as React.MouseEvent); } else { setSelected(lead); } }}
                       className={clsx(
                         "rounded-lg border bg-white p-3 shadow-sm cursor-pointer hover:shadow-md transition select-none",
                         selectedIds.has(lead.id)
@@ -1069,13 +1088,15 @@ export function KanbanBoard({
                     >
                       {/* Checkbox + Client badge */}
                       <div className="flex items-center gap-1 mb-1.5">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(lead.id)}
-                          onChange={() => {}}
-                          onClick={(e) => toggleSelect(lead.id, e)}
-                          className="accent-blue-600 cursor-pointer shrink-0"
-                        />
+                        {selectionMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(lead.id)}
+                            onChange={() => {}}
+                            onClick={(e) => toggleSelect(lead.id, e)}
+                            className="accent-blue-600 cursor-pointer shrink-0"
+                          />
+                        )}
                         {client && (
                           <>
                             <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: client.color }} />
