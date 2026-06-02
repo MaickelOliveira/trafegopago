@@ -342,6 +342,21 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
 
+  // ── Proteção contra criação de leads falsos no history sync do reconect ──
+  // Situação 1: mensagem enviada por nós (fromMe=true) para um contato que ainda
+  //             não é lead → nunca deve criar lead. Leads só nascem quando o
+  //             contato MANDA mensagem para nós, não o contrário.
+  if (isNew && fromMe) {
+    console.log(`[WPPConnect Webhook] fromMe + lead novo — ignorado (history sync de envios) phone=${phone}`);
+    return NextResponse.json({ ok: true });
+  }
+  // Situação 2: mensagem sem timestamp → não veio em tempo real, é history sync
+  //             cujo campo timestamp não foi preenchido pelo WPPConnect.
+  if (isNew && msgTimestamp === 0) {
+    console.log(`[WPPConnect Webhook] sem timestamp + lead novo — ignorado (history sync sem ts) phone=${phone}`);
+    return NextResponse.json({ ok: true });
+  }
+
   // ── 1. Grava o lead IMEDIATAMENTE (sem esperar resolução do LID) ──
   const savedLead = upsertLeadByPhone(clientId, phone, {
     clientId,
