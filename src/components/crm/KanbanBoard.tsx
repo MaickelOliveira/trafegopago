@@ -459,6 +459,59 @@ export function KanbanBoard({
   const [saving, setSaving]   = useState(false);
   const draggingId = useRef<string | null>(null);
 
+  // Multi-seleção de leads
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState(false); // mostra toolbar
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [bulkMoveCol, setBulkMoveCol] = useState("");
+
+  function toggleSelect(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+    setBulkMoveCol("");
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(filtered.map((l) => l.id)));
+  }
+
+  async function executeBulk(action: "delete" | "move" | "ai", extra?: Record<string, unknown>) {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+
+    if (action === "delete") {
+      if (!confirm(`Excluir ${ids.length} lead${ids.length !== 1 ? "s" : ""}? Essa ação não pode ser desfeita.`)) return;
+    }
+
+    setBulkProcessing(true);
+    await fetch("/api/crm/leads/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ids, ...extra }),
+    });
+
+    if (action === "delete") {
+      setLeads((prev) => prev.filter((l) => !selectedIds.has(l.id)));
+    } else if (action === "move" && extra?.colId) {
+      setLeads((prev) => prev.map((l) => selectedIds.has(l.id) ? { ...l, status: extra.colId as string } : l));
+    } else if (action === "ai") {
+      const paused = !!extra?.aiPaused;
+      setLeads((prev) => prev.map((l) => selectedIds.has(l.id) ? { ...l, aiPaused: paused } : l));
+    }
+
+    clearSelection();
+    setBulkProcessing(false);
+  }
+
   // Agente Kanban — liga/desliga
   const [agentEnabled, setAgentEnabled] = useState(
     clients.find((c) => c.id === (selectedClient ?? clients[0]?.id))?.kanbanAgentEnabled !== false
@@ -888,6 +941,77 @@ export function KanbanBoard({
         </div>
       )}
 
+      {/* ── Barra de ações em lote ── */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-30 flex items-center gap-2 flex-wrap rounded-xl border border-blue-300 bg-blue-50 px-4 py-2.5 shadow-md">
+          <span className="text-sm font-bold text-blue-800">{selectedIds.size} lead{selectedIds.size !== 1 ? "s" : ""} selecionado{selectedIds.size !== 1 ? "s" : ""}</span>
+
+          {/* Mover para coluna */}
+          <select
+            value={bulkMoveCol}
+            onChange={(e) => setBulkMoveCol(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-blue-400"
+          >
+            <option value="">↗ Mover para...</option>
+            {funnel.columns.map((c) => (
+              <option key={c.id} value={c.id}>{c.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => { if (bulkMoveCol) executeBulk("move", { colId: bulkMoveCol }); }}
+            disabled={!bulkMoveCol || bulkProcessing}
+            className="rounded-lg bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 hover:bg-blue-700 disabled:opacity-40 transition"
+          >
+            {bulkProcessing ? "..." : "Mover"}
+          </button>
+
+          <div className="w-px h-4 bg-blue-200" />
+
+          {/* Pausar/Reativar IA */}
+          <button
+            onClick={() => executeBulk("ai", { aiPaused: true })}
+            disabled={bulkProcessing}
+            className="rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-xs font-semibold px-3 py-1.5 hover:bg-amber-100 disabled:opacity-40 transition"
+          >
+            ⏸ Pausar IA
+          </button>
+          <button
+            onClick={() => executeBulk("ai", { aiPaused: false })}
+            disabled={bulkProcessing}
+            className="rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold px-3 py-1.5 hover:bg-violet-100 disabled:opacity-40 transition"
+          >
+            🤖 Reativar IA
+          </button>
+
+          <div className="w-px h-4 bg-blue-200" />
+
+          {/* Selecionar todos */}
+          <button
+            onClick={selectAll}
+            className="rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-semibold px-3 py-1.5 hover:bg-slate-50 transition"
+          >
+            ☑ Todos ({filtered.length})
+          </button>
+
+          {/* Excluir */}
+          <button
+            onClick={() => executeBulk("delete")}
+            disabled={bulkProcessing}
+            className="rounded-lg bg-red-600 text-white text-xs font-semibold px-3 py-1.5 hover:bg-red-700 disabled:opacity-40 transition"
+          >
+            🗑 Excluir
+          </button>
+
+          {/* Limpar seleção */}
+          <button
+            onClick={clearSelection}
+            className="ml-auto rounded-lg border border-blue-200 text-blue-500 text-xs font-semibold px-3 py-1.5 hover:bg-blue-100 transition"
+          >
+            ✕ Cancelar
+          </button>
+        </div>
+      )}
+
       {/* Kanban */}
       <div className="flex gap-3 overflow-x-auto pb-4">
         {funnel.columns.map((col) => {
@@ -932,19 +1056,33 @@ export function KanbanBoard({
                   return (
                     <div
                       key={lead.id}
-                      draggable
+                      draggable={selectedIds.size === 0}
                       onDragStart={() => onDragStart(lead.id)}
                       onMouseEnter={() => { if (lead.source === "whatsapp") prefetchConversation(lead.phone, lead.clientId); }}
-                      onClick={() => setSelected(lead)}
-                      className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm cursor-pointer hover:shadow-md hover:border-blue-300 transition select-none"
-                    >
-                      {/* Client badge */}
-                      {client && (
-                        <div className="flex items-center gap-1 mb-1.5">
-                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: client.color }} />
-                          <span className="text-xs text-slate-400 truncate">{client.name}</span>
-                        </div>
+                      onClick={() => { if (selectedIds.size > 0) { toggleSelect(lead.id, { stopPropagation: () => {} } as React.MouseEvent); } else { setSelected(lead); } }}
+                      className={clsx(
+                        "rounded-lg border bg-white p-3 shadow-sm cursor-pointer hover:shadow-md transition select-none",
+                        selectedIds.has(lead.id)
+                          ? "border-blue-400 ring-2 ring-blue-300 ring-offset-1"
+                          : "border-slate-200 hover:border-blue-300"
                       )}
+                    >
+                      {/* Checkbox + Client badge */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(lead.id)}
+                          onChange={() => {}}
+                          onClick={(e) => toggleSelect(lead.id, e)}
+                          className="accent-blue-600 cursor-pointer shrink-0"
+                        />
+                        {client && (
+                          <>
+                            <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: client.color }} />
+                            <span className="text-xs text-slate-400 truncate">{client.name}</span>
+                          </>
+                        )}
+                      </div>
 
                       <div className="flex items-start justify-between gap-1 mb-1">
                         <p className="font-semibold text-slate-800 text-sm leading-tight line-clamp-1">{lead.name}</p>
