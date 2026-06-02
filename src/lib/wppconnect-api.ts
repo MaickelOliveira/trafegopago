@@ -308,6 +308,62 @@ export async function sendMedia(
   }
 }
 
+// Envia mídia a partir de base64 já resolvido (sem baixar de URL)
+export async function sendMediaFromBase64(
+  sessionName: string,
+  token: string,
+  phone: string,
+  base64DataUri: string, // data:mime;base64,...
+  mimeType: string,
+  caption?: string,
+  isLid = false,
+): Promise<boolean> {
+  if (!base()) return false;
+  try {
+    const phoneFormatted = isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
+    const phoneKey = phoneFormatted.replace(/@.*/, "").replace(/\D/g, "");
+    markPhoneSending(phoneKey);
+    if (caption?.trim()) markSent(phoneKey, caption.trim());
+
+    const rawExt = mimeType.split("/")[1]?.split(";")[0] ?? "bin";
+    const ext = rawExt === "jpeg" ? "jpg" : rawExt;
+    const filename = `file.${ext}`;
+    const type = mimeType.startsWith("image/") ? "image"
+               : mimeType.startsWith("video/") ? "video"
+               : mimeType.startsWith("audio/") ? "audio"
+               : "document";
+
+    if (type === "audio") {
+      const res = await fetch(`${base()}/api/${sessionName}/send-voice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted, base64: base64DataUri, ...(isLid ? { isLid: true } : {}) }),
+      });
+      if (!res.ok) console.error(`[wppconnect-api] sendMediaFromBase64 send-voice FAILED status=${res.status}`);
+      return res.ok;
+    }
+    if (type === "image") {
+      const res = await fetch(`${base()}/api/${sessionName}/send-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted, base64: base64DataUri, filename, caption: caption ?? "", ...(isLid ? { isLid: true } : {}) }),
+      });
+      if (!res.ok) console.error(`[wppconnect-api] sendMediaFromBase64 send-image FAILED status=${res.status}`);
+      return res.ok;
+    }
+    const res = await fetch(`${base()}/api/${sessionName}/send-file-base64`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted, base64: base64DataUri, filename, caption: caption ?? "", ...(isLid ? { isLid: true } : {}) }),
+    });
+    if (!res.ok) console.error(`[wppconnect-api] sendMediaFromBase64 send-file-base64 FAILED status=${res.status}`);
+    return res.ok;
+  } catch (e) {
+    console.error(`[wppconnect-api] sendMediaFromBase64 EXCEPTION session=${sessionName}`, e);
+    return false;
+  }
+}
+
 // Lista todas as sessões (se o servidor suportar)
 export async function listSessions(): Promise<{ session: string; status: string }[]> {
   if (!base()) return [];

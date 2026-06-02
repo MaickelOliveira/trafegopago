@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readFileSync, existsSync } from "fs";
+import path from "path";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 import { getFunnels } from "@/lib/funnels";
 import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead } from "@/lib/leads";
@@ -9,11 +11,11 @@ import { markSent, consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
-import { sendText as wppSendText, resolveContactPhone, getContactName } from "@/lib/wppconnect-api";
+import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName } from "@/lib/wppconnect-api";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
-import type { AgentConfig } from "@/lib/clients";
+import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
 import {
@@ -25,6 +27,65 @@ import {
 } from "@/lib/pending-responses";
 
 export const dynamic = "force-dynamic";
+
+// ── Extrai marcadores [MIDIA:nome] do texto da IA ──
+function extractMediaMarkers(text: string): { clean: string; names: string[] } {
+  const pattern = /\[MIDIA:([^\]]+)\]/gi;
+  const names: string[] = [];
+  const clean = text.replace(pattern, (_, name: string) => {
+    names.push(name.trim().toLowerCase());
+    return "";
+  }).replace(/\s{2,}/g, " ").trim();
+  return { clean, names };
+}
+
+// ── Envia mídias marcadas via WPPConnect ──
+async function sendWppMarkedMedia(
+  sessionName: string,
+  token: string,
+  phone: string,
+  names: string[],
+  library: AgentMedia[],
+  isLid: boolean,
+): Promise<void> {
+  const libraryNames = library.map((m) => m.name?.toLowerCase());
+  for (const name of names) {
+    const media = library.find((m) => m.name?.toLowerCase() === name);
+    if (!media) {
+      console.warn(`[WPPConnect sendWppMarkedMedia] Mídia "${name}" não encontrada. Library: ${JSON.stringify(libraryNames)}`);
+      continue;
+    }
+    try {
+      // Arquivo local: lê do disco e envia como base64
+      const localMatch = media.url.match(/\/api\/uploads\/([^/?#]+)$/);
+      if (localMatch) {
+        const filePath = path.join(process.cwd(), "data", "uploads", localMatch[1]);
+        if (!existsSync(filePath)) {
+          console.warn(`[WPPConnect sendWppMarkedMedia] Arquivo não encontrado: ${filePath}`);
+          continue;
+        }
+        const buffer = readFileSync(filePath);
+        const ext = localMatch[1].split(".").pop()?.toLowerCase() ?? "";
+        const mimeMap: Record<string, string> = {
+          jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+          gif: "image/gif", webp: "image/webp", mp4: "video/mp4",
+          pdf: "application/pdf",
+        };
+        const mime = mimeMap[ext] ?? "application/octet-stream";
+        const base64DataUri = `data:${mime};base64,${buffer.toString("base64")}`;
+        const result = await sendMediaFromBase64(sessionName, token, phone, base64DataUri, mime, media.caption, isLid);
+        console.log(`[WPPConnect sendWppMarkedMedia] "${name}" (base64 local) result=${result}`);
+      } else {
+        // URL externa: usa sendMedia padrão (com download)
+        const result = await wppSendMedia(sessionName, token, phone, media.url, media.caption, isLid);
+        console.log(`[WPPConnect sendWppMarkedMedia] "${name}" (url externa) result=${result}`);
+      }
+    } catch (e) {
+      console.error(`[WPPConnect sendWppMarkedMedia] Erro ao enviar "${name}":`, e);
+    }
+    await new Promise<void>((r) => setTimeout(r, 700));
+  }
+}
 
 // ── Resumo de conversa via WPPConnect ──
 
@@ -526,16 +587,25 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
+    // Extrai marcadores [MIDIA:nome] do texto antes de enviar
+    const { clean, names } = extractMediaMarkers(reply);
+    const textToSend = clean || reply;
     const chunks = agentCfg?.splitMessages
-      ? splitMessage(reply, agentCfg.maxMessageLength ?? 300)
-      : [reply];
+      ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
+      : [textToSend];
     // Marca cada chunk antes de enviar (evita pausar IA no onselfmessage de volta)
     for (const chunk of chunks) markSent(phone, chunk);
-    // Salva a resposta completa no histórico (uma única vez)
-    addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, { connId });
+    // Salva texto limpo (sem marcadores) no histórico
+    addMessage(phone, { role: "assistant", content: textToSend, ts: Date.now() }, clientId, { connId });
     // Envia cada chunk separadamente
     for (const chunk of chunks) {
       await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, chunk, isLidPhone);
+    }
+    // Envia mídias referenciadas (se houver)
+    if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
+      await sendWppMarkedMedia(wppSession!.sessionName, wppSession!.sessionToken, phone, names, agentCfg.mediaLibrary, isLidPhone);
+    } else if (names.length > 0) {
+      console.warn(`[WPPConnect sendReply] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
     }
   }
 
