@@ -105,12 +105,19 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
 const TOOLS: Tool[] = [{ functionDeclarations: TOOL_DECLARATIONS }];
 
 function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[]): string {
-  const today = new Date().toLocaleDateString("pt-BR", {
+  const now = new Date();
+  const today = now.toLocaleDateString("pt-BR", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
+    timeZone: "America/Sao_Paulo",
   });
+  const time = now.toLocaleTimeString("pt-BR", {
+    hour: "2-digit", minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
+  const dateTimeInfo = `[Data e horário atual: ${today}, ${time} (horário de Brasília)]`;
 
   const base = `Você é um assistente de WhatsApp para ${clientName}.
-Data atual: ${today}
+Data e horário atual: ${today}, ${time} (horário de Brasília)
 
 Você pode:
 - Verificar horários disponíveis e agendar compromissos no Google Calendar
@@ -139,7 +146,7 @@ Regras:
     : "";
 
   if (customPrompt?.trim()) {
-    return `${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}`;
+    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}`;
   }
   return `${base}${mediaPart}`;
 }
