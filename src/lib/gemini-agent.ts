@@ -160,7 +160,11 @@ export async function runGeminiAgent(
   if (!agentCfg?.enabled) return { text: "", actions: [] };
 
   const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
-  if (!apiKey) return { text: "", actions: [] };
+  if (!apiKey) {
+    console.error(`[gemini-agent] SEM API KEY — clientId=${clientId} phone=${phone} agentCfg.geminiApiKey=${agentCfg.geminiApiKey ? "definida" : "undefined"} GEMINI_API_KEY=${process.env.GEMINI_API_KEY ? "definida" : "undefined"}`);
+    return { text: "", actions: [] };
+  }
+  console.log(`[gemini-agent] Iniciando — clientId=${clientId} phone=${phone} apiKey=${apiKey.slice(0, 8)}...`);
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const mediaLibrary = agentCfg.mediaLibrary;

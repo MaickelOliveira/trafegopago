@@ -464,13 +464,19 @@ export async function POST(
 
   // ── Verifica IA ──
   const currentLead = getLeadByPhone(clientId, phone);
-  if (currentLead?.aiPaused) return NextResponse.json({ ok: true });
+  if (currentLead?.aiPaused) {
+    console.log(`[WPPConnect IA] phone=${phone} clientId=${clientId} — IA pausada (aiPaused=true)`);
+    return NextResponse.json({ ok: true });
+  }
 
   const activeClient = clientId !== "sem-cliente" ? getClientById(clientId) : null;
   const agentCfg = activeClient ? getAgentConfigForConnection(activeClient, connId) : undefined;
   const geminiEnabled = agentCfg?.enabled === true;
 
+  console.log(`[WPPConnect IA] phone=${phone} clientId=${clientId} connId=${connId} enabled=${geminiEnabled} hasAgentCfg=${!!agentCfg} activeClient=${activeClient?.name ?? "null"}`);
+
   if (!geminiEnabled || clientId === "sem-cliente") {
+    console.log(`[WPPConnect IA] IA desligada — geminiEnabled=${geminiEnabled} clientId=${clientId}`);
     return NextResponse.json({ ok: true });
   }
 
@@ -478,6 +484,7 @@ export async function POST(
   if (agentCfg?.testPhone) {
     const testNorm = agentCfg.testPhone.replace(/\D/g, "");
     if (phone !== testNorm && !phone.endsWith(testNorm.slice(-9))) {
+      console.log(`[WPPConnect IA] phone=${phone} bloqueado — testPhone=${agentCfg.testPhone} (modo teste ativo)`);
       return NextResponse.json({ ok: true });
     }
   }
@@ -503,6 +510,8 @@ export async function POST(
 
   const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
   const history = getHistory(phone, clientId);
+
+  console.log(`[WPPConnect IA] Chamando runGeminiAgent — phone=${phone} clientId=${clientId} waitSeconds=${waitSeconds} historyLen=${history.length} text="${text.slice(0, 80)}"`);
 
   // Helper: envia e registra a resposta da IA
   const isLidPhone =
@@ -537,6 +546,7 @@ export async function POST(
       runGeminiAgent(combined, h, _clientId, _phone, connId)
         .then(async ({ text: geminiText, actions }) => {
           markDone(batch.id);
+          console.log(`[WPPConnect IA batch] runGeminiAgent concluído — phone=${_phone} geminiTextLen=${geminiText?.length ?? 0} reply="${(geminiText ?? "").slice(0, 100)}"`);
           if (geminiText) await sendReply(geminiText);
           if (actions.length && activeClient && agentCfg) {
             await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, _phone, isLidPhone, _clientId).catch(() => {});
@@ -555,6 +565,7 @@ export async function POST(
   cancelPendingForPhone(clientId, phone);
   try {
     const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId);
+    console.log(`[WPPConnect IA] runGeminiAgent concluído — phone=${phone} geminiTextLen=${geminiText?.length ?? 0} actions=${actions.length} reply="${(geminiText ?? "").slice(0, 100)}"`);
     if (geminiText) await sendReply(geminiText);
     if (actions.length && activeClient && agentCfg) {
       await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId).catch(() => {});
