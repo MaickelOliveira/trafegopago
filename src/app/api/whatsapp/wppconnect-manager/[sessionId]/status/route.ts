@@ -17,10 +17,14 @@ export async function GET(
   const rawStatus = await checkConnectionStatus(wppSession.sessionName, wppSession.sessionToken);
   const connected = rawStatus === "CONNECTED";
 
-  // Tenta obter QR sempre que não estiver conectado (WPPConnect retorna PNG se disponível)
+  // Tenta obter QR quando não estiver conectado — até 3 tentativas rápidas
   let qr: string | null = null;
   if (!connected) {
-    qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken).catch(() => null);
+    for (let i = 0; i < 3; i++) {
+      qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken).catch(() => null);
+      if (qr) break;
+      if (i < 2) await new Promise(r => setTimeout(r, 1000));
+    }
   }
 
   return NextResponse.json({
