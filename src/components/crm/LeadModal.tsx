@@ -135,6 +135,12 @@ export function LeadModal({
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
 
+  // Mover para outro funil
+  const [allFunnels, setAllFunnels] = useState<Funnel[]>([]);
+  const [moveFunnelId, setMoveFunnelId] = useState("");
+  const [moveColumnId, setMoveColumnId] = useState("");
+  const [moving, setMoving] = useState(false);
+
   // Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
@@ -151,6 +157,29 @@ export function LeadModal({
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
+
+  useEffect(() => {
+    const cId = lead.clientId;
+    if (!cId) return;
+    fetch(`/api/crm/funnels?clientId=${encodeURIComponent(cId)}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: Funnel[]) => setAllFunnels(data.filter((f) => f.id !== funnel.id)))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.clientId, funnel.id]);
+
+  async function moveFunnel() {
+    if (!moveFunnelId || !moveColumnId) return;
+    setMoving(true);
+    const res = await fetch(`/api/crm/leads/${lead.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ funnelId: moveFunnelId, status: moveColumnId }),
+    });
+    const updated = await res.json();
+    if (res.ok) { onUpdated(updated); onClose(); }
+    setMoving(false);
+  }
 
   async function fetchMessages(silent = false) {
     const cacheKey = `${lead.clientId ?? ""}:${lead.phone}`;
@@ -318,6 +347,41 @@ export function LeadModal({
                 ))}
               </div>
             </div>
+
+            {/* Mover para outro funil */}
+            {allFunnels.length > 0 && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">↗ Mover para outro funil</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={moveFunnelId}
+                    onChange={(e) => { setMoveFunnelId(e.target.value); setMoveColumnId(""); }}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white outline-none focus:border-indigo-400"
+                  >
+                    <option value="">— Funil de destino —</option>
+                    {allFunnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                  <select
+                    value={moveColumnId}
+                    onChange={(e) => setMoveColumnId(e.target.value)}
+                    disabled={!moveFunnelId}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white outline-none focus:border-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">— Etapa de destino —</option>
+                    {(allFunnels.find((f) => f.id === moveFunnelId)?.columns ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={moveFunnel}
+                  disabled={!moveFunnelId || !moveColumnId || moving}
+                  className="mt-2 w-full rounded-lg bg-indigo-600 text-white text-sm font-semibold py-1.5 hover:bg-indigo-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {moving ? "Movendo..." : "Mover lead"}
+                </button>
+              </div>
+            )}
 
             {/* Follow-ups agendados */}
             <FollowUpSection leadId={lead.id} />

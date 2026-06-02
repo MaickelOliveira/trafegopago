@@ -18,12 +18,14 @@ import type { TemplateComponent } from "./waba-templates";
  * - column_changed   : Lead muda para qualquer coluna
  * - column_entered   : Lead criado OU movido para uma coluna específica
  * - scheduled_daily  : Diariamente às HH:MM para todos os leads de uma coluna
+ * - message_received : Lead envia mensagem com palavra/frase específica
  */
 export type CrmTrigger =
   | "lead_created"
   | "column_changed"
   | "column_entered"
-  | "scheduled_daily";
+  | "scheduled_daily"
+  | "message_received";
 
 export type CrmChannel = "uazapi" | "waba";
 
@@ -84,6 +86,7 @@ export type CrmAutomation = {
   triggerColumnId?: string;   // para column_changed / column_entered / scheduled_daily
   triggerWebhookId?: string;  // para lead_created: filtra por webhook específico (site)
   scheduledTime?: string;     // "HH:MM" para scheduled_daily
+  triggerKeywords?: string[];  // para message_received: palavras/frases que ativam a automação
   // ── Multi-passo (novo) ──
   steps?: CrmStep[];
   // ── Legacy (single-action, mantido para retrocompatibilidade) ──
@@ -360,6 +363,26 @@ export function runAutomationsForEvent(
   });
   console.log(`[crm-auto] matched ${all.length} automation(s) for trigger=${trigger}`);
   for (const auto of all) scheduleSteps(auto, lead);
+}
+
+/**
+ * Dispara automações quando um lead envia uma mensagem com determinada palavra/frase.
+ * Chamar no webhook de mensagens recebidas (WPPConnect / UazapiGO).
+ */
+export function runAutomationsForMessage(clientId: string, lead: Lead, messageText: string) {
+  const allForClient = getAutomations(clientId);
+  const normalized = messageText.toLowerCase().trim();
+  console.log(`[crm-auto] runAutomationsForMessage leadId=${lead.id} phone=${lead.phone} text="${normalized.slice(0, 80)}"`);
+  const matched = allForClient.filter((a) => {
+    if (!a.active) return false;
+    if (a.trigger !== "message_received") return false;
+    if (a.funnelId && a.funnelId !== lead.funnelId) return false;
+    // Se não houver keywords definidas, qualquer mensagem dispara
+    if (!a.triggerKeywords || a.triggerKeywords.length === 0) return true;
+    return a.triggerKeywords.some((kw) => normalized.includes(kw.toLowerCase().trim()));
+  });
+  console.log(`[crm-auto] message_received matched ${matched.length} automation(s)`);
+  for (const auto of matched) scheduleSteps(auto, lead);
 }
 
 /**

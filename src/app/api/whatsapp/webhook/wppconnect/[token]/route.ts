@@ -15,6 +15,7 @@ import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
 import type { AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
+import { runAutomationsForMessage } from "@/lib/crm-automations";
 import {
   upsertPending,
   getPendingForPhone,
@@ -389,6 +390,11 @@ export async function POST(
       clientId,
       { connId, contactName: sanitizeContactName(pushName !== phone ? pushName : undefined, phone) },
     );
+  }
+
+  // ── Automações por palavra-chave (message_received) ──
+  if (!fromMe && text.trim() && clientId !== "sem-cliente") {
+    runAutomationsForMessage(clientId, savedLead, text);
   }
 
   // Se foi enviado por nós (fromMe = IA, plataforma ou operador pelo celular)

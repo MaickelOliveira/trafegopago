@@ -51,6 +51,7 @@ type FormState = {
   triggerColumnId: string;
   triggerWebhookId: string;
   scheduledTime: string;
+  triggerKeywords: string[];
   steps: StepForm[];
 };
 
@@ -80,6 +81,12 @@ const TRIGGER_OPTIONS: { value: CrmTrigger; icon: string; label: string; descrip
     label: "Todo dia num horário",
     description: "Dispara diariamente para todos os leads de uma etapa",
   },
+  {
+    value: "message_received",
+    icon: "💬",
+    label: "Lead envia frase específica",
+    description: "Dispara quando o lead manda uma mensagem com determinada palavra ou frase",
+  },
 ];
 
 const TRIGGER_LABEL: Record<CrmTrigger, string> = {
@@ -87,6 +94,7 @@ const TRIGGER_LABEL: Record<CrmTrigger, string> = {
   column_changed:  "↕ Lead muda de etapa",
   column_entered:  "🔀 Lead chega numa etapa",
   scheduled_daily: "📅 Diariamente",
+  message_received: "💬 Frase específica",
 };
 
 // Simplified step picker options (hidden technical split between send_message / send_template)
@@ -783,6 +791,7 @@ export function CrmAutomationsView({
   const blankFormFn = (): FormState => ({
     name: "", trigger: "lead_created",
     funnelId: "", triggerColumnId: "", triggerWebhookId: "", scheduledTime: "09:00",
+    triggerKeywords: [],
     steps: [blankStep("send_message", uazapiConnId, firstTplId)],
   });
 
@@ -805,6 +814,7 @@ export function CrmAutomationsView({
       funnelId: auto.funnelId ?? "", triggerColumnId: auto.triggerColumnId ?? "",
       triggerWebhookId: auto.triggerWebhookId ?? "",
       scheduledTime: auto.scheduledTime ?? "09:00",
+      triggerKeywords: auto.triggerKeywords ?? [],
       steps: stepsFromAuto(auto, uazapiConnId, firstTplId),
     });
     setExpandedStep(null); setShowPicker(false); setEditingId(auto.id); setShowForm(true);
@@ -850,6 +860,7 @@ export function CrmAutomationsView({
       triggerColumnId: form.trigger !== "lead_created" ? form.triggerColumnId || undefined : undefined,
       triggerWebhookId: form.trigger === "lead_created" ? form.triggerWebhookId || undefined : undefined,
       scheduledTime: form.trigger === "scheduled_daily" ? form.scheduledTime : undefined,
+      triggerKeywords: form.trigger === "message_received" && form.triggerKeywords.length > 0 ? form.triggerKeywords : undefined,
       steps: stepsToPayload(form.steps),
       active: true,
     };
@@ -946,7 +957,7 @@ export function CrmAutomationsView({
               <div className="grid grid-cols-2 gap-2">
                 {TRIGGER_OPTIONS.map((opt) => (
                   <button key={opt.value} type="button"
-                    onClick={() => { setField("trigger", opt.value); setField("triggerColumnId", ""); setField("triggerWebhookId", ""); }}
+                    onClick={() => { setField("trigger", opt.value); setField("triggerColumnId", ""); setField("triggerWebhookId", ""); setField("triggerKeywords", []); }}
                     className={clsx(
                       "flex items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition",
                       form.trigger === opt.value
@@ -1066,6 +1077,37 @@ export function CrmAutomationsView({
                       <div className="col-span-2">
                         <label className="block text-xs text-slate-500 mb-1 font-medium">Horário de disparo <span className="text-red-500">*</span></label>
                         <input type="time" value={form.scheduledTime} onChange={(e) => setField("scheduledTime", e.target.value)} className={inputCls} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* message_received: funil opcional + keywords */}
+                  {form.trigger === "message_received" && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">Funil (opcional)</label>
+                        <select value={form.funnelId} onChange={(e) => setField("funnelId", e.target.value)} className={inputCls}>
+                          <option value="">Qualquer funil</option>
+                          {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1 font-medium">
+                          Palavras ou frases que ativam <span className="text-slate-400 font-normal">(uma por linha, sem diferença de maiúsculas)</span>
+                        </label>
+                        <textarea
+                          rows={4}
+                          placeholder={"quero comprar\npreciso de informações\norçamento"}
+                          value={form.triggerKeywords.join("\n")}
+                          onChange={(e) => {
+                            const lines = e.target.value.split("\n").map((l) => l.trimStart());
+                            setField("triggerKeywords", lines);
+                          }}
+                          className={inputCls + " resize-none font-mono text-xs"}
+                        />
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          A automação dispara se a mensagem do lead <strong>contiver</strong> qualquer uma das frases acima. Deixe em branco para disparar em qualquer mensagem.
+                        </p>
                       </div>
                     </div>
                   )}

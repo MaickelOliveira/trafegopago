@@ -629,6 +629,12 @@ export function KanbanBoard({
   }
 
   function handleUpdated(updated: Lead) {
+    // Se o lead foi movido para outro funil, remove do board atual
+    if (updated.funnelId !== funnel.id) {
+      setLeads((prev) => prev.filter((l) => l.id !== updated.id));
+      setSelected(null);
+      return;
+    }
     setLeads((prev) => prev.map((l) => l.id === updated.id ? updated : l));
     setSelected(updated);
   }
