@@ -113,8 +113,16 @@ export default function InboxView({ clientId, initialConversations = [], initial
       const data = await res.json();
       setConversations(data.conversations ?? []);
       if (data.connections && data.connections.length > 0) {
-        setConnections(data.connections);
-        // Se ainda não tem nenhum selecionado, seleciona o primeiro
+        // Mescla com connections existentes — nunca remove uma aba que já foi exibida
+        setConnections(prev => {
+          const incoming: typeof prev = data.connections;
+          const merged = [...incoming];
+          for (const old of prev) {
+            if (!merged.find(c => c.id === old.id)) merged.push(old);
+          }
+          return merged;
+        });
+        // Seleciona o primeiro apenas se ainda não há seleção
         setSelectedConn((prev) => prev ?? data.connections[0].id);
       }
     } catch {}

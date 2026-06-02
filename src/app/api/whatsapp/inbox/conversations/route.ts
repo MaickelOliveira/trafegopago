@@ -34,10 +34,20 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Pega todas as conversas do cliente filtradas pelas conexões deste cliente
+  // Pega todas as conversas do cliente — sem filtrar por connId ativo,
+  // para que conversas de sessões desconectadas/deletadas continuem visíveis.
   const conversations = getAllConversationsByClientId(clientId);
+
+  // Adiciona conexões "históricas" derivadas das conversas (sessões que foram
+  // deletadas mas ainda têm conversas salvas localmente).
+  for (const conv of conversations) {
+    if (conv.connId && !connIds.has(conv.connId)) {
+      connIds.add(conv.connId);
+      connections.push({ id: conv.connId, phone: conv.connId, type: "wppconnect" });
+    }
+  }
+
   const filtered = conversations
-    .filter((c) => !c.connId || connIds.has(c.connId))
     .map((c) => {
       // Sincroniza aiPaused com o lead — CRM é a fonte de verdade
       const lead = getLeadByPhone(clientId, c.phone);
