@@ -483,10 +483,18 @@ export async function POST(
   // testPhone: quando configurado, IA responde APENAS este número
   if (agentCfg?.testPhone) {
     const testNorm = agentCfg.testPhone.replace(/\D/g, "");
-    if (phone !== testNorm && !phone.endsWith(testNorm.slice(-9))) {
-      console.log(`[WPPConnect IA] phone=${phone} bloqueado — testPhone=${agentCfg.testPhone} (modo teste ativo)`);
+    // Comparação tolerante ao 9º dígito brasileiro e variações de prefixo:
+    // extrai os últimos 8 dígitos (núcleo do número local) para comparação flexível
+    const coreDigits = (n: string) => n.replace(/\D/g, "").slice(-8);
+    const phoneMatches =
+      phone === testNorm ||
+      phone.endsWith(testNorm.slice(-9)) ||
+      coreDigits(phone) === coreDigits(testNorm);
+    if (!phoneMatches) {
+      console.log(`[WPPConnect IA] phone=${phone} bloqueado — testPhone=${agentCfg.testPhone} core_phone=${coreDigits(phone)} core_test=${coreDigits(testNorm)} (modo teste ativo)`);
       return NextResponse.json({ ok: true });
     }
+    console.log(`[WPPConnect IA] testPhone match — phone=${phone} testNorm=${testNorm} ✓`);
   }
 
   // ── Transcreve áudio/imagem ANTES do agente (evita conflito com function calling) ──
