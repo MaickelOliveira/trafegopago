@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { QuickRepliesPicker, QuickRepliesManager } from "@/components/shared/QuickRepliesPopover";
+import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -74,6 +76,11 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const [recording, setRecording] = useState(false);
   const [search, setSearch] = useState("");
   const [loadingMessages, setLoadingMessages] = useState(false);
+
+  // Quick Replies
+  const [quickQuery, setQuickQuery] = useState<string | null>(null);
+  const [showQuickManager, setShowQuickManager] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -159,48 +166,88 @@ export default function InboxView({ clientId, initialConversations = [], initial
   };
 
   const handleSend = async () => {
-    if (!text.trim() || !selected || sending) return;
+    if (!text.trim() && !pendingImage) return;
+    if (!selected || sending) return;
     setSending(true);
     const t = text.trim();
+    const img = pendingImage;
     setText("");
+    setPendingImage(null);
+    setQuickQuery(null);
 
-    const optimistic: ChatMessage = { role: "assistant", content: t, ts: Date.now(), type: "text" };
-    // Garante que o chat role para baixo ao enviar, independente de onde o usuário estava
     isAtBottomRef.current = true;
     userScrolledUpRef.current = false;
-    setMessages((prev) => [...prev, optimistic]);
 
-    try {
-      const res = await fetch("/api/whatsapp/inbox/send", {
+    if (img) {
+      // Send image first
+      const optimisticImg: ChatMessage = { role: "assistant", content: img, ts: Date.now(), type: "image" };
+      setMessages((prev) => [...prev, optimisticImg]);
+      await fetch("/api/whatsapp/inbox/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: selected,
-          content: t,
-          type: "text",
+          content: img,
+          type: "image",
+          caption: t || undefined,
           clientId,
           connId: selectedConv?.connId ?? selectedConn ?? undefined,
         }),
-      });
-      const data = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !data.ok) {
-        // Envio falhou — mantém a mensagem otimista e avisa o usuário
-        console.error("[handleSend] falhou", data);
-        alert(`Erro ao enviar mensagem: ${data?.error ?? "verifique a conexão"}`);
-        setSending(false);
-        return;
-      }
-    } catch (err) {
-      console.error("[handleSend] exception", err);
-      alert("Erro ao enviar mensagem. Verifique sua conexão.");
-      setSending(false);
-      return;
+      }).catch(console.error);
+      if (!t) { setSending(false); fetchMessages(selected, true); return; }
     }
+
+    if (t) {
+      const optimistic: ChatMessage = { role: "assistant", content: t, ts: Date.now(), type: "text" };
+      setMessages((prev) => [...prev, optimistic]);
+
+      try {
+        const res = await fetch("/api/whatsapp/inbox/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: selected,
+            content: t,
+            type: "text",
+            clientId,
+            connId: selectedConv?.connId ?? selectedConn ?? undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({ ok: false }));
+        if (!res.ok || !data.ok) {
+          console.error("[handleSend] falhou", data);
+          alert(`Erro ao enviar mensagem: ${data?.error ?? "verifique a conexão"}`);
+        }
+      } catch (err) {
+        console.error("[handleSend] exception", err);
+        alert("Erro ao enviar mensagem. Verifique sua conexão.");
+      }
+    }
+
     setSending(false);
-    fetchMessages(selected, true); // poll silencioso para confirmar sem resetar scroll
+    fetchMessages(selected, true);
   };
 
+  function handleQuickSelect(reply: QuickReply) {
+    setText(reply.text);
+    if (reply.imageUrl) setPendingImage(reply.imageUrl);
+    setQuickQuery(null);
+  }
+
+  function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setText(val);
+    e.target.style.height = "auto";
+    e.target.style.height = `${e.target.scrollHeight}px`;
+    if (val.startsWith("/")) {
+      setQuickQuery(val.slice(1));
+    } else {
+      setQuickQuery(null);
+    }
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape" && quickQuery !== null) { setQuickQuery(null); return; }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -506,43 +553,85 @@ export default function InboxView({ clientId, initialConversations = [], initial
           </div>
 
           {/* Input bar */}
-          <div className="flex items-end gap-2 px-3 py-3 bg-[#202c33]">
-            <div className="flex-1 bg-[#2a3942] rounded-lg px-4 py-2 flex items-end">
-              <textarea
-                className="flex-1 bg-transparent resize-none outline-none text-sm text-[#d1d7db] placeholder:text-[#8696a0] max-h-32 min-h-[36px]"
-                placeholder="Digite uma mensagem"
-                value={text}
-                onChange={(e) => { setText(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${e.target.scrollHeight}px`; }}
-                onKeyDown={handleKeyDown}
-                rows={1}
-              />
-            </div>
-
-            {text.trim() ? (
-              <button
-                onClick={handleSend}
-                disabled={sending}
-                className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center hover:bg-[#06cf9c] transition-colors disabled:opacity-50 shrink-0"
-              >
-                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                </svg>
-              </button>
-            ) : (
-              <button
-                onMouseDown={startRecording}
-                onMouseUp={stopRecording}
-                onTouchStart={startRecording}
-                onTouchEnd={stopRecording}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0 ${recording ? "bg-red-500 animate-pulse" : "bg-[#00a884] hover:bg-[#06cf9c]"}`}
-                title={recording ? "Solte para enviar" : "Segure para gravar áudio"}
-              >
-                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
-                </svg>
-              </button>
+          <div className="bg-[#202c33] shrink-0">
+            {/* Pending image preview */}
+            {pendingImage && (
+              <div className="flex items-center gap-2 px-3 pt-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={pendingImage} alt="preview" className="h-12 w-12 object-cover rounded-lg border border-[#3c4f5c]" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-[#8696a0]">📎 Foto anexada</p>
+                  <p className="text-xs text-[#8696a0] truncate">{pendingImage}</p>
+                </div>
+                <button onClick={() => setPendingImage(null)} className="text-xs text-red-400 hover:text-red-300 font-medium">✕</button>
+              </div>
             )}
+
+            <div className="relative flex items-end gap-2 px-3 py-3">
+              {/* Quick replies picker (shown when typing /) */}
+              {quickQuery !== null && (
+                <QuickRepliesPicker
+                  clientId={clientId}
+                  query={quickQuery}
+                  onSelect={handleQuickSelect}
+                  onOpenManager={() => { setQuickQuery(null); setShowQuickManager(true); }}
+                />
+              )}
+
+              {/* ⚡ Quick replies button */}
+              <button
+                onClick={() => setShowQuickManager(true)}
+                title="Respostas rápidas"
+                className="shrink-0 w-10 h-10 rounded-full bg-[#2a3942] flex items-center justify-center text-base hover:bg-[#3c4f5c] transition-colors"
+              >
+                ⚡
+              </button>
+
+              <div className="flex-1 bg-[#2a3942] rounded-lg px-4 py-2 flex items-end">
+                <textarea
+                  className="flex-1 bg-transparent resize-none outline-none text-sm text-[#d1d7db] placeholder:text-[#8696a0] max-h-32 min-h-[36px]"
+                  placeholder="Digite uma mensagem ou / para respostas rápidas"
+                  value={text}
+                  onChange={handleTextChange}
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                />
+              </div>
+
+              {(text.trim() || pendingImage) ? (
+                <button
+                  onClick={handleSend}
+                  disabled={sending}
+                  className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center hover:bg-[#06cf9c] transition-colors disabled:opacity-50 shrink-0"
+                >
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  onMouseDown={startRecording}
+                  onMouseUp={stopRecording}
+                  onTouchStart={startRecording}
+                  onTouchEnd={stopRecording}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0 ${recording ? "bg-red-500 animate-pulse" : "bg-[#00a884] hover:bg-[#06cf9c]"}`}
+                  title={recording ? "Solte para enviar" : "Segure para gravar áudio"}
+                >
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Quick Replies Manager */}
+          {showQuickManager && (
+            <QuickRepliesManager
+              clientId={clientId}
+              onClose={() => setShowQuickManager(false)}
+            />
+          )}
         </div>
       )}
     </div>

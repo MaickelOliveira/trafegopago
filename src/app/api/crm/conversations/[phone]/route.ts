@@ -4,8 +4,8 @@ import { getHistory, addMessage, getClientId, getAllConversationsByClientId } fr
 import { markSent } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
-import { sendText } from "@/lib/uazapi";
-import { sendText as wppSendText } from "@/lib/wppconnect-api";
+import { sendText, sendMedia as uazapiSendMedia } from "@/lib/uazapi";
+import { sendText as wppSendText, sendMedia as wppSendMedia } from "@/lib/wppconnect-api";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { getConfig, getClientById } from "@/lib/clients";
 
@@ -32,8 +32,8 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
 
-  const { message } = await req.json();
-  if (!message?.trim()) return NextResponse.json({ error: "message obrigatório" }, { status: 400 });
+  const { message, imageUrl } = await req.json() as { message?: string; imageUrl?: string };
+  if (!message?.trim() && !imageUrl?.trim()) return NextResponse.json({ error: "message ou imageUrl obrigatório" }, { status: 400 });
 
   const clientId = getClientId(normalized);
 
@@ -71,37 +71,51 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     token = config.uazapiToken ?? null;
   }
 
+  const msgText = message?.trim() ?? "";
+  const imgUrl = imageUrl?.trim() ?? "";
+
   // Envia pela conexão correta
   if (wppSession) {
     const lead = clientId ? getLeadByPhone(clientId, normalized) : undefined;
     let isLid = lead?.isLid === true;
-    markSent(normalized, message.trim()); // marca ANTES de enviar (evita race condition com onselfmessage)
-    let ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim(), isLid);
-    // Fallback: se falhou e não tentamos isLid ainda, tenta com isLid:true
-    // (cobre leads criados antes da detecção automática de LID)
-    if (!ok && !isLid) {
-      console.log(`[conversations/send] Retrying with isLid=true phone=${normalized}`);
-      ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, message.trim(), true);
-      if (ok && clientId && funnelId) {
-        // Salva isLid:true no lead para envios futuros
-        upsertLeadByPhone(clientId, normalized, { funnelId, isLid: true });
-        isLid = true;
-      }
+
+    if (imgUrl) {
+      // Envia imagem com legenda
+      await wppSendMedia(wppSession.sessionName, wppSession.sessionToken, normalized, imgUrl, msgText || undefined, isLid);
     }
-    console.log(`[conversations/send] WPPConnect ok=${ok} session=${wppSession.sessionName} phone=${normalized} isLid=${isLid}`);
+    if (msgText && !imgUrl) {
+      // Só texto
+      markSent(normalized, msgText);
+      let ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, msgText, isLid);
+      if (!ok && !isLid) {
+        console.log(`[conversations/send] Retrying with isLid=true phone=${normalized}`);
+        ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, msgText, true);
+        if (ok && clientId && funnelId) {
+          upsertLeadByPhone(clientId, normalized, { funnelId, isLid: true });
+          isLid = true;
+        }
+      }
+      console.log(`[conversations/send] WPPConnect ok=${ok} session=${wppSession.sessionName} phone=${normalized} isLid=${isLid}`);
+    }
   } else if (connType === "meta" && metaPhoneNumberId && metaToken) {
-    await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${metaToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: normalized,
-        type: "text",
-        text: { body: message.trim() },
-      }),
-    }).catch(e => console.error("[conversations/send] Meta API error:", e));
+    if (msgText) {
+      await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${metaToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: normalized,
+          type: "text",
+          text: { body: msgText },
+        }),
+      }).catch(e => console.error("[conversations/send] Meta API error:", e));
+    }
   } else if (token) {
-    await sendText(token, normalized, message.trim());
+    if (imgUrl) {
+      await uazapiSendMedia(token, normalized, "image", imgUrl, msgText || undefined);
+    } else if (msgText) {
+      await sendText(token, normalized, msgText);
+    }
   } else {
     console.warn("[conversations/send] sem token para enviar ao phone:", normalized);
   }
@@ -110,14 +124,15 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   if (clientId) {
     const agCfg = getClientById(clientId)?.agentConfig;
     const resumeKeyword = agCfg?.aiResumeKeyword?.trim();
-    if (resumeKeyword && message.trim().toLowerCase() === resumeKeyword.toLowerCase()) {
+    if (resumeKeyword && msgText.toLowerCase() === resumeKeyword.toLowerCase()) {
       upsertLeadByPhone(clientId, normalized, { funnelId, aiPaused: false });
     } else {
       upsertLeadByPhone(clientId, normalized, { funnelId, aiPaused: true });
     }
   }
 
-  addMessage(normalized, { role: "assistant", content: message.trim(), ts: Date.now() }, clientId);
+  const savedContent = imgUrl ? (msgText ? `[imagem] ${msgText}` : "[imagem]") : msgText;
+  if (savedContent) addMessage(normalized, { role: "assistant", content: savedContent, ts: Date.now() }, clientId);
 
   return NextResponse.json({ ok: true });
 }

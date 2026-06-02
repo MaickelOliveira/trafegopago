@@ -5,6 +5,8 @@ import { clsx } from "clsx";
 import type { Lead } from "@/lib/leads";
 import type { Funnel } from "@/lib/funnels";
 import type { ChatMessage } from "@/lib/conversations";
+import { QuickRepliesPicker, QuickRepliesManager } from "@/components/shared/QuickRepliesPopover";
+import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
 
 // ── Cache de prefetch (módulo-level, persiste enquanto a página está aberta) ──
 type CacheEntry = { messages: ChatMessage[]; fetchedAt: number };
@@ -152,6 +154,11 @@ export function LeadModal({
   const lastMsgCountRef = useRef(0);
   const isAtBottomRef = useRef(true);
 
+  // Quick Replies
+  const [quickQuery, setQuickQuery] = useState<string | null>(null); // null = fechado, string = filtro ativo
+  const [showQuickManager, setShowQuickManager] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null); // imagem da resposta rápida
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", h);
@@ -229,18 +236,39 @@ export function LeadModal({
   }, [messages, tab]);
 
   async function sendMsg() {
-    if (!msgInput.trim() || sending) return;
+    if ((!msgInput.trim() && !pendingImage) || sending) return;
     setSending(true);
     const text = msgInput.trim();
+    const img = pendingImage;
     setMsgInput("");
+    setPendingImage(null);
+    setQuickQuery(null);
     isAtBottomRef.current = true;
-    setMessages((prev) => [...prev, { role: "assistant", content: text, ts: Date.now() }]);
+    // Optimistic UI: show image preview or text
+    const previewContent = img ? (text ? `[imagem] ${text}` : "[imagem]") : text;
+    setMessages((prev) => [...prev, { role: "assistant", content: previewContent, ts: Date.now() }]);
     await fetch(`/api/crm/conversations/${lead.phone}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text || undefined, imageUrl: img || undefined }),
     });
     setSending(false);
+  }
+
+  function handleQuickSelect(reply: QuickReply) {
+    setMsgInput(reply.text);
+    if (reply.imageUrl) setPendingImage(reply.imageUrl);
+    setQuickQuery(null);
+  }
+
+  function handleMsgInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setMsgInput(val);
+    if (val.startsWith("/")) {
+      setQuickQuery(val.slice(1)); // texto após /
+    } else {
+      setQuickQuery(null);
+    }
   }
 
   async function save() {
@@ -692,21 +720,65 @@ export function LeadModal({
             </div>
 
             {/* Input */}
-            <div className="border-t border-slate-200 bg-white px-4 py-3 flex gap-3 items-end shrink-0">
-              <textarea
-                value={msgInput}
-                onChange={(e) => setMsgInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
-                placeholder="Mensagem... (Enter para enviar, Shift+Enter para nova linha)"
-                rows={2}
-                className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-green-400 resize-none"
-                style={{ maxHeight: 120 }}
-              />
-              <button onClick={sendMsg} disabled={sending || !msgInput.trim()}
-                className="shrink-0 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-40 px-5 py-2.5 text-white font-bold text-sm transition">
-                {sending ? "..." : "Enviar"}
-              </button>
+            <div className="border-t border-slate-200 bg-white shrink-0">
+              {/* Pending image preview */}
+              {pendingImage && (
+                <div className="flex items-center gap-2 px-4 pt-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={pendingImage} alt="imagem" className="h-14 w-14 object-cover rounded-lg border border-slate-200" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-500">📎 Foto anexada</p>
+                    <p className="text-xs text-slate-400 truncate">{pendingImage}</p>
+                  </div>
+                  <button onClick={() => setPendingImage(null)} className="text-xs text-red-500 hover:text-red-700 font-medium">✕</button>
+                </div>
+              )}
+
+              <div className="relative px-4 py-3 flex gap-3 items-end">
+                {/* Quick replies picker (shown when query is not null) */}
+                {quickQuery !== null && lead.clientId && (
+                  <QuickRepliesPicker
+                    clientId={lead.clientId}
+                    query={quickQuery}
+                    onSelect={handleQuickSelect}
+                    onOpenManager={() => { setQuickQuery(null); setShowQuickManager(true); }}
+                  />
+                )}
+
+                {/* ⚡ Quick replies button */}
+                {lead.clientId && (
+                  <button
+                    onClick={() => setShowQuickManager(true)}
+                    title="Respostas rápidas"
+                    className="shrink-0 rounded-xl border border-slate-200 px-3 py-2.5 text-base hover:bg-amber-50 hover:border-amber-300 transition"
+                  >
+                    ⚡
+                  </button>
+                )}
+
+                <textarea
+                  value={msgInput}
+                  onChange={handleMsgInputChange}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
+                  placeholder="Mensagem... (ou digite / para respostas rápidas)"
+                  rows={2}
+                  className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-green-400 resize-none"
+                  style={{ maxHeight: 120 }}
+                />
+                <button onClick={sendMsg} disabled={sending || (!msgInput.trim() && !pendingImage)}
+                  className="shrink-0 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-40 px-5 py-2.5 text-white font-bold text-sm transition">
+                  {sending ? "..." : "Enviar"}
+                </button>
+              </div>
             </div>
+
+            {/* Quick Replies Manager modal */}
+            {showQuickManager && lead.clientId && (
+              <QuickRepliesManager
+                clientId={lead.clientId}
+                onClose={() => setShowQuickManager(false)}
+              />
+            )}
           </div>
         )}
 
