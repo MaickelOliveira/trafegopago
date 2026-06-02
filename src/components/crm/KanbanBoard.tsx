@@ -653,6 +653,19 @@ export function KanbanBoard({
       .catch(() => setMetricsLoading(false));
   }, [currentClientMeta?.metaAccountId, metricsPeriod]);
 
+  // Polling automático — atualiza leads a cada 15s para capturar novos via WhatsApp
+  useEffect(() => {
+    const clientParam = filterClient !== "all" ? `?clientId=${filterClient}` : "";
+    const tick = () => {
+      fetch(`/api/crm/leads${clientParam}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((fresh: Lead[] | null) => { if (fresh) setLeads(fresh); })
+        .catch(() => {/* silencioso */});
+    };
+    const id = setInterval(tick, 15_000);
+    return () => clearInterval(id);
+  }, [filterClient]);
+
   const funnel = funnels.find((f) => f.id === activeFunnel) ?? funnels[0];
 
   const filtered = leads.filter((l) => {
