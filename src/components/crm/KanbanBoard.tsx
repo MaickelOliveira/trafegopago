@@ -253,15 +253,15 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditing(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-slate-800">Editar colunas — {editing.name}</h3>
+          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl p-8" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-slate-800">✏️ Editar colunas — {editing.name}</h3>
               <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
             </div>
 
-            <div className="space-y-2 mb-4 max-h-80 overflow-y-auto pr-1">
+            <div className="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-2">
               {editCols.map((col, idx) => (
-                <div key={col.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 space-y-1.5">
+                <div key={col.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-2">
                   <div className="flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: col.color }} />
                     <span className="flex-1 text-sm font-medium text-slate-700 truncate">{col.label}</span>
@@ -278,7 +278,7 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                         onChange={(e) => setEditCols((prev) => prev.map((c, i) => i === idx ? { ...c, blockAutoMove: e.target.checked || undefined } : c))}
                         className="rounded accent-violet-600"
                       />
-                      <span className="text-[11px] text-slate-500">🔒 Bloqueado p/ IA</span>
+                      <span className="text-xs text-slate-600">🔒 Bloqueado p/ IA</span>
                     </label>
                     <label className="flex items-center gap-1 cursor-pointer select-none">
                       <input
@@ -287,7 +287,7 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                         onChange={(e) => setEditCols((prev) => prev.map((c, i) => i === idx ? { ...c, askValueOnMove: e.target.checked || undefined } : c))}
                         className="rounded accent-green-600"
                       />
-                      <span className="text-[11px] text-slate-500">💰 Pedir valor+data</span>
+                      <span className="text-xs text-slate-600">💰 Pedir valor+data</span>
                     </label>
                   </div>
 
@@ -303,7 +303,7 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
 
                   {/* Contexto IA — descrição de quando o lead deve ir para esta coluna */}
                   <div className="mt-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 space-y-1">
-                    <p className="text-[11px] font-semibold text-blue-700">🧠 Contexto IA — quando mover o lead para cá?</p>
+                    <p className="text-xs font-semibold text-blue-700">🧠 Contexto IA — quando mover o lead para cá?</p>
                     <textarea
                       value={col.aiDescription ?? ""}
                       onChange={(e) =>
@@ -312,7 +312,7 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                         )
                       }
                       placeholder={`Ex: Mover quando o lead agendou uma reunião ou demonstrou interesse concreto em marcar um horário`}
-                      rows={2}
+                      rows={3}
                       className="w-full text-xs rounded border border-blue-200 px-2 py-1.5 outline-none focus:border-blue-400 bg-white resize-none text-slate-700 placeholder-slate-400"
                     />
                   </div>
@@ -350,8 +350,8 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                   </div>
 
                   {/* Seletor de evento Meta CAPI */}
-                  <div className="flex items-center gap-1.5 pl-1">
-                    <span className="text-[10px] text-slate-400 shrink-0 uppercase tracking-wide">Meta</span>
+                  <div className="flex items-center gap-2 pl-1">
+                    <span className="text-xs font-semibold text-slate-500 shrink-0 uppercase tracking-wide">Meta</span>
                     <select
                       value={col.metaEvent ?? ""}
                       onChange={(e) => setEditCols((prev) => prev.map((c, i) => i === idx ? { ...c, metaEvent: e.target.value || undefined } : c))}
@@ -401,8 +401,8 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
               ))}
             </div>
 
-            <div className="flex gap-2 mb-4">
-              <div className="flex gap-1 flex-wrap">
+            <div className="flex gap-2 mb-6">
+              <div className="flex gap-1.5 flex-wrap">
                 {COL_COLORS.map((c) => (
                   <button key={c} onClick={() => setNewColColor(c)}
                     className="w-5 h-5 rounded-full border-2 transition"
@@ -415,9 +415,9 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
               <button onClick={addCol} disabled={!newColName.trim()} className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40">+ Add</button>
             </div>
 
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setEditing(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">Cancelar</button>
-              <button onClick={saveEdit} disabled={saving || editCols.length === 0} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{saving ? "Salvando..." : "Salvar"}</button>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setEditing(null)} className="rounded-lg border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button>
+              <button onClick={saveEdit} disabled={saving || editCols.length === 0} className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{saving ? "Salvando..." : "💾 Salvar funil"}</button>
             </div>
           </div>
         </div>
