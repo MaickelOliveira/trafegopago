@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { LeadModal, prefetchConversation } from "./LeadModal";
 import type { Lead } from "@/lib/leads";
-import type { Funnel, FunnelColumn } from "@/lib/funnels";
+import type { Funnel, FunnelColumn, TriggerPhrase } from "@/lib/funnels";
 
 type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean };
 
@@ -57,35 +57,72 @@ function hexToLight(hex: string): string {
 }
 
 // ── Frases de gatilho por coluna ─────────────────────────────────────────────
-function TriggerPhrases({ phrases, onChange }: { phrases: string[]; onChange: (p: string[]) => void }) {
+function TriggerPhrases({ phrases, onChange }: { phrases: TriggerPhrase[]; onChange: (p: TriggerPhrase[]) => void }) {
   const [input, setInput] = useState("");
+  const [matchMode, setMatchMode] = useState<"exact" | "contains">("contains");
 
   function add() {
     const v = input.trim();
-    if (!v || phrases.includes(v)) return;
-    onChange([...phrases, v]);
+    if (!v || phrases.some((p) => p.text === v)) return;
+    onChange([...phrases, { text: v, match: matchMode }]);
     setInput("");
+  }
+
+  function toggleMatch(text: string) {
+    onChange(phrases.map((p) => p.text === text ? { ...p, match: p.match === "exact" ? "contains" : "exact" } : p));
+  }
+
+  function remove(text: string) {
+    onChange(phrases.filter((p) => p.text !== text));
   }
 
   return (
     <div className="mt-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 space-y-1.5">
       <p className="text-[11px] font-semibold text-violet-700">🤖 Frases que movem o lead para esta coluna</p>
       {phrases.length > 0 && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-col gap-1">
           {phrases.map((p) => (
-            <span key={p} className="inline-flex items-center gap-1 rounded-full bg-white border border-violet-300 px-2 py-0.5 text-[11px] text-violet-700 font-medium">
-              &quot;{p}&quot;
-              <button onClick={() => onChange(phrases.filter((x) => x !== p))} className="hover:text-red-500 leading-none ml-0.5">×</button>
-            </span>
+            <div key={p.text} className="flex items-center gap-1">
+              {/* toggle exata/contém */}
+              <button
+                onClick={() => toggleMatch(p.text)}
+                title={p.match === "exact" ? "Mensagem exata — clique para mudar para Contém" : "Mensagem contém — clique para mudar para Exata"}
+                className={clsx(
+                  "rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 border transition",
+                  p.match === "exact"
+                    ? "bg-orange-100 border-orange-300 text-orange-700"
+                    : "bg-blue-100 border-blue-300 text-blue-700"
+                )}
+              >
+                {p.match === "exact" ? "= exata" : "⊃ contém"}
+              </button>
+              <span className="flex-1 inline-flex items-center gap-1 rounded-full bg-white border border-violet-300 px-2 py-0.5 text-[11px] text-violet-700 font-medium truncate">
+                &quot;{p.text}&quot;
+              </span>
+              <button onClick={() => remove(p.text)} className="text-slate-400 hover:text-red-500 leading-none shrink-0 text-sm">×</button>
+            </div>
           ))}
         </div>
       )}
       <div className="flex gap-1">
+        {/* Selector exata/contém ao adicionar */}
+        <button
+          onClick={() => setMatchMode((m) => m === "contains" ? "exact" : "contains")}
+          title={matchMode === "exact" ? "Modo: Exata — a mensagem inteira deve ser igual" : "Modo: Contém — basta a mensagem conter esta frase"}
+          className={clsx(
+            "text-[10px] font-bold rounded border px-1.5 py-1 shrink-0 transition",
+            matchMode === "exact"
+              ? "bg-orange-100 border-orange-300 text-orange-700"
+              : "bg-blue-100 border-blue-300 text-blue-700"
+          )}
+        >
+          {matchMode === "exact" ? "= exata" : "⊃ contém"}
+        </button>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
-          placeholder='ex: "obrigado pela compra", "paguei", "quero fechar"'
+          placeholder={matchMode === "exact" ? 'ex: "paguei"' : 'ex: "pix", "obrigado"'}
           className="flex-1 text-xs rounded border border-violet-200 bg-white px-2 py-1.5 outline-none focus:border-violet-400 placeholder:text-slate-400"
         />
         <button
@@ -96,7 +133,11 @@ function TriggerPhrases({ phrases, onChange }: { phrases: string[]; onChange: (p
           + Add
         </button>
       </div>
-      <p className="text-[10px] text-violet-400">Digite e pressione Enter ou clique + Add. O agente detecta variações da frase.</p>
+      <p className="text-[10px] text-violet-400">
+        <span className="font-semibold text-orange-600">= exata</span> — mensagem deve ser igual &nbsp;|
+        &nbsp;<span className="font-semibold text-blue-600">⊃ contém</span> — basta conter a frase.
+        Clique no badge para alternar.
+      </p>
     </div>
   );
 }

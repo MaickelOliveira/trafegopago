@@ -12,7 +12,7 @@ import { getFunnelById } from "./funnels";
 import { sendCapiEvent } from "./meta-capi";
 import type { ChatMessage } from "./conversations";
 import type { Lead } from "./leads";
-import type { Funnel } from "./funnels";
+import type { Funnel, TriggerPhrase } from "./funnels";
 
 type KanbanAction =
   | { type: "mover_lead"; colunaId: string; motivo: string }
@@ -33,7 +33,11 @@ function buildSystemPrompt(lead: Lead, funnel: Funnel, agentSystemPrompt?: strin
       if (c.aiDescription) linhas.push(`  Contexto: ${c.aiDescription}`);
       // Frases de gatilho
       if (c.triggerPhrases?.length) {
-        linhas.push(`  Gatilhos: ${c.triggerPhrases.map((f) => `"${f}"`).join(", ")}`);
+        const parts = (c.triggerPhrases as TriggerPhrase[]).map((p) => {
+          if (p.match === "exact") return `«${p.text}» (correspondencia EXATA — a mensagem deve ser igualzinha)`;
+          return `«${p.text}» (basta CONTER essa frase na mensagem)`;
+        });
+        linhas.push(`  Gatilhos: ${parts.join(", ")}`);
       }
       // Whitelist de transições (camada 3)
       if (c.allowedTransitions?.length) {
@@ -65,7 +69,10 @@ ${listaPermitidas}${listaBloqueadas}
 
 Regras:
 - PRIORIDADE 1: Se a coluna tiver "Contexto", siga-o à risca — ele define exatamente quando mover
-- PRIORIDADE 2: Se tiver "Gatilhos", mova quando a mensagem for semanticamente equivalente a um deles
+- PRIORIDADE 2: Se tiver "Gatilhos", atente ao tipo de correspondência:
+    • (correspondência EXATA) — a mensagem deve ser literalmente igual ao gatilho (ignorando maiúsculas)
+    • (basta CONTER) — mova se qualquer parte da mensagem contiver o texto do gatilho
+    Em qualquer caso, confidence >= 0.95 ao detectar gatilho direto.
 - PRIORIDADE 3: Na ausência de contexto/gatilhos, mova quando houver indicação clara do estágio atual. Exemplos que DEVEM gerar movimentação:
     • Lead confirma data, horário ou aceita uma reunião/consulta → mover para coluna de reunião agendada
     • Lead demonstra interesse explícito no produto/serviço → mover para coluna de interessados
@@ -243,6 +250,56 @@ async function runKanbanAgent(
 }
 
 /**
+ * CAMADA 0 — Correspondência direta de frases de gatilho.
+ * Roda ANTES do Gemini. Se encontrar match, move o lead imediatamente
+ * sem gastar tokens de API.
+ * Retorna true se o lead foi movido.
+ */
+async function tryDirectPhraseMatch(
+  lastMessage: string,
+  lead: Lead,
+  funnel: Funnel,
+  client: { pixelId?: string; capiToken?: string } | null
+): Promise<boolean> {
+  const msg = lastMessage.toLowerCase().trim();
+  if (!msg) return false;
+
+  for (const col of funnel.columns ?? []) {
+    if (col.blockAutoMove) continue;
+    if (col.id === lead.status) continue;
+    if (!col.triggerPhrases?.length) continue;
+
+    for (const phrase of col.triggerPhrases as TriggerPhrase[]) {
+      const t = phrase.text.toLowerCase().trim();
+      if (!t) continue;
+
+      const matched =
+        phrase.match === "exact"
+          ? msg === t
+          : msg.includes(t);
+
+      if (matched) {
+        console.log(`[kanban-agent/layer0] gatilho direto: msg="${msg}" phrase="${t}" mode=${phrase.match} → col=${col.id}`);
+        updateLead(lead.id, { status: col.id });
+        if (col.metaEvent && client?.pixelId) {
+          sendCapiEvent({
+            pixelId: client.pixelId,
+            capiToken: client.capiToken,
+            eventName: col.metaEvent,
+            phone: lead.phone,
+            email: lead.email ?? undefined,
+            externalId: lead.id,
+            value: lead.value ?? undefined,
+          }).catch(() => {});
+        }
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Classifica um lead com base em todo o histórico de conversa.
  * Usado pelo endpoint de classificação em lote.
  * Retorna true se o lead foi movido.
@@ -330,6 +387,13 @@ export async function processKanbanActions(
 
   const agentSystemPrompt = client?.agentConfig?.systemPrompt ?? undefined;
   console.log(`[kanban-agent] iniciando — lead=${lead.name} status=${lead.status} msg="${lastMessage.slice(0, 80)}"`)
+
+  // ── CAMADA 0: correspondência direta de frases de gatilho (sem Gemini) ───────
+  const directMatch = await tryDirectPhraseMatch(lastMessage, lead, funnel, client ?? null);
+  if (directMatch) {
+    console.log(`[kanban-agent] movido via gatilho direto — sem chamar Gemini`);
+    return;
+  }
 
   const actions = await runKanbanAgent(lastMessage, history, lead, funnel, geminiApiKey, agentSystemPrompt);
 

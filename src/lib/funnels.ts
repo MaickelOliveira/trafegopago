@@ -2,6 +2,11 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 
+export type TriggerPhrase = {
+  text: string;
+  match: "exact" | "contains";
+};
+
 export type FunnelColumn = {
   id: string;
   label: string;
@@ -9,7 +14,7 @@ export type FunnelColumn = {
   metaEvent?: string;           // evento CAPI disparado quando lead entra nesta coluna
   blockAutoMove?: boolean;      // bloqueia movimentação automática pelo agente IA
   askValueOnMove?: boolean;     // abre modal pedindo valor + data quando lead entra aqui
-  triggerPhrases?: string[];    // frases que indicam que o lead deve ser movido para esta coluna
+  triggerPhrases?: TriggerPhrase[];  // frases que movem o lead para esta coluna
   aiDescription?: string;       // contexto para o agente IA: quando mover o lead para esta coluna
   allowedTransitions?: string[]; // camada 3: whitelist de IDs de colunas de destino permitidas (vazio = todas)
 };
@@ -39,10 +44,23 @@ export type Funnel = {
 
 const FILE = path.join(process.cwd(), "data", "funnels.json");
 
+// Normaliza dados antigos: triggerPhrases pode ser string[] ou TriggerPhrase[]
+function normalizeFunnels(funnels: Funnel[]): Funnel[] {
+  return funnels.map((f) => ({
+    ...f,
+    columns: f.columns.map((c) => ({
+      ...c,
+      triggerPhrases: (c.triggerPhrases as unknown as (string | TriggerPhrase)[])?.map((p) =>
+        typeof p === "string" ? { text: p, match: "contains" as const } : p
+      ),
+    })),
+  }));
+}
+
 function load(): Funnel[] {
   try {
     if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
+    return normalizeFunnels(JSON.parse(readFileSync(FILE, "utf-8")));
   } catch {
     return [];
   }
