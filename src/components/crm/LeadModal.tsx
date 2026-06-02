@@ -291,28 +291,44 @@ export function LeadModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
-        style={{ maxHeight: "90vh" }}
+        className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: "95vh" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-slate-100 shrink-0">
+        <div className="flex items-center gap-4 px-6 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-r from-slate-50 to-white">
+          {/* Avatar */}
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white shrink-0 shadow-sm"
+            style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
+            {(lead.name?.[0] ?? "?").toUpperCase()}
+          </div>
           <div className="flex-1 min-w-0">
             {editing ? (
               <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                className="text-lg font-bold text-slate-900 w-full outline-none border-b border-blue-400 pb-0.5" />
+                className="text-xl font-bold text-slate-900 w-full outline-none border-b-2 border-blue-400 pb-0.5 bg-transparent" />
             ) : (
-              <h2 className="text-lg font-bold text-slate-900 truncate">{lead.name}</h2>
+              <h2 className="text-xl font-bold text-slate-900 truncate">{lead.name}</h2>
             )}
-            <p className="text-sm text-slate-500 mt-0.5">
-              {lead.source === "whatsapp" ? "💬 WhatsApp" : lead.source === "form" ? "📝 Formulário" : "✏️ Manual"}
-              {lead.campaignName && ` · ${lead.campaignName}`}
-              {" · "}{days === 0 ? "hoje" : `${days} dia${days !== 1 ? "s" : ""} no pipeline`}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span className="text-sm text-slate-500">
+                {lead.source === "whatsapp" ? "💬 WhatsApp" : lead.source === "form" ? "📝 Formulário" : "✏️ Manual"}
+              </span>
+              <span className="text-slate-300">·</span>
+              <span className="text-sm text-slate-400">{days === 0 ? "hoje" : `${days} dia${days !== 1 ? "s" : ""} no pipeline`}</span>
+              {lead.ai?.score != null && (
+                <span className={clsx("rounded-full px-2 py-0.5 text-xs font-bold border", SCORE_COLOR(lead.ai.score))}>
+                  IA {lead.ai.score}/10
+                </span>
+              )}
+              <a href={`https://wa.me/${lead.realPhone ?? lead.phone}`} target="_blank" rel="noreferrer"
+                className="rounded-full bg-green-100 text-green-700 px-2.5 py-0.5 text-xs font-semibold hover:bg-green-200 transition shrink-0">
+                Abrir WA ↗
+              </a>
+            </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 ml-3 shrink-0">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition shrink-0 p-1 rounded-lg hover:bg-slate-100">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -320,247 +336,267 @@ export function LeadModal({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-100 shrink-0">
+        <div className="flex border-b border-slate-100 shrink-0 bg-white">
           {(["details", "chat"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
-              className={clsx("flex-1 py-2.5 text-sm font-medium transition",
-                tab === t ? "border-b-2 border-blue-600 text-blue-600" : "text-slate-500 hover:text-slate-700")}>
-              {t === "details" ? "Detalhes" : "💬 Conversa"}
+              className={clsx("px-8 py-3 text-sm font-semibold transition border-b-2",
+                tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700")}>
+              {t === "details" ? "📋 Detalhes" : "💬 Conversa"}
             </button>
           ))}
         </div>
 
         {/* Details Tab */}
         {tab === "details" && (
-          <div className="p-5 overflow-y-auto flex-1 space-y-4">
-            {/* Status */}
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Etapa — {funnel.name}</p>
-              <div className="flex gap-1.5 flex-wrap">
-                {funnel.columns.map((col) => (
-                  <button key={col.id} onClick={() => changeStatus(col.id)}
-                    className={clsx("rounded-lg px-3 py-1.5 text-sm font-medium transition border",
-                      lead.status === col.id ? "text-white border-transparent" : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50")}
-                    style={lead.status === col.id ? { backgroundColor: col.color } : undefined}>
-                    {col.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="overflow-y-auto flex-1">
+            <div className="grid grid-cols-5 divide-x divide-slate-100 min-h-full">
 
-            {/* Mover para outro funil */}
-            {allFunnels.length > 0 && (
-              <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
-                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">↗ Mover para outro funil</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={moveFunnelId}
-                    onChange={(e) => { setMoveFunnelId(e.target.value); setMoveColumnId(""); }}
-                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white outline-none focus:border-indigo-400"
-                  >
-                    <option value="">— Funil de destino —</option>
-                    {allFunnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                  </select>
-                  <select
-                    value={moveColumnId}
-                    onChange={(e) => setMoveColumnId(e.target.value)}
-                    disabled={!moveFunnelId}
-                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm bg-white outline-none focus:border-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="">— Etapa de destino —</option>
-                    {(allFunnels.find((f) => f.id === moveFunnelId)?.columns ?? []).map((c) => (
-                      <option key={c.id} value={c.id}>{c.label}</option>
+              {/* ── Left column (3/5) ── */}
+              <div className="col-span-3 p-6 space-y-5">
+
+                {/* Etapa */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Etapa — {funnel.name}</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {funnel.columns.map((col) => (
+                      <button key={col.id} onClick={() => changeStatus(col.id)}
+                        className={clsx("rounded-xl px-4 py-2 text-sm font-semibold transition border",
+                          lead.status === col.id ? "text-white border-transparent shadow-sm" : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50")}
+                        style={lead.status === col.id ? { backgroundColor: col.color } : undefined}>
+                        {col.label}
+                      </button>
                     ))}
-                  </select>
-                </div>
-                <button
-                  onClick={moveFunnel}
-                  disabled={!moveFunnelId || !moveColumnId || moving}
-                  className="mt-2 w-full rounded-lg bg-indigo-600 text-white text-sm font-semibold py-1.5 hover:bg-indigo-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {moving ? "Movendo..." : "Mover lead"}
-                </button>
-              </div>
-            )}
-
-            {/* Follow-ups agendados */}
-            <FollowUpSection leadId={lead.id} />
-
-            {/* Toggle IA por conversa */}
-            <div className={clsx(
-              "rounded-xl border p-3 flex items-center justify-between",
-              lead.aiPaused
-                ? "border-amber-200 bg-amber-50"
-                : "border-violet-200 bg-violet-50"
-            )}>
-              <div>
-                <p className={clsx("text-xs font-semibold uppercase tracking-wide", lead.aiPaused ? "text-amber-700" : "text-violet-700")}>
-                  {lead.aiPaused ? "⏸ IA pausada nesta conversa" : "🤖 IA ativa nesta conversa"}
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {lead.aiPaused
-                    ? "Especialista assumiu. A IA não vai responder até ser reativada."
-                    : "A IA responde automaticamente. Pause para assumir manualmente."}
-                </p>
-              </div>
-              <button
-                onClick={async () => {
-                  const res = await fetch(`/api/crm/leads/${lead.id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ aiPaused: !lead.aiPaused }),
-                  });
-                  const updated = await res.json();
-                  if (res.ok) { setLead(updated); onUpdated(updated); }
-                }}
-                className={clsx(
-                  "rounded-lg px-3 py-1.5 text-xs font-semibold transition shrink-0",
-                  lead.aiPaused
-                    ? "bg-violet-600 text-white hover:bg-violet-700"
-                    : "bg-amber-500 text-white hover:bg-amber-600"
-                )}
-              >
-                {lead.aiPaused ? "Reativar IA" : "Pausar IA"}
-              </button>
-            </div>
-
-            {/* AI Analysis */}
-            <div className="rounded-xl border border-purple-200 bg-purple-50 p-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">Análise IA</p>
-                <button onClick={analyze} disabled={analyzing} className="text-xs text-purple-600 hover:text-purple-800 font-medium disabled:opacity-50">
-                  {analyzing ? "Analisando..." : lead.ai ? "Reanalisar" : "Analisar agora"}
-                </button>
-              </div>
-              {lead.ai ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className={clsx("rounded-lg border px-2.5 py-1 text-sm font-bold", SCORE_COLOR(lead.ai.score))}>{lead.ai.score}/10</span>
-                    <span className="text-xs text-slate-500">
-                      {lead.ai.score >= 8 ? "Alta intenção de compra" : lead.ai.score >= 5 ? "Intenção média" : "Baixa intenção"}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-700">{lead.ai.summary}</p>
-                  <div className="rounded-lg bg-white border border-purple-200 px-3 py-2">
-                    <p className="text-xs text-purple-600 font-medium mb-0.5">Próximo passo:</p>
-                    <p className="text-sm text-slate-700">{lead.ai.nextStep}</p>
                   </div>
                 </div>
-              ) : (
-                <p className="text-sm text-slate-400 italic">Clique em "Analisar agora" para obter insights sobre este lead.</p>
-              )}
-            </div>
 
-            {/* Contact info */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Telefone</p>
-                {editing ? (
-                  <div className="flex flex-col gap-1">
-                    {lead.isLid && (
-                      <input value={form.realPhone} onChange={(e) => setForm((f) => ({ ...f, realPhone: e.target.value }))}
-                        placeholder="Número real (ex: 5544...)"
-                        className="w-full rounded-lg border border-blue-300 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500" />
-                    )}
-                    {!lead.isLid && (
-                      <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                        className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400" />
-                    )}
+                {/* Mover para outro funil */}
+                {allFunnels.length > 0 && (
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+                    <p className="text-xs font-semibold text-indigo-600 uppercase tracking-widest mb-3">↗ Mover para outro funil</p>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">Funil de destino</label>
+                        <select
+                          value={moveFunnelId}
+                          onChange={(e) => { setMoveFunnelId(e.target.value); setMoveColumnId(""); }}
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-indigo-400"
+                        >
+                          <option value="">— Selecione —</option>
+                          {allFunnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">Etapa de destino</label>
+                        <select
+                          value={moveColumnId}
+                          onChange={(e) => setMoveColumnId(e.target.value)}
+                          disabled={!moveFunnelId}
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <option value="">— Selecione —</option>
+                          {(allFunnels.find((f) => f.id === moveFunnelId)?.columns ?? []).map((c) => (
+                            <option key={c.id} value={c.id}>{c.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <button
+                      onClick={moveFunnel}
+                      disabled={!moveFunnelId || !moveColumnId || moving}
+                      className="w-full rounded-lg bg-indigo-600 text-white text-sm font-semibold py-2 hover:bg-indigo-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {moving ? "Movendo..." : "Mover lead para este funil"}
+                    </button>
                   </div>
-                ) : (
-                  <div>
-                    <a href={`https://wa.me/${lead.realPhone ?? lead.phone}`} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline font-mono">{lead.realPhone ?? lead.phone}</a>
-                    {lead.isLid && !lead.realPhone && <span className="ml-2 text-xs text-amber-600">(LID — edite para inserir o número real)</span>}
+                )}
+
+                {/* Contato */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Contato</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Telefone</p>
+                      {editing ? (
+                        <div className="space-y-1">
+                          {lead.isLid && (
+                            <input value={form.realPhone} onChange={(e) => setForm((f) => ({ ...f, realPhone: e.target.value }))}
+                              placeholder="Número real (ex: 5544...)"
+                              className="w-full rounded-lg border border-blue-300 px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                          )}
+                          {!lead.isLid && (
+                            <input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <p className="text-sm font-medium text-slate-800 font-mono">{lead.realPhone ?? lead.phone}</p>
+                          {lead.isLid && !lead.realPhone && <span className="text-xs text-amber-600">LID — edite para inserir o número real</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">E-mail</p>
+                      {editing ? (
+                        <input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                          placeholder="email@..." className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      ) : (
+                        <p className="text-sm font-medium text-slate-800">{lead.email ?? "—"}</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Valor estimado</p>
+                      {editing ? (
+                        <input value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
+                          type="number" placeholder="0,00" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-800">
+                          {lead.value ? lead.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Campanha</p>
+                      {editing ? (
+                        <input value={form.campaignName} onChange={(e) => setForm((f) => ({ ...f, campaignName: e.target.value }))}
+                          placeholder="Nome da campanha" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
+                      ) : (
+                        <p className="text-sm font-medium text-slate-800">{lead.campaignName ?? "—"}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* UTMs */}
+                {(lead.utmSource || lead.utmMedium || lead.utmCampaign || lead.utmContent || lead.utmTerm || lead.fbclid || lead.gclid) && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">📊 Rastreamento</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                      {lead.utmSource   && <><span className="text-xs text-slate-400">utm_source</span>   <span className="text-xs font-medium text-slate-700 truncate">{lead.utmSource}</span></>}
+                      {lead.utmMedium   && <><span className="text-xs text-slate-400">utm_medium</span>   <span className="text-xs font-medium text-slate-700 truncate">{lead.utmMedium}</span></>}
+                      {lead.utmCampaign && <><span className="text-xs text-slate-400">utm_campaign</span> <span className="text-xs font-medium text-slate-700 truncate">{lead.utmCampaign}</span></>}
+                      {lead.utmContent  && <><span className="text-xs text-slate-400">utm_content</span>  <span className="text-xs font-medium text-slate-700 truncate">{lead.utmContent}</span></>}
+                      {lead.utmTerm     && <><span className="text-xs text-slate-400">utm_term</span>     <span className="text-xs font-medium text-slate-700 truncate">{lead.utmTerm}</span></>}
+                      {lead.fbclid      && <><span className="text-xs text-slate-400">fbclid</span>       <span className="text-xs font-mono text-slate-500 truncate">{lead.fbclid.slice(0,20)}…</span></>}
+                      {lead.gclid       && <><span className="text-xs text-slate-400">gclid</span>        <span className="text-xs font-mono text-slate-500 truncate">{lead.gclid.slice(0,20)}…</span></>}
+                    </div>
                   </div>
                 )}
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">E-mail</p>
-                {editing ? (
-                  <input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                    placeholder="email@..." className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400" />
-                ) : (
-                  <p className="text-sm text-slate-700">{lead.email ?? "—"}</p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Valor estimado</p>
-                {editing ? (
-                  <input value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
-                    type="number" placeholder="R$ 0,00" className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400" />
-                ) : (
-                  <p className="text-sm text-slate-700 font-medium">
-                    {lead.value ? lead.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
-                  </p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Campanha</p>
-                {editing ? (
-                  <input value={form.campaignName} onChange={(e) => setForm((f) => ({ ...f, campaignName: e.target.value }))}
-                    placeholder="Nome da campanha" className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400" />
-                ) : (
-                  <p className="text-sm text-slate-700">{lead.campaignName ?? "—"}</p>
-                )}
-              </div>
-            </div>
 
-            {/* UTMs */}
-            {(lead.utmSource || lead.utmMedium || lead.utmCampaign || lead.utmContent || lead.utmTerm || lead.fbclid || lead.gclid) && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">📊 Rastreamento</p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                  {lead.utmSource   && <><span className="text-xs text-slate-400">utm_source</span>   <span className="text-xs font-medium text-slate-700 truncate">{lead.utmSource}</span></>}
-                  {lead.utmMedium   && <><span className="text-xs text-slate-400">utm_medium</span>   <span className="text-xs font-medium text-slate-700 truncate">{lead.utmMedium}</span></>}
-                  {lead.utmCampaign && <><span className="text-xs text-slate-400">utm_campaign</span> <span className="text-xs font-medium text-slate-700 truncate">{lead.utmCampaign}</span></>}
-                  {lead.utmContent  && <><span className="text-xs text-slate-400">utm_content</span>  <span className="text-xs font-medium text-slate-700 truncate">{lead.utmContent}</span></>}
-                  {lead.utmTerm     && <><span className="text-xs text-slate-400">utm_term</span>     <span className="text-xs font-medium text-slate-700 truncate">{lead.utmTerm}</span></>}
-                  {lead.fbclid      && <><span className="text-xs text-slate-400">fbclid</span>       <span className="text-xs font-mono text-slate-500 truncate">{lead.fbclid.slice(0,20)}…</span></>}
-                  {lead.gclid       && <><span className="text-xs text-slate-400">gclid</span>        <span className="text-xs font-mono text-slate-500 truncate">{lead.gclid.slice(0,20)}…</span></>}
+                {/* Dados da Campanha */}
+                {(lead.adPlatform || lead.campaignId || lead.adSetName || lead.adName || lead.adId) && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+                      {lead.adPlatform === "meta" ? "🟦 Meta Ads" : lead.adPlatform === "google" ? "🔴 Google Ads" : "📣 Campanha"}
+                    </p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                      {lead.adPlatform   && <><span className="text-xs text-slate-400">Plataforma</span>  <span className="text-xs font-medium text-slate-700">{lead.adPlatform === "meta" ? "Meta Ads" : lead.adPlatform === "google" ? "Google Ads" : lead.adPlatform}</span></>}
+                      {lead.campaignName && <><span className="text-xs text-slate-400">Campanha</span>    <span className="text-xs font-medium text-slate-700 truncate">{lead.campaignName}</span></>}
+                      {lead.adSetName    && <><span className="text-xs text-slate-400">Conjunto</span>    <span className="text-xs font-medium text-slate-700 truncate">{lead.adSetName}</span></>}
+                      {lead.adName       && <><span className="text-xs text-slate-400">Anúncio</span>     <span className="text-xs font-medium text-slate-700 truncate">{lead.adName}</span></>}
+                      {lead.adId         && <><span className="text-xs text-slate-400">Ad ID</span>       <span className="text-xs font-mono text-slate-500 truncate">{lead.adId}</span></>}
+                      {lead.campaignId   && <><span className="text-xs text-slate-400">Campaign ID</span> <span className="text-xs font-mono text-slate-500 truncate">{lead.campaignId}</span></>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Campos extras do formulário */}
+                {lead.customFields && Object.keys(lead.customFields).length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">📋 Dados do Formulário</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                      {Object.entries(lead.customFields).map(([k, v]) => (
+                        <>
+                          <span key={k + "_k"} className="text-xs text-slate-400 truncate">{k}</span>
+                          <span key={k + "_v"} className="text-xs font-medium text-slate-700 truncate">{v}</span>
+                        </>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Anotações */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Anotações</p>
+                  <textarea value={editing ? form.notes : lead.notes}
+                    onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                    onFocus={() => !editing && setEditing(true)}
+                    rows={4} placeholder="Adicione anotações sobre este lead..."
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400 resize-none" />
                 </div>
               </div>
-            )}
 
-            {/* Dados da Campanha */}
-            {(lead.adPlatform || lead.campaignId || lead.adSetName || lead.adName || lead.adId) && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                  {lead.adPlatform === "meta" ? "🟦 Campanha Meta Ads" : lead.adPlatform === "google" ? "🔴 Campanha Google Ads" : "📣 Dados da Campanha"}
-                </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                  {lead.adPlatform   && <><span className="text-xs text-slate-400">Plataforma</span>   <span className="text-xs font-medium text-slate-700">{lead.adPlatform === "meta" ? "Meta Ads" : lead.adPlatform === "google" ? "Google Ads" : lead.adPlatform}</span></>}
-                  {lead.campaignName && <><span className="text-xs text-slate-400">Campanha</span>      <span className="text-xs font-medium text-slate-700 truncate">{lead.campaignName}</span></>}
-                  {lead.adSetName    && <><span className="text-xs text-slate-400">Conjunto</span>      <span className="text-xs font-medium text-slate-700 truncate">{lead.adSetName}</span></>}
-                  {lead.adName       && <><span className="text-xs text-slate-400">Anúncio</span>       <span className="text-xs font-medium text-slate-700 truncate">{lead.adName}</span></>}
-                  {lead.adId         && <><span className="text-xs text-slate-400">Ad ID</span>         <span className="text-xs font-mono text-slate-500 truncate">{lead.adId}</span></>}
-                  {lead.campaignId   && <><span className="text-xs text-slate-400">Campaign ID</span>   <span className="text-xs font-mono text-slate-500 truncate">{lead.campaignId}</span></>}
+              {/* ── Right column (2/5) ── */}
+              <div className="col-span-2 p-6 space-y-5 bg-slate-50/50">
+
+                {/* IA toggle */}
+                <div className={clsx(
+                  "rounded-xl border p-4",
+                  lead.aiPaused ? "border-amber-200 bg-amber-50" : "border-violet-200 bg-violet-50"
+                )}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className={clsx("text-xs font-bold uppercase tracking-wide", lead.aiPaused ? "text-amber-700" : "text-violet-700")}>
+                        {lead.aiPaused ? "⏸ IA pausada" : "🤖 IA ativa"}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        {lead.aiPaused
+                          ? "Especialista assumiu. Reative quando quiser."
+                          : "Respondendo automaticamente."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ aiPaused: !lead.aiPaused }),
+                        });
+                        const updated = await res.json();
+                        if (res.ok) { setLead(updated); onUpdated(updated); }
+                      }}
+                      className={clsx(
+                        "rounded-lg px-3 py-1.5 text-xs font-bold transition shrink-0 whitespace-nowrap",
+                        lead.aiPaused
+                          ? "bg-violet-600 text-white hover:bg-violet-700"
+                          : "bg-amber-500 text-white hover:bg-amber-600"
+                      )}
+                    >
+                      {lead.aiPaused ? "Reativar" : "Pausar"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
 
-            {/* Campos extras do formulário */}
-            {lead.customFields && Object.keys(lead.customFields).length > 0 && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">📋 Dados do Formulário</p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                  {Object.entries(lead.customFields).map(([k, v]) => (
-                    <>
-                      <span key={k + "_k"} className="text-xs text-slate-400 truncate">{k}</span>
-                      <span key={k + "_v"} className="text-xs font-medium text-slate-700 truncate">{v}</span>
-                    </>
-                  ))}
+                {/* Análise IA */}
+                <div className="rounded-xl border border-purple-200 bg-white p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold text-purple-700 uppercase tracking-wide">✨ Análise IA</p>
+                    <button onClick={analyze} disabled={analyzing} className="text-xs text-purple-600 hover:text-purple-800 font-semibold disabled:opacity-50">
+                      {analyzing ? "Analisando..." : lead.ai ? "Reanalisar" : "Analisar"}
+                    </button>
+                  </div>
+                  {lead.ai ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <span className={clsx("rounded-xl px-3 py-1.5 text-lg font-black border", SCORE_COLOR(lead.ai.score))}>{lead.ai.score}/10</span>
+                        <span className="text-sm font-medium text-slate-600">
+                          {lead.ai.score >= 8 ? "Alta intenção" : lead.ai.score >= 5 ? "Média intenção" : "Baixa intenção"}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-700 leading-relaxed">{lead.ai.summary}</p>
+                      <div className="rounded-lg bg-purple-50 border border-purple-100 px-3 py-2.5">
+                        <p className="text-xs text-purple-600 font-semibold mb-1">Próximo passo:</p>
+                        <p className="text-sm text-slate-700 leading-relaxed">{lead.ai.nextStep}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-400 italic">Clique em "Analisar" para obter insights.</p>
+                  )}
                 </div>
-              </div>
-            )}
 
-            {/* Notes */}
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Anotações</p>
-              <textarea value={editing ? form.notes : lead.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                onFocus={() => !editing && setEditing(true)}
-                rows={3} placeholder="Adicione anotações sobre este lead..."
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 resize-none" />
+                {/* Follow-ups */}
+                <FollowUpSection leadId={lead.id} />
+              </div>
             </div>
           </div>
         )}
@@ -656,18 +692,18 @@ export function LeadModal({
             </div>
 
             {/* Input */}
-            <div className="border-t border-slate-200 bg-white p-3 flex gap-2 items-end shrink-0">
+            <div className="border-t border-slate-200 bg-white px-4 py-3 flex gap-3 items-end shrink-0">
               <textarea
                 value={msgInput}
                 onChange={(e) => setMsgInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
-                placeholder="Mensagem... (Enter para enviar)"
-                rows={1}
-                className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-green-400 resize-none"
-                style={{ maxHeight: 100 }}
+                placeholder="Mensagem... (Enter para enviar, Shift+Enter para nova linha)"
+                rows={2}
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-green-400 resize-none"
+                style={{ maxHeight: 120 }}
               />
               <button onClick={sendMsg} disabled={sending || !msgInput.trim()}
-                className="shrink-0 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-40 px-4 py-2 text-white font-semibold text-sm transition">
+                className="shrink-0 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-40 px-5 py-2.5 text-white font-bold text-sm transition">
                 {sending ? "..." : "Enviar"}
               </button>
             </div>
@@ -676,9 +712,9 @@ export function LeadModal({
 
         {/* Footer (only on details tab) */}
         {tab === "details" && (
-          <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 shrink-0">
+          <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4 shrink-0 bg-white">
             {canDeleteLeads ? (
-              <button onClick={remove} className="text-sm text-red-500 hover:text-red-700 transition">Remover lead</button>
+              <button onClick={remove} className="text-sm text-red-500 hover:text-red-700 font-medium transition">🗑 Remover lead</button>
             ) : (
               <span />
             )}
@@ -686,17 +722,17 @@ export function LeadModal({
               {editing && (
                 <>
                   <button onClick={() => { setEditing(false); setForm({ name: lead.name, phone: lead.phone, realPhone: lead.realPhone ?? "", email: lead.email ?? "", value: lead.value?.toString() ?? "", notes: lead.notes, campaignName: lead.campaignName ?? "" }); }}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
+                    className="rounded-xl border border-slate-200 px-5 py-2 text-sm text-slate-600 hover:bg-slate-50 font-medium">
                     Cancelar
                   </button>
-                  <button onClick={save} disabled={saving} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
-                    {saving ? "Salvando..." : "Salvar"}
+                  <button onClick={save} disabled={saving} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 transition">
+                    {saving ? "Salvando..." : "Salvar alterações"}
                   </button>
                 </>
               )}
               {!editing && (
-                <button onClick={() => setEditing(true)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
-                  Editar
+                <button onClick={() => setEditing(true)} className="rounded-xl border border-slate-200 px-5 py-2 text-sm text-slate-600 hover:bg-slate-50 font-medium transition">
+                  ✏️ Editar
                 </button>
               )}
             </div>
