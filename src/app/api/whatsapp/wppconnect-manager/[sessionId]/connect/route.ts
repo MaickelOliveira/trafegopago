@@ -29,7 +29,13 @@ export async function POST(
     await new Promise(r => setTimeout(r, 3000));
   }
 
-  const qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken);
+  // Tenta obter QR com até 8 tentativas (WPPConnect pode demorar até ~16s para gerar)
+  let qr: string | null = null;
+  for (let i = 0; i < 8; i++) {
+    qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken);
+    if (qr) break;
+    await new Promise(r => setTimeout(r, 2000));
+  }
 
   return NextResponse.json({ status: "connecting", qr });
 }
