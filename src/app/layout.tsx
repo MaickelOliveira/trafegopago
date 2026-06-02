@@ -16,8 +16,9 @@ export const metadata: Metadata = {
   title: "Nexo — Dashboard de Campanhas",
   description: "Dashboard inteligente para gestão de tráfego pago: Meta Ads e Google Ads",
   icons: {
-    icon: "/nexo-logo.png",
-    shortcut: "/nexo-logo.png",
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
   },
 };
 
