@@ -133,16 +133,23 @@ export async function POST(
     return NextResponse.json({ ok: true });
   }
 
-  console.log(`[WPPConnect Webhook] session=${wppSession.sessionName} event=${body.event} from=${body.from} fromMe=${body.fromMe} chatId=${body.chatId}`);
+  // Log completo para ajudar a diagnosticar history sync em caso de reincidência
+  console.log(`[WPPConnect Webhook] session=${wppSession.sessionName} event=${body.event} from=${body.from} fromMe=${body.fromMe} chatId=${body.chatId} timestamp_raw=${(body.timestamp as number) ?? (body.t as number) ?? "n/a"}`);
 
   // ── Ignora mensagens históricas do sync de reconexão ──────────────────────
-  // Quando o WPPConnect reconecta ele dispara eventos "onmessage" para mensagens
-  // antigas (history sync). Filtramos mensagens com mais de 120s no passado.
-  const msgTimestamp = (body.timestamp as number) || (body.t as number) || 0;
+  // WPPConnect dispara "onmessage" para mensagens antigas ao reconectar.
+  // O campo timestamp pode vir em SEGUNDOS ou MILISSEGUNDOS — normalizamos.
+  let msgTimestamp = (body.timestamp as number) || (body.t as number) || 0;
+  if (msgTimestamp > 1_000_000_000_000) {
+    // timestamp em ms → converte para segundos
+    msgTimestamp = Math.floor(msgTimestamp / 1000);
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
   if (msgTimestamp > 0) {
-    const ageSec = Math.floor(Date.now() / 1000) - msgTimestamp;
-    if (ageSec > 120) {
-      console.log(`[WPPConnect Webhook] histórico ignorado: phone_raw=${body.from} age=${ageSec}s ts=${msgTimestamp}`);
+    const ageSec = nowSec - msgTimestamp;
+    // Bloqueia: (a) mensagens mais antigas que 5 min, ou (b) timestamp no futuro
+    if (ageSec > 300 || ageSec < -30) {
+      console.log(`[WPPConnect Webhook] histórico ignorado: phone_raw=${body.from} age=${ageSec}s ts=${msgTimestamp} (raw=${(body.timestamp as number) || (body.t as number)})`);
       return NextResponse.json({ ok: true });
     }
   }
