@@ -1059,6 +1059,9 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
   // Delete confirm
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const [refreshingWebhooks, setRefreshingWebhooks] = useState(false);
+  const [webhookRefreshResult, setWebhookRefreshResult] = useState<string | null>(null);
+
   const fetchSessions = useCallback(async () => {
     try {
       const res = await fetch("/api/whatsapp/wppconnect-manager");
@@ -1073,6 +1076,29 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     const t = setInterval(fetchSessions, 10000);
     return () => clearInterval(t);
   }, [fetchSessions]);
+
+  // Auto-registra webhooks no WPPConnect ao montar — garante que o webhook
+  // não se perca após restart do servidor WPPConnect (que armazena em memória)
+  useEffect(() => {
+    fetch("/api/whatsapp/wppconnect-manager/refresh-webhooks", { method: "POST" }).catch(() => {});
+  }, []);
+
+  async function handleRefreshWebhooks() {
+    setRefreshingWebhooks(true);
+    setWebhookRefreshResult(null);
+    try {
+      const res = await fetch("/api/whatsapp/wppconnect-manager/refresh-webhooks", { method: "POST" });
+      const data = await res.json() as { results?: { sessionName: string; ok: boolean }[]; baseUrl?: string };
+      const total = data.results?.length ?? 0;
+      const ok = data.results?.filter(r => r.ok).length ?? 0;
+      setWebhookRefreshResult(`✓ ${ok}/${total} webhook${total !== 1 ? "s" : ""} registrado${total !== 1 ? "s" : ""} em ${data.baseUrl ?? ""}`);
+    } catch {
+      setWebhookRefreshResult("Erro ao reconectar webhooks");
+    } finally {
+      setRefreshingWebhooks(false);
+      setTimeout(() => setWebhookRefreshResult(null), 5000);
+    }
+  }
 
   // QR polling
   useEffect(() => {
@@ -1168,6 +1194,19 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
             <span className="text-sm font-medium text-slate-700">{connectedCount} / {sessions.length} conectada{sessions.length !== 1 ? "s" : ""}</span>
           </div>
           <button
+            onClick={handleRefreshWebhooks}
+            disabled={refreshingWebhooks}
+            title="Reregistra o webhook no servidor WPPConnect — use se as mensagens não estiverem chegando"
+            className="flex items-center gap-2 bg-white border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-700 hover:text-violet-700 text-sm font-medium rounded-xl px-4 py-2.5 transition shadow-sm disabled:opacity-50"
+          >
+            {refreshingWebhooks ? (
+              <span className="h-4 w-4 rounded-full border-2 border-violet-400 border-t-transparent animate-spin" />
+            ) : (
+              <span>🔗</span>
+            )}
+            Reconectar Webhooks
+          </button>
+          <button
             onClick={() => { setNewName(""); setCreateError(""); setWppModal({ type: "create", stage: "name" }); }}
             className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition shadow-sm"
           >
@@ -1175,6 +1214,13 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
           </button>
         </div>
       </div>
+
+      {/* Toast de resultado do refresh webhooks */}
+      {webhookRefreshResult && (
+        <div className="mb-4 px-4 py-2.5 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 text-sm font-medium">
+          {webhookRefreshResult}
+        </div>
+      )}
 
       {/* Info banner */}
       <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4 mb-5 flex items-start gap-3">
