@@ -350,15 +350,8 @@ export async function POST(
     String(body.from ?? "").endsWith("@lid");
 
   // ── Proteção contra criação de leads falsos no history sync do reconect ──
-  // Situação 1: mensagem enviada por nós (fromMe=true) para um contato que ainda
-  //             não é lead → nunca deve criar lead. Leads só nascem quando o
-  //             contato MANDA mensagem para nós, não o contrário.
-  if (isNew && fromMe) {
-    console.log(`[WPPConnect Webhook] fromMe + lead novo — ignorado (history sync de envios) phone=${phone}`);
-    return NextResponse.json({ ok: true });
-  }
-  // Situação 2: mensagem sem timestamp → não veio em tempo real, é history sync
-  //             cujo campo timestamp não foi preenchido pelo WPPConnect.
+  // O filtro de timestamp acima (ageSec > 300) já bloqueia mensagens históricas com timestamp.
+  // Aqui só bloqueamos o caso sem timestamp (campo ausente = nunca é mensagem real do WPPConnect).
   if (isNew && msgTimestamp === 0) {
     console.log(`[WPPConnect Webhook] sem timestamp + lead novo — ignorado (history sync sem ts) phone=${phone}`);
     return NextResponse.json({ ok: true });
