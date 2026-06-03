@@ -345,11 +345,39 @@ export async function POST(
 
   // ── CTWa: referral data (Click-to-WhatsApp) ──
   // WPPConnect expõe dados de anúncio no campo `referral`
-  const referral = body.referral as Record<string, unknown> | undefined;
-  let ctwaAdId      = referral?.source_id as string | undefined;
-  const ctwaSourceUrl = referral?.source_url as string | undefined;
-  const ctwaHeadline  = referral?.headline as string | undefined;
-  const ctwaSourceType = referral?.source_type as string | undefined;
+  // ── DIAGNÓSTICO: loga o body completo para leads novos (primeiro contato) ──
+  // Isso permite ver exatamente o que o WPPConnect envia e onde está o referral.
+  const isNewPhone = !getLeadByPhone(
+    (getFunnels().find(f => f.id === wppSession.funnelId)?.clientId ?? wppSession.clientId ?? "sem-cliente"),
+    phone,
+  );
+  if (isNewPhone && !fromMe) {
+    // Trunca campos grandes (base64) para não poluir o log
+    const bodyForLog = Object.fromEntries(
+      Object.entries(body).map(([k, v]) => {
+        if (typeof v === "string" && v.length > 200) return [k, `<truncated:${v.length}chars>`];
+        return [k, v];
+      }),
+    );
+    console.log(`[WPPConnect CTWa DIAG] NOVO LEAD phone=${phone} BODY_KEYS=${JSON.stringify(Object.keys(body))}`);
+    console.log(`[WPPConnect CTWa DIAG] BODY=${JSON.stringify(bodyForLog)}`);
+  }
+
+  // WPPConnect pode enviar o referral CTWa em campos diferentes dependendo da versão:
+  //  - body.referral  (padrão documentado)
+  //  - body.ctwaContext (versões mais novas do whatsapp-web.js)
+  //  - body._data?.referral (acesso interno)
+  const referral =
+    (body.referral as Record<string, unknown> | undefined) ||
+    (body.ctwaContext as Record<string, unknown> | undefined);
+  const bodyData = body._data as Record<string, unknown> | undefined;
+  const referralFromData = bodyData?.referral as Record<string, unknown> | undefined;
+  const effectiveReferral = referral || referralFromData;
+
+  let ctwaAdId      = (effectiveReferral?.source_id ?? effectiveReferral?.sourceId) as string | undefined;
+  const ctwaSourceUrl = (effectiveReferral?.source_url ?? effectiveReferral?.sourceUrl) as string | undefined;
+  const ctwaHeadline  = (effectiveReferral?.headline) as string | undefined;
+  const ctwaSourceType = (effectiveReferral?.source_type ?? effectiveReferral?.sourceType) as string | undefined;
 
   // Se source_id não veio, tenta extrair o Ad ID da source_url
   // Formatos conhecidos:
@@ -368,7 +396,7 @@ export async function POST(
     }
   }
 
-  if (referral) {
+  if (effectiveReferral) {
     console.log(`[WPPConnect CTWa] referral detectado — source_id=${ctwaAdId} source_type=${ctwaSourceType} headline="${ctwaHeadline}" source_url=${ctwaSourceUrl}`);
   }
 
