@@ -142,7 +142,7 @@ Regras:
         const tipo = m.type === "image" ? "imagem" : m.type === "video" ? "vídeo" : "documento";
         const desc = m.caption ? ` — "${m.caption}"` : "";
         return `• [${m.name}]: ${tipo}${desc}`;
-      }).join("\n")}\n\nPara enviar uma mídia, inclua o marcador no texto da resposta:\n  [MIDIA:nome-da-midia]\nExemplo: "Aqui está nosso catálogo! [MIDIA:catalogo-produtos]"\nO arquivo será enviado automaticamente no lugar do marcador. Só envie mídia quando fizer sentido no contexto da conversa.`
+      }).join("\n")}\n\nPara enviar uma mídia, inclua o marcador no texto da resposta:\n  [MIDIA:nome-da-midia]\nExemplo: "Aqui está nosso catálogo! [MIDIA:catalogo-produtos]"\nO arquivo será enviado automaticamente no lugar do marcador. Só envie mídia quando fizer sentido no contexto da conversa.\n\nPara enviar uma mensagem de texto APÓS as mídias (depois que as fotos chegarem), use:\n  [APOS_MIDIA:texto que será enviado depois das fotos]\nExemplo: "Aqui está o cardápio! [MIDIA:cardapio] [APOS_MIDIA:O que você achou? Quer fazer a reserva?]"\nO texto dentro de [APOS_MIDIA:...] é enviado automaticamente após todas as mídias serem entregues.`
     : "";
 
   if (customPrompt?.trim()) {
