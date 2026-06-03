@@ -800,6 +800,18 @@ export async function POST(
           return NextResponse.json({ ok: true }); // eco da plataforma — não pausa IA
         }
       }
+      // Verifica se já existe alguma mensagem do cliente nesta conversa.
+      // Se não houver (conversa nova), esta mensagem fromMe é uma saudação automática
+      // do WhatsApp Business (ex: anúncios CTWa) — não deve pausar a IA.
+      if (textTrimmed && cid !== "sem-cliente") {
+        const historyFM2 = getHistory(phone, cid);
+        const hasUserMsgs = historyFM2.some((m) => m.role === "user");
+        if (!hasUserMsgs) {
+          console.log(`[webhook/${instanceId}] conversa nova sem mensagens do cliente — saudação automática, não pausa IA`);
+          addMessage(phone, { role: "assistant", content: textTrimmed, ts: Date.now() }, cid, { connId: uazConn?.id });
+          return NextResponse.json({ ok: true });
+        }
+      }
       // Mensagem do gestor via celular → pausa a IA
       if (cid !== "sem-cliente") {
         const agCfg = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);

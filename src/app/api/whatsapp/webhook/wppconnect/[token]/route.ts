@@ -609,6 +609,16 @@ export async function POST(
       if (consumed) {
         return NextResponse.json({ ok: true });
       }
+      // Verifica se já existe alguma mensagem do cliente nesta conversa.
+      // Se não houver (conversa nova), esta mensagem fromMe é uma saudação automática
+      // do WhatsApp Business (ex: anúncios CTWa) — não deve pausar a IA.
+      const historyFM = getHistory(phone, clientId);
+      const hasUserMessages = historyFM.some((m) => m.role === "user");
+      if (!hasUserMessages) {
+        console.log(`[WPPConnect fromMe] phone=${phone} conversa nova sem mensagens do cliente — saudação automática, não pausa IA`);
+        addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
+        return NextResponse.json({ ok: true });
+      }
       // Operador enviou pelo celular → salva e pausa a IA
       addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
       const activeClientFM = clientId !== "sem-cliente" ? getClientById(clientId) : null;
