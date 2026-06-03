@@ -388,10 +388,12 @@ export async function POST(
   const referralFromData = bodyData?.referral as Record<string, unknown> | undefined;
   const effectiveReferral = referral || referralFromData;
 
-  let ctwaAdId      = (effectiveReferral?.source_id ?? effectiveReferral?.sourceId) as string | undefined;
-  const ctwaSourceUrl = (effectiveReferral?.source_url ?? effectiveReferral?.sourceUrl) as string | undefined;
-  const ctwaHeadline  = (effectiveReferral?.headline) as string | undefined;
-  const ctwaSourceType = (effectiveReferral?.source_type ?? effectiveReferral?.sourceType) as string | undefined;
+  // Normaliza: || undefined converte string vazia para undefined
+  let ctwaAdId      = (((effectiveReferral?.source_id ?? effectiveReferral?.sourceId) as string | undefined) || undefined);
+  const ctwaSourceUrl = (((effectiveReferral?.source_url ?? effectiveReferral?.sourceUrl) as string | undefined) || undefined);
+  const ctwaHeadline  = ((effectiveReferral?.headline as string | undefined) || undefined);
+  const ctwaSourceType = (((effectiveReferral?.source_type ?? effectiveReferral?.sourceType) as string | undefined) || undefined);
+  const ctwaConversionSource = ((effectiveReferral?.conversionSource as string | undefined) || undefined);
 
   // Se source_id não veio, tenta extrair o Ad ID da source_url
   // Formatos conhecidos:
@@ -410,8 +412,33 @@ export async function POST(
     }
   }
 
+  // Se ainda sem ad ID e a URL é um link curto fb.me, tenta seguir o redirect
+  // para obter a URL final que pode conter o ad ID
+  if (!ctwaAdId && ctwaSourceUrl && /fb\.me\//.test(ctwaSourceUrl)) {
+    try {
+      const resp = await fetch(ctwaSourceUrl, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(3000) });
+      const resolvedUrl = resp.url;
+      if (resolvedUrl && resolvedUrl !== ctwaSourceUrl) {
+        const resolvedMatch =
+          resolvedUrl.match(/[?&]adId=(\d+)/i) ||
+          resolvedUrl.match(/\/ads\/adId=(\d+)/i) ||
+          resolvedUrl.match(/fb\.me\/ads\/(\d+)/i) ||
+          resolvedUrl.match(/\/ads\/(\d{10,})/i) ||
+          resolvedUrl.match(/[?&]ad_id=(\d+)/i);
+        if (resolvedMatch) {
+          ctwaAdId = resolvedMatch[1];
+          console.log(`[WPPConnect CTWa] Ad ID extraído da URL resolvida (${resolvedUrl}): ${ctwaAdId}`);
+        } else {
+          console.log(`[WPPConnect CTWa] URL resolvida sem ad ID: ${resolvedUrl}`);
+        }
+      }
+    } catch (e) {
+      console.warn("[WPPConnect CTWa] Erro ao resolver fb.me redirect:", e instanceof Error ? e.message : e);
+    }
+  }
+
   if (effectiveReferral) {
-    console.log(`[WPPConnect CTWa] referral detectado — source_id=${ctwaAdId} source_type=${ctwaSourceType} headline="${ctwaHeadline}" source_url=${ctwaSourceUrl}`);
+    console.log(`[WPPConnect CTWa] referral detectado — conversionSource=${ctwaConversionSource} source_id=${ctwaAdId} source_type=${ctwaSourceType} headline="${ctwaHeadline}" source_url=${ctwaSourceUrl}`);
   }
 
   // Encontra o funil vinculado
