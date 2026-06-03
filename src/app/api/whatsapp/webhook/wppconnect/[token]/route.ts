@@ -28,6 +28,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
+// Rastreia leads novos criados pelo primeiro contato do cliente.
+// Usado para detectar a saudação automática do WA Business (CTWa) mesmo no race condition
+// onde a mensagem do cliente chega ANTES do eco fromMe da saudação.
+const newLeadGreetingWindow = new Map<string, number>(); // phone → timestamp
+
 // ── Extrai marcadores [MIDIA:nome] e [APOS_MIDIA:texto] do texto da IA ──
 function extractMediaMarkers(text: string): { clean: string; names: string[]; followup?: string } {
   // Extrai [APOS_MIDIA:texto] para enviar após as mídias
@@ -594,6 +599,13 @@ export async function POST(
     runAutomationsForMessage(clientId, savedLead, text);
   }
 
+  // Rastreia leads novos para detectar saudações automáticas do WA Business (CTWa).
+  // Se a mensagem do cliente chega antes do eco fromMe da saudação, o window permite
+  // identificar que o fromMe seguinte é greeting — não operador — e não pausa a IA.
+  if (isNew && !fromMe) {
+    newLeadGreetingWindow.set(phone, Date.now());
+  }
+
   // Se foi enviado por nós (fromMe = IA, plataforma ou operador pelo celular)
   if (fromMe) {
     // Janela de envio ativa: qualquer eco (texto ou mídia, onanymessage ou onselfmessage)
@@ -609,13 +621,17 @@ export async function POST(
       if (consumed) {
         return NextResponse.json({ ok: true });
       }
-      // Verifica se já existe alguma mensagem do cliente nesta conversa.
-      // Se não houver (conversa nova), esta mensagem fromMe é uma saudação automática
-      // do WhatsApp Business (ex: anúncios CTWa) — não deve pausar a IA.
+      // Verifica se é uma saudação automática do WA Business (ex: anúncios CTWa).
+      // Dois cenários possíveis:
+      //   A) fromMe chega ANTES da mensagem do cliente → histórico vazio → !hasUserMessages
+      //   B) mensagem do cliente chega ANTES (race condition) → newLeadGreetingWindow marcado
+      const newLeadAt = newLeadGreetingWindow.get(phone);
+      const isWithinGreetingWindow = newLeadAt !== undefined && (Date.now() - newLeadAt) < 30_000;
       const historyFM = getHistory(phone, clientId);
       const hasUserMessages = historyFM.some((m) => m.role === "user");
-      if (!hasUserMessages) {
-        console.log(`[WPPConnect fromMe] phone=${phone} conversa nova sem mensagens do cliente — saudação automática, não pausa IA`);
+      if (!hasUserMessages || isWithinGreetingWindow) {
+        if (isWithinGreetingWindow) newLeadGreetingWindow.delete(phone);
+        console.log(`[WPPConnect fromMe] phone=${phone} — saudação automática (${isWithinGreetingWindow ? `janela CTWa ${Math.round((Date.now() - (newLeadAt ?? 0)) / 1000)}s` : "conversa nova"}), não pausa IA`);
         addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
         return NextResponse.json({ ok: true });
       }

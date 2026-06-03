@@ -28,6 +28,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { getAdInfoById } from "@/lib/meta-api";
 
+// Rastreia leads novos criados pelo primeiro contato do cliente.
+// Usado para detectar a saudação automática do WA Business (CTWa) mesmo no race condition
+// onde a mensagem do cliente chega ANTES do eco fromMe da saudação.
+const newLeadGreetingWindow = new Map<string, number>(); // phone → timestamp
+
 /**
  * Usa o Gemini para gerar um resumo em texto corrido da conversa.
  */
@@ -783,6 +788,13 @@ export async function POST(
     const savedType = msgType === "audio" ? "audio" as const : msgType === "image" ? "image" as const : undefined;
     addMessage(phone, { role: fromMe ? "assistant" : "user", content: msgContent, ts, type: savedType, mediaUrl: localMediaUrl ?? mediaUrl }, clientId, { connId: uazConn?.id, contactName: fromMe ? undefined : contactName });
 
+    // Rastreia leads novos para detectar saudações automáticas do WA Business (CTWa).
+    // Se a mensagem do cliente chega antes do eco fromMe da saudação, o window permite
+    // identificar que o fromMe seguinte é greeting — não operador — e não pausa a IA.
+    if (isNew && !fromMe) {
+      newLeadGreetingWindow.set(phone, Date.now());
+    }
+
     // Mensagem enviada por você (gestor via WhatsApp ou automação/IA)
     if (fromMe) {
       // Janela de envio ativa: qualquer eco (texto ou mídia) não deve pausar a IA
@@ -800,14 +812,18 @@ export async function POST(
           return NextResponse.json({ ok: true }); // eco da plataforma — não pausa IA
         }
       }
-      // Verifica se já existe alguma mensagem do cliente nesta conversa.
-      // Se não houver (conversa nova), esta mensagem fromMe é uma saudação automática
-      // do WhatsApp Business (ex: anúncios CTWa) — não deve pausar a IA.
+      // Verifica se é uma saudação automática do WA Business (ex: anúncios CTWa).
+      // Dois cenários possíveis:
+      //   A) fromMe chega ANTES da mensagem do cliente → histórico vazio → !hasUserMsgs
+      //   B) mensagem do cliente chega ANTES (race condition) → newLeadGreetingWindow marcado
       if (textTrimmed && cid !== "sem-cliente") {
+        const newLeadAt = newLeadGreetingWindow.get(phone);
+        const isWithinGreetingWindow = newLeadAt !== undefined && (Date.now() - newLeadAt) < 30_000;
         const historyFM2 = getHistory(phone, cid);
         const hasUserMsgs = historyFM2.some((m) => m.role === "user");
-        if (!hasUserMsgs) {
-          console.log(`[webhook/${instanceId}] conversa nova sem mensagens do cliente — saudação automática, não pausa IA`);
+        if (!hasUserMsgs || isWithinGreetingWindow) {
+          if (isWithinGreetingWindow) newLeadGreetingWindow.delete(phone);
+          console.log(`[webhook/${instanceId}] ${isWithinGreetingWindow ? `janela CTWa ${Math.round((Date.now() - (newLeadAt ?? 0)) / 1000)}s` : "conversa nova sem mensagens do cliente"} — saudação automática, não pausa IA`);
           addMessage(phone, { role: "assistant", content: textTrimmed, ts: Date.now() }, cid, { connId: uazConn?.id });
           return NextResponse.json({ ok: true });
         }
