@@ -28,15 +28,21 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// ── Extrai marcadores [MIDIA:nome] do texto da IA ──
-function extractMediaMarkers(text: string): { clean: string; names: string[] } {
+// ── Extrai marcadores [MIDIA:nome] e [APOS_MIDIA:texto] do texto da IA ──
+function extractMediaMarkers(text: string): { clean: string; names: string[]; followup?: string } {
+  // Extrai [APOS_MIDIA:texto] para enviar após as mídias
+  const followupPattern = /\[APOS_MIDIA:([\s\S]*?)\]/i;
+  const followupMatch = text.match(followupPattern);
+  const followup = followupMatch ? followupMatch[1].trim() : undefined;
+  const textWithoutFollowup = text.replace(followupPattern, "").trim();
+
   const pattern = /\[MIDIA:([^\]]+)\]/gi;
   const names: string[] = [];
-  const clean = text.replace(pattern, (_, name: string) => {
+  const clean = textWithoutFollowup.replace(pattern, (_, name: string) => {
     names.push(name.trim().toLowerCase());
     return "";
   }).replace(/\s{2,}/g, " ").trim();
-  return { clean, names };
+  return { clean, names, followup };
 }
 
 // ── Envia mídias marcadas via WPPConnect ──
@@ -690,8 +696,8 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
-    // Extrai marcadores [MIDIA:nome] do texto antes de enviar
-    const { clean, names } = extractMediaMarkers(reply);
+    // Extrai marcadores [MIDIA:nome] e [FOLLOWUP:texto] do texto antes de enviar
+    const { clean, names, followup } = extractMediaMarkers(reply);
     const textToSend = clean || reply;
     const chunks = agentCfg?.splitMessages
       ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
@@ -709,6 +715,12 @@ export async function POST(
       await sendWppMarkedMedia(wppSession!.sessionName, wppSession!.sessionToken, phone, names, agentCfg.mediaLibrary, isLidPhone);
     } else if (names.length > 0) {
       console.warn(`[WPPConnect sendReply] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
+    }
+    // Envia mensagem de follow-up após as mídias (se houver [APOS_MIDIA:texto])
+    if (followup) {
+      await new Promise<void>((r) => setTimeout(r, 800));
+      markSent(phone, followup);
+      await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, followup, isLidPhone);
     }
   }
 

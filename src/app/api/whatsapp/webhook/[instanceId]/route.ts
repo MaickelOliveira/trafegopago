@@ -148,16 +148,22 @@ async function processGeminiActions(
 }
 
 /**
- * Remove marcadores [MIDIA:nome] do texto e retorna os nomes encontrados + texto limpo.
+ * Remove marcadores [MIDIA:nome] e [APOS_MIDIA:texto] do texto e retorna os nomes encontrados + texto limpo + followup.
  */
-function extractMediaMarkers(text: string): { clean: string; names: string[] } {
+function extractMediaMarkers(text: string): { clean: string; names: string[]; followup?: string } {
+  // Extrai [APOS_MIDIA:texto] para enviar após as mídias
+  const followupPattern = /\[APOS_MIDIA:([\s\S]*?)\]/i;
+  const followupMatch = text.match(followupPattern);
+  const followup = followupMatch ? followupMatch[1].trim() : undefined;
+  const textWithoutFollowup = text.replace(followupPattern, "").trim();
+
   const pattern = /\[MIDIA:([^\]]+)\]/gi;
   const names: string[] = [];
-  const clean = text.replace(pattern, (_, name: string) => {
+  const clean = textWithoutFollowup.replace(pattern, (_, name: string) => {
     names.push(name.trim().toLowerCase());
     return "";
   }).replace(/\s{2,}/g, " ").trim();
-  return { clean, names };
+  return { clean, names, followup };
 }
 
 /**
@@ -894,7 +900,7 @@ export async function POST(
             const clientName = getClientById(cid)?.name ?? cid;
             if (geminiText) {
               console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
-              const { clean, names } = extractMediaMarkers(geminiText);
+              const { clean, names, followup } = extractMediaMarkers(geminiText);
               console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(names)} | library size: ${agCfg?.mediaLibrary?.length ?? 0}`);
               // Salva texto limpo (sem marcadores) no histórico
               addMessage(phone, { role: "assistant", content: clean || geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
@@ -911,6 +917,11 @@ export async function POST(
                 await sendMarkedMedia(instanceUazToken, phone, names, agCfg.mediaLibrary);
               } else if (names.length > 0) {
                 console.warn(`[webhook/${instanceId}] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
+              }
+              // Envia mensagem após mídias (se houver [APOS_MIDIA:texto])
+              if (followup) {
+                await new Promise<void>((r) => setTimeout(r, 800));
+                await sendText(instanceUazToken, phone, followup);
               }
             }
             if (agCfg && actions.length > 0) {
@@ -947,7 +958,7 @@ export async function POST(
 
     if (geminiText) {
       console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
-      const { clean, names } = extractMediaMarkers(geminiText);
+      const { clean, names, followup } = extractMediaMarkers(geminiText);
       console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(names)} | library size: ${agentCfg?.mediaLibrary?.length ?? 0}`);
       // Salva texto limpo (sem marcadores) no histórico
       addMessage(phone, { role: "assistant", content: clean || geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
@@ -964,6 +975,11 @@ export async function POST(
         await sendMarkedMedia(instanceUazToken, phone, names, agentCfg.mediaLibrary);
       } else if (names.length > 0) {
         console.warn(`[webhook/${instanceId}] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
+      }
+      // Envia mensagem após mídias (se houver [APOS_MIDIA:texto])
+      if (followup) {
+        await new Promise<void>((r) => setTimeout(r, 800));
+        await sendText(instanceUazToken, phone, followup);
       }
     }
     if (agentCfg && geminiActions.length > 0) {
