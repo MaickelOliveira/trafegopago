@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import path from "path";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 import { getFunnels } from "@/lib/funnels";
@@ -361,6 +361,20 @@ export async function POST(
     );
     console.log(`[WPPConnect CTWa DIAG] NOVO LEAD phone=${phone} BODY_KEYS=${JSON.stringify(Object.keys(body))}`);
     console.log(`[WPPConnect CTWa DIAG] BODY=${JSON.stringify(bodyForLog)}`);
+
+    // Salva em arquivo para acesso via /api/debug/webhook-payloads
+    try {
+      const debugFile = path.join(process.cwd(), "data", "debug-webhook-payloads.json");
+      mkdirSync(path.dirname(debugFile), { recursive: true });
+      const existing: unknown[] = existsSync(debugFile)
+        ? (JSON.parse(readFileSync(debugFile, "utf-8")) as unknown[])
+        : [];
+      existing.unshift({ ts: new Date().toISOString(), phone, session: wppSession.sessionName, body: bodyForLog });
+      if (existing.length > 20) existing.length = 20; // guarda só os últimos 20
+      writeFileSync(debugFile, JSON.stringify(existing, null, 2));
+    } catch (e) {
+      console.warn("[WPPConnect CTWa DIAG] Erro ao salvar debug file:", e);
+    }
   }
 
   // WPPConnect pode enviar o referral CTWa em campos diferentes dependendo da versão:
