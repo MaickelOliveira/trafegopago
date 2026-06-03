@@ -332,6 +332,8 @@ export async function POST(req: NextRequest) {
       setTimeout(() => {
         const batch = getPendingForPhone(_cid, _phone);
         if (!batch || batch.id !== _pendingId || batch.status !== "pending") return;
+        // Debounce verdadeiro: se outra mensagem estendeu o prazo, espera o próximo timer
+        if (new Date(batch.respondAfter) > new Date()) return;
         markProcessing(batch.id);
         const combined = batch.messages.join("\n");
         const h = getHistory(_phone, _cid);
