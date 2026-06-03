@@ -346,9 +346,31 @@ export async function POST(
   // ── CTWa: referral data (Click-to-WhatsApp) ──
   // WPPConnect expõe dados de anúncio no campo `referral`
   const referral = body.referral as Record<string, unknown> | undefined;
-  const ctwaAdId      = referral?.source_id as string | undefined;
+  let ctwaAdId      = referral?.source_id as string | undefined;
   const ctwaSourceUrl = referral?.source_url as string | undefined;
   const ctwaHeadline  = referral?.headline as string | undefined;
+  const ctwaSourceType = referral?.source_type as string | undefined;
+
+  // Se source_id não veio, tenta extrair o Ad ID da source_url
+  // Formatos conhecidos:
+  //   https://www.facebook.com/ads/adId=<ID>
+  //   https://fb.me/ads/<ID>
+  //   https://www.facebook.com/...?adId=<ID>&...
+  if (!ctwaAdId && ctwaSourceUrl) {
+    const urlAdIdMatch =
+      ctwaSourceUrl.match(/[?&]adId=(\d+)/i) ||
+      ctwaSourceUrl.match(/\/ads\/adId=(\d+)/i) ||
+      ctwaSourceUrl.match(/fb\.me\/ads\/(\d+)/i) ||
+      ctwaSourceUrl.match(/\/ads\/(\d{10,})/i);
+    if (urlAdIdMatch) {
+      ctwaAdId = urlAdIdMatch[1];
+      console.log(`[WPPConnect CTWa] Ad ID extraído da source_url: ${ctwaAdId}`);
+    }
+  }
+
+  if (referral) {
+    console.log(`[WPPConnect CTWa] referral detectado — source_id=${ctwaAdId} source_type=${ctwaSourceType} headline="${ctwaHeadline}" source_url=${ctwaSourceUrl}`);
+  }
 
   // Encontra o funil vinculado
   const funnels = getFunnels();
@@ -375,14 +397,22 @@ export async function POST(
   const nameToSave = contactNameFromApi ?? (shouldUpdateName ? pushName : undefined);
 
   // ── Lookup no Meta Ads API para enriquecer dados de campanha ──
+  // Roda sempre que houver CTWa referral com Ad ID (novo ou retornante — lead pode ter
+  // clicado em anúncio diferente numa nova sessão).
   let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-  if (isNew && ctwaAdId) {
+  const shouldLookupAd = !!ctwaAdId && (!existingLead?.adId || existingLead.adId !== ctwaAdId);
+  if (shouldLookupAd) {
     try {
       const cfg = getConfig();
       if (cfg.metaToken) {
-        adInfo = await getAdInfoById(ctwaAdId, cfg.metaToken);
+        adInfo = await getAdInfoById(ctwaAdId!, cfg.metaToken);
+        console.log(`[WPPConnect CTWa] Meta API result: campaign="${adInfo?.campaignName}" adSet="${adInfo?.adSetName}" ad="${adInfo?.adName}"`);
+      } else {
+        console.warn("[WPPConnect CTWa] metaToken não configurado — não foi possível resolver campanha via Meta API");
       }
-    } catch { /* best-effort */ }
+    } catch (e) {
+      console.warn("[WPPConnect CTWa] Erro ao chamar Meta API:", e instanceof Error ? e.message : e);
+    }
   }
 
   const adFields = adInfo
@@ -396,10 +426,14 @@ export async function POST(
         campaignName: adInfo.campaignName,
         adSourceUrl: ctwaSourceUrl ?? null,
       }
-    : ctwaAdId || ctwaHeadline
+    : ctwaAdId || ctwaHeadline || ctwaSourceUrl
     ? {
         adPlatform: "meta" as const,
         adId: ctwaAdId ?? null,
+        adName: null,
+        adSetId: null,
+        adSetName: null,
+        campaignId: null,
         campaignName: ctwaHeadline ?? null,
         adSourceUrl: ctwaSourceUrl ?? null,
       }
