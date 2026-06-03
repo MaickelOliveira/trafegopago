@@ -379,19 +379,51 @@ export function splitMessage(text: string, maxLen = 300): string[] {
             sentBuf += (sentBuf ? " " : "") + s;
           } else {
             if (sentBuf) chunks.push(sentBuf);
-            // Frase única maior que maxLen: divide por palavras
+            // Frase única maior que maxLen: tenta dividir por quebra de linha simples antes de palavras
             if (s.length > maxLen) {
-              const words = s.split(" ");
-              let wordBuf = "";
-              for (const w of words) {
-                if ((wordBuf + " " + w).length > maxLen) {
-                  if (wordBuf) chunks.push(wordBuf);
-                  wordBuf = w;
-                } else {
-                  wordBuf += (wordBuf ? " " : "") + w;
+              const lines = s.split("\n");
+              if (lines.length > 1) {
+                // Agrupa linhas sem exceder maxLen — nunca corta no meio de uma linha
+                let lineBuf = "";
+                for (const line of lines) {
+                  const joined = lineBuf ? lineBuf + "\n" + line : line;
+                  if (joined.length <= maxLen) {
+                    lineBuf = joined;
+                  } else {
+                    if (lineBuf) chunks.push(lineBuf);
+                    // Linha individual ainda maior que maxLen: divide por palavras
+                    if (line.length > maxLen) {
+                      const words = line.split(" ");
+                      let wordBuf = "";
+                      for (const w of words) {
+                        if ((wordBuf + " " + w).length > maxLen) {
+                          if (wordBuf) chunks.push(wordBuf);
+                          wordBuf = w;
+                        } else {
+                          wordBuf += (wordBuf ? " " : "") + w;
+                        }
+                      }
+                      lineBuf = wordBuf;
+                    } else {
+                      lineBuf = line;
+                    }
+                  }
                 }
+                sentBuf = lineBuf;
+              } else {
+                // Sem quebras de linha: divide por palavras
+                const words = s.split(" ");
+                let wordBuf = "";
+                for (const w of words) {
+                  if ((wordBuf + " " + w).length > maxLen) {
+                    if (wordBuf) chunks.push(wordBuf);
+                    wordBuf = w;
+                  } else {
+                    wordBuf += (wordBuf ? " " : "") + w;
+                  }
+                }
+                sentBuf = wordBuf;
               }
-              sentBuf = wordBuf;
             } else {
               sentBuf = s;
             }
