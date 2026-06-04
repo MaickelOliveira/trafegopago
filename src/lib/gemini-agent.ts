@@ -496,19 +496,28 @@ export async function runGeminiAgent(
 
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      const errLower = errMsg.toLowerCase();
+
+      // Erros que justificam tentar o próximo modelo
       const isModelUnavailable =
-        errMsg.includes("404") ||
-        errMsg.toLowerCase().includes("not found") ||
-        errMsg.toLowerCase().includes("not supported") ||
-        errMsg.toLowerCase().includes("not available");
+        errLower.includes("404") ||
+        errLower.includes("not found") ||
+        errLower.includes("not supported") ||
+        errLower.includes("not available") ||
+        errLower.includes("overloaded") ||
+        errLower.includes("503") ||
+        errLower.includes("resource_exhausted") ||
+        errLower.includes("quota") ||
+        errLower.includes("rate limit");
+
+      console.warn(`[gemini-agent] Erro modelo=${usedModel} disponivel=${!isModelUnavailable} ERRO: ${errMsg.slice(0, 200)}`);
 
       if (isModelUnavailable) {
-        console.warn(`[gemini-agent] Modelo ${usedModel} indisponível — tentando próximo...`);
         continue;
       }
 
-      console.error(`[gemini-agent] ERRO na chamada ao Gemini: ${errMsg}`);
-      console.error(`[gemini-agent] Detalhes: modelo=${usedModel} clientId=${clientId} phone=${phone} apiKey=${apiKey ? apiKey.slice(0,8) + "..." : "MISSING"}`);
+      // Erro não-recuperável (ex: INVALID_ARGUMENT, API_KEY_INVALID, history inválido)
+      console.error(`[gemini-agent] Erro não-recuperável — abortando. modelo=${usedModel} clientId=${clientId}`);
       return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
     }
   } // fim do loop de modelos
