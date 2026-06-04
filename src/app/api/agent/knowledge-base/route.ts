@@ -34,8 +34,9 @@ async function extractText(buffer: Buffer, filename: string): Promise<string> {
   const ext = filename.split(".").pop()?.toLowerCase();
 
   if (ext === "pdf") {
+    // Importa o arquivo interno para evitar que pdf-parse execute testes ao inicializar
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse");
+    const pdfParse = require("pdf-parse/lib/pdf-parse.js");
     const data = await pdfParse(buffer);
     return data.text ?? "";
   }
