@@ -105,21 +105,34 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
 const TOOLS: Tool[] = [{ functionDeclarations: TOOL_DECLARATIONS }];
 
 function sanitizeForWhatsApp(text: string): string {
-  return text
-    // Converte **texto** → *texto* (markdown bold → WhatsApp bold)
-    .replace(/\*\*([^*]+)\*\*/g, "*$1*")
-    // Remove headers markdown: ## Título → Título (em maiúsculas para destaque)
-    .replace(/^#{1,6}\s+(.+)$/gm, (_, t) => `*${t.trim().toUpperCase()}*`)
-    // Remove --- e ___ (linhas divisórias)
-    .replace(/^[-_]{3,}$/gm, "")
-    // Remove backticks inline e blocos de código
+  let result = text
+    // Remove blocos de código e backticks
     .replace(/```[\s\S]*?```/g, "")
     .replace(/`([^`]+)`/g, "$1")
-    // Converte - item e * item no início de linha → • item
-    .replace(/^[\-\*]\s+/gm, "• ")
+    // Remove --- e ___ (linhas divisórias markdown)
+    .replace(/^[-_]{3,}$/gm, "")
+    // Converte **texto** → *texto* (markdown bold → WhatsApp bold)
+    .replace(/\*\*([^*\n]+)\*\*/g, "*$1*")
+    // Remove headers markdown: ## Título → *TÍTULO*
+    .replace(/^#{1,6}\s+(.+)$/gm, (_, t) => `*${t.trim().toUpperCase()}*`)
+    // Converte "- item" no início de linha → "• item"
+    // Não toca em "*texto*" (negrito) nem "*1." (numerados)
+    .replace(/^-\s+/gm, "• ")
+    // Garante \n\n antes de itens numerados com asterisco (*1., *2., *3. ...)
+    // mesmo que estejam colados ao texto anterior
+    .replace(/([^\n])(\*\d+[\.\)]\s)/g, "$1\n\n$2")
+    // Garante \n\n antes de itens numerados simples (1., 2., 3. ...) se colados
+    .replace(/([^\n])\n(\d+[\.\)]\s[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ])/g, "$1\n\n$2")
+    // Separa a frase/pergunta final que ficou colada no último bullet
+    // Ex: "• R$ 278,80 por placa Qual dessas..." → separa com \n\n
+    .replace(/(•[^\n]+?)\s{1,3}(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou)/g, "$1\n\n$2")
+    // Remove espaços extras antes de quebra de linha
+    .replace(/[ \t]+\n/g, "\n")
     // Remove linhas em branco extras (mais de 2 seguidas)
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  return result;
 }
 
 function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[]): string {
