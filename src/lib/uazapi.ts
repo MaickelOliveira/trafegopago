@@ -362,18 +362,19 @@ export function splitMessage(text: string, maxLen = 300): string[] {
   const paragraphs = trimmed.split(/\n\s*\n/);
   let current = "";
 
-  // Detecta parágrafo que começa com seção numerada: "1. TÍTULO", "*1. TÍTULO", "1) TÍTULO"
+  // Detecta seção numerada: "1. TÍTULO", "*1. TÍTULO"
   const isSection = (p: string) => /^\*?\d+[\.\)]\s/.test(p);
+  // Detecta sub-seção com bullet bold: "• *Malha X:*", "• *Fio X:*", "• *Postes:*"
+  const isSubSection = (p: string) => /^•\s*\*[^*\n]+\*/.test(p);
 
   for (const para of paragraphs) {
     const piece = para.trim();
     if (!piece) continue;
 
-    // Seções numeradas SEMPRE começam uma nova bolha — nunca combinam com texto anterior
-    if (isSection(piece) && current) {
+    // Seções e sub-seções SEMPRE começam uma nova bolha
+    if ((isSection(piece) || isSubSection(piece)) && current) {
       chunks.push(current);
       current = "";
-      // Não usa continue — deixa cair no bloco abaixo para dividir seção > maxLen se necessário
     }
 
     if ((current + (current ? "\n\n" : "") + piece).length <= maxLen) {
