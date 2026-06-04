@@ -122,14 +122,22 @@ function sanitizeForWhatsApp(text: string): string {
     // 7. CRÍTICO: cada bullet • em sua própria linha
     //    Usa [ \t]* para NÃO absorver newlines já existentes
     .replace(/([^\n])[ \t]*•[ \t]*/g, "$1\n• ")
-    // 8. Garante \n\n antes de itens numerados: *1. *2. ou 1. 2. no meio do texto
+    // 8. Bullets nunca devem ter linha em branco entre eles (AI às vezes insere \n\n entre bullets)
+    .replace(/\n\n(•)/g, "\n$1")
+    // 9. Garante \n\n antes de itens numerados: *1. *2. ou 1. 2. no meio do texto
     .replace(/\n(\*?\d+[\.\)]\s)/g, "\n\n$1")         // 1 newline → 2
     .replace(/([^\n])(\*?\d+[\.\)]\s)/g, "$1\n\n$2")  // 0 newlines → 2
-    // 9. Separa pergunta/CTA colada no último bullet
+    // 10. Remove asteriscos solitários em parágrafos próprios (resíduo de ** multi-linha)
+    //     ex: "\n\n*\n\n" → "\n\n" e "* solt\n\nN." → "N."
+    .replace(/\n\n\*\n\n(\d+[\.\)]\s)/g, "\n\n$1")  // *\n\nN. → N.
+    .replace(/\n\n\*\n\n/g, "\n\n")                  // *\n\n solto no meio
+    .replace(/^\*\n\n/gm, "")                         // * no início
+    .replace(/\n\n\*$/gm, "")                         // * no fim
+    // 11. Separa pergunta/CTA colada no último bullet
     .replace(/(•[^\n]+?)\s+(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou|Para finalizar)/g, "$1\n\n$2")
-    // 10. Remove espaços antes de quebra de linha
+    // 12. Remove espaços antes de quebra de linha
     .replace(/[ \t]+\n/g, "\n")
-    // 11. Remove linhas em branco extras
+    // 13. Remove linhas em branco extras
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
