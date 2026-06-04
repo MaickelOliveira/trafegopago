@@ -372,8 +372,8 @@ export function splitMessage(text: string, maxLen = 300): string[] {
     // Seções numeradas SEMPRE começam uma nova bolha — nunca combinam com texto anterior
     if (isSection(piece) && current) {
       chunks.push(current);
-      current = piece;
-      continue;
+      current = "";
+      // Não usa continue — deixa cair no bloco abaixo para dividir seção > maxLen se necessário
     }
 
     if ((current + (current ? "\n\n" : "") + piece).length <= maxLen) {
