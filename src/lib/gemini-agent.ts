@@ -511,7 +511,12 @@ export async function runGeminiAgent(
   }
 
   // Sanitiza markdown residual para WhatsApp
+  console.log(`[sanitize-IN] ${JSON.stringify(finalText.slice(0, 300))}`);
   finalText = sanitizeForWhatsApp(finalText);
+  console.log(`[sanitize-OUT] ${JSON.stringify(finalText.slice(0, 300))}`);
+  const paras = finalText.split(/\n\s*\n/);
+  console.log(`[sanitize-PARAS] total=${paras.length} sizes=${paras.map(p=>p.trim().length).join(",")}`);
+  paras.forEach((p,i) => console.log(`[para ${i}] ${JSON.stringify(p.trim().slice(0,120))}`));
 
   console.log(`[gemini-agent] Resposta finalText.length=${finalText.length} actions=${actions.length}`);
   return { text: finalText, actions };
