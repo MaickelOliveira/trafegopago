@@ -106,29 +106,30 @@ const TOOLS: Tool[] = [{ functionDeclarations: TOOL_DECLARATIONS }];
 
 function sanitizeForWhatsApp(text: string): string {
   let result = text
-    // Remove blocos de código e backticks
+    // 1. Remove blocos de código e backticks
     .replace(/```[\s\S]*?```/g, "")
     .replace(/`([^`]+)`/g, "$1")
-    // Remove --- e ___ (linhas divisórias markdown)
+    // 2. Remove linhas divisórias markdown
     .replace(/^[-_]{3,}$/gm, "")
-    // Converte **texto** → *texto* (markdown bold → WhatsApp bold)
+    // 3. Converte **texto** → *texto* (markdown bold → WhatsApp bold)
     .replace(/\*\*([^*\n]+)\*\*/g, "*$1*")
-    // Remove headers markdown: ## Título → *TÍTULO*
+    // 4. Converte ## Título → *TÍTULO*
     .replace(/^#{1,6}\s+(.+)$/gm, (_, t) => `*${t.trim().toUpperCase()}*`)
-    // Converte "- item" no início de linha → "• item"
-    // Não toca em "*texto*" (negrito) nem "*1." (numerados)
+    // 5. Converte "- item" no início de linha → "• item"
     .replace(/^-\s+/gm, "• ")
-    // Garante \n\n antes de itens numerados bold (*1., *2., *3.)
-    // cobre: sem newline antes, com 1 newline antes — garante sempre linha em branco
-    .replace(/\n(\*\d+[\.\)]\s)/g, "\n\n$1")   // 1 newline → 2
+    // 6. CRÍTICO: garante que cada bullet • começa em sua própria linha
+    //    O Gemini frequentemente gera "• item1 • item2 • item3" tudo na mesma linha
+    .replace(/([^\n])\s*•\s*/g, "$1\n• ")
+    // 7. Garante \n\n antes de itens numerados com asterisco (*1., *2., *3.)
+    .replace(/\n(\*\d+[\.\)]\s)/g, "\n\n$1")        // 1 newline → 2
     .replace(/([^\n])(\*\d+[\.\)]\s)/g, "$1\n\n$2") // 0 newlines → 2
-    // Garante \n\n antes de itens numerados simples sem asterisco (1., 2. ...)
+    // 8. Garante \n\n antes de itens numerados simples (1., 2. ...)
     .replace(/([^\n])\n(\d+[\.\)]\s[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ])/g, "$1\n\n$2")
-    // Separa frase/pergunta final que ficou colada no último bullet
-    .replace(/(•[^\n]+?)\s+(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou|Para finalizar|Qual dessas|Qual desses|Qual destes|Qual deste)/g, "$1\n\n$2")
-    // Remove espaços extras antes de quebra de linha
+    // 9. Separa pergunta/CTA colada no último bullet
+    .replace(/(•[^\n]+?)\s+(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou|Para finalizar)/g, "$1\n\n$2")
+    // 10. Remove espaços antes de quebra de linha
     .replace(/[ \t]+\n/g, "\n")
-    // Remove linhas em branco extras (mais de 2 seguidas)
+    // 11. Remove linhas em branco extras
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
