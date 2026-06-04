@@ -120,8 +120,8 @@ function sanitizeForWhatsApp(text: string): string {
     // 6. Converte "- item" no início de linha → "• item"
     .replace(/^-\s+/gm, "• ")
     // 7. CRÍTICO: cada bullet • em sua própria linha
-    //    Regra direta: qualquer espaço imediatamente antes de • vira \n
-    .replace(/ •/g, "\n•")
+    //    Cobre espaço normal, NBSP (u00a0) e qualquer whitespace antes de •
+    .replace(/[ \t ]+•/g, "\n•")
     // 8. Bullets nunca devem ter linha em branco entre eles, MAS sub-títulos bold (Malha, Fio...)
     //    devem ter linha em branco antes para separar grupos dentro de uma seção
     .replace(/\n(•\s*\*[^*\n]+\*[:\s*])/g, "\n\n$1")  // linha em branco antes de bullet bold (sub-título)
