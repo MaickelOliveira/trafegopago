@@ -120,9 +120,9 @@ function sanitizeForWhatsApp(text: string): string {
     // 6. Converte "- item" no início de linha → "• item"
     .replace(/^-\s+/gm, "• ")
     // 7. CRÍTICO: cada bullet • em sua própria linha
-    //    Usa [ \t]* para NÃO absorver newlines já existentes
-    .replace(/([^\n])[ \t]*•[ \t]*/g, "$1\n• ")
-    // 8. Bullets nunca devem ter linha em branco entre eles (AI às vezes insere \n\n entre bullets)
+    //    Regra direta: qualquer espaço imediatamente antes de • vira \n
+    .replace(/ •/g, "\n•")
+    // 8. Bullets nunca devem ter linha em branco entre eles
     .replace(/\n\n(•)/g, "\n$1")
     // 9. Garante \n\n antes de itens numerados: *1. *2. ou 1. 2. no meio do texto
     .replace(/\n(\*?\d+[\.\)]\s)/g, "\n\n$1")         // 1 newline → 2
@@ -134,7 +134,7 @@ function sanitizeForWhatsApp(text: string): string {
     .replace(/^\*\n\n/gm, "")                         // * no início
     .replace(/\n\n\*$/gm, "")                         // * no fim
     // 11. Separa pergunta/CTA colada no último bullet
-    .replace(/(•[^\n]+?)\s+(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou|Para finalizar)/g, "$1\n\n$2")
+    .replace(/(•[^\n]+?)\s+(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou|Para finalizar|Gostaria de|Qual desses|Qual dessas|Qual destes|Qual deste|Há algo|Tem alguma)/g, "$1\n\n$2")
     // 12. Remove espaços antes de quebra de linha
     .replace(/[ \t]+\n/g, "\n")
     // 13. Remove linhas em branco extras
