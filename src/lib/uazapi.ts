@@ -380,68 +380,22 @@ export function splitMessage(text: string, maxLen = 300): string[] {
       current += (current ? "\n\n" : "") + piece;
     } else {
       if (current) chunks.push(current);
-      // Se o parágrafo sozinho já é maior que maxLen, divide por frase
+      current = "";
+
       if (piece.length > maxLen) {
-        // Não divide quando o char ANTES do ponto é um dígito (ex: *1. *2. R$ 48,30)
-        // (?<=[^0-9\n][.!?]) = lookbehind de 2 chars: não-dígito + ponto
-        const sentences = piece.split(/(?<=[^0-9\n][.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÎÔÛÃÕ])/u);
-        let sentBuf = "";
-        for (const s of sentences) {
-          if ((sentBuf + (sentBuf ? " " : "") + s).length <= maxLen) {
-            sentBuf += (sentBuf ? " " : "") + s;
+        // Parágrafo maior que maxLen: divide por linha (nunca corta no meio de uma linha)
+        const lines = piece.split("\n");
+        let lineBuf = "";
+        for (const line of lines) {
+          const joined = lineBuf ? lineBuf + "\n" + line : line;
+          if (joined.length <= maxLen) {
+            lineBuf = joined;
           } else {
-            if (sentBuf) chunks.push(sentBuf);
-            // Frase única maior que maxLen: tenta dividir por quebra de linha simples antes de palavras
-            if (s.length > maxLen) {
-              const lines = s.split("\n");
-              if (lines.length > 1) {
-                // Agrupa linhas sem exceder maxLen — nunca corta no meio de uma linha
-                let lineBuf = "";
-                for (const line of lines) {
-                  const joined = lineBuf ? lineBuf + "\n" + line : line;
-                  if (joined.length <= maxLen) {
-                    lineBuf = joined;
-                  } else {
-                    if (lineBuf) chunks.push(lineBuf);
-                    // Linha individual ainda maior que maxLen: divide por palavras
-                    if (line.length > maxLen) {
-                      const words = line.split(" ");
-                      let wordBuf = "";
-                      for (const w of words) {
-                        if ((wordBuf + " " + w).length > maxLen) {
-                          if (wordBuf) chunks.push(wordBuf);
-                          wordBuf = w;
-                        } else {
-                          wordBuf += (wordBuf ? " " : "") + w;
-                        }
-                      }
-                      lineBuf = wordBuf;
-                    } else {
-                      lineBuf = line;
-                    }
-                  }
-                }
-                sentBuf = lineBuf;
-              } else {
-                // Sem quebras de linha: divide por palavras
-                const words = s.split(" ");
-                let wordBuf = "";
-                for (const w of words) {
-                  if ((wordBuf + " " + w).length > maxLen) {
-                    if (wordBuf) chunks.push(wordBuf);
-                    wordBuf = w;
-                  } else {
-                    wordBuf += (wordBuf ? " " : "") + w;
-                  }
-                }
-                sentBuf = wordBuf;
-              }
-            } else {
-              sentBuf = s;
-            }
+            if (lineBuf) chunks.push(lineBuf);
+            lineBuf = line.length <= maxLen ? line : line.slice(0, maxLen);
           }
         }
-        current = sentBuf;
+        current = lineBuf;
       } else {
         current = piece;
       }
