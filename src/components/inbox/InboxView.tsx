@@ -348,6 +348,13 @@ export default function InboxView({ clientId, initialConversations = [], initial
               </span>
             )}
           </div>
+          <button
+            onClick={() => setShowQuickManager(true)}
+            title="Respostas rápidas"
+            className="w-8 h-8 rounded-full bg-[#2a3942] flex items-center justify-center text-sm hover:bg-[#3c4f5c] transition-colors"
+          >
+            ⚡
+          </button>
         </div>
 
         {/* ── Seletor de número (tabs) ── */}
@@ -641,6 +648,14 @@ export default function InboxView({ clientId, initialConversations = [], initial
             />
           )}
         </div>
+      )}
+
+      {/* Quick Replies Manager (quando aberto sem conversa selecionada) */}
+      {!selected && showQuickManager && (
+        <QuickRepliesManager
+          clientId={clientId}
+          onClose={() => setShowQuickManager(false)}
+        />
       )}
     </div>
   );

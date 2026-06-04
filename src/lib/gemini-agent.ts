@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration, type Part } from "@google/generative-ai";
-import { getClientById, getAgentConfigForConnection, type AgentMedia } from "./clients";
+import { getClientById, getAgentConfigForConnection, type AgentMedia, type KnowledgeBaseDoc } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
@@ -104,7 +104,7 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
 
 const TOOLS: Tool[] = [{ functionDeclarations: TOOL_DECLARATIONS }];
 
-function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[]): string {
+function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[]): string {
   const now = new Date();
   const today = now.toLocaleDateString("pt-BR", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -145,10 +145,16 @@ Regras:
       }).join("\n")}\n\nPara enviar uma mídia, inclua o marcador no texto da resposta:\n  [MIDIA:nome-da-midia]\nExemplo: "Aqui está nosso catálogo! [MIDIA:catalogo-produtos]"\nO arquivo será enviado automaticamente no lugar do marcador. Só envie mídia quando fizer sentido no contexto da conversa.\n\nPara enviar uma mensagem de texto APÓS as mídias (depois que as fotos chegarem), use:\n  [APOS_MIDIA:texto que será enviado depois das fotos]\nExemplo: "Aqui está o cardápio! [MIDIA:cardapio] [APOS_MIDIA:O que você achou? Quer fazer a reserva?]"\nO texto dentro de [APOS_MIDIA:...] é enviado automaticamente após todas as mídias serem entregues.`
     : "";
 
+  // Base de conhecimento — documentos PDF/TXT carregados pelo gestor
+  const kbDocs = (knowledgeBase ?? []).filter((d) => d.content?.trim());
+  const kbPart = kbDocs.length > 0
+    ? `\n\n--- BASE DE CONHECIMENTO ---\nOs documentos abaixo contêm informações importantes do negócio. Consulte-os ao responder perguntas sobre produtos, serviços, preços ou qualquer informação específica do cliente:\n\n${kbDocs.map((d) => `### ${d.name} (${d.filename})\n${d.content.trim()}`).join("\n\n---\n\n")}\n--- FIM DA BASE DE CONHECIMENTO ---`
+    : "";
+
   if (customPrompt?.trim()) {
-    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}`;
+    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}${kbPart}`;
   }
-  return `${base}${mediaPart}`;
+  return `${base}${mediaPart}${kbPart}`;
 }
 
 export async function runGeminiAgent(
@@ -175,7 +181,7 @@ export async function runGeminiAgent(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const mediaLibrary = agentCfg.mediaLibrary;
-  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary);
+  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase);
 
   const modelsToTry = [
     "gemini-2.5-pro",

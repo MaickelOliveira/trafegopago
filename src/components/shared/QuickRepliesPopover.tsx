@@ -140,19 +140,26 @@ export function QuickRepliesManager({ clientId, onClose }: ManagerProps) {
 
   async function saveReply() {
     if (!form.shortcut.trim() || !form.title.trim() || !form.text.trim()) return;
+    if (!clientId) { alert("Erro: ID do cliente não identificado. Tente recarregar a página."); return; }
     setSaving(true);
     const body = { clientId, shortcut: form.shortcut, title: form.title, text: form.text, imageUrl: form.imageUrl || undefined };
     const url = editingId ? `/api/quick-replies/${editingId}` : "/api/quick-replies";
     const method = editingId ? "PUT" : "POST";
-    await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setSaving(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(`Erro ao salvar: ${err.error ?? res.status}`);
+      return;
+    }
     cancelEdit();
     load();
   }
 
   async function removeReply(id: string) {
     if (!confirm("Excluir esta resposta rápida?")) return;
-    await fetch(`/api/quick-replies/${id}?clientId=${encodeURIComponent(clientId)}`, { method: "DELETE" });
+    const res = await fetch(`/api/quick-replies/${id}?clientId=${encodeURIComponent(clientId)}`, { method: "DELETE" });
+    if (!res.ok) { alert("Erro ao excluir resposta."); return; }
     load();
   }
 

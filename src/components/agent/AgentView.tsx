@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { clsx } from "clsx";
 import { useSearchParams } from "next/navigation";
 
@@ -124,6 +124,13 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string; category: string; language: string }[]>([]);
 
+  // Base de conhecimento
+  type KbDoc = { id: string; name: string; filename: string; chars?: number; uploadedAt: number };
+  const [kbDocs, setKbDocs] = useState<KbDoc[]>([]);
+  const [kbUploading, setKbUploading] = useState(false);
+  const [kbMsg, setKbMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const kbFileRef = useRef<HTMLInputElement>(null);
+
   async function loadCalendars() {
     setLoadingCalendars(true);
     try {
@@ -145,6 +152,51 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     setCfg(d);
     if (!connId && d._agentConfigsSummary) setConfigsSummary(d._agentConfigsSummary);
     if (d.calendarConnected) loadCalendars();
+    await loadKbDocs(connId);
+  }
+
+  async function loadKbDocs(connId: string | null) {
+    const connParam = connId ? `&connId=${encodeURIComponent(connId)}` : "";
+    const res = await fetch(`/api/agent/knowledge-base?clientId=${clientId}${connParam}`);
+    if (res.ok) {
+      const data = await res.json();
+      setKbDocs(data.docs ?? []);
+    }
+  }
+
+  async function uploadKbDoc(file: File, docName: string) {
+    setKbUploading(true);
+    setKbMsg(null);
+    const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("name", docName);
+    try {
+      const res = await fetch(`/api/agent/knowledge-base?clientId=${clientId}${connParam}`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setKbMsg({ type: "ok", text: `"${data.doc.name}" carregado — ${(data.doc.chars as number).toLocaleString("pt-BR")} caracteres extraídos` });
+        await loadKbDocs(selectedConnId);
+      } else {
+        setKbMsg({ type: "err", text: data.error ?? "Erro ao fazer upload" });
+      }
+    } catch {
+      setKbMsg({ type: "err", text: "Falha na conexão" });
+    }
+    setKbUploading(false);
+  }
+
+  async function deleteKbDoc(docId: string) {
+    if (!confirm("Remover este documento da base de conhecimento?")) return;
+    const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
+    const res = await fetch(`/api/agent/knowledge-base/${docId}?clientId=${clientId}${connParam}`, {
+      method: "DELETE",
+    });
+    if (res.ok) await loadKbDocs(selectedConnId);
+    else alert("Erro ao remover documento");
   }
 
   useEffect(() => {
@@ -1122,6 +1174,88 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             </div>
           ))}
         </div>
+      </div>
+
+      {/* ── Base de Conhecimento ── */}
+      <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 space-y-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <span>📚</span> Base de Conhecimento
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Carregue PDFs ou arquivos TXT com catálogos de produtos, tabelas de preços, scripts de vendas, etc.
+              A IA lê esses documentos ao responder — sem precisar colocar tudo no prompt.
+            </p>
+          </div>
+          <button
+            onClick={() => kbFileRef.current?.click()}
+            disabled={kbUploading}
+            className="shrink-0 flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 transition"
+          >
+            {kbUploading ? (
+              <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Carregando...</>
+            ) : (
+              <>📤 Adicionar documento</>
+            )}
+          </button>
+          <input
+            ref={kbFileRef}
+            type="file"
+            accept=".pdf,.txt,.md"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const docName = prompt(`Nome deste documento na base de conhecimento:\n(ex: "Tabela de Preços", "Cardápio", "Produtos")`, file.name.replace(/\.[^.]+$/, ""));
+              if (docName === null) return;
+              await uploadKbDoc(file, docName.trim() || file.name);
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        {kbMsg && (
+          <div className={clsx(
+            "rounded-lg px-3 py-2 text-xs font-medium",
+            kbMsg.type === "ok" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+          )}>
+            {kbMsg.type === "ok" ? "✓" : "✗"} {kbMsg.text}
+          </div>
+        )}
+
+        {kbDocs.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-amber-200 p-6 text-center">
+            <p className="text-sm text-slate-400">Nenhum documento carregado.</p>
+            <p className="text-xs text-slate-400 mt-1">Formatos suportados: PDF, TXT, MD</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {kbDocs.map((doc) => (
+              <div key={doc.id} className="flex items-center gap-3 rounded-xl border border-amber-100 bg-white p-3">
+                <span className="text-xl shrink-0">📄</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800 truncate">{doc.name}</p>
+                  <p className="text-xs text-slate-400">{doc.filename}</p>
+                  {doc.chars && (
+                    <p className="text-[10px] text-amber-600 font-medium mt-0.5">
+                      {doc.chars.toLocaleString("pt-BR")} caracteres extraídos
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => deleteKbDoc(doc.id)}
+                  className="text-slate-300 hover:text-red-500 transition text-sm shrink-0 px-1"
+                >✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-[10px] text-slate-400">
+          💡 Dica: documentos muito grandes (acima de 100 mil caracteres) podem tornar a IA mais lenta.
+          Prefira textos limpos e organizados para melhor desempenho.
+        </p>
       </div>
 
       {/* Salvar */}

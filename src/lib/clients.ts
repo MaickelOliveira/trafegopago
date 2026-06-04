@@ -31,6 +31,14 @@ export type AgentMedia = {
   sendOnFirstContact: boolean; // dispara quando o lead entra em contato pela primeira vez
 };
 
+export type KnowledgeBaseDoc = {
+  id: string;
+  name: string;       // nome exibido (ex: "Tabela de Produtos")
+  filename: string;   // nome original do arquivo
+  content: string;    // texto extraído do PDF/TXT
+  uploadedAt: number;
+};
+
 export type AgentConfig = {
   enabled: boolean;              // Liga/desliga o agente
   followUpEnabled: boolean;      // Liga/desliga follow-ups separadamente
@@ -48,6 +56,7 @@ export type AgentConfig = {
   maxMessageLength?: number;     // Máx. de caracteres por mensagem (padrão: 300)
   aiResumeKeyword?: string;      // Palavra-chave enviada pelo gestor para reativar a IA (ex: "atendimento finalizado")
   testPhone?: string;            // Número de teste: quando preenchido, a IA responde APENAS este número
+  knowledgeBase?: KnowledgeBaseDoc[]; // Documentos PDF/TXT que a IA pode consultar
 };
 
 export type Client = {

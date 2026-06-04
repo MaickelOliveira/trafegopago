@@ -588,7 +588,12 @@ export function KanbanBoard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: !agentEnabled }),
     });
-    if (res.ok) setAgentEnabled((v) => !v);
+    if (res.ok) {
+      setAgentEnabled((v) => !v);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(`Erro ao alterar IA: ${err.error ?? res.status}`);
+    }
     setTogglingAgent(false);
   }
 

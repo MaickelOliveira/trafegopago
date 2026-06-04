@@ -10,12 +10,17 @@ import { classifyLeadByHistory } from "@/lib/kanban-agent";
 // PATCH /api/crm/kanban-agent?clientId=xxx — liga ou desliga o agente Kanban
 export async function PATCH(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "manager") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const clientId = req.nextUrl.searchParams.get("clientId");
+  const clientId = req.nextUrl.searchParams.get("clientId") ?? session.clientId;
   if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
+
+  // Managers podem alterar qualquer cliente; clientes/funcionários só o próprio
+  if (session.role !== "manager" && session.clientId !== clientId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const client = getClientById(clientId);
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
@@ -31,12 +36,16 @@ export async function PATCH(req: NextRequest) {
 // POST /api/crm/kanban-agent?clientId=xxx — classifica todos os leads existentes
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "manager") {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const clientId = req.nextUrl.searchParams.get("clientId");
+  const clientId = req.nextUrl.searchParams.get("clientId") ?? session.clientId;
   if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
+
+  if (session.role !== "manager" && session.clientId !== clientId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const client = getClientById(clientId);
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
