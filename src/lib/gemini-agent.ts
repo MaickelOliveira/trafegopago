@@ -501,6 +501,8 @@ export async function runGeminiAgent(
       // Erros que justificam tentar o próximo modelo
       const isModelUnavailable =
         errLower.includes("404") ||
+        errLower.includes("429") ||
+        errLower.includes("too many") ||
         errLower.includes("not found") ||
         errLower.includes("not supported") ||
         errLower.includes("not available") ||
@@ -508,7 +510,9 @@ export async function runGeminiAgent(
         errLower.includes("503") ||
         errLower.includes("resource_exhausted") ||
         errLower.includes("quota") ||
-        errLower.includes("rate limit");
+        errLower.includes("rate limit") ||
+        errLower.includes("depleted") ||
+        errLower.includes("credits");
 
       console.warn(`[gemini-agent] Erro modelo=${usedModel} disponivel=${!isModelUnavailable} ERRO: ${errMsg.slice(0, 200)}`);
 
