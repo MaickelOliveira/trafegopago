@@ -118,14 +118,14 @@ function sanitizeForWhatsApp(text: string): string {
     // Converte "- item" no início de linha → "• item"
     // Não toca em "*texto*" (negrito) nem "*1." (numerados)
     .replace(/^-\s+/gm, "• ")
-    // Garante \n\n antes de itens numerados com asterisco (*1., *2., *3. ...)
-    // mesmo que estejam colados ao texto anterior
-    .replace(/([^\n])(\*\d+[\.\)]\s)/g, "$1\n\n$2")
-    // Garante \n\n antes de itens numerados simples (1., 2., 3. ...) se colados
+    // Garante \n\n antes de itens numerados bold (*1., *2., *3.)
+    // cobre: sem newline antes, com 1 newline antes — garante sempre linha em branco
+    .replace(/\n(\*\d+[\.\)]\s)/g, "\n\n$1")   // 1 newline → 2
+    .replace(/([^\n])(\*\d+[\.\)]\s)/g, "$1\n\n$2") // 0 newlines → 2
+    // Garante \n\n antes de itens numerados simples sem asterisco (1., 2. ...)
     .replace(/([^\n])\n(\d+[\.\)]\s[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ])/g, "$1\n\n$2")
-    // Separa a frase/pergunta final que ficou colada no último bullet
-    // Ex: "• R$ 278,80 por placa Qual dessas..." → separa com \n\n
-    .replace(/(•[^\n]+?)\s{1,3}(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou)/g, "$1\n\n$2")
+    // Separa frase/pergunta final que ficou colada no último bullet
+    .replace(/(•[^\n]+?)\s+(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou|Para finalizar|Qual dessas|Qual desses|Qual destes|Qual deste)/g, "$1\n\n$2")
     // Remove espaços extras antes de quebra de linha
     .replace(/[ \t]+\n/g, "\n")
     // Remove linhas em branco extras (mais de 2 seguidas)
