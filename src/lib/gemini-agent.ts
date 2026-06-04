@@ -104,6 +104,24 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
 
 const TOOLS: Tool[] = [{ functionDeclarations: TOOL_DECLARATIONS }];
 
+function sanitizeForWhatsApp(text: string): string {
+  return text
+    // Converte **texto** → *texto* (markdown bold → WhatsApp bold)
+    .replace(/\*\*([^*]+)\*\*/g, "*$1*")
+    // Remove headers markdown: ## Título → Título (em maiúsculas para destaque)
+    .replace(/^#{1,6}\s+(.+)$/gm, (_, t) => `*${t.trim().toUpperCase()}*`)
+    // Remove --- e ___ (linhas divisórias)
+    .replace(/^[-_]{3,}$/gm, "")
+    // Remove backticks inline e blocos de código
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    // Converte - item e * item no início de linha → • item
+    .replace(/^[\-\*]\s+/gm, "• ")
+    // Remove linhas em branco extras (mais de 2 seguidas)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[]): string {
   const now = new Date();
   const today = now.toLocaleDateString("pt-BR", {
@@ -126,14 +144,34 @@ Você pode:
 - Ler e interpretar imagens enviadas pelo usuário (visão)
 - Transcrever e compreender áudios enviados pelo usuário
 
-Regras:
+Regras gerais:
 - Sempre responda em português, mensagens curtas e amigáveis
 - Ao receber áudio: transcreva internamente e responda com base no conteúdo do áudio
 - Ao receber imagem: descreva brevemente o que vê e responda ao contexto da conversa
 - Ao receber vídeo ou documento: reconheça o recebimento e pergunte como pode ajudar
 - Ao agendar, confirme: data, hora e nome do lead
 - Use listar_horarios_disponiveis antes de agendar para verificar disponibilidade
-- Ao receber mensagem nova, cancele follow-ups pendentes deste contato`;
+- Ao receber mensagem nova, cancele follow-ups pendentes deste contato
+
+REGRAS OBRIGATÓRIAS DE FORMATAÇÃO PARA WHATSAPP:
+- NUNCA use markdown: proibido **, __, ##, ---, >, \`\`\`
+- Para negrito no WhatsApp use APENAS um asterisco: *texto* (nunca dois: **texto**)
+- Cada item numerado (1., 2., 3.) DEVE começar em uma nova linha com uma linha em branco antes
+- Separe sempre seções com uma linha em branco (deixe uma linha vazia entre blocos de conteúdo)
+- Use • para listas de itens dentro de uma seção, cada um em sua própria linha
+- NUNCA coloque o título de um item e seus sub-itens todos na mesma linha
+- Exemplo correto de como listar produtos:
+
+*1. PRODUTO A:*
+• Cor: vermelha
+• Preço: R$ 10,00
+
+*2. PRODUTO B:*
+• Cor: azul
+• Preço: R$ 20,00
+
+- Exemplo ERRADO (nunca faça assim): "**1. PRODUTO A:** • Cor: vermelha **2. PRODUTO B:**"
+- Mantenha cada seção isolada e legível — pense que o cliente vai ler no celular`;
 
   // Instrução de mídias — só aparece se houver mídias com nome configuradas
   const namedMedia = (mediaLibrary ?? []).filter((m) => m.name?.trim());
@@ -456,6 +494,9 @@ export async function runGeminiAgent(
     console.error(`[gemini-agent] Todos os modelos falharam. clientId=${clientId} phone=${phone}`);
     return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
   }
+
+  // Sanitiza markdown residual para WhatsApp
+  finalText = sanitizeForWhatsApp(finalText);
 
   console.log(`[gemini-agent] Resposta finalText.length=${finalText.length} actions=${actions.length}`);
   return { text: finalText, actions };
