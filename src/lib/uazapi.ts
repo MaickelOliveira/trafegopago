@@ -372,8 +372,9 @@ export function splitMessage(text: string, maxLen = 300): string[] {
       if (current) chunks.push(current);
       // Se o parágrafo sozinho já é maior que maxLen, divide por frase
       if (piece.length > maxLen) {
-        // Não divide após ponto de itens numerados (*1. *2. etc.) nem após abreviações comuns
-        const sentences = piece.split(/(?<=[.!?])(?!\d)(?!\s*\w+:)\s+(?=[A-ZÁÉÍÓÚÂÊÎÔÛÃÕ])/u);
+        // Não divide quando o char ANTES do ponto é um dígito (ex: *1. *2. R$ 48,30)
+        // (?<=[^0-9\n][.!?]) = lookbehind de 2 chars: não-dígito + ponto
+        const sentences = piece.split(/(?<=[^0-9\n][.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÎÔÛÃÕ])/u);
         let sentBuf = "";
         for (const s of sentences) {
           if ((sentBuf + (sentBuf ? " " : "") + s).length <= maxLen) {

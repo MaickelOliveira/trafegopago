@@ -134,6 +134,7 @@ function sanitizeForWhatsApp(text: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
+  console.log(`[sanitize v7] in=${text.length}chars out=${result.length}chars bullets=${(result.match(/\n•/g) ?? []).length}`);
   return result;
 }
 
