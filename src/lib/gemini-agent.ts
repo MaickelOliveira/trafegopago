@@ -118,8 +118,9 @@ function sanitizeForWhatsApp(text: string): string {
     // 5. Converte "- item" no início de linha → "• item"
     .replace(/^-\s+/gm, "• ")
     // 6. CRÍTICO: garante que cada bullet • começa em sua própria linha
-    //    O Gemini frequentemente gera "• item1 • item2 • item3" tudo na mesma linha
-    .replace(/([^\n])\s*•\s*/g, "$1\n• ")
+    //    O Gemini gera "• item1 • item2 • item3" tudo na mesma linha
+    //    Usa [ \t]* (não \s*) para NÃO absorver newlines já existentes
+    .replace(/([^\n])[ \t]*•[ \t]*/g, "$1\n• ")
     // 7. Garante \n\n antes de itens numerados com asterisco (*1., *2., *3.)
     .replace(/\n(\*\d+[\.\)]\s)/g, "\n\n$1")        // 1 newline → 2
     .replace(/([^\n])(\*\d+[\.\)]\s)/g, "$1\n\n$2") // 0 newlines → 2
