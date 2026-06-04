@@ -218,7 +218,11 @@ export async function runGeminiAgent(
 
   const rawHistory = mergedHistory.slice(-10);
   const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
-  const geminiHistory = firstUserIdx > 0 ? rawHistory.slice(firstUserIdx) : rawHistory;
+  // Garante que o histórico começa com 'user' — Gemini rejeita se começar com 'model'
+  // firstUserIdx === -1: nenhum user encontrado → histórico vazio
+  // firstUserIdx === 0: já começa com user → usa tudo
+  // firstUserIdx > 0: havia mensagens model antes do primeiro user → fatia a partir do user
+  const geminiHistory = firstUserIdx >= 0 ? rawHistory.slice(firstUserIdx) : [];
 
   const actions: GeminiAction[] = [];
   let finalText = "";
