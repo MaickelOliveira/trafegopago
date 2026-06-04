@@ -212,10 +212,36 @@ REGRAS OBRIGATÓRIAS DE FORMATAÇÃO PARA WHATSAPP:
     ? `\n\n--- BASE DE CONHECIMENTO ---\nOs documentos abaixo contêm informações importantes do negócio. Consulte-os ao responder perguntas sobre produtos, serviços, preços ou qualquer informação específica do cliente:\n\n${kbDocs.map((d) => `### ${d.name} (${d.filename})\n${d.content.trim()}`).join("\n\n---\n\n")}\n--- FIM DA BASE DE CONHECIMENTO ---`
     : "";
 
+  // Regras de formatação — aplicadas SEMPRE, no final do prompt (maior prioridade)
+  const formatPart = `
+
+--- REGRAS OBRIGATÓRIAS DE FORMATAÇÃO WHATSAPP (PRIORIDADE MÁXIMA) ---
+Estas regras se sobrepõem a qualquer instrução anterior:
+1. NUNCA use ** (markdown bold duplo). Para negrito use apenas *texto* (asterisco simples).
+2. NUNCA use # ## ### para títulos.
+3. Cada item numerado (1. 2. 3.) DEVE estar em linha própria com uma linha em branco antes.
+4. Cada bullet • DEVE estar em linha própria. NUNCA coloque dois bullets na mesma linha.
+5. NUNCA coloque o título de uma seção na mesma linha que um bullet anterior.
+6. NUNCA termine a última frase/pergunta na mesma linha que um bullet — deixe linha em branco antes.
+7. Formato correto obrigatório para listas de produtos:
+
+Texto introdutório aqui.
+
+*TÍTULO GERAL*
+
+1. NOME DO PRODUTO:
+• Especificação A - R$ XX,XX
+• Especificação B - R$ XX,XX
+
+2. PRÓXIMO PRODUTO:
+• Especificação C - R$ XX,XX
+
+Pergunta final aqui.`;
+
   if (customPrompt?.trim()) {
-    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}${kbPart}`;
+    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}${kbPart}${formatPart}`;
   }
-  return `${base}${mediaPart}${kbPart}`;
+  return `${base}${mediaPart}${kbPart}${formatPart}`;
 }
 
 export async function runGeminiAgent(
