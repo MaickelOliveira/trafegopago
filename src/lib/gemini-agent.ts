@@ -111,21 +111,20 @@ function sanitizeForWhatsApp(text: string): string {
     .replace(/`([^`]+)`/g, "$1")
     // 2. Remove linhas divisórias markdown
     .replace(/^[-_]{3,}$/gm, "")
-    // 3. Converte **texto** → *texto* (markdown bold → WhatsApp bold)
-    .replace(/\*\*([^*\n]+)\*\*/g, "*$1*")
-    // 4. Converte ## Título → *TÍTULO*
+    // 3. Converte **texto** → *texto* — permite newlines dentro do bloco bold
+    .replace(/\*\*([^*]+)\*\*/g, "*$1*")
+    // 4. Catch-all: qualquer ** restante vira * (cobre **N. Title:** multi-linha)
+    .replace(/\*\*/g, "*")
+    // 5. Converte ## Título → *TÍTULO*
     .replace(/^#{1,6}\s+(.+)$/gm, (_, t) => `*${t.trim().toUpperCase()}*`)
-    // 5. Converte "- item" no início de linha → "• item"
+    // 6. Converte "- item" no início de linha → "• item"
     .replace(/^-\s+/gm, "• ")
-    // 6. CRÍTICO: garante que cada bullet • começa em sua própria linha
-    //    O Gemini gera "• item1 • item2 • item3" tudo na mesma linha
-    //    Usa [ \t]* (não \s*) para NÃO absorver newlines já existentes
+    // 7. CRÍTICO: cada bullet • em sua própria linha
+    //    Usa [ \t]* para NÃO absorver newlines já existentes
     .replace(/([^\n])[ \t]*•[ \t]*/g, "$1\n• ")
-    // 7. Garante \n\n antes de itens numerados com asterisco (*1., *2., *3.)
-    .replace(/\n(\*\d+[\.\)]\s)/g, "\n\n$1")        // 1 newline → 2
-    .replace(/([^\n])(\*\d+[\.\)]\s)/g, "$1\n\n$2") // 0 newlines → 2
-    // 8. Garante \n\n antes de itens numerados simples (1., 2. ...)
-    .replace(/([^\n])\n(\d+[\.\)]\s[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ])/g, "$1\n\n$2")
+    // 8. Garante \n\n antes de itens numerados: *1. *2. ou 1. 2. no meio do texto
+    .replace(/\n(\*?\d+[\.\)]\s)/g, "\n\n$1")         // 1 newline → 2
+    .replace(/([^\n])(\*?\d+[\.\)]\s)/g, "$1\n\n$2")  // 0 newlines → 2
     // 9. Separa pergunta/CTA colada no último bullet
     .replace(/(•[^\n]+?)\s+(Qual|Você|Gostaria|Precisa|Quer|Posso|Aguardo|Me informe|Pode me|Alguma|Ficou|Para finalizar)/g, "$1\n\n$2")
     // 10. Remove espaços antes de quebra de linha
@@ -134,7 +133,7 @@ function sanitizeForWhatsApp(text: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  console.log(`[sanitize v7] in=${text.length}chars out=${result.length}chars bullets=${(result.match(/\n•/g) ?? []).length}`);
+  console.log(`[sanitize v8] in=${text.length}chars out=${result.length}chars bullets=${(result.match(/\n•/g) ?? []).length}`);
   return result;
 }
 
