@@ -122,11 +122,14 @@ function sanitizeForWhatsApp(text: string): string {
     // 7. CRÍTICO: cada bullet • em sua própria linha
     //    Regra direta: qualquer espaço imediatamente antes de • vira \n
     .replace(/ •/g, "\n•")
-    // 8. Bullets nunca devem ter linha em branco entre eles
-    .replace(/\n\n(•)/g, "\n$1")
+    // 8. Bullets nunca devem ter linha em branco entre eles, MAS sub-títulos bold (Malha, Fio...)
+    //    devem ter linha em branco antes para separar grupos dentro de uma seção
+    .replace(/\n(•\s*\*[^*\n]+\*[:\s*])/g, "\n\n$1")  // linha em branco antes de bullet bold (sub-título)
+    .replace(/\n\n\n(•)/g, "\n\n$1")                   // no máximo 2 newlines antes de bullet normal
     // 9. Garante \n\n antes de itens numerados: *1. *2. ou 1. 2. no meio do texto
-    .replace(/\n(\*?\d+[\.\)]\s)/g, "\n\n$1")         // 1 newline → 2
-    .replace(/([^\n])(\*?\d+[\.\)]\s)/g, "$1\n\n$2")  // 0 newlines → 2
+    .replace(/([^\n]) (\d+\. [A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ])/g, "$1\n\n$2")  // "texto N. TÍTULO" → \n\n
+    .replace(/\n(\*?\d+[\.\)]\s)/g, "\n\n$1")           // 1 newline → 2
+    .replace(/([^\n])(\*?\d+[\.\)]\s)/g, "$1\n\n$2")   // 0 newlines → 2
     // 10. Remove asteriscos solitários em parágrafos próprios (resíduo de ** multi-linha)
     //     ex: "\n\n*\n\n" → "\n\n" e "* solt\n\nN." → "N."
     .replace(/\n\n\*\n\n(\d+[\.\)]\s)/g, "\n\n$1")  // *\n\nN. → N.
