@@ -366,6 +366,7 @@ export function splitMessage(text: string, maxLen = 300): string[] {
   const isSection = (p: string) => /^\*?\d+[\.\)]\s/.test(p);
   // Detecta sub-seção com bullet bold: "• *Malha X:*", "• *Fio X:*", "• *Postes:*"
   const isSubSection = (p: string) => /^•\s*\*[^*\n]+\*/.test(p);
+  console.log(`[split v3] paras=${paragraphs.length} maxLen=${maxLen}`);
 
   for (const para of paragraphs) {
     const piece = para.trim();
