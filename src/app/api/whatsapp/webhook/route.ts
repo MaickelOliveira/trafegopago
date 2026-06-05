@@ -268,7 +268,7 @@ export async function POST(req: NextRequest) {
 
     // Quando lead responde: cancela follow-ups pendentes e inicia sequência se for novo lead
     if (cid !== "sem-cliente") {
-      const activeClientCfg = getClientById(cid)?.agentConfig;
+      const activeClientCfg = getAgentConfigForConnection(getClientById(cid)!, incomingConnectionId);
       if (activeClientCfg?.followUpEnabled && (activeClientCfg.followUps?.length ?? 0) > 0) {
         if (isNew) {
           // Lead novo: inicia sequência de follow-ups

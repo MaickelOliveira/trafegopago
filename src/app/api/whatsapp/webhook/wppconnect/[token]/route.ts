@@ -18,6 +18,7 @@ import { transcribeMedia } from "@/lib/media-transcribe";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
+import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
 import {
   upsertPending,
   getPendingForPhone,
@@ -788,6 +789,13 @@ export async function POST(
     if (geminiText) await sendReply(geminiText);
     if (actions.length && activeClient && agentCfg) {
       await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId).catch(() => {});
+    }
+
+    // ── Agenda follow-up após resposta da IA ────────────────────────────
+    if (agentCfg?.followUpEnabled && (agentCfg.followUps?.length ?? 0) > 0) {
+      cancelFollowUpsForPhone(clientId, phone);
+      startFollowUpSequence(clientId, phone, agentCfg.followUps);
+      console.log(`[WPPConnect IA] follow-up agendado — phone=${phone} steps=${agentCfg.followUps.length}`);
     }
   } catch (e) {
     console.error("[WPPConnect webhook] Erro no Gemini:", e);

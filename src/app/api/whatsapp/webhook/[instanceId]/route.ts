@@ -167,7 +167,7 @@ function extractMediaMarkers(text: string): { clean: string; names: string[]; fo
   const clean = textWithoutFollowup.replace(pattern, (_, name: string) => {
     names.push(name.trim().toLowerCase());
     return "";
-  }).replace(/\s{2,}/g, " ").trim();
+  }).replace(/[ \t]{2,}/g, " ").trim();
   return { clean, names, followup };
 }
 
