@@ -33,7 +33,9 @@ export async function register() {
           if (!client) continue;
           // Procura em todos os agentConfigs do cliente qual tem followUpEnabled
           const allCfgs = getAllAgentConfigs(client);
-          const agCfg = allCfgs.find(c => c.followUpEnabled);
+          // Encontra o agentConfig dono deste step (pelo stepId) para usar a conexão certa
+          const agCfg = allCfgs.find(c => c.followUpEnabled && c.followUps?.some(s => s.id === fu.stepId))
+            ?? allCfgs.find(c => c.followUpEnabled);
           if (!agCfg) continue;
           try {
             const lead = getLeadByPhone(fu.clientId, fu.phone);
