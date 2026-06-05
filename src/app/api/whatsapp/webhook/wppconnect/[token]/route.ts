@@ -657,6 +657,17 @@ export async function POST(
     processKanbanActions(text, historyForKanban, clientId, phone).catch(() => {});
   }
 
+  // ── Follow-ups: agenda quando lead responde, independente de IA ──────
+  if (clientId !== "sem-cliente") {
+    const activeClientFU = getClientById(clientId);
+    const agentCfgFU = activeClientFU ? getAgentConfigForConnection(activeClientFU, connId) : undefined;
+    if (agentCfgFU?.followUpEnabled && (agentCfgFU.followUps?.length ?? 0) > 0) {
+      cancelFollowUpsForPhone(clientId, phone);
+      startFollowUpSequence(clientId, phone, agentCfgFU.followUps);
+      console.log(`[WPPConnect] follow-up agendado phone=${phone} steps=${agentCfgFU.followUps.length}`);
+    }
+  }
+
   // ── Verifica IA ──
   const currentLead = getLeadByPhone(clientId, phone);
   if (currentLead?.aiPaused) {
@@ -789,13 +800,6 @@ export async function POST(
     if (geminiText) await sendReply(geminiText);
     if (actions.length && activeClient && agentCfg) {
       await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId).catch(() => {});
-    }
-
-    // ── Agenda follow-up após resposta da IA ────────────────────────────
-    if (agentCfg?.followUpEnabled && (agentCfg.followUps?.length ?? 0) > 0) {
-      cancelFollowUpsForPhone(clientId, phone);
-      startFollowUpSequence(clientId, phone, agentCfg.followUps);
-      console.log(`[WPPConnect IA] follow-up agendado — phone=${phone} steps=${agentCfg.followUps.length}`);
     }
   } catch (e) {
     console.error("[WPPConnect webhook] Erro no Gemini:", e);

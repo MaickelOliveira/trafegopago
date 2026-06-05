@@ -112,23 +112,6 @@ export async function register() {
             if (reply) {
               addMessage(batch.phone, { role: "assistant", content: reply, ts: Date.now() }, batch.clientId);
               await sendMessage(batch.phone, reply, batch.clientId, connId);
-              // Agenda follow-up após resposta da IA (válido para WPPConnect + janela de espera)
-              if (agCfg.followUpEnabled && (agCfg.followUps?.length ?? 0) > 0) {
-                cancelFollowUpsForPhone(batch.clientId, batch.phone);
-                scheduleFollowUp({
-                  clientId: batch.clientId,
-                  phone: batch.phone,
-                  scheduledAt: new Date(Date.now() + agCfg.followUps[0].delayHours * 3600000).toISOString(),
-                  message: agCfg.followUps[0].message,
-                  type: "followup",
-                  stepIndex: 0,
-                  stepId: agCfg.followUps[0].id,
-                  messageType: agCfg.followUps[0].messageType,
-                  templateId: agCfg.followUps[0].templateId,
-                  templateVariables: agCfg.followUps[0].templateVariables,
-                });
-                console.log(`[cron] follow-up agendado para ${batch.phone} (batch) — step 0 em ${agCfg.followUps[0].delayHours}h`);
-              }
             }
           } catch (e) {
             console.error("[cron] Erro batch:", batch.id, e);
