@@ -9,6 +9,7 @@ import { getConfig } from "./clients";
 import { sendText } from "./uazapi";
 import { getWppSessions } from "./wppconnect-sessions";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
+import { markPhoneSending } from "./wppconnect-sent";
 
 export async function sendMessage(
   phone: string,
@@ -28,6 +29,7 @@ export async function sendMessage(
       // Detecta número LID (≥13 dígitos, não começa com 55)
       const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
       const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+      markPhoneSending(rawPhone);
       const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message, isLid);
       if (ok) return;
     }
