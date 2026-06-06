@@ -72,14 +72,16 @@ export async function register() {
           try {
             const lead = getLeadByPhone(fu.clientId, fu.phone);
 
-            console.log(`[cron] follow-up id=${fu.id} phone=${fu.phone} type=${fu.messageType} connId=${agCfg.whatsappConnectionId}`);
+            // Usa realPhone se disponível (resolve LID para número real)
+            const sendPhone = lead?.realPhone || fu.phone;
+            console.log(`[cron] follow-up id=${fu.id} phone=${fu.phone} sendPhone=${sendPhone} type=${fu.messageType} connId=${agCfg.whatsappConnectionId}`);
 
             if (fu.messageType === "template") {
               // Envia template Meta aprovado
               const { getTemplateById, sendTemplate } = await import("./lib/waba-templates");
               const tpl = fu.templateId ? getTemplateById(fu.templateId) : null;
               if (tpl && tpl.status === "APPROVED" && tpl.phoneNumberId && tpl.metaToken) {
-                await sendTemplate(tpl.phoneNumberId, tpl.metaToken, fu.phone, tpl.name, tpl.language);
+                await sendTemplate(tpl.phoneNumberId, tpl.metaToken, sendPhone, tpl.name, tpl.language);
               } else {
                 console.warn(`[cron] template não encontrado/aprovado para fu=${fu.id}`);
               }
@@ -92,8 +94,8 @@ export async function register() {
               } else {
                 const aiMsg = await generateFollowUpAI(history, lead?.name, client.name, apiKey);
                 if (aiMsg) {
-                  console.log(`[cron] AI gerou mensagem para ${fu.phone}: "${aiMsg.slice(0, 80)}"`);
-                  await sendMessage(fu.phone, aiMsg, fu.clientId, agCfg.whatsappConnectionId);
+                  console.log(`[cron] AI gerou mensagem para ${sendPhone}: "${aiMsg.slice(0, 80)}"`);
+                  await sendMessage(sendPhone, aiMsg, fu.clientId, agCfg.whatsappConnectionId);
                 } else {
                   console.error(`[cron] generateFollowUpAI retornou null para fu=${fu.id}`);
                 }
