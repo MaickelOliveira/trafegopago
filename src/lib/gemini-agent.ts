@@ -573,7 +573,7 @@ Retorne APENAS a mensagem, sem explicações adicionais.
 Histórico:
 ${historyText || "Sem histórico de conversa disponível. Crie uma mensagem de reengajamento gentil."}`;
 
-  const modelsToTry = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest"];
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"];
   for (const modelId of modelsToTry) {
     try {
       const ai = new GoogleGenerativeAI(geminiApiKey);
