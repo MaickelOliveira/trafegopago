@@ -556,17 +556,14 @@ export async function generateFollowUpAI(
   geminiApiKey: string | null,
 ): Promise<string | null> {
   if (!geminiApiKey) return null;
-  try {
-    const ai = new GoogleGenerativeAI(geminiApiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    const firstName = leadName ? leadName.split(" ")[0] : null;
-    const historyText = history
-      .slice(-20)
-      .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
-      .join("\n");
+  const firstName = leadName ? leadName.split(" ")[0] : null;
+  const historyText = history
+    .slice(-20)
+    .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
+    .join("\n");
 
-    const prompt = `Você é um assistente de vendas para ${clientName}.
+  const prompt = `Você é um assistente de vendas para ${clientName}.
 ${firstName ? `O lead se chama ${firstName}.` : ""}
 Analise o histórico de conversa abaixo e crie uma mensagem de follow-up inteligente e personalizada em português.
 Seja natural, breve (2-3 frases), retome o contexto de onde a conversa parou e demonstre interesse genuíno.
@@ -576,10 +573,20 @@ Retorne APENAS a mensagem, sem explicações adicionais.
 Histórico:
 ${historyText || "Sem histórico de conversa disponível. Crie uma mensagem de reengajamento gentil."}`;
 
-    const result = await model.generateContent(prompt);
-    return result.response.text().trim() || null;
-  } catch (e) {
-    console.error("[gemini-agent] generateFollowUpAI error:", e);
-    return null;
+  const modelsToTry = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest"];
+  for (const modelId of modelsToTry) {
+    try {
+      const ai = new GoogleGenerativeAI(geminiApiKey);
+      const model = ai.getGenerativeModel({ model: modelId });
+      const result = await model.generateContent(prompt);
+      const text = result.response.text().trim();
+      if (text) {
+        console.log(`[gemini-agent] generateFollowUpAI OK model=${modelId}`);
+        return text;
+      }
+    } catch (e) {
+      console.error(`[gemini-agent] generateFollowUpAI model=${modelId} error:`, e instanceof Error ? e.message : e);
+    }
   }
+  return null;
 }
