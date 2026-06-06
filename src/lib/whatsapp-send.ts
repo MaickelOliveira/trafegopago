@@ -25,7 +25,10 @@ export async function sendMessage(
     const wppSessions = getWppSessions();
     const wppSession = wppSessions.find(s => s.id === preferredConnectionId);
     if (wppSession) {
-      const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message);
+      // Detecta número LID (≥13 dígitos, não começa com 55)
+      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
+      const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+      const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message, isLid);
       if (ok) return;
     }
 
