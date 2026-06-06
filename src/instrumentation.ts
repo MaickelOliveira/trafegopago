@@ -7,11 +7,43 @@ export async function register() {
     const { sendMessage } = await import("./lib/whatsapp-send");
     const { runGeminiAgent, generateFollowUpAI } = await import("./lib/gemini-agent");
     const { addMessage, getHistory } = await import("./lib/conversations");
-    const { getClientById, getAllAgentConfigs } = await import("./lib/clients");
+    const { getClientById, getAllAgentConfigs, getConfig } = await import("./lib/clients");
     const { getLeadByPhone } = await import("./lib/leads");
     const { getGeminiApiKey } = await import("./lib/whatsapp-send");
 
     console.log("[cron] Agendador interno iniciado — verificação a cada 60s");
+
+    // ── Re-registra webhooks WPPConnect no servidor ao iniciar ────────────
+    // O servidor WPPConnect armazena webhooks em memória — perde após restart.
+    // Aguarda 8s para o servidor estabilizar antes de tentar.
+    setTimeout(async () => {
+      try {
+        const { getWppSessions } = await import("./lib/wppconnect-sessions");
+        const { checkConnectionStatus, startSession } = await import("./lib/wppconnect-api");
+        const appBaseUrl = getConfig().appBaseUrl?.replace(/\/$/, "");
+        if (!appBaseUrl) {
+          console.log("[cron] appBaseUrl não configurado — skip re-registro de webhooks WPPConnect");
+          return;
+        }
+        const sessions = getWppSessions();
+        for (const wpp of sessions) {
+          const webhookUrl = `${appBaseUrl}/api/whatsapp/webhook/wppconnect/${wpp.id}`;
+          try {
+            const status = await checkConnectionStatus(wpp.sessionName, wpp.sessionToken);
+            if (status === "CONNECTED") {
+              await startSession(wpp.sessionName, wpp.sessionToken, webhookUrl);
+              console.log(`[cron] webhook re-registrado: ${wpp.sessionName} → ${webhookUrl}`);
+            } else {
+              console.log(`[cron] skip webhook re-registro: ${wpp.sessionName} status=${status}`);
+            }
+          } catch (e) {
+            console.error(`[cron] erro ao re-registrar webhook ${wpp.sessionName}:`, e);
+          }
+        }
+      } catch (e) {
+        console.error("[cron] erro no re-registro de webhooks:", e);
+      }
+    }, 8000);
 
     /** Interpola variáveis {{nome}}, {{nome_completo}}, {{telefone}}, {{email}} */
     function interpolateFollowUp(msg: string, lead: { name?: string | null; phone?: string | null; email?: string | null } | undefined): string {
