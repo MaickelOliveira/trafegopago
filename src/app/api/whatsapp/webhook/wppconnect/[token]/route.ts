@@ -194,6 +194,7 @@ export async function POST(
 
   // Identifica a sessão pelo UUID
   const wppSession = getWppSessionById(token);
+  console.log(`[WPP-DIAG] token=${token} session=${wppSession?.id ?? "NOT_FOUND"} funnelId=${wppSession?.funnelId ?? "null"} clientId=${wppSession?.clientId ?? "null"}`);
   if (!wppSession || !wppSession.funnelId) {
     console.log(`[WPPConnect Webhook] token=${token} ignorado (sessão sem funil ou inexistente)`);
     return NextResponse.json({ ok: true }); // ignora sessões sem funil
@@ -529,7 +530,7 @@ export async function POST(
   // O filtro de timestamp acima (ageSec > 300) já bloqueia mensagens históricas com timestamp.
   // Aqui só bloqueamos o caso sem timestamp (campo ausente = nunca é mensagem real do WPPConnect).
   if (isNew && msgTimestamp === 0) {
-    console.log(`[WPPConnect Webhook] sem timestamp + lead novo — ignorado (history sync sem ts) phone=${phone}`);
+    console.log(`[WPP-DIAG] BLOQUEADO: sem timestamp + lead novo phone=${phone}`);
     return NextResponse.json({ ok: true });
   }
 
@@ -658,14 +659,20 @@ export async function POST(
   }
 
   // ── Follow-ups: agenda quando lead responde, independente de IA ──────
+  console.log(`[WPP-DIAG] chegou ao bloco follow-up: clientId=${clientId} connId=${connId} fromMe=${fromMe}`);
   if (clientId !== "sem-cliente") {
     const activeClientFU = getClientById(clientId);
     const agentCfgFU = activeClientFU ? getAgentConfigForConnection(activeClientFU, connId) : undefined;
+    console.log(`[WPP-DIAG] agentCfgFU: found=${!!agentCfgFU} followUpEnabled=${agentCfgFU?.followUpEnabled} stepsCount=${agentCfgFU?.followUps?.length ?? 0} connMatch=${agentCfgFU?.whatsappConnectionId}`);
     if (agentCfgFU?.followUpEnabled && (agentCfgFU.followUps?.length ?? 0) > 0) {
       cancelFollowUpsForPhone(clientId, phone);
       startFollowUpSequence(clientId, phone, agentCfgFU.followUps);
-      console.log(`[WPPConnect] follow-up agendado phone=${phone} steps=${agentCfgFU.followUps.length}`);
+      console.log(`[WPP-DIAG] ✅ follow-up AGENDADO phone=${phone} steps=${agentCfgFU.followUps.length}`);
+    } else {
+      console.log(`[WPP-DIAG] ❌ follow-up NÃO agendado — followUpEnabled=${agentCfgFU?.followUpEnabled} steps=${agentCfgFU?.followUps?.length ?? 0}`);
     }
+  } else {
+    console.log(`[WPP-DIAG] ❌ follow-up NÃO agendado — clientId=sem-cliente`);
   }
 
   // ── Verifica IA ──
