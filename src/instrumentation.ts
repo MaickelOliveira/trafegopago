@@ -6,9 +6,9 @@ export async function register() {
     const { getDuePending, markProcessing, markDone } = await import("./lib/pending-responses");
     const { sendMessage } = await import("./lib/whatsapp-send");
     const { runGeminiAgent, generateFollowUpAI } = await import("./lib/gemini-agent");
-    const { addMessage, getHistory } = await import("./lib/conversations");
+    const { addMessage, getHistory, setAiPaused } = await import("./lib/conversations");
     const { getClientById, getAllAgentConfigs, getConfig } = await import("./lib/clients");
-    const { getLeadByPhone } = await import("./lib/leads");
+    const { getLeadByPhone, updateLead } = await import("./lib/leads");
     const { getGeminiApiKey } = await import("./lib/whatsapp-send");
 
     console.log("[cron] Agendador interno iniciado — verificação a cada 60s");
@@ -95,6 +95,9 @@ export async function register() {
                 const aiMsg = await generateFollowUpAI(history, lead?.name, client.name, apiKey);
                 if (aiMsg) {
                   console.log(`[cron] AI gerou mensagem para ${sendPhone}: "${aiMsg.slice(0, 80)}"`);
+                  // Salva no histórico ANTES de enviar — usado pelo webhook para
+                  // reconhecer o eco fromMe e não pausar a IA
+                  addMessage(fu.phone, { role: "assistant", content: aiMsg, ts: Date.now() }, fu.clientId);
                   await sendMessage(sendPhone, aiMsg, fu.clientId, agCfg.whatsappConnectionId);
                 } else {
                   console.error(`[cron] generateFollowUpAI retornou null para fu=${fu.id}`);
@@ -108,6 +111,15 @@ export async function register() {
             }
 
             markSent(fu.id);
+
+            // Re-ativa a IA após o follow-up para que ela possa responder quando o lead reagir
+            const leadAfterSend = getLeadByPhone(fu.clientId, fu.phone);
+            if (leadAfterSend?.aiPaused) {
+              setAiPaused(fu.phone, false, fu.clientId);
+              updateLead(leadAfterSend.id, { aiPaused: false });
+              console.log(`[cron] IA reativada para ${fu.phone} após follow-up`);
+            }
+
             const steps = agCfg.followUps ?? [];
             const nextIdx = (fu.stepIndex ?? 0) + 1;
             const nextStep = steps[nextIdx];
