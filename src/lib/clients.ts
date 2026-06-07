@@ -39,6 +39,13 @@ export type KnowledgeBaseDoc = {
   uploadedAt: number;
 };
 
+export type AvisoRecipient = {
+  id: string;        // uuid gerado no cliente
+  label: string;     // ex: "Gestor", "Grupo Vendas"
+  value: string;     // ex: "5511999990000" ou "120363xxxx@g.us"
+  type: "phone" | "group";
+};
+
 export type AgentConfig = {
   enabled: boolean;              // Liga/desliga o agente
   followUpEnabled: boolean;      // Liga/desliga follow-ups separadamente
@@ -46,7 +53,8 @@ export type AgentConfig = {
   geminiApiKey?: string;         // Chave Gemini (sobrescreve a global se preenchida)
   googleCalendarId?: string;     // Calendar ID do cliente (ex: "primary")
   googleRefreshToken?: string;   // OAuth refresh token do Google Calendar
-  summaryPhone?: string;         // Número para receber resumo de conversa
+  summaryPhone?: string;         // Legado — use avisos[] para novos destinatários
+  avisos?: AvisoRecipient[];     // Destinatários de avisos (números e grupos WhatsApp)
   followUps: FollowUpStep[];     // Sequência de follow-ups configurados
   systemPrompt?: string;         // Instruções do agente para este cliente
   whatsappConnectionId?: string; // ID da conexão WhatsApp que o agente usa

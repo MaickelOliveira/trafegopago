@@ -35,6 +35,13 @@ type WaConnection = {
   funnelName: string;
 };
 
+type AvisoRecipient = {
+  id: string;
+  label: string;
+  value: string;
+  type: "phone" | "group";
+};
+
 type AgentCfg = {
   enabled: boolean;
   followUpEnabled: boolean;
@@ -42,6 +49,7 @@ type AgentCfg = {
   geminiApiKey?: string;
   googleCalendarId?: string;
   summaryPhone?: string;
+  avisos?: AvisoRecipient[];
   followUps: FollowUpStep[];
   whatsappConnectionId?: string;
   messageWaitSeconds?: number;
@@ -124,6 +132,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string; category: string; language: string }[]>([]);
 
+  // Avisos
+  const [addingAviso, setAddingAviso] = useState(false);
+  const [newAviso, setNewAviso] = useState<{ label: string; value: string; type: "phone" | "group" }>({ label: "", value: "", type: "phone" });
+
   // Base de conhecimento
   type KbDoc = { id: string; name: string; filename: string; chars?: number; uploadedAt: number };
   const [kbDocs, setKbDocs] = useState<KbDoc[]>([]);
@@ -149,6 +161,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       : `/api/agent?clientId=${clientId}`;
     const res = await fetch(url);
     const d = await res.json();
+    // migra summaryPhone legado para avisos[]
+    if (d.summaryPhone && !d.avisos?.length) {
+      d.avisos = [{ id: "legacy", label: "Gestor", value: d.summaryPhone, type: "phone" }];
+    }
     setCfg(d);
     if (!connId && d._agentConfigsSummary) setConfigsSummary(d._agentConfigsSummary);
     if (d.calendarConnected) loadCalendars();
@@ -882,16 +898,127 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         </div>
       </div>
 
-      {/* Resumo */}
+      {/* Avisos */}
       <div className="rounded-2xl border border-amber-200 bg-white p-5 space-y-4 shadow-sm">
-        <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">📋 Resumo de Conversa</p>
-        <Field
-          label="Número para receber resumos"
-          value={cfg.summaryPhone ?? ""}
-          onChange={(v) => setCfg((c) => ({ ...c, summaryPhone: v }))}
-          placeholder="5511999990000"
-          hint="Quando solicitado, o agente envia o resumo da conversa para este número via WhatsApp."
-        />
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">🔔 Avisos</p>
+          {!addingAviso && (
+            <button
+              onClick={() => { setAddingAviso(true); setNewAviso({ label: "", value: "", type: "phone" }); }}
+              className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-600 transition"
+            >
+              + Adicionar destinatário
+            </button>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-500">
+          Quando o agente gerar um aviso ou resumo de conversa, todos os destinatários abaixo receberão a mensagem via WhatsApp.
+        </p>
+
+        {/* Lista de destinatários */}
+        {(cfg.avisos ?? []).length > 0 && (
+          <div className="space-y-2">
+            {(cfg.avisos ?? []).map((r) => (
+              <div key={r.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className={clsx(
+                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  r.type === "group" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"
+                )}>
+                  {r.type === "group" ? "Grupo" : "Número"}
+                </span>
+                <span className="flex-1 text-sm font-medium text-slate-700 truncate">{r.label}</span>
+                <span className="text-xs text-slate-400 font-mono truncate max-w-[160px]">{r.value}</span>
+                <button
+                  onClick={() => setCfg((c) => ({ ...c, avisos: (c.avisos ?? []).filter((x) => x.id !== r.id) }))}
+                  className="shrink-0 rounded-md px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 transition"
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {(cfg.avisos ?? []).length === 0 && !addingAviso && (
+          <p className="text-xs text-slate-400 italic">Nenhum destinatário configurado.</p>
+        )}
+
+        {/* Formulário de novo destinatário */}
+        {addingAviso && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+            <p className="text-xs font-semibold text-amber-700">Novo destinatário</p>
+
+            {/* Tipo */}
+            <div className="flex gap-2">
+              {(["phone", "group"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setNewAviso((a) => ({ ...a, type: t }))}
+                  className={clsx(
+                    "flex-1 rounded-lg border py-1.5 text-xs font-semibold transition",
+                    newAviso.type === t
+                      ? "bg-amber-500 border-amber-500 text-white"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-amber-400"
+                  )}
+                >
+                  {t === "phone" ? "📱 Número" : "👥 Grupo WhatsApp"}
+                </button>
+              ))}
+            </div>
+
+            {/* Label */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Rótulo</label>
+              <input
+                type="text"
+                value={newAviso.label}
+                onChange={(e) => setNewAviso((a) => ({ ...a, label: e.target.value }))}
+                placeholder='ex: "Gestor", "Grupo Vendas"'
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+            </div>
+
+            {/* Valor */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                {newAviso.type === "phone" ? "Número (com DDI)" : "ID do grupo"}
+              </label>
+              <input
+                type="text"
+                value={newAviso.value}
+                onChange={(e) => setNewAviso((a) => ({ ...a, value: e.target.value }))}
+                placeholder={newAviso.type === "phone" ? "5511999990000" : "120363xxxxxxxx@g.us"}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+              {newAviso.type === "group" && (
+                <p className="mt-1 text-[11px] text-slate-400">
+                  O ID do grupo está no formato <span className="font-mono">120363xxxxxxxx@g.us</span>. Você pode obtê-lo no WhatsApp Web (URL do grupo) ou solicitando ao suporte.
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => {
+                  if (!newAviso.label.trim() || !newAviso.value.trim()) return;
+                  const id = Math.random().toString(36).slice(2);
+                  setCfg((c) => ({ ...c, avisos: [...(c.avisos ?? []), { id, ...newAviso }] }));
+                  setAddingAviso(false);
+                }}
+                className="flex-1 rounded-lg bg-amber-500 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 transition"
+              >
+                Confirmar
+              </button>
+              <button
+                onClick={() => setAddingAviso(false)}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Cron */}

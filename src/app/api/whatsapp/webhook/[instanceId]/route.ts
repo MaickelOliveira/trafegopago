@@ -111,7 +111,8 @@ async function generateSummaryText(
 }
 
 /**
- * Envia resumo de conversa para o summaryPhone do cliente, com link wa.me para o lead.
+ * Envia aviso/resumo de conversa para todos os destinatários configurados em avisos[].
+ * Mantém fallback para summaryPhone legado.
  */
 async function sendConversationSummary(
   token: string,
@@ -120,8 +121,13 @@ async function sendConversationSummary(
   phone: string,
   motivo: string,
 ): Promise<void> {
-  const summaryPhone = agCfg.summaryPhone;
-  if (!summaryPhone) return;
+  const recipients = agCfg.avisos?.length
+    ? agCfg.avisos
+    : agCfg.summaryPhone
+      ? [{ id: "legacy", label: "Gestor", value: agCfg.summaryPhone, type: "phone" as const }]
+      : [];
+
+  if (recipients.length === 0) return;
 
   const resumo = await generateSummaryText(clientName, agCfg, phone, motivo);
   const waLink = `https://wa.me/${phone.replace(/\D/g, "")}`;
@@ -132,7 +138,7 @@ async function sendConversationSummary(
     `📝 *Motivo:* ${motivo}\n\n` +
     `${resumo}`;
 
-  await sendText(token, summaryPhone, msg);
+  await Promise.all(recipients.map((r) => sendText(token, r.value, msg)));
 }
 
 /**
