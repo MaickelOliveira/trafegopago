@@ -91,7 +91,7 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: "enviar_resumo",
-    description: "Envia um resumo da conversa para o número configurado pelo gestor.",
+    description: "Envia um aviso ou resumo da conversa para o grupo/número de avisos configurado pelo gestor. Use sempre que o cliente enviar dados de reserva, confirmar pagamento via Pix, ou fizer perguntas que você não sabe responder.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
