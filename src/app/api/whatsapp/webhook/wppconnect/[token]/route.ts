@@ -11,7 +11,7 @@ import { markSent, consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
-import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName } from "@/lib/wppconnect-api";
+import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName, startTyping, stopTyping } from "@/lib/wppconnect-api";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
@@ -746,6 +746,9 @@ export async function POST(
   const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
   const history = getHistory(phone, clientId);
 
+  // Indica "digitando..." imediatamente para o lead saber que a mensagem foi recebida
+  startTyping(wppSession.sessionName, wppSession.sessionToken, phone).catch(() => {});
+
   console.log(`[WPPConnect IA] Chamando runGeminiAgent — phone=${phone} clientId=${clientId} waitSeconds=${waitSeconds} historyLen=${history.length} text="${text.slice(0, 80)}"`);
 
   // Helper: envia e registra a resposta da IA
@@ -753,6 +756,7 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
+    stopTyping(wppSession!.sessionName, wppSession!.sessionToken, phone).catch(() => {});
     // Extrai marcadores [MIDIA:nome] e [FOLLOWUP:texto] do texto antes de enviar
     const { clean, names, followup } = extractMediaMarkers(reply);
     const textToSend = clean || reply;

@@ -378,6 +378,38 @@ function extractJid(id: unknown): string {
   return "";
 }
 
+// Ativa o indicador "digitando..." para um número via WPPConnect
+export async function startTyping(
+  sessionName: string,
+  token: string,
+  phone: string,
+): Promise<void> {
+  if (!base()) return;
+  try {
+    await fetch(`${base()}/api/${sessionName}/start-typing`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ phone }),
+    });
+  } catch { /* ignora — não-crítico */ }
+}
+
+// Para o indicador "digitando..." para um número via WPPConnect
+export async function stopTyping(
+  sessionName: string,
+  token: string,
+  phone: string,
+): Promise<void> {
+  if (!base()) return;
+  try {
+    await fetch(`${base()}/api/${sessionName}/stop-typing`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ phone }),
+    });
+  } catch { /* ignora — não-crítico */ }
+}
+
 // Lista todos os grupos do WhatsApp conectado nesta sessão
 export async function listGroups(
   sessionName: string,
