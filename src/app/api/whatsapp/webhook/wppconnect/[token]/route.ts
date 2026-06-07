@@ -166,11 +166,18 @@ async function processWppActions(
 ): Promise<void> {
   for (const action of actions) {
     if (action.type === "resumo_solicitado") {
-      const summaryPhone = agCfg.summaryPhone;
-      if (!summaryPhone) {
-        console.log("[wpp-summary] summaryPhone não configurado — resumo ignorado");
+      // Usa avisos[] com fallback para summaryPhone legado
+      const recipients = agCfg.avisos?.length
+        ? agCfg.avisos
+        : agCfg.summaryPhone
+          ? [{ id: "legacy", label: "Gestor", value: agCfg.summaryPhone, type: "phone" as const }]
+          : [];
+
+      if (recipients.length === 0) {
+        console.log("[wpp-summary] Nenhum destinatário de avisos configurado — resumo ignorado");
         continue;
       }
+
       const resumo = await generateWppSummaryText(clientName, agCfg, leadPhone, action.motivo, clientId);
       const lead = getLeadByPhone(clientId, leadPhone);
       const displayPhone = (lead?.realPhone ?? leadPhone).replace(/\D/g, "");
@@ -180,8 +187,14 @@ async function processWppActions(
         `📞 *Lead:* ${waLink}\n` +
         `📝 *Motivo:* ${action.motivo}\n\n` +
         `${resumo}`;
-      console.log(`[wpp-summary] Enviando resumo para ${summaryPhone}`);
-      await wppSendText(sessionName, sessionToken, summaryPhone, msg, false);
+
+      console.log(`[wpp-summary] Enviando aviso para ${recipients.length} destinatário(s)`);
+      await Promise.all(
+        recipients.map((r) => {
+          console.log(`[wpp-summary] → ${r.label} (${r.type}) ${r.value}`);
+          return wppSendText(sessionName, sessionToken, r.value, msg, false);
+        })
+      );
     }
   }
 }
