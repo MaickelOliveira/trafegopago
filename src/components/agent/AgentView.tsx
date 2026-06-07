@@ -135,6 +135,25 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   // Avisos
   const [addingAviso, setAddingAviso] = useState(false);
   const [newAviso, setNewAviso] = useState<{ label: string; value: string; type: "phone" | "group" }>({ label: "", value: "", type: "phone" });
+  const [wppGroups, setWppGroups] = useState<{ id: string; name: string }[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
+
+  async function fetchWppGroups() {
+    const wppConn = waConnections.find((c) => c.type === "wppconnect" && (selectedConnId === null || c.id === selectedConnId));
+    if (!wppConn) return;
+    setLoadingGroups(true);
+    setShowGroupPicker(true);
+    try {
+      const res = await fetch(`/api/whatsapp/wppconnect-manager/${wppConn.id}/groups`);
+      if (res.ok) {
+        const data = await res.json() as { groups: { id: string; name: string }[] };
+        setWppGroups(data.groups);
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingGroups(false);
+    }
+  }
 
   // Base de conhecimento
   type KbDoc = { id: string; name: string; filename: string; chars?: number; uploadedAt: number };
@@ -903,18 +922,77 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">🔔 Avisos</p>
           {!addingAviso && (
-            <button
-              onClick={() => { setAddingAviso(true); setNewAviso({ label: "", value: "", type: "phone" }); }}
-              className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-600 transition"
-            >
-              + Adicionar destinatário
-            </button>
+            <div className="flex gap-2">
+              {waConnections.some((c) => c.type === "wppconnect") && (
+                <button
+                  onClick={fetchWppGroups}
+                  disabled={loadingGroups}
+                  className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition disabled:opacity-50"
+                >
+                  {loadingGroups ? "Carregando..." : "👥 Listar grupos"}
+                </button>
+              )}
+              <button
+                onClick={() => { setAddingAviso(true); setNewAviso({ label: "", value: "", type: "phone" }); }}
+                className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-600 transition"
+              >
+                + Adicionar destinatário
+              </button>
+            </div>
           )}
         </div>
 
         <p className="text-xs text-slate-500">
           Quando o agente gerar um aviso ou resumo de conversa, todos os destinatários abaixo receberão a mensagem via WhatsApp.
         </p>
+
+        {/* Seletor de grupos WPPConnect */}
+        {showGroupPicker && (
+          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-violet-700">👥 Selecione um grupo para adicionar</p>
+              <button
+                onClick={() => setShowGroupPicker(false)}
+                className="text-xs text-slate-400 hover:text-slate-600"
+              >
+                Fechar
+              </button>
+            </div>
+            {loadingGroups ? (
+              <p className="text-xs text-slate-400">Carregando grupos...</p>
+            ) : wppGroups.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">Nenhum grupo encontrado. Verifique se a sessão está conectada.</p>
+            ) : (
+              <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                {wppGroups.map((g) => {
+                  const alreadyAdded = (cfg.avisos ?? []).some((a) => a.value === g.id);
+                  return (
+                    <button
+                      key={g.id}
+                      disabled={alreadyAdded}
+                      onClick={() => {
+                        if (alreadyAdded) return;
+                        const id = Math.random().toString(36).slice(2);
+                        setCfg((c) => ({ ...c, avisos: [...(c.avisos ?? []), { id, label: g.name, value: g.id, type: "group" }] }));
+                        setShowGroupPicker(false);
+                      }}
+                      className={clsx(
+                        "w-full text-left rounded-lg border px-3 py-2 text-sm transition",
+                        alreadyAdded
+                          ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
+                          : "bg-white border-violet-200 text-slate-700 hover:border-violet-500 hover:bg-violet-50"
+                      )}
+                    >
+                      <span className="font-medium">{g.name}</span>
+                      {alreadyAdded && <span className="ml-2 text-[10px] text-slate-400">já adicionado</span>}
+                      <span className="block text-[10px] text-slate-400 font-mono mt-0.5 truncate">{g.id}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Lista de destinatários */}
         {(cfg.avisos ?? []).length > 0 && (

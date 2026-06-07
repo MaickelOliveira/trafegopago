@@ -161,9 +161,12 @@ export async function sendText(
   try {
     // Para contatos LID, envia o número puro (sem @c.us) com isLid:true
     // Para contatos normais, normaliza para formato brasileiro padrão
+    const isGroup = phone.endsWith("@g.us");
     const phoneFormatted = isLid
       ? phone.replace(/@.*/, "")
-      : normalizeBrPhone(phone);
+      : isGroup
+        ? phone  // grupos: envia o JID completo como está (ex: 120363xxx@g.us)
+        : normalizeBrPhone(phone);
     // Marca ANTES de enviar para que o eco fromMe seja ignorado pelo webhook
     const phoneKey = phoneFormatted.replace(/@.*/, "").replace(/\D/g, "");
     markPhoneSending(phoneKey); // janela 30s: cobre onanymessage + onselfmessage
@@ -176,7 +179,7 @@ export async function sendText(
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ phone: phoneFormatted, message, isGroup: false, ...(isLid ? { isLid: true } : {}) }),
+        body: JSON.stringify({ phone: phoneFormatted, message, isGroup, ...(isLid ? { isLid: true } : {}) }),
       },
     );
     if (!res.ok) {
@@ -361,6 +364,34 @@ export async function sendMediaFromBase64(
   } catch (e) {
     console.error(`[wppconnect-api] sendMediaFromBase64 EXCEPTION session=${sessionName}`, e);
     return false;
+  }
+}
+
+// Lista todos os grupos do WhatsApp conectado nesta sessão
+export async function listGroups(
+  sessionName: string,
+  token: string,
+): Promise<{ id: string; name: string }[]> {
+  if (!base()) return [];
+  try {
+    const res = await fetch(
+      `${base()}/api/${sessionName}/list-chats`,
+      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const data = await res.json() as Record<string, unknown>;
+    const chats = (Array.isArray(data) ? data : (data.response ?? [])) as Record<string, unknown>[];
+    return chats
+      .filter((c) => {
+        const id = String(c.id ?? (c as Record<string, Record<string, unknown>>)?.id?._serialized ?? "");
+        return id.endsWith("@g.us");
+      })
+      .map((c) => ({
+        id: String(c.id ?? (c as Record<string, Record<string, unknown>>)?.id?._serialized ?? ""),
+        name: String(c.name ?? c.formattedTitle ?? c.title ?? "Grupo sem nome"),
+      }));
+  } catch {
+    return [];
   }
 }
 
