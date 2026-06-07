@@ -140,15 +140,16 @@ async function generateWppSummaryText(
       `o que o lead quer, o estágio da conversa, dúvidas ou objeções levantadas, e próximo passo sugerido. ` +
       `Não use marcadores ou listas, escreva em parágrafos curtos.`;
 
-    for (const modelId of ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-pro"]) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelId });
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().trim();
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000));
+    try {
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const result = await Promise.race([model.generateContent(prompt), timeout]);
+      if (result) {
+        const text = (result as Awaited<ReturnType<typeof model.generateContent>>).response.text().trim();
         if (text) return text;
-      } catch (e) {
-        console.error(`[wpp-summary] modelo ${modelId} falhou:`, e);
       }
+    } catch (e) {
+      console.error("[wpp-summary] gemini-2.0-flash falhou:", e);
     }
   }
   return buildBasicSummary(history);
