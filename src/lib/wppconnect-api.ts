@@ -367,29 +367,64 @@ export async function sendMediaFromBase64(
   }
 }
 
+// Extrai o JID string de um campo id do WPPConnect (pode ser string ou objeto {_serialized})
+function extractJid(id: unknown): string {
+  if (typeof id === "string") return id;
+  if (id && typeof id === "object") {
+    const obj = id as Record<string, unknown>;
+    if (typeof obj._serialized === "string") return obj._serialized;
+    if (typeof obj.user === "string") return obj.user;
+  }
+  return "";
+}
+
 // Lista todos os grupos do WhatsApp conectado nesta sessão
 export async function listGroups(
   sessionName: string,
   token: string,
 ): Promise<{ id: string; name: string }[]> {
   if (!base()) return [];
+
+  function parseGroups(data: unknown): { id: string; name: string }[] {
+    const arr = (Array.isArray(data) ? data : (data as Record<string, unknown>)?.response) as Record<string, unknown>[] | undefined;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((c) => {
+        if (c.isGroup === true) return true;
+        const jid = extractJid(c.id);
+        return jid.endsWith("@g.us");
+      })
+      .map((c) => {
+        const jid = extractJid(c.id);
+        const name = String(c.name ?? c.formattedTitle ?? c.title ?? "Grupo sem nome");
+        return { id: jid, name };
+      })
+      .filter((g) => g.id);
+  }
+
   try {
+    // Tenta list-chats primeiro (retorna todos os chats incluindo grupos)
     const res = await fetch(
       `${base()}/api/${sessionName}/list-chats`,
       { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
     );
-    if (!res.ok) return [];
-    const data = await res.json() as Record<string, unknown>;
-    const chats = (Array.isArray(data) ? data : (data.response ?? [])) as Record<string, unknown>[];
-    return chats
-      .filter((c) => {
-        const id = String(c.id ?? (c as Record<string, Record<string, unknown>>)?.id?._serialized ?? "");
-        return id.endsWith("@g.us");
-      })
-      .map((c) => ({
-        id: String(c.id ?? (c as Record<string, Record<string, unknown>>)?.id?._serialized ?? ""),
-        name: String(c.name ?? c.formattedTitle ?? c.title ?? "Grupo sem nome"),
-      }));
+    if (res.ok) {
+      const data = await res.json() as unknown;
+      const groups = parseGroups(data);
+      if (groups.length > 0) return groups;
+    }
+
+    // Fallback: all-contacts filtrando por @g.us
+    const res2 = await fetch(
+      `${base()}/api/${sessionName}/all-contacts`,
+      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
+    );
+    if (res2.ok) {
+      const data2 = await res2.json() as unknown;
+      return parseGroups(data2);
+    }
+
+    return [];
   } catch {
     return [];
   }

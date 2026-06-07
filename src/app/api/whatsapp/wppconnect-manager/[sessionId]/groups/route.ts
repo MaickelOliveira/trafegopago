@@ -21,5 +21,6 @@ export async function GET(
   }
 
   const groups = await listGroups(wppSession.sessionName, wppSession.sessionToken);
+  console.log(`[groups] session=${wppSession.sessionName} found=${groups.length}`);
   return NextResponse.json({ groups });
 }
