@@ -323,6 +323,17 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                     <button onClick={() => moveCol(idx, 1)} disabled={idx === editCols.length - 1} className="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs px-1">▼</button>
                     <button onClick={() => removeCol(idx)} className="text-slate-300 hover:text-red-500 text-xs px-1">✕</button>
                   </div>
+                  <div className="flex gap-1 pl-5 flex-wrap">
+                    {COL_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => setEditCols((prev) => prev.map((col2, i) => i === idx ? { ...col2, color: c } : col2))}
+                        className="w-4 h-4 rounded-full border-2 transition"
+                        style={{ background: c, borderColor: col.color === c ? "#1e293b" : "transparent" }}
+                        title={c}
+                      />
+                    ))}
+                  </div>
                   {/* Flags de comportamento */}
                   <div className="flex items-center gap-3 pl-5">
                     <label className="flex items-center gap-1 cursor-pointer select-none">
