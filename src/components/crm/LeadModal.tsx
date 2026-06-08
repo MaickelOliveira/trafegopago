@@ -8,6 +8,11 @@ import type { ChatMessage } from "@/lib/conversations";
 import { QuickRepliesPicker, QuickRepliesManager } from "@/components/shared/QuickRepliesPopover";
 import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
 
+function withCountryCode(p: string) {
+  const d = p.replace(/\D/g, "");
+  return d.startsWith("55") ? d : "55" + d;
+}
+
 // ── Cache de prefetch (módulo-level, persiste enquanto a página está aberta) ──
 type CacheEntry = { messages: ChatMessage[]; fetchedAt: number };
 const _convCache = new Map<string, CacheEntry>();
@@ -458,7 +463,7 @@ export function LeadModal({
                         </div>
                       ) : (
                         <div>
-                          <p className="text-sm font-medium text-slate-800 font-mono">{lead.realPhone ?? lead.phone}</p>
+                          <p className="text-sm font-medium text-slate-800 font-mono">{withCountryCode(lead.realPhone ?? lead.phone)}</p>
                           {lead.isLid && !lead.realPhone && <span className="text-xs text-amber-600">LID — edite para inserir o número real</span>}
                         </div>
                       )}
