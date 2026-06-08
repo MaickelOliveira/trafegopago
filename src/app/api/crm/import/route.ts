@@ -101,10 +101,14 @@ export async function POST(req: NextRequest) {
   let errors = 0;
 
   for (const row of rows) {
-    const phone = String(row[mapping.phone] ?? "").replace(/\D/g, "");
+    let phone = String(row[mapping.phone] ?? "").replace(/\D/g, "");
     if (!phone || phone.length < 8) {
       skipped++;
       continue;
+    }
+    // Garante código do país 55 (Brasil) para disparos funcionarem
+    if (!phone.startsWith("55")) {
+      phone = "55" + phone;
     }
 
     const stageLabel = String(row[mapping.stage] ?? "").trim();
