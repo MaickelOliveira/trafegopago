@@ -51,6 +51,7 @@ type AgentCfg = {
   summaryPhone?: string;
   avisos?: AvisoRecipient[];
   followUps: FollowUpStep[];
+  followUpContext?: string;
   whatsappConnectionId?: string;
   messageWaitSeconds?: number;
   systemPrompt?: string;
@@ -728,6 +729,25 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         <p className="text-xs text-slate-400">
           Cada step é enviado após o prazo configurado. Quando o lead responde, a sequência reinicia do zero.
         </p>
+
+        {/* Contexto para análise inteligente do follow-up */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-slate-600">
+            Contexto do negócio para follow-up inteligente
+          </label>
+          <textarea
+            value={cfg.followUpContext ?? ""}
+            onChange={(e) => setCfg((c) => ({ ...c, followUpContext: e.target.value }))}
+            rows={3}
+            placeholder={
+              "Ex: Pousada e espaço para eventos. Clientes são pessoas físicas interessadas em hospedagem, day use ou eventos. Não enviar follow-up para fornecedores, candidatos a emprego ou conversas pessoais."
+            }
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
+          />
+          <p className="text-[11px] text-slate-400">
+            A IA lê este contexto antes de enviar cada follow-up para decidir se a conversa merece retorno. Seja específico: o que o negócio vende, quem é o cliente ideal, e o que deve ser filtrado.
+          </p>
+        </div>
 
         {(cfg.followUps ?? []).length === 0 && (
           <div className="rounded-xl border border-dashed border-emerald-200 p-4 text-center">

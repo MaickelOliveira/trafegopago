@@ -56,6 +56,7 @@ export type AgentConfig = {
   summaryPhone?: string;         // Legado — use avisos[] para novos destinatários
   avisos?: AvisoRecipient[];     // Destinatários de avisos (números e grupos WhatsApp)
   followUps: FollowUpStep[];     // Sequência de follow-ups configurados
+  followUpContext?: string;      // Contexto curto do negócio para a IA decidir se envia follow-up (ex: "pousada, clientes pessoa física, filtrar fornecedores")
   systemPrompt?: string;         // Instruções do agente para este cliente
   whatsappConnectionId?: string; // ID da conexão WhatsApp que o agente usa
   messageWaitSeconds?: number;   // Segundos de espera para acumular mensagens (0 = desabilitado)

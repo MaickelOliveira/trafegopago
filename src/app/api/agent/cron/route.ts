@@ -133,7 +133,9 @@ export async function GET(req: NextRequest) {
 
       // ── 2. Análise Gemini: deve enviar? ─────────────────────────────────
       const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
-      const systemPrompt = agentCfg?.systemPrompt ?? "";
+      // Usa followUpContext (campo dedicado) se preenchido; senão cai nos primeiros 800 chars do systemPrompt
+      const systemPrompt = agentCfg?.followUpContext?.trim()
+        || (agentCfg?.systemPrompt ?? "").slice(0, 800);
 
       if (apiKey && history.length > 0) {
         const send = await shouldSendFollowUp(history, systemPrompt, followUp.message, apiKey);
@@ -148,7 +150,8 @@ export async function GET(req: NextRequest) {
       // ── 3. Determinar mensagem: texto fixo ou geração AI ─────────────────
       let msgToSend = followUp.message;
       if (followUp.messageType === "ai" && apiKey && history.length > 0) {
-        const aiMsg = await generateAiFollowUp(history, systemPrompt, followUp.message, apiKey);
+        const aiCtx = agentCfg?.followUpContext?.trim() || (agentCfg?.systemPrompt ?? "").slice(0, 600);
+        const aiMsg = await generateAiFollowUp(history, aiCtx, followUp.message, apiKey);
         if (aiMsg) {
           msgToSend = aiMsg;
           console.log(`[agent/cron] FU ${followUp.id} mensagem AI: "${aiMsg.slice(0, 80)}"`);
