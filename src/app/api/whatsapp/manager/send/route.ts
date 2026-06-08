@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "token, phone e content são obrigatórios" }, { status: 400 });
   }
 
-  const cleanPhone = phone.replace(/\D/g, "");
+  const digits = phone.replace(/\D/g, "");
+  const cleanPhone = digits.startsWith("55") ? digits : "55" + digits;
 
   let ok: boolean;
   if (type === "text") {

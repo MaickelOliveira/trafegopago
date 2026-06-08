@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "phone, content, clientId required" }, { status: 400 });
   }
 
-  const cleanPhone = phone.replace(/\D/g, "");
+  const digits = phone.replace(/\D/g, "");
+  const cleanPhone = digits.startsWith("55") ? digits : "55" + digits;
 
   // Encontra a conexão certa dentro dos funnels do cliente
   const funnels = getFunnels().filter((f) => f.clientId === clientId);

@@ -25,6 +25,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "phoneNumberId e metaToken não configurados no template" }, { status: 422 });
   }
 
+  function withCountryCode(p: string) {
+    const digits = p.replace(/\D/g, "");
+    return digits.startsWith("55") ? digits : "55" + digits;
+  }
+
   let targetPhones: string[] = [];
 
   if (phones === "all" && clientId) {
@@ -33,9 +38,9 @@ export async function POST(req: NextRequest) {
       if (funnelId && l.funnelId !== funnelId) return false;
       return !!l.phone;
     });
-    targetPhones = leads.map((l) => l.phone);
+    targetPhones = leads.map((l) => withCountryCode(l.phone));
   } else if (Array.isArray(phones)) {
-    targetPhones = phones;
+    targetPhones = phones.map(withCountryCode);
   } else {
     return NextResponse.json({ error: "phones deve ser um array ou 'all'" }, { status: 400 });
   }
