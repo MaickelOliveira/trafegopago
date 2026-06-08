@@ -140,14 +140,19 @@ async function generateWppSummaryText(
       `o que o lead quer, o estágio da conversa, dúvidas ou objeções levantadas, e próximo passo sugerido. ` +
       `Não use marcadores ou listas, escreva em parágrafos curtos.`;
 
-    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000));
     for (const modelId of ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]) {
       try {
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 12_000));
         const model = genAI.getGenerativeModel({ model: modelId });
         const result = await Promise.race([model.generateContent(prompt), timeout]);
         if (result) {
           const text = (result as Awaited<ReturnType<typeof model.generateContent>>).response.text().trim();
-          if (text) return text;
+          if (text) {
+            console.log(`[wpp-summary] sucesso modelo=${modelId}`);
+            return text;
+          }
+        } else {
+          console.warn(`[wpp-summary] timeout modelo=${modelId}`);
         }
       } catch (e) {
         console.error(`[wpp-summary] ${modelId} falhou:`, e);
