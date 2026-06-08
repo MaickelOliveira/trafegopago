@@ -176,6 +176,7 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Funnel | null>(null);
+  const [editName, setEditName] = useState("");
   const [editCols, setEditCols] = useState<FunnelColumn[]>([]);
   const [newColName, setNewColName] = useState("");
   const [newColColor, setNewColColor] = useState(COL_COLORS[0]);
@@ -206,6 +207,7 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
 
   function startEdit(f: Funnel) {
     setEditing(f);
+    setEditName(f.name);
     setEditCols(f.columns.map((c) => ({ ...c })));
     setNewColName("");
     setNewColColor(COL_COLORS[0]);
@@ -236,7 +238,7 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
     const res = await fetch(`/api/crm/funnels/${editing.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ columns: editCols }),
+      body: JSON.stringify({ name: editName.trim() || editing.name, columns: editCols }),
     });
     const updated = await res.json();
     onUpdated(funnels.map((f) => f.id === updated.id ? updated : f));
@@ -296,9 +298,19 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditing(null)}>
           <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl p-8" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-bold text-slate-800">✏️ Editar colunas — {editing.name}</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-800">✏️ Editar funil</h3>
               <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-medium text-slate-500 mb-1">Nome do funil</label>
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                placeholder="Nome do funil"
+              />
             </div>
 
             <div className="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-2">
