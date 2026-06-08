@@ -658,6 +658,12 @@ export async function POST(
       setAiPaused(phone, isPausing, clientId);
       const freshLead = getLeadByPhone(clientId, phone);
       if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
+      // Operador assumiu o atendimento → reinicia sequência de follow-up
+      // para que, se o lead não responder, o follow-up seja enviado
+      if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
+        cancelFollowUpsForPhone(clientId, phone);
+        startFollowUpSequence(clientId, phone, agentCfgFM.followUps);
+      }
     }
     return NextResponse.json({ ok: true });
   }
