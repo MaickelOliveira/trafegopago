@@ -141,15 +141,17 @@ async function generateWppSummaryText(
       `Não use marcadores ou listas, escreva em parágrafos curtos.`;
 
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000));
-    try {
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-      const result = await Promise.race([model.generateContent(prompt), timeout]);
-      if (result) {
-        const text = (result as Awaited<ReturnType<typeof model.generateContent>>).response.text().trim();
-        if (text) return text;
+    for (const modelId of ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelId });
+        const result = await Promise.race([model.generateContent(prompt), timeout]);
+        if (result) {
+          const text = (result as Awaited<ReturnType<typeof model.generateContent>>).response.text().trim();
+          if (text) return text;
+        }
+      } catch (e) {
+        console.error(`[wpp-summary] ${modelId} falhou:`, e);
       }
-    } catch (e) {
-      console.error("[wpp-summary] gemini-2.0-flash falhou:", e);
     }
   }
   return buildBasicSummary(history);
