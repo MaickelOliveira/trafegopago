@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { createFunnel } from "@/lib/funnels";
+import { createFunnel, updateFunnel } from "@/lib/funnels";
 import { upsertLeadByPhone } from "@/lib/leads";
 import * as XLSX from "xlsx";
 import { randomUUID } from "crypto";
@@ -86,6 +86,8 @@ export async function POST(req: NextRequest) {
   }));
 
   const funnel = createFunnel(funnelName, columns);
+  // Vincula o funil ao cliente correto para aparecer no CRM
+  updateFunnel(funnel.id, { clientId });
 
   // Mapeia label da etapa → id da coluna criada
   const stageIdMap: Record<string, string> = {};
