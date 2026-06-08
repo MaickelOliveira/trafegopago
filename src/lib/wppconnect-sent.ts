@@ -11,32 +11,23 @@ const sentRegistry = new Map<string, string[]>(); // phone → conteúdos recent
  * e o consumeSent remove a entrada no primeiro — o segundo ficaria sem correspondência.
  * A janela de tempo cobre ambos os eventos sem depender de match exato.
  */
-const phoneSendingRegistry = new Map<string, number>(); // corePhone → timestamp de expiração
-
-// Usa os últimos 8 dígitos como chave — invariante ao 9º dígito brasileiro.
-// O WPPConnect pode entregar o echo com chatId de 12 dígitos (sem o 9) enquanto
-// o sendText normalizou o número para 13 dígitos (com o 9). Os 8 finais são iguais.
-function corePhone(phone: string): string {
-  return phone.replace(/\D/g, "").slice(-8);
-}
+const phoneSendingRegistry = new Map<string, number>(); // phone → timestamp de expiração
 
 export function markPhoneSending(phone: string) {
-  const key = corePhone(phone);
   const expiry = Date.now() + 30_000;
-  phoneSendingRegistry.set(key, expiry);
-  console.log(`[wppconnect-sent] markPhoneSending phone=${phone} core=${key} expiry_in=30s`);
+  phoneSendingRegistry.set(phone, expiry);
+  console.log(`[wppconnect-sent] markPhoneSending phone=${phone} expiry_in=30s`);
   setTimeout(() => {
-    const stored = phoneSendingRegistry.get(key);
-    if (stored && stored <= Date.now()) phoneSendingRegistry.delete(key);
+    const stored = phoneSendingRegistry.get(phone);
+    if (stored && stored <= Date.now()) phoneSendingRegistry.delete(phone);
   }, 30_000);
 }
 
 export function isPhoneSending(phone: string): boolean {
-  const key = corePhone(phone);
-  const expiry = phoneSendingRegistry.get(key);
+  const expiry = phoneSendingRegistry.get(phone);
   if (!expiry) return false;
   if (Date.now() < expiry) return true;
-  phoneSendingRegistry.delete(key);
+  phoneSendingRegistry.delete(phone);
   return false;
 }
 
