@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { LeadModal, prefetchConversation } from "./LeadModal";
+import ImportModal from "./ImportModal";
 import type { Lead } from "@/lib/leads";
 import type { Funnel, FunnelColumn, TriggerPhrase } from "@/lib/funnels";
 
@@ -496,6 +497,7 @@ export function KanbanBoard({
   const [selected, setSelected]     = useState<Lead | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [showFunnelMgr, setShowFunnelMgr] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [newLead, setNewLead] = useState({ name: "", phone: "", email: "", campaignName: "", value: "", clientId: clients[0]?.id ?? "" });
   const [saving, setSaving]   = useState(false);
   const draggingId = useRef<string | null>(null);
@@ -981,6 +983,17 @@ export function KanbanBoard({
         </button>
 
         <button
+          onClick={() => setShowImport(true)}
+          title="Importar leads do Kommo via planilha"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition shrink-0 flex items-center gap-1.5"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Importar Kommo
+        </button>
+
+        <button
           onClick={() => setShowNewForm(true)}
           className="ml-auto rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition shrink-0"
         >
@@ -1222,6 +1235,18 @@ export function KanbanBoard({
           );
         })}
       </div>
+
+      {/* Modal importar Kommo */}
+      {showImport && (
+        <ImportModal
+          clientId={filterClient}
+          onClose={() => setShowImport(false)}
+          onImported={(funnelId) => {
+            setShowImport(false);
+            window.location.reload();
+          }}
+        />
+      )}
 
       {/* Modal lead */}
       {selected && (
