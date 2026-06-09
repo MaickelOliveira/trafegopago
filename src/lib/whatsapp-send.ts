@@ -124,6 +124,7 @@ export async function sendMediaMessage(
     if (wppSession) {
       const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
       const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+      markPhoneSending(rawPhone);
       const ok = await wppSendMedia(wppSession.sessionName, wppSession.sessionToken, phone, mediaUrl, caption, isLid);
       if (ok) return;
     }
@@ -133,6 +134,7 @@ export async function sendMediaMessage(
   for (const s of wppSessions) {
     const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
     const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+    markPhoneSending(rawPhone);
     const ok = await wppSendMedia(s.sessionName, s.sessionToken, phone, mediaUrl, caption, isLid);
     if (ok) return;
   }

@@ -7,7 +7,7 @@ import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead } f
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused, sanitizeContactName } from "@/lib/conversations";
-import { markSent, consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
+import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
@@ -68,6 +68,11 @@ async function sendWppMarkedMedia(
       continue;
     }
     try {
+      // Marca o telefone como "enviando mídia da plataforma" para que o eco
+      // fromMe não seja interpretado como ação do operador e não pause a IA
+      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
+      markPhoneSending(rawPhone);
+
       // Arquivo local: lê do disco e envia como base64
       const localMatch = media.url.match(/\/api\/uploads\/([^/?#]+)$/);
       if (localMatch) {
@@ -631,30 +636,26 @@ export async function POST(
   // Se foi enviado por nós (fromMe = IA, plataforma ou operador pelo celular)
   if (fromMe) {
     // Áudio e ptt: a plataforma NUNCA envia automaticamente — é sempre o operador.
-    // Imagem: a plataforma pode enviar, mas usamos isPhoneSending para distinguir.
-    // Nesses casos pulamos o isPhoneSending para garantir que o operador pause a IA.
+    // Para todos os outros tipos (texto, imagem, vídeo, doc): usa isPhoneSending para
+    // distinguir eco da plataforma de ação do operador. sendWppMarkedMedia e sendMediaMessage
+    // já chamam markPhoneSending antes de enviar qualquer mídia.
     const isOperatorOnlyMedia = msgType === "ptt" || msgType === "audio";
-    const isImageFromMe = msgType === "image";
 
     if (!isOperatorOnlyMedia) {
-      // Janela de envio ativa: eco da plataforma (texto, vídeo, doc, imagem enviada pela plataforma)
-      // O WPPConnect pode disparar 2 eventos para 1 mensagem enviada.
-      if (isPhoneSending(phone) && !isImageFromMe) {
+      // Janela de envio ativa: eco da plataforma (onanymessage ou onselfmessage)
+      if (isPhoneSending(phone)) {
         console.log(`[WPPConnect fromMe] phone=${phone} janela de envio ativa — não pausa IA`);
         return NextResponse.json({ ok: true });
       }
 
-      if (text.trim() && !isImageFromMe) {
-        // Fora da janela: tenta match exato no registry (mensagens da IA/plataforma)
+      if (text.trim()) {
+        // Fora da janela: tenta match exato no registry (mensagens de texto da IA/plataforma)
         const consumed = consumeSent(phone, text.trim());
         console.log(`[WPPConnect fromMe] phone=${phone} consumed=${consumed} text="${text.trim().slice(0, 80)}"`);
         if (consumed) {
           return NextResponse.json({ ok: true });
         }
         // Verifica se é uma saudação automática do WA Business (ex: anúncios CTWa).
-        // Dois cenários possíveis:
-        //   A) fromMe chega ANTES da mensagem do cliente → histórico vazio → !hasUserMessages
-        //   B) mensagem do cliente chega ANTES (race condition) → ctwaLeadSet marcado pelo adId
         const isCTWaGreeting = ctwaLeadSet.has(phone);
         const historyFM = getHistory(phone, clientId);
         const hasUserMessages = historyFM.some((m) => m.role === "user");
@@ -667,8 +668,8 @@ export async function POST(
       }
     }
 
-    if (text.trim() && (isOperatorOnlyMedia || isImageFromMe || !isPhoneSending(phone))) {
-      // Operador enviou pelo celular (áudio, ptt, imagem, ou texto fora da janela) → salva e pausa a IA
+    if (text.trim()) {
+      // Operador enviou pelo celular (áudio, ptt, ou texto/imagem fora da janela) → salva e pausa a IA
       console.log(`[WPPConnect fromMe] phone=${phone} msgType=${msgType} — operador enviou mídia/texto, pausando IA`);
       addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
       const activeClientFM = clientId !== "sem-cliente" ? getClientById(clientId) : null;
@@ -679,7 +680,6 @@ export async function POST(
       const freshLead = getLeadByPhone(clientId, phone);
       if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
       // Operador assumiu o atendimento → reinicia sequência de follow-up
-      // para que, se o lead não responder, o follow-up seja enviado
       if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
         cancelFollowUpsForPhone(clientId, phone);
         startFollowUpSequence(clientId, phone, agentCfgFM.followUps);

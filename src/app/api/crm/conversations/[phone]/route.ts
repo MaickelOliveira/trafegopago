@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getHistory, addMessage, getClientId, getAllConversationsByClientId } from "@/lib/conversations";
-import { markSent } from "@/lib/wppconnect-sent";
+import { markSent, markPhoneSending } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { sendText, sendMedia as uazapiSendMedia } from "@/lib/uazapi";
@@ -80,7 +80,8 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     let isLid = lead?.isLid === true;
 
     if (imgUrl) {
-      // Envia imagem com legenda
+      // Envia imagem com legenda — marca antes para que o eco fromMe não pause a IA
+      markPhoneSending(normalized);
       await wppSendMedia(wppSession.sessionName, wppSession.sessionToken, normalized, imgUrl, msgText || undefined, isLid);
     }
     if (msgText && !imgUrl) {
