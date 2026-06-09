@@ -56,7 +56,10 @@ export async function GET() {
   }
 
   // ── WPPConnect sessions ─────────────────────────────────────────────────────
-  const wppSessions = getWppSessions().filter((s) => s.clientId === clientId);
+  const clientFunnelIds = new Set(funnels.map((f) => f.id));
+  const wppSessions = getWppSessions().filter(
+    (s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId))
+  );
   for (const s of wppSessions) {
     try {
       const status = await checkConnectionStatus(s.sessionName, s.sessionToken);
