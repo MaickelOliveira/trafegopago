@@ -630,33 +630,46 @@ export async function POST(
 
   // Se foi enviado por nós (fromMe = IA, plataforma ou operador pelo celular)
   if (fromMe) {
-    // Janela de envio ativa: qualquer eco (texto ou mídia, onanymessage ou onselfmessage)
-    // não deve pausar a IA. O WPPConnect pode disparar 2 eventos para 1 mensagem enviada.
-    if (isPhoneSending(phone)) {
-      console.log(`[WPPConnect fromMe] phone=${phone} janela de envio ativa — não pausa IA`);
-      return NextResponse.json({ ok: true });
+    // Áudio e ptt: a plataforma NUNCA envia automaticamente — é sempre o operador.
+    // Imagem: a plataforma pode enviar, mas usamos isPhoneSending para distinguir.
+    // Nesses casos pulamos o isPhoneSending para garantir que o operador pause a IA.
+    const isOperatorOnlyMedia = msgType === "ptt" || msgType === "audio";
+    const isImageFromMe = msgType === "image";
+
+    if (!isOperatorOnlyMedia) {
+      // Janela de envio ativa: eco da plataforma (texto, vídeo, doc, imagem enviada pela plataforma)
+      // O WPPConnect pode disparar 2 eventos para 1 mensagem enviada.
+      if (isPhoneSending(phone) && !isImageFromMe) {
+        console.log(`[WPPConnect fromMe] phone=${phone} janela de envio ativa — não pausa IA`);
+        return NextResponse.json({ ok: true });
+      }
+
+      if (text.trim() && !isImageFromMe) {
+        // Fora da janela: tenta match exato no registry (mensagens da IA/plataforma)
+        const consumed = consumeSent(phone, text.trim());
+        console.log(`[WPPConnect fromMe] phone=${phone} consumed=${consumed} text="${text.trim().slice(0, 80)}"`);
+        if (consumed) {
+          return NextResponse.json({ ok: true });
+        }
+        // Verifica se é uma saudação automática do WA Business (ex: anúncios CTWa).
+        // Dois cenários possíveis:
+        //   A) fromMe chega ANTES da mensagem do cliente → histórico vazio → !hasUserMessages
+        //   B) mensagem do cliente chega ANTES (race condition) → ctwaLeadSet marcado pelo adId
+        const isCTWaGreeting = ctwaLeadSet.has(phone);
+        const historyFM = getHistory(phone, clientId);
+        const hasUserMessages = historyFM.some((m) => m.role === "user");
+        if (!hasUserMessages || isCTWaGreeting) {
+          if (isCTWaGreeting) ctwaLeadSet.delete(phone);
+          console.log(`[WPPConnect fromMe] phone=${phone} — saudação automática (${isCTWaGreeting ? "CTWa identificado via adId" : "conversa nova"}), não pausa IA`);
+          addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
+          return NextResponse.json({ ok: true });
+        }
+      }
     }
-    if (text.trim()) {
-      // Fora da janela: tenta match exato no registry (mensagens da IA/plataforma)
-      const consumed = consumeSent(phone, text.trim());
-      console.log(`[WPPConnect fromMe] phone=${phone} consumed=${consumed} text="${text.trim().slice(0, 80)}"`);
-      if (consumed) {
-        return NextResponse.json({ ok: true });
-      }
-      // Verifica se é uma saudação automática do WA Business (ex: anúncios CTWa).
-      // Dois cenários possíveis:
-      //   A) fromMe chega ANTES da mensagem do cliente → histórico vazio → !hasUserMessages
-      //   B) mensagem do cliente chega ANTES (race condition) → ctwaLeadSet marcado pelo adId
-      const isCTWaGreeting = ctwaLeadSet.has(phone);
-      const historyFM = getHistory(phone, clientId);
-      const hasUserMessages = historyFM.some((m) => m.role === "user");
-      if (!hasUserMessages || isCTWaGreeting) {
-        if (isCTWaGreeting) ctwaLeadSet.delete(phone);
-        console.log(`[WPPConnect fromMe] phone=${phone} — saudação automática (${isCTWaGreeting ? "CTWa identificado via adId" : "conversa nova"}), não pausa IA`);
-        addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
-        return NextResponse.json({ ok: true });
-      }
-      // Operador enviou pelo celular → salva e pausa a IA
+
+    if (text.trim() && (isOperatorOnlyMedia || isImageFromMe || !isPhoneSending(phone))) {
+      // Operador enviou pelo celular (áudio, ptt, imagem, ou texto fora da janela) → salva e pausa a IA
+      console.log(`[WPPConnect fromMe] phone=${phone} msgType=${msgType} — operador enviou mídia/texto, pausando IA`);
       addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
       const activeClientFM = clientId !== "sem-cliente" ? getClientById(clientId) : null;
       const agentCfgFM = activeClientFM ? getAgentConfigForConnection(activeClientFM, connId) : undefined;

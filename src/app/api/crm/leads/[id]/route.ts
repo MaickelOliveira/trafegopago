@@ -6,6 +6,10 @@ import { getClientById } from "@/lib/clients";
 import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
 import { setAiPaused } from "@/lib/conversations";
+import { cancelFollowUpsForPhone } from "@/lib/followups";
+
+// Colunas finais: ao entrar nelas, todos os follow-ups do lead são cancelados
+const TERMINAL_COLUMN_IDS = ["ganho", "perdido"];
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -31,6 +35,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // Sincroniza conversations.json quando aiPaused muda via UI
   if (typeof body.aiPaused === "boolean" && lead.phone) {
     setAiPaused(lead.phone, body.aiPaused);
+  }
+
+  // Cancela follow-ups ao mover para coluna final (ganho ou perdido)
+  if (body.status && previous && body.status !== previous.status && lead.phone) {
+    if (TERMINAL_COLUMN_IDS.includes(body.status)) {
+      cancelFollowUpsForPhone(lead.clientId, lead.phone);
+    }
   }
 
   // Dispara evento CAPI quando o status muda e a coluna tem metaEvent configurado

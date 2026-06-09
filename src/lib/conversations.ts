@@ -229,6 +229,14 @@ export function addMessage(
   const defaultKey = clientId ? `${clientId}:${phone}` : phone;
   existingKey = existingKey ?? defaultKey;
   const conv: Conversation = all[existingKey] ?? { messages: [], clientId, lastActivity: 0 };
+
+  // Deduplicação: ignora mensagem idêntica com mesmo role em janela de 10s
+  const DEDUP_MS = 10_000;
+  const lastMsg = conv.messages[conv.messages.length - 1];
+  if (lastMsg && lastMsg.role === msg.role && lastMsg.content === msg.content && Math.abs(msg.ts - lastMsg.ts) < DEDUP_MS) {
+    return;
+  }
+
   conv.messages.push(msg);
   if (conv.messages.length > MAX_MESSAGES) {
     conv.messages = conv.messages.slice(-MAX_MESSAGES);
