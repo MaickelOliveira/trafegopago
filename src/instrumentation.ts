@@ -3,6 +3,7 @@ export async function register() {
 
   try {
     const { getDueFollowUps, markSent, scheduleFollowUp } = await import("./lib/followups");
+    const { markSent: markWppSent } = await import("./lib/wppconnect-sent");
     const { getDuePending, markProcessing, markDone } = await import("./lib/pending-responses");
     const { sendMessage } = await import("./lib/whatsapp-send");
     const { runGeminiAgent, generateFollowUpAI } = await import("./lib/gemini-agent");
@@ -97,6 +98,7 @@ export async function register() {
                   console.log(`[cron] AI gerou mensagem para ${sendPhone}: "${aiMsg.slice(0, 80)}"`);
                   // Salva no histórico ANTES de enviar — usado pelo webhook para
                   // reconhecer o eco fromMe e não pausar a IA
+                  markWppSent(sendPhone, aiMsg); // registra para o webhook ignorar o eco fromMe
                   addMessage(fu.phone, { role: "assistant", content: aiMsg, ts: Date.now() }, fu.clientId);
                   await sendMessage(sendPhone, aiMsg, fu.clientId, agCfg.whatsappConnectionId);
                 } else {
@@ -107,6 +109,7 @@ export async function register() {
               // Texto fixo com interpolação de variáveis
               const interpolated = interpolateFollowUp(fu.message, lead);
               console.log(`[cron] enviando texto fixo para ${fu.phone}: "${interpolated.slice(0, 80)}"`);
+              markWppSent(sendPhone, interpolated); // registra para o webhook ignorar o eco fromMe
               await sendMessage(fu.phone, interpolated, fu.clientId, agCfg.whatsappConnectionId);
             }
 
