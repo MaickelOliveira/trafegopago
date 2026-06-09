@@ -353,7 +353,11 @@ export async function sendMedia(
  * Prioridade: dupla quebra → quebra simples → ponto/exclamação/interrogação → tamanho máximo.
  */
 export function splitMessage(text: string, maxLen = 300): string[] {
-  const trimmed = text.trim();
+  // Corrige quebras acidentais em expressões tipo "24/\n\n7" → "24/7"
+  const trimmed = text
+    .trim()
+    .replace(/(\d+\/)\s*\n[\s\n]*(\d)/g, "$1$2");
+
   if (trimmed.length <= maxLen) return [trimmed];
 
   const chunks: string[] = [];
