@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDueFollowUps, markSent, cancelFollowUp, scheduleFollowUp } from "@/lib/followups";
+import { getDueFollowUps, markSent, cancelFollowUp, scheduleFollowUp, cancelFollowUpsForPhone } from "@/lib/followups";
 import { getDuePending, markProcessing, markDone } from "@/lib/pending-responses";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
 import { sendMessage, getGeminiApiKey } from "@/lib/whatsapp-send";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { addMessage, getHistory } from "@/lib/conversations";
 import { runScheduledDailyAutomations } from "@/lib/crm-automations";
+import { getLeadByPhone } from "@/lib/leads";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ChatMessage } from "@/lib/conversations";
+
+const TERMINAL_STATUSES = ["ganho", "perdido"];
 
 // Decide via Gemini se o follow-up deve ser enviado para este lead
 async function shouldSendFollowUp(
@@ -119,6 +122,15 @@ export async function GET(req: NextRequest) {
     }
 
     try {
+      // ── 0. Lead em coluna final (ganho/perdido) → cancela todos e pula ───
+      const lead = getLeadByPhone(followUp.clientId, followUp.phone);
+      if (lead && TERMINAL_STATUSES.includes(lead.status)) {
+        cancelFollowUpsForPhone(followUp.clientId, followUp.phone);
+        console.log(`[agent/cron] FU ${followUp.id} cancelado: lead em coluna final (${lead.status})`);
+        skipped++;
+        continue;
+      }
+
       // ── 1. Checar quem enviou a última mensagem ──────────────────────────
       const history = getHistory(followUp.phone, followUp.clientId);
       const lastMsg = history[history.length - 1];
