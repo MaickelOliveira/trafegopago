@@ -353,10 +353,13 @@ export async function sendMedia(
  * Prioridade: dupla quebra → quebra simples → ponto/exclamação/interrogação → tamanho máximo.
  */
 export function splitMessage(text: string, maxLen = 300): string[] {
-  // Corrige quebras acidentais em expressões tipo "24/\n\n7" → "24/7"
+  // Corrige quebras acidentais em expressões numéricas:
+  //   "24/\n\n7"  → "24/7"   (fração/horário partido)
+  //   "1\n\n2-"  → "12-"    (data/número partido)
   const trimmed = text
     .trim()
-    .replace(/(\d+\/)\s*\n[\s\n]*(\d)/g, "$1$2");
+    .replace(/(\d+\/)\s*\n[\s\n]*(\d)/g, "$1$2")
+    .replace(/(\d)\s*\n[\s\n]+(\d[-.:\/])/g, "$1$2");
 
   if (trimmed.length <= maxLen) return [trimmed];
 
@@ -409,7 +412,19 @@ export function splitMessage(text: string, maxLen = 300): string[] {
   }
 
   if (current) chunks.push(current);
-  return chunks.filter(Boolean);
+
+  // Pós-processamento: absorve chunk que seja só 1-3 dígitos (ex: "1", "7.", "2-")
+  // no chunk anterior — evita mensagem separada só com um número solto.
+  const merged: string[] = [];
+  for (const chunk of chunks.filter(Boolean)) {
+    const isLoneNumber = /^\d{1,3}[-.\s]*$/.test(chunk.trim());
+    if (isLoneNumber && merged.length > 0) {
+      merged[merged.length - 1] += chunk.trim();
+    } else {
+      merged.push(chunk);
+    }
+  }
+  return merged;
 }
 
 export async function getPairingCode(token: string, phone: string): Promise<string | null> {
