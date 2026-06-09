@@ -554,8 +554,14 @@ export async function generateFollowUpAI(
   leadName: string | undefined,
   clientName: string,
   geminiApiKey: string | null,
+  systemPrompt?: string,
 ): Promise<string | null> {
   if (!geminiApiKey) return null;
+
+  // Se não há nenhuma mensagem do lead, não há contexto real para gerar follow-up —
+  // evita que a IA invente assunto não relacionado ao negócio.
+  const hasUserMessage = history.some((m) => m.role === "user");
+  if (!hasUserMessage) return null;
 
   const firstName = leadName ? leadName.split(" ")[0] : null;
   const historyText = history
@@ -563,15 +569,21 @@ export async function generateFollowUpAI(
     .map((m) => `${m.role === "user" ? "Lead" : "Agente"}: ${m.content}`)
     .join("\n");
 
-  const prompt = `Você é um assistente de vendas para ${clientName}.
+  // Inclui o system prompt (contexto do negócio) para evitar alucinações
+  const businessContext = systemPrompt?.trim()
+    ? `\n\nContexto do negócio (use para manter o follow-up relevante ao que a empresa oferece):\n${systemPrompt.slice(0, 1500)}`
+    : "";
+
+  const prompt = `Você é um assistente de vendas para ${clientName}.${businessContext}
 ${firstName ? `O lead se chama ${firstName}.` : ""}
 Analise o histórico de conversa abaixo e crie uma mensagem de follow-up inteligente e personalizada em português.
 Seja natural, breve (2-3 frases), retome o contexto de onde a conversa parou e demonstre interesse genuíno.
 ${firstName ? `Use o primeiro nome "${firstName}" para personalizar a mensagem.` : ""}
+IMPORTANTE: a mensagem deve ser estritamente sobre o que a empresa oferece — nunca invente serviços ou assuntos não presentes no histórico ou no contexto do negócio.
 Retorne APENAS a mensagem, sem explicações adicionais.
 
 Histórico:
-${historyText || "Sem histórico de conversa disponível. Crie uma mensagem de reengajamento gentil."}`;
+${historyText}`;
 
   const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"];
   for (const modelId of modelsToTry) {

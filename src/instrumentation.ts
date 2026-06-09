@@ -92,7 +92,7 @@ export async function register() {
               if (!apiKey) {
                 console.error(`[cron] sem geminiApiKey para fu=${fu.id} — follow-up AI não enviado`);
               } else {
-                const aiMsg = await generateFollowUpAI(history, lead?.name, client.name, apiKey);
+                const aiMsg = await generateFollowUpAI(history, lead?.name, client.name, apiKey, agCfg.systemPrompt);
                 if (aiMsg) {
                   console.log(`[cron] AI gerou mensagem para ${sendPhone}: "${aiMsg.slice(0, 80)}"`);
                   // Salva no histórico ANTES de enviar — usado pelo webhook para
