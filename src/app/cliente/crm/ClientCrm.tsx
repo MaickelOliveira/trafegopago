@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { KanbanBoard } from "@/components/crm/KanbanBoard";
-import { WhatsAppStatus } from "@/components/crm/WhatsAppStatus";
 import { ClientWhatsAppConnect } from "@/components/cliente/ClientWhatsAppConnect";
 import type { Lead } from "@/lib/leads";
 import type { Funnel } from "@/lib/funnels";
@@ -44,15 +43,7 @@ export function ClientCrm({ clientId, clientName, clientColor, initialLeads, ini
           <h1 className="text-xl font-bold text-slate-900">CRM</h1>
           <p className="text-sm text-slate-500 mt-0.5">Gerencie seus leads — {clientName}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <ClientWhatsAppConnect />
-          <WhatsAppStatus
-            clients={client}
-            clientId={clientId}
-            readOnly
-            funnels={funnels.map(f => ({ id: f.id, name: f.name, clientId: f.clientId, connections: f.connections }))}
-          />
-        </div>
+        <ClientWhatsAppConnect />
       </div>
 
       <div className="flex-1 min-h-0 p-6 lg:p-8 pt-4">
