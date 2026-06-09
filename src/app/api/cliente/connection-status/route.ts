@@ -24,6 +24,8 @@ export async function GET() {
     type: string;
     status: string;
     connected: boolean;
+    funnelId: string;
+    funnelName: string;
     qr?: string | null;
   }[] = [];
 
@@ -47,10 +49,12 @@ export async function GET() {
           type: "uazapi",
           status: st.status,
           connected: st.status === "connected",
+          funnelId: funnel.id,
+          funnelName: funnel.name,
           qr: qrImage,
         });
       } catch {
-        results.push({ id: conn.id, phone: conn.phone, type: "uazapi", status: "error", connected: false });
+        results.push({ id: conn.id, phone: conn.phone, type: "uazapi", status: "error", connected: false, funnelId: funnel.id, funnelName: funnel.name });
       }
     }
   }
@@ -61,6 +65,7 @@ export async function GET() {
     (s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId))
   );
   for (const s of wppSessions) {
+    const linkedFunnel = funnels.find((f) => f.id === s.funnelId);
     try {
       const status = await checkConnectionStatus(s.sessionName, s.sessionToken);
       results.push({
@@ -69,9 +74,11 @@ export async function GET() {
         type: "wppconnect",
         status,
         connected: status === "CONNECTED",
+        funnelId: linkedFunnel?.id ?? "",
+        funnelName: linkedFunnel?.name ?? "Sem funil",
       });
     } catch {
-      results.push({ id: s.id, phone: s.sessionName, type: "wppconnect", status: "error", connected: false });
+      results.push({ id: s.id, phone: s.sessionName, type: "wppconnect", status: "error", connected: false, funnelId: linkedFunnel?.id ?? "", funnelName: linkedFunnel?.name ?? "Sem funil" });
     }
   }
 
