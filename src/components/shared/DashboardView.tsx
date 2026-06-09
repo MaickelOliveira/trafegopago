@@ -121,7 +121,16 @@ export function DashboardView({ client }: { client: Client }) {
   const totalPurchases  = campaigns.reduce((s, c) => s + (c.insights?.purchases ?? 0), 0);
   const totalRevenue    = campaigns.reduce((s, c) => s + (c.insights?.revenue ?? 0), 0);
   const totalResults    = totalLeads + totalConversas + totalPurchases;
-  const overallRoas     = totalSpend > 0 && totalRevenue > 0 ? totalRevenue / totalSpend : null;
+  const metaRoas        = totalSpend > 0 && totalRevenue > 0 ? totalRevenue / totalSpend : null;
+
+  // ROAS via CRM: faturamento dos leads com status "ganho"
+  const crmGanhoValor   = crmLeads.filter(l => l.status === "ganho").reduce((s, l) => s + (l.value ?? 0), 0);
+  const crmRoas         = totalSpend > 0 && crmGanhoValor > 0 ? crmGanhoValor / totalSpend : null;
+
+  // Usa pixel Meta se disponível; senão usa faturamento do CRM
+  const overallRoas     = metaRoas ?? crmRoas;
+  const roasSource      = metaRoas ? "pixel" : crmRoas ? "crm" : null;
+
   const avgCtr          = withData.length > 0 ? withData.reduce((s, c) => s + (c.insights?.ctr ?? 0), 0) / withData.length : 0;
   const avgCpm          = withData.length > 0 ? withData.reduce((s, c) => s + (c.insights?.cpm ?? 0), 0) / withData.length : 0;
 
@@ -217,8 +226,10 @@ export function DashboardView({ client }: { client: Client }) {
           sub={costPerResult ? `Custo ${fmt(costPerResult)}` : "Sem resultados ainda"} icon="✅"
           from="from-emerald-500" to="to-teal-600"
           trend={costPerResult && costPerResult <= client.cplTarget ? "up" : costPerResult ? "down" : "neutral"} />
-        <KPI label={overallRoas ? "ROAS" : "Receita"} value={overallRoas ? `${overallRoas.toFixed(2)}×` : fmt(totalRevenue)}
-          sub={overallRoas ? `Meta ${roasMeta}× · ${overallRoas >= roasMeta ? "✓ Atingida" : "Abaixo da meta"}` : "Sem pixel de compra"}
+        <KPI label="ROAS" value={overallRoas ? `${overallRoas.toFixed(2)}×` : "—"}
+          sub={overallRoas
+            ? `${roasSource === "crm" ? "Fatur. CRM" : "Pixel Meta"} · Meta ${roasMeta}× · ${overallRoas >= roasMeta ? "✓ Atingida" : "Abaixo da meta"}`
+            : "Registre valor nos leads ganhos"}
           icon={overallRoas && overallRoas >= roasMeta ? "🚀" : "📈"}
           from={overallRoas && overallRoas >= roasMeta ? "from-green-500" : "from-orange-500"}
           to={overallRoas && overallRoas >= roasMeta ? "to-emerald-700" : "to-amber-700"}
@@ -413,14 +424,17 @@ export function DashboardView({ client }: { client: Client }) {
             </div>
             <div className="w-full grid grid-cols-2 gap-3 mt-4">
               <div className="rounded-2xl bg-white/5 p-3 text-center">
-                <p className="text-xs text-slate-400">Receita</p>
-                <p className="text-sm font-bold text-white">{fmt(totalRevenue)}</p>
+                <p className="text-xs text-slate-400">{roasSource === "crm" ? "Fatur. CRM (ganho)" : "Receita pixel"}</p>
+                <p className="text-sm font-bold text-white">{fmt(roasSource === "crm" ? crmGanhoValor : totalRevenue)}</p>
               </div>
               <div className="rounded-2xl bg-white/5 p-3 text-center">
                 <p className="text-xs text-slate-400">Investido</p>
                 <p className="text-sm font-bold text-white">{fmt(totalSpend)}</p>
               </div>
             </div>
+            {roasSource === "crm" && (
+              <p className="text-[10px] text-slate-500 text-center mt-2">ROAS calculado via faturamento do CRM</p>
+            )}
           </div>
         </div>
       </div>
