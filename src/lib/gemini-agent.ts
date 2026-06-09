@@ -248,9 +248,9 @@ export async function runGeminiAgent(
   const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase);
 
   const modelsToTry = [
+    "gemini-3.1-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
   ];
 
   // Converte histórico para formato Gemini
@@ -600,7 +600,7 @@ Histórico:
 ${historyText}`;
   }
 
-  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+  const modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
   for (const modelId of modelsToTry) {
     try {
       const ai = new GoogleGenerativeAI(geminiApiKey);

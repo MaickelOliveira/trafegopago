@@ -5,9 +5,9 @@ import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const MODELS_TO_TRY = [
+  "gemini-3.1-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
-  "gemini-1.5-flash",
 ];
 
 // POST /api/agent/test?clientId=xxx[&connId=yyy] — testa conexão com Gemini e retorna diagnóstico

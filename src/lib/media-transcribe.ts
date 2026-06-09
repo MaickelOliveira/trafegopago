@@ -152,9 +152,9 @@ export async function transcribeMedia(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const modelsToTry = [
+    "gemini-3.1-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
   ];
 
   // ── Áudio: File API (upload + fileData URI) ────────────────────────────────
