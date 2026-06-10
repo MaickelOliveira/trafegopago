@@ -560,7 +560,7 @@ export async function POST(
 
     const cid = clientId ?? "sem-cliente";
     const funnelId = funnel?.id ?? "default";
-    const existingLead = getLeadByPhone(cid, phone);
+    const existingLead = getLeadByPhone(cid, phone, funnelId);
     const isNew = !existingLead;
     const shouldUpdateName = isNew || existingLead?.name === phone;
 
