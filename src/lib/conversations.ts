@@ -49,9 +49,18 @@ function clientPhoneVariants(phone: string, clientId: string): string[] {
   return phoneVariants(phone).map((v) => `${clientId}:${v}`);
 }
 
-export function getHistory(phone: string, clientId?: string | null): ChatMessage[] {
+export function getHistory(phone: string, clientId?: string | null, connId?: string | null): ChatMessage[] {
   const all = load();
-  // Se clientId fornecido, tenta chaves prefixadas primeiro (conversations isoladas)
+  // Se connId fornecido, tenta chave isolada por conexão primeiro
+  if (clientId && connId) {
+    const connKey = `${clientId}:${connId}:${phone}`;
+    const conv = all[connKey];
+    if (conv) {
+      if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
+      return conv.messages;
+    }
+  }
+  // Se clientId fornecido, tenta chaves prefixadas (clientId:phone)
   if (clientId) {
     for (const v of clientPhoneVariants(phone, clientId)) {
       const conv = all[v];
@@ -65,7 +74,6 @@ export function getHistory(phone: string, clientId?: string | null): ChatMessage
   for (const v of phoneVariants(phone)) {
     const conv = all[v];
     if (conv) {
-      // Se clientId foi informado e a conversa pertence a outro cliente, pula
       if (clientId && conv.clientId && conv.clientId !== clientId) continue;
       if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
       return conv.messages;
@@ -225,9 +233,17 @@ export function addMessage(
       (v) => all[v] && (!clientId || !all[v].clientId || all[v].clientId === clientId)
     );
   }
-  // Chave padrão: prefixada quando clientId disponível
-  const defaultKey = clientId ? `${clientId}:${phone}` : phone;
-  existingKey = existingKey ?? defaultKey;
+  // Chave padrão: inclui connId quando disponível para isolar histórico por conexão
+  const connIdVal = opts?.connId;
+  const defaultKey = clientId
+    ? (connIdVal ? `${clientId}:${connIdVal}:${phone}` : `${clientId}:${phone}`)
+    : phone;
+  // Se connId fornecido, usa sempre a chave isolada (ignora histórico compartilhado)
+  if (clientId && connIdVal) {
+    existingKey = `${clientId}:${connIdVal}:${phone}`;
+  } else {
+    existingKey = existingKey ?? defaultKey;
+  }
   const conv: Conversation = all[existingKey] ?? { messages: [], clientId, lastActivity: 0 };
 
   // Deduplicação: ignora mensagem idêntica com mesmo role em janela de 10s

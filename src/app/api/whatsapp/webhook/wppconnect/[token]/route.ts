@@ -124,7 +124,7 @@ async function generateWppSummaryText(
   motivo: string,
   clientId: string,
 ): Promise<string> {
-  const history = getHistory(phone, clientId);
+  const history = getHistory(phone, clientId, connId);
   if (history.length === 0) return "Sem histórico de conversa.";
 
   const recent = history.slice(-20);
@@ -658,7 +658,7 @@ export async function POST(
         }
         // Verifica se é uma saudação automática do WA Business (ex: anúncios CTWa).
         const isCTWaGreeting = ctwaLeadSet.has(phone);
-        const historyFM = getHistory(phone, clientId);
+        const historyFM = getHistory(phone, clientId, connId);
         const hasUserMessages = historyFM.some((m) => m.role === "user");
         if (!hasUserMessages || isCTWaGreeting) {
           if (isCTWaGreeting) ctwaLeadSet.delete(phone);
@@ -694,7 +694,7 @@ export async function POST(
   // NOTA: getHistory já inclui a mensagem recém adicionada, então removemos o último
   // item para não duplicar (runKanbanAgent envia lastMessage separadamente)
   if (clientId !== "sem-cliente") {
-    const _h = getHistory(phone, clientId);
+    const _h = getHistory(phone, clientId, connId);
     const historyForKanban = _h.length > 1 ? _h.slice(0, -1) : [];
     processKanbanActions(text, historyForKanban, clientId, phone).catch(() => {});
   }
@@ -771,7 +771,7 @@ export async function POST(
   }
 
   const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
-  const history = getHistory(phone, clientId);
+  const history = getHistory(phone, clientId, connId);
 
   // Indica "digitando..." e renova a cada 3s enquanto a IA processa
   // (WhatsApp expira o indicador após ~5s se não for renovado)

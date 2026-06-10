@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
             if (!batch || batch.id !== pendingId || batch.status !== "pending") return;
             markProcessing(batch.id);
             const combined = batch.messages.join("\n");
-            const h = getHistory(phone);
+            const h = getHistory(phone, clientId, connId ?? undefined);
             console.log(`[meta] Gemini batch phone=${phone} cid=${cid} msgs=${batch.messages.length}`);
             runGeminiAgent(combined, h, cid, phone, connId ?? undefined)
               .then(async ({ text: reply }) => {
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
 
         // ── Resposta imediata ────────────────────────────────────────────
         console.log(`[meta] Gemini imediato phone=${phone} cid=${cid}`);
-        const history = getHistory(phone);
+        const history = getHistory(phone, clientId, connId ?? undefined);
         const { text: reply } = await runGeminiAgent(text, history, cid, phone, connId ?? undefined);
         if (reply) await sendMetaReply(reply);
       }
