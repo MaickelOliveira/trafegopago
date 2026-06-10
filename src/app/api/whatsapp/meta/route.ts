@@ -46,27 +46,21 @@ export async function POST(req: NextRequest) {
       let metaToken: string | null = null;
       let connId: string | null = null;
 
-      console.log(`[meta-diag] phoneNumberId=${phoneNumberId} totalFunnels=${funnels.length}`);
       for (const f of funnels) {
         const conn = f.connections?.find(c => c.type === "meta" && c.metaPhoneNumberId === phoneNumberId);
         if (!conn) continue;
         funnelId = f.id;
         metaToken = conn.metaToken ?? null;
         connId = conn.id;
-        clientId = f.clientId ?? null;
-        console.log(`[meta-diag] found conn in funnel="${f.name}" connId=${conn.id} funnelClientId=${f.clientId ?? "NULL"}`);
-        if (!clientId) {
-          const clients = getClients();
-          const client = clients.find(c =>
-            c.agentConfig?.whatsappConnectionId === conn.id ||
-            c.agentConfigs?.some(a => a.whatsappConnectionId === conn.id)
-          );
-          clientId = client?.id ?? null;
-          console.log(`[meta-diag] fallback clientId=${clientId ?? "NULL"} (checked ${clients.length} clients)`);
-        }
+        // Prioriza agentConfig (fonte autoritativa do cliente) sobre funnel.clientId
+        const allClients = getClients();
+        const clientByAgent = allClients.find(c =>
+          c.agentConfig?.whatsappConnectionId === conn.id ||
+          c.agentConfigs?.some(a => a.whatsappConnectionId === conn.id)
+        );
+        clientId = clientByAgent?.id ?? f.clientId ?? null;
         break;
       }
-      console.log(`[meta-diag] resolved => funnelId=${funnelId} clientId=${clientId}`);
 
       for (const msg of (value?.messages ?? [])) {
         const phone = msg.from?.replace(/\D/g, "");

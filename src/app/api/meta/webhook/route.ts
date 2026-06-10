@@ -22,16 +22,17 @@ function resolveClientByPageId(pageId?: string): { clientId: string; funnelId: s
 function resolveClientByPhoneNumberId(phoneNumberId?: string): { clientId: string; funnelId: string } | null {
   if (!phoneNumberId) return null;
   const funnels = getFunnels();
+  const allClients = getClients();
   for (const funnel of funnels) {
     const conn = funnel.connections?.find(c => c.type === "meta" && c.metaPhoneNumberId === phoneNumberId);
     if (!conn) continue;
-    if (funnel.clientId) return { clientId: funnel.clientId, funnelId: funnel.id };
-    // Funil sem clientId: busca pelo agentConfig do cliente que aponta para esta conexão
-    const client = getClients().find(c =>
+    // Prioriza agentConfig (fonte autoritativa) sobre funnel.clientId
+    const clientByAgent = allClients.find(c =>
       c.agentConfig?.whatsappConnectionId === conn.id ||
       c.agentConfigs?.some(a => a.whatsappConnectionId === conn.id)
     );
-    if (client) return { clientId: client.id, funnelId: funnel.id };
+    const clientId = clientByAgent?.id ?? funnel.clientId;
+    if (clientId) return { clientId, funnelId: funnel.id };
   }
   return null;
 }
