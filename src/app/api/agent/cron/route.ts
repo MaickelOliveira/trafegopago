@@ -44,7 +44,7 @@ async function shouldSendFollowUp(
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 12_000));
     const result = await Promise.race([model.generateContent(prompt), timeout]);
     if (!result) {
@@ -84,7 +84,7 @@ async function generateAiFollowUp(
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000));
     const result = await Promise.race([model.generateContent(prompt), timeout]);
     if (!result) return null;

@@ -46,7 +46,7 @@ ${historyText || "Sem histórico de conversa disponível. Crie uma mensagem de r
   let aiError: string | null = null;
   let modelUsed: string | null = null;
 
-  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"];
+  const modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash"];
 
   for (const modelId of modelsToTry) {
     try {

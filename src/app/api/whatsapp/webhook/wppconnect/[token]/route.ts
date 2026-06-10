@@ -145,7 +145,7 @@ async function generateWppSummaryText(
       `o que o lead quer, o estágio da conversa, dúvidas ou objeções levantadas, e próximo passo sugerido. ` +
       `Não use marcadores ou listas, escreva em parágrafos curtos.`;
 
-    for (const modelId of ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"]) {
+    for (const modelId of ["gemini-3.1-flash-lite", "gemini-2.5-flash"]) {
       try {
         const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 12_000));
         const model = genAI.getGenerativeModel({ model: modelId });
