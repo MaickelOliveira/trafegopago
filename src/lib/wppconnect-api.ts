@@ -94,15 +94,18 @@ export async function checkConnectionStatus(
       `${base()}/api/${sessionName}/check-connection-session`,
       { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store", signal: controller.signal },
     );
-    if (!res.ok) return "DISCONNECTED";
+    if (!res.ok) return "UNKNOWN";
     const data = await res.json() as Record<string, unknown>;
-    // WPPConnect retorna { status: true/false } (boolean) ou string
     if (typeof data.status === "boolean") {
       return data.status ? "CONNECTED" : "DISCONNECTED";
     }
-    return (data.status as string) || "DISCONNECTED";
+    const s = String(data.status ?? data.state ?? "").toUpperCase();
+    if (s === "CONNECTED" || s === "ISLOGGED" || s === "OPEN" || s === "AUTHENTICATED") return "CONNECTED";
+    if (s === "QRCODE" || s === "STARTING" || s === "INITIALIZING") return "QRCODE";
+    if (s === "DISCONNECTED" || s === "NOTLOGGED" || s === "CLOSED") return "DISCONNECTED";
+    return s || "UNKNOWN";
   } catch {
-    return "DISCONNECTED";
+    return "UNKNOWN";
   } finally {
     clearTimeout(timer);
   }

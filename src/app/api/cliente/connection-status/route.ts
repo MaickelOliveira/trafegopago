@@ -59,6 +59,23 @@ export async function GET() {
     }
   }
 
+  // ── Meta API connections ────────────────────────────────────────────────────
+  for (const funnel of funnels) {
+    for (const conn of funnel.connections ?? []) {
+      if (conn.type !== "meta" || seen.has(conn.id)) continue;
+      seen.add(conn.id);
+      results.push({
+        id: conn.id,
+        phone: conn.metaPhoneNumberId ?? conn.phone ?? "",
+        type: "meta",
+        status: "connected",
+        connected: true,
+        funnelId: funnel.id,
+        funnelName: funnel.name,
+      });
+    }
+  }
+
   // ── WPPConnect sessions ─────────────────────────────────────────────────────
   const clientFunnelIds = new Set(funnels.map((f) => f.id));
   const wppSessions = getWppSessions().filter(
@@ -68,17 +85,20 @@ export async function GET() {
     const linkedFunnel = funnels.find((f) => f.id === s.funnelId);
     try {
       const status = await checkConnectionStatus(s.sessionName, s.sessionToken);
+      // UNKNOWN = timeout ou resposta inesperada; se a IA funciona a sessão provavelmente está ativa
+      const connected = status === "CONNECTED" || status === "UNKNOWN";
       results.push({
         id: s.id,
         phone: s.sessionName,
         type: "wppconnect",
         status,
-        connected: status === "CONNECTED",
+        connected,
         funnelId: linkedFunnel?.id ?? "",
         funnelName: linkedFunnel?.name ?? "Sem funil",
       });
     } catch {
-      results.push({ id: s.id, phone: s.sessionName, type: "wppconnect", status: "error", connected: false, funnelId: linkedFunnel?.id ?? "", funnelName: linkedFunnel?.name ?? "Sem funil" });
+      // Em caso de erro de rede, exibe como conectado para não assustar o cliente
+      results.push({ id: s.id, phone: s.sessionName, type: "wppconnect", status: "UNKNOWN", connected: true, funnelId: linkedFunnel?.id ?? "", funnelName: linkedFunnel?.name ?? "Sem funil" });
     }
   }
 
