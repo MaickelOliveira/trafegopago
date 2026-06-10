@@ -123,6 +123,7 @@ async function generateWppSummaryText(
   phone: string,
   motivo: string,
   clientId: string,
+  connId: string,
 ): Promise<string> {
   const history = getHistory(phone, clientId, connId);
   if (history.length === 0) return "Sem histórico de conversa.";
@@ -176,6 +177,7 @@ async function processWppActions(
   leadPhone: string,
   isLid: boolean,
   clientId: string,
+  connId: string,
 ): Promise<void> {
   for (const action of actions) {
     if (action.type === "resumo_solicitado") {
@@ -191,7 +193,7 @@ async function processWppActions(
         continue;
       }
 
-      const resumo = await generateWppSummaryText(clientName, agCfg, leadPhone, action.motivo, clientId);
+      const resumo = await generateWppSummaryText(clientName, agCfg, leadPhone, action.motivo, clientId, connId);
       const lead = getLeadByPhone(clientId, leadPhone);
       const displayPhone = (lead?.realPhone ?? leadPhone).replace(/\D/g, "");
       const waLink = `https://wa.me/${displayPhone}`;
@@ -839,7 +841,7 @@ export async function POST(
           console.log(`[WPPConnect IA batch] runGeminiAgent concluído — phone=${_phone} geminiTextLen=${geminiText?.length ?? 0} reply="${(geminiText ?? "").slice(0, 100)}"`);
           if (geminiText) await sendReply(geminiText);
           if (actions.length && activeClient && agentCfg) {
-            await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, _phone, isLidPhone, _clientId).catch(() => {});
+            await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, _phone, isLidPhone, _clientId, connId).catch(() => {});
           }
         })
         .catch((e) => {
@@ -865,7 +867,7 @@ export async function POST(
       stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
     }
     if (actions.length && activeClient && agentCfg) {
-      await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId).catch(() => {});
+      await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId, connId).catch(() => {});
     }
   } catch (e) {
     console.error("[WPPConnect webhook] Erro no Gemini:", e);
