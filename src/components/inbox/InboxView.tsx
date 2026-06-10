@@ -134,10 +134,11 @@ export default function InboxView({ clientId, initialConversations = [], initial
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchConversations]);
 
-  const fetchMessages = useCallback(async (phone: string, silent = false) => {
+  const fetchMessages = useCallback(async (phone: string, silent = false, connId?: string | null) => {
     if (!silent) setLoadingMessages(true);
     try {
-      const res = await fetch(`/api/whatsapp/inbox/messages?phone=${encodeURIComponent(phone)}&clientId=${encodeURIComponent(clientId)}`);
+      const connParam = connId ? `&connId=${encodeURIComponent(connId)}` : "";
+      const res = await fetch(`/api/whatsapp/inbox/messages?phone=${encodeURIComponent(phone)}&clientId=${encodeURIComponent(clientId)}${connParam}`);
       if (!res.ok) return;
       const data = await res.json();
       setMessages(data.messages ?? []);
@@ -145,17 +146,19 @@ export default function InboxView({ clientId, initialConversations = [], initial
     } catch {} finally {
       if (!silent) setLoadingMessages(false);
     }
-  }, []);
+  }, [clientId]);
 
   useEffect(() => {
     if (!selected) { setMessages([]); return; }
     isAtBottomRef.current = true;
     userScrolledUpRef.current = false;
     lastMsgCountRef.current = 0;
-    fetchMessages(selected);                                              // inicial: mostra loading
-    msgPollRef.current = setInterval(() => fetchMessages(selected, true), 3000); // polls: silencioso
+    const connId = selectedConv?.connId ?? null;
+    fetchMessages(selected, false, connId);
+    msgPollRef.current = setInterval(() => fetchMessages(selected, true, connId), 3000);
     return () => { if (msgPollRef.current) clearInterval(msgPollRef.current); };
-  }, [selected, fetchMessages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, fetchMessages, selectedConv?.connId]);
 
   // Quando muda de conexão, deseleciona conversa atual se ela não pertence à nova conexão
   useEffect(() => {
@@ -202,7 +205,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
           connId: selectedConv?.connId ?? selectedConn ?? undefined,
         }),
       }).catch(console.error);
-      if (!t) { setSending(false); fetchMessages(selected, true); return; }
+      if (!t) { setSending(false); fetchMessages(selected, true, selectedConv?.connId); return; }
     }
 
     if (t) {
@@ -233,7 +236,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
     }
 
     setSending(false);
-    fetchMessages(selected, true);
+    fetchMessages(selected, true, selectedConv?.connId);
   };
 
   function handleQuickSelect(reply: QuickReply) {
@@ -314,7 +317,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
       });
     } catch {} finally {
       setSending(false);
-      if (selected) fetchMessages(selected);
+      if (selected) fetchMessages(selected, false, selectedConv?.connId);
     }
   };
 

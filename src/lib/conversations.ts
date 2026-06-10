@@ -125,25 +125,42 @@ export function getAllConversationsByClientId(clientId: string): Array<{
       conv.clientId == null;
     if (!belongs) continue;
     if (Date.now() - conv.lastActivity > MAX_AGE_MS) continue;
-    // Remove prefixo clientId: da chave para retornar o número de telefone limpo
-    const phone = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+    // Remove prefixo clientId: da chave para obter o restante
+    let phone = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+    // Chaves no formato clientId:connId:phone — remove também o connId do início
+    const convConnId = conv.connId ?? null;
+    if (convConnId && phone.startsWith(convConnId + ":")) {
+      phone = phone.slice(convConnId.length + 1);
+    }
     const lastMessage = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
     result.push({
       phone,
       contactName: conv.contactName ?? null,
-      connId: conv.connId ?? null,
+      connId: convConnId,
       lastMessage,
       lastActivity: conv.lastActivity,
       unread: conv.unread ?? false,
       aiPaused: conv.aiPaused ?? false,
     });
   }
-  return result.sort((a, b) => b.lastActivity - a.lastActivity);
+  // Deduplica por (phone, connId): mantém a entrada mais recente
+  const deduped = new Map<string, (typeof result)[0]>();
+  for (const c of result) {
+    const dk = `${c.connId ?? ""}:${c.phone}`;
+    const existing = deduped.get(dk);
+    if (!existing || c.lastActivity > existing.lastActivity) deduped.set(dk, c);
+  }
+  return [...deduped.values()].sort((a, b) => b.lastActivity - a.lastActivity);
 }
 
-export function markAsRead(phone: string, clientId?: string | null) {
+export function markAsRead(phone: string, clientId?: string | null, connId?: string | null) {
   const all = load();
-  // Tenta chave prefixada primeiro
+  // Tenta chave isolada por conexão primeiro
+  if (clientId && connId) {
+    const connKey = `${clientId}:${connId}:${phone}`;
+    if (all[connKey]) { all[connKey].unread = false; save(all); return; }
+  }
+  // Tenta chave prefixada (clientId:phone)
   if (clientId) {
     for (const v of clientPhoneVariants(phone, clientId)) {
       if (all[v]) { all[v].unread = false; save(all); return; }
