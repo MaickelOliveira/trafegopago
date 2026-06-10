@@ -154,19 +154,14 @@ export function getAgentConfigForConnection(
   return client.agentConfig;
 }
 
-/** Retorna todos os agentConfigs do cliente (agentConfigs + agentConfig como fallback).
- *  Garante unicidade por whatsappConnectionId. */
+/** Retorna todos os agentConfigs do cliente.
+ *  Se agentConfigs[] existe e tem entradas, usa somente ele (ignora o legado agentConfig).
+ *  Caso contrário, cai no agentConfig único como fallback. */
 export function getAllAgentConfigs(client: Client): AgentConfig[] {
-  const configs: AgentConfig[] = [...(client.agentConfigs ?? [])];
-  // Inclui agentConfig padrão se não estiver em agentConfigs
-  if (client.agentConfig) {
-    const connId = client.agentConfig.whatsappConnectionId;
-    const alreadyPresent = connId
-      ? configs.some((c) => c.whatsappConnectionId === connId)
-      : configs.length > 0 && !connId; // se o padrão não tem connId e já há configs, não duplica
-    if (!alreadyPresent) configs.push(client.agentConfig);
+  if (client.agentConfigs && client.agentConfigs.length > 0) {
+    return [...client.agentConfigs];
   }
-  return configs;
+  return client.agentConfig ? [client.agentConfig] : [];
 }
 
 export function getClientByEmail(email: string): Client | undefined {

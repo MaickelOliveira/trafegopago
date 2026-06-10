@@ -87,10 +87,12 @@ export async function checkConnectionStatus(
   token: string,
 ): Promise<string> {
   if (!base()) return "DISCONNECTED";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
     const res = await fetch(
       `${base()}/api/${sessionName}/check-connection-session`,
-      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
+      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store", signal: controller.signal },
     );
     if (!res.ok) return "DISCONNECTED";
     const data = await res.json() as Record<string, unknown>;
@@ -101,6 +103,8 @@ export async function checkConnectionStatus(
     return (data.status as string) || "DISCONNECTED";
   } catch {
     return "DISCONNECTED";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
