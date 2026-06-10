@@ -413,13 +413,15 @@ export function splitMessage(text: string, maxLen = 300): string[] {
 
   if (current) chunks.push(current);
 
-  // Pós-processamento: absorve chunk que seja só 1-3 dígitos (ex: "1", "7.", "2-")
-  // no chunk anterior — evita mensagem separada só com um número solto.
+  // Pós-processamento: absorve chunk que seja APENAS dígitos soltos (ex: "1", "12.", "7-")
+  // no chunk anterior, com espaço quando necessário.
   const merged: string[] = [];
   for (const chunk of chunks.filter(Boolean)) {
-    const isLoneNumber = /^\d{1,3}[-.\s]*$/.test(chunk.trim());
+    const isLoneNumber = /^\d{1,4}[-.\s]*$/.test(chunk.trim());
     if (isLoneNumber && merged.length > 0) {
-      merged[merged.length - 1] += chunk.trim();
+      const prev = merged[merged.length - 1];
+      const sep = /[\s\n\/]$/.test(prev) ? "" : " ";
+      merged[merged.length - 1] = prev + sep + chunk.trim();
     } else {
       merged.push(chunk);
     }
