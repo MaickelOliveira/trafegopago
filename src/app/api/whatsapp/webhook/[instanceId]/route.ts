@@ -562,10 +562,17 @@ export async function POST(
     const funnelId = funnel?.id ?? "default";
     const existingLead = getLeadByPhone(cid, phone, funnelId);
     const isNew = !existingLead;
-    const shouldUpdateName = isNew || existingLead?.name === phone;
 
     // Coluna de entrada: primeira coluna do funil (normalmente "entrada" / "novo")
     const entradaColumn = funnel?.columns?.[0]?.id ?? "entrada";
+
+    // Reparo: lead existe mas com status inválido (não é coluna do funil) ou nome padrão
+    const funnelColumnIds = funnel?.columns?.map((c) => c.id) ?? [];
+    const leadHasValidStatus = existingLead
+      ? funnelColumnIds.length === 0 || funnelColumnIds.includes(existingLead.status)
+      : false;
+    const shouldUpdateName = isNew || existingLead?.name === phone || existingLead?.name === "Desconhecido";
+    const shouldUpdateStatus = isNew || !leadHasValidStatus;
 
     // ── Rastreio CTWa via referral do UazapiGO ───────────────────────────
     // UazapiGO repassa o referral de mensagens Click-to-WhatsApp.
@@ -594,7 +601,7 @@ export async function POST(
       funnelId,
       source: "whatsapp",
       ...(shouldUpdateName ? { name: contactName } : {}),
-      ...(isNew ? { status: entradaColumn } : {}),
+      ...(shouldUpdateStatus ? { status: entradaColumn } : {}),
       ...(adInfo ? {
         adPlatform: "meta",
         adId: adInfo.adId,
