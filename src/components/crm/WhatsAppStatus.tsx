@@ -313,7 +313,8 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, r
                 )}
                 {(f.connections ?? []).map(conn => {
                   const inst = instances[conn.id];
-                  const status = inst?.status ?? "disconnected";
+                  // Meta API connections have no live socket state — configured = active
+                  const status = conn.type === "meta" ? "connected" : (inst?.status ?? "disconnected");
                   return (
                     <div key={conn.id} className="flex items-center gap-3 px-4 py-2.5">
                       <span className={`h-2 w-2 rounded-full flex-shrink-0 ${status === "connected" ? "bg-green-500" : "bg-slate-300"}`} />
@@ -322,7 +323,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, r
                           {conn.type === "meta" ? "🏢 Meta API" : "⚡ UazAPI"} · {conn.phone || conn.metaPhoneNumberId}
                         </p>
                         <p className="text-xs text-slate-400">
-                          {status === "connected" ? (inst?.phone ? `+${inst.phone}` : "Conectado") : "Desconectado"}
+                          {status === "connected" ? (inst?.phone ? `+${inst.phone}` : "Configurado") : "Desconectado"}
                         </p>
                       </div>
                       <button onClick={() => removeConnection(f.id, conn.id)}
