@@ -24,7 +24,14 @@ function resolveClientByPhoneNumberId(phoneNumberId?: string): { clientId: strin
   const funnels = getFunnels();
   for (const funnel of funnels) {
     const conn = funnel.connections?.find(c => c.type === "meta" && c.metaPhoneNumberId === phoneNumberId);
-    if (conn && funnel.clientId) return { clientId: funnel.clientId, funnelId: funnel.id };
+    if (!conn) continue;
+    if (funnel.clientId) return { clientId: funnel.clientId, funnelId: funnel.id };
+    // Funil sem clientId: busca pelo agentConfig do cliente que aponta para esta conexão
+    const client = getClients().find(c =>
+      c.agentConfig?.whatsappConnectionId === conn.id ||
+      c.agentConfigs?.some(a => a.whatsappConnectionId === conn.id)
+    );
+    if (client) return { clientId: client.id, funnelId: funnel.id };
   }
   return null;
 }

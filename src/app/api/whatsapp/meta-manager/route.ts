@@ -182,6 +182,13 @@ export async function PUT(req: NextRequest) {
     }
   }
 
+  // Salva clientId no funil para que resolveClientByPhoneNumberId funcione corretamente
+  const targetFunnelId = newFunnelId ?? oldFunnelId;
+  if (targetFunnelId && clientId) {
+    const tf = getFunnels().find(f => f.id === targetFunnelId);
+    if (tf && tf.clientId !== clientId) updateFunnel(targetFunnelId, { clientId });
+  }
+
   // Atualiza vínculo de cliente
   const clients = getClients();
   for (const client of clients) {
