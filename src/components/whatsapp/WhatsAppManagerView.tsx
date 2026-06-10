@@ -46,7 +46,7 @@ function ClientFunnelSelect({ clients, funnels, value, onChange, accentColor = "
           <optgroup key={c.id} label={c.name}>
             {clientFunnels.length > 0
               ? clientFunnels.map(f => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
+                  <option key={f.id} value={f.id}>{c.name} — {f.name}</option>
                 ))
               : <option value={`auto:${c.id}`}>Funil Principal (criar automaticamente)</option>
             }
