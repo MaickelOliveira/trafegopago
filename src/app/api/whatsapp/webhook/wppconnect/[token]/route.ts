@@ -834,7 +834,7 @@ export async function POST(
       if (new Date(batch.respondAfter) > new Date()) return;
       markProcessing(batch.id);
       const combined = batch.messages.join("\n");
-      const h = getHistory(_phone, _clientId);
+      const h = getHistory(_phone, _clientId, connId);
       runGeminiAgent(combined, h, _clientId, _phone, connId)
         .then(async ({ text: geminiText, actions }) => {
           markDone(batch.id);
