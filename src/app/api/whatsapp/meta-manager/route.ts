@@ -182,11 +182,11 @@ export async function PUT(req: NextRequest) {
     }
   }
 
-  // Salva clientId no funil para que resolveClientByPhoneNumberId funcione corretamente
+  // Atualiza clientId no funil APENAS se ainda não tiver dono (nunca sobrescreve)
   const targetFunnelId = newFunnelId ?? oldFunnelId;
   if (targetFunnelId && clientId) {
     const tf = getFunnels().find(f => f.id === targetFunnelId);
-    if (tf && tf.clientId !== clientId) updateFunnel(targetFunnelId, { clientId });
+    if (tf && !tf.clientId) updateFunnel(targetFunnelId, { clientId });
   }
 
   // Atualiza vínculo de cliente
