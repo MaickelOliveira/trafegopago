@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
+import { getClients } from "@/lib/clients";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { addMessage, getHistory } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
@@ -47,7 +48,20 @@ export async function POST(req: NextRequest) {
 
       for (const f of funnels) {
         const conn = f.connections?.find(c => c.type === "meta" && c.metaPhoneNumberId === phoneNumberId);
-        if (conn) { funnelId = f.id; clientId = f.clientId ?? null; metaToken = conn.metaToken ?? null; connId = conn.id; break; }
+        if (!conn) continue;
+        funnelId = f.id;
+        metaToken = conn.metaToken ?? null;
+        connId = conn.id;
+        clientId = f.clientId ?? null;
+        if (!clientId) {
+          // Funil sem clientId: busca pelo agentConfig/agentConfigs do cliente
+          const client = getClients().find(c =>
+            c.agentConfig?.whatsappConnectionId === conn.id ||
+            c.agentConfigs?.some(a => a.whatsappConnectionId === conn.id)
+          );
+          clientId = client?.id ?? null;
+        }
+        break;
       }
 
       for (const msg of (value?.messages ?? [])) {
