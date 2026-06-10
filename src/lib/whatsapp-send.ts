@@ -86,8 +86,13 @@ export async function sendMessageDirect(
         }),
       }
     );
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.error(`[sendMessageDirect] FALHOU status=${res.status} phoneNumberId=${phoneNumberId} phone=${phone} body=${errBody.slice(0, 300)}`);
+    }
     return res.ok;
-  } catch {
+  } catch (e) {
+    console.error(`[sendMessageDirect] EXCEÇÃO phoneNumberId=${phoneNumberId} phone=${phone}:`, e);
     return false;
   }
 }

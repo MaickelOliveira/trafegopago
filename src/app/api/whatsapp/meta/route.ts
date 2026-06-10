@@ -124,9 +124,17 @@ export async function POST(req: NextRequest) {
 
         // ── Helper: envia resposta via Meta API ──────────────────────────
         async function sendMetaReply(replyText: string) {
-          if (!replyText || !metaToken || !phoneNumberId) return;
-          addMessage(phone, { role: "assistant", content: replyText, ts: Date.now() }, clientId, { connId: connId ?? undefined });
-          await sendMessageDirect(phone, replyText, phoneNumberId, metaToken);
+          if (!replyText) return;
+          if (!metaToken || !phoneNumberId) {
+            console.error(`[meta] sendMetaReply ABORTADO — metaToken=${!!metaToken} phoneNumberId=${!!phoneNumberId} phone=${phone} cid=${cid}`);
+            return;
+          }
+          const ok = await sendMessageDirect(phone, replyText, phoneNumberId, metaToken);
+          if (ok) {
+            addMessage(phone, { role: "assistant", content: replyText, ts: Date.now() }, clientId, { connId: connId ?? undefined });
+          } else {
+            console.error(`[meta] sendMetaReply FALHOU — mensagem NÃO entregue ao WhatsApp. phone=${phone} phoneNumberId=${phoneNumberId}`);
+          }
         }
 
         // ── Batching (messageWaitSeconds > 0) ────────────────────────────
