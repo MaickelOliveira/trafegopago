@@ -389,6 +389,7 @@ export async function POST(
   const isNewPhone = !getLeadByPhone(
     (getFunnels().find(f => f.id === wppSession.funnelId)?.clientId ?? wppSession.clientId ?? "sem-cliente"),
     phone,
+    wppSession.funnelId ?? undefined,
   );
   if (isNewPhone && !fromMe) {
     // Trunca campos grandes (base64) para não poluir o log
@@ -488,7 +489,7 @@ export async function POST(
   const entradaColumnId = funnel?.columns?.[0]?.id ?? "entrada";
   const connId = wppSession.id;
 
-  const existingLead = getLeadByPhone(clientId, phone);
+  const existingLead = getLeadByPhone(clientId, phone, funnelId);
   const isNew = !existingLead;
   // Só atualiza o nome a partir de mensagens RECEBIDAS do lead (fromMe=false).
   // Quando fromMe=true, o pushName é o do operador — não do lead.
@@ -677,7 +678,7 @@ export async function POST(
       const resumeKeyword = agentCfgFM?.aiResumeKeyword?.trim();
       const isPausing = !(resumeKeyword && text.trim().toLowerCase() === resumeKeyword.toLowerCase());
       setAiPaused(phone, isPausing, clientId);
-      const freshLead = getLeadByPhone(clientId, phone);
+      const freshLead = getLeadByPhone(clientId, phone, funnelId);
       if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
       // Operador assumiu o atendimento → reinicia sequência de follow-up
       if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
@@ -716,7 +717,7 @@ export async function POST(
   }
 
   // ── Verifica IA ──
-  const currentLead = getLeadByPhone(clientId, phone);
+  const currentLead = getLeadByPhone(clientId, phone, funnelId);
   if (currentLead?.aiPaused) {
     console.log(`[WPPConnect IA] phone=${phone} clientId=${clientId} — IA pausada (aiPaused=true)`);
     return NextResponse.json({ ok: true });

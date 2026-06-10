@@ -107,11 +107,12 @@ export function getLeadById(id: string): Lead | undefined {
   return load().find((l) => l.id === id);
 }
 
-export function getLeadByPhone(clientId: string, phone: string): Lead | undefined {
+export function getLeadByPhone(clientId: string, phone: string, funnelId?: string): Lead | undefined {
   const normalized = normalizePhone(phone);
   return load().find(
     (l) =>
       l.clientId === clientId &&
+      (!funnelId || l.funnelId === funnelId) &&
       (normalizePhone(l.phone) === normalized ||
         (l.realPhone != null && normalizePhone(l.realPhone) === normalized)),
   );
@@ -177,11 +178,13 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
   const leads = load();
   const normalized = normalizePhone(phone);
   const funnelId = patch.funnelId ?? "default";
-  // Busca APENAS por clientId + telefone normalizado, sem restringir por funnelId.
-  // Isso evita duplicatas quando o mesmo número chega via canais/funis diferentes.
+  // Busca por clientId + funnelId + telefone normalizado.
+  // Mesmo número em funnels diferentes = leads separados (cada agente/canal tem seu próprio lead).
+  // Mesmo número no mesmo funil = um único lead (sem duplicata).
   const idx = leads.findIndex(
     (l) =>
       l.clientId === clientId &&
+      l.funnelId === funnelId &&
       (normalizePhone(l.phone) === normalized ||
         (l.realPhone != null && normalizePhone(l.realPhone) === normalized)),
   );
