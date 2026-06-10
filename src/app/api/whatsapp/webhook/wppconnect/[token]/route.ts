@@ -772,8 +772,14 @@ export async function POST(
   const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
   const history = getHistory(phone, clientId);
 
-  // Indica "digitando..." imediatamente para o lead saber que a mensagem foi recebida
-  startTyping(wppSession.sessionName, wppSession.sessionToken, phone).catch(() => {});
+  // Indica "digitando..." e renova a cada 3s enquanto a IA processa
+  // (WhatsApp expira o indicador após ~5s se não for renovado)
+  const sessionSnap = wppSession.sessionName;
+  const tokenSnap   = wppSession.sessionToken;
+  startTyping(sessionSnap, tokenSnap, phone).catch(() => {});
+  const typingInterval = setInterval(() => {
+    startTyping(sessionSnap, tokenSnap, phone).catch(() => {});
+  }, 3000);
 
   console.log(`[WPPConnect IA] Chamando runGeminiAgent — phone=${phone} clientId=${clientId} waitSeconds=${waitSeconds} historyLen=${history.length} text="${text.slice(0, 80)}"`);
 
@@ -782,6 +788,7 @@ export async function POST(
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
   async function sendReply(reply: string) {
+    clearInterval(typingInterval);
     stopTyping(wppSession!.sessionName, wppSession!.sessionToken, phone).catch(() => {});
     // Extrai marcadores [MIDIA:nome] e [FOLLOWUP:texto] do texto antes de enviar
     const { clean, names, followup } = extractMediaMarkers(reply);
@@ -837,6 +844,8 @@ export async function POST(
         .catch((e) => {
           console.error("[WPPConnect webhook] Erro no batch:", e);
           markDone(batch.id);
+          clearInterval(typingInterval);
+          stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
         });
     }, waitSeconds * 1000);
 
@@ -848,12 +857,19 @@ export async function POST(
   try {
     const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId);
     console.log(`[WPPConnect IA] runGeminiAgent concluído — phone=${phone} geminiTextLen=${geminiText?.length ?? 0} actions=${actions.length} reply="${(geminiText ?? "").slice(0, 100)}"`);
-    if (geminiText) await sendReply(geminiText);
+    if (geminiText) {
+      await sendReply(geminiText);
+    } else {
+      clearInterval(typingInterval);
+      stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
+    }
     if (actions.length && activeClient && agentCfg) {
       await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId).catch(() => {});
     }
   } catch (e) {
     console.error("[WPPConnect webhook] Erro no Gemini:", e);
+    clearInterval(typingInterval);
+    stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
   }
 
   return NextResponse.json({ ok: true });
