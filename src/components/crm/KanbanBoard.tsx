@@ -57,6 +57,67 @@ function hexToLight(hex: string): string {
   return hex + "22";
 }
 
+type DatePreset = "all" | "today" | "yesterday" | "last_7d" | "last_30d" | "this_month" | "last_month" | "custom";
+
+/** Calcula o intervalo de timestamps (ms) correspondente a um preset de data ou a um range personalizado. */
+function getDateRange(preset: DatePreset, customStart: string, customEnd: string): { start: number | null; end: number | null } {
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+
+  switch (preset) {
+    case "today":
+      return { start: startOfDay(now), end: endOfDay(now) };
+    case "yesterday": {
+      const y = new Date(now); y.setDate(y.getDate() - 1);
+      return { start: startOfDay(y), end: endOfDay(y) };
+    }
+    case "last_7d": {
+      const s = new Date(now); s.setDate(s.getDate() - 6);
+      return { start: startOfDay(s), end: endOfDay(now) };
+    }
+    case "last_30d": {
+      const s = new Date(now); s.setDate(s.getDate() - 29);
+      return { start: startOfDay(s), end: endOfDay(now) };
+    }
+    case "this_month":
+      return { start: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), end: endOfDay(now) };
+    case "last_month": {
+      const s = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const e = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { start: startOfDay(s), end: endOfDay(e) };
+    }
+    case "custom":
+      return {
+        start: customStart ? startOfDay(new Date(`${customStart}T00:00:00`)) : null,
+        end: customEnd ? endOfDay(new Date(`${customEnd}T00:00:00`)) : null,
+      };
+    default:
+      return { start: null, end: null };
+  }
+}
+
+type PlatformFilterId = "meta" | "google" | "tiktok" | "linkedin";
+
+/** Detecta a plataforma de origem do lead (Meta, Google, TikTok, LinkedIn) a partir de adPlatform/utmSource. */
+function getLeadPlatform(lead: Lead): PlatformFilterId | null {
+  if (lead.adPlatform === "meta") return "meta";
+  if (lead.adPlatform === "google") return "google";
+  const src = (lead.utmSource ?? "").toLowerCase();
+  if (src.includes("tiktok")) return "tiktok";
+  if (src.includes("linkedin")) return "linkedin";
+  if (["facebook", "instagram", "fb", "meta"].includes(src)) return "meta";
+  if (src === "google") return "google";
+  return null;
+}
+
+const PLATFORM_FILTERS: { id: PlatformFilterId; label: string }[] = [
+  { id: "meta", label: "Meta" },
+  { id: "google", label: "Google" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "linkedin", label: "LinkedIn" },
+];
+
 // ── Frases de gatilho por coluna ─────────────────────────────────────────────
 function TriggerPhrases({ phrases, onChange }: { phrases: TriggerPhrase[]; onChange: (p: TriggerPhrase[]) => void }) {
   const [input, setInput] = useState("");
@@ -530,6 +591,10 @@ export function KanbanBoard({
   });
   const filterClient = selectedClient ?? clients[0]?.id ?? "all";
   const [search, setSearch]   = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [platformFilter, setPlatformFilter] = useState<Set<PlatformFilterId>>(new Set());
   const [selected, setSelected]     = useState<Lead | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [showFunnelMgr, setShowFunnelMgr] = useState(false);
@@ -716,9 +781,20 @@ export function KanbanBoard({
 
   const funnel = funnels.find((f) => f.id === activeFunnel) ?? funnels[0];
 
+  const { start: dateStart, end: dateEnd } = getDateRange(datePreset, customStart, customEnd);
+
   const filtered = leads.filter((l) => {
     if (l.funnelId !== funnel?.id) return false;
     if (filterClient !== "all" && l.clientId !== filterClient) return false;
+    if (dateStart != null || dateEnd != null) {
+      const created = new Date(l.createdAt).getTime();
+      if (dateStart != null && created < dateStart) return false;
+      if (dateEnd != null && created > dateEnd) return false;
+    }
+    if (platformFilter.size > 0) {
+      const p = getLeadPlatform(l);
+      if (!p || !platformFilter.has(p)) return false;
+    }
     if (search) {
       const q = search.toLowerCase();
       return l.name.toLowerCase().includes(q) || l.phone.includes(q) || (l.campaignName ?? "").toLowerCase().includes(q);
@@ -958,6 +1034,63 @@ export function KanbanBoard({
           <button onClick={() => setShowFunnelMgr((v) => !v)} className="rounded-md px-2 py-1.5 text-sm text-slate-400 hover:text-slate-600 transition" title="Gerenciar funis">
             ⚙️
           </button>
+        </div>
+
+        {/* Filtro de data */}
+        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+          <select
+            value={datePreset}
+            onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 outline-none focus:border-blue-400"
+          >
+            <option value="all">Todas as datas</option>
+            <option value="today">Hoje</option>
+            <option value="yesterday">Ontem</option>
+            <option value="last_7d">Últimos 7 dias</option>
+            <option value="last_30d">Últimos 30 dias</option>
+            <option value="this_month">Este mês</option>
+            <option value="last_month">Mês passado</option>
+            <option value="custom">Personalizado</option>
+          </select>
+          {datePreset === "custom" && (
+            <>
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 outline-none focus:border-blue-400"
+              />
+              <span className="text-xs text-slate-400">até</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 outline-none focus:border-blue-400"
+              />
+            </>
+          )}
+        </div>
+
+        {/* Filtro de plataforma */}
+        <div className="flex items-center gap-1 flex-wrap shrink-0">
+          {PLATFORM_FILTERS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPlatformFilter((prev) => {
+                const next = new Set(prev);
+                if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+                return next;
+              })}
+              className={clsx(
+                "rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition",
+                platformFilter.has(p.id)
+                  ? "border-blue-400 bg-blue-100 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
 
         {/* Search */}
