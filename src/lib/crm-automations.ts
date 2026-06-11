@@ -355,7 +355,11 @@ async function executeLegacy(automation: CrmAutomation, lead: Lead) {
 
   if (automation.channel === "uazapi") {
     if (!conn.uazapiToken || !automation.message) return;
-    await sendText(conn.uazapiToken, lead.phone, interpolate(automation.message, lead, funnel?.name));
+    const msg = interpolate(automation.message, lead, funnel?.name);
+    const ok = await sendText(conn.uazapiToken, lead.phone, msg);
+    if (ok) {
+      addMessage(lead.phone, { role: "assistant", content: msg, ts: Date.now(), type: "text" }, lead.clientId, { connId: conn.id });
+    }
   } else if (automation.channel === "waba") {
     if (!automation.templateId || !conn.metaPhoneNumberId || !conn.metaToken) return;
     const tpl = getTemplates().find((t) => t.id === automation.templateId);
@@ -363,8 +367,17 @@ async function executeLegacy(automation: CrmAutomation, lead: Lead) {
     const comps = automation.templateVariables
       ? buildMetaComponents(tpl.components, automation.templateVariables, lead, funnel?.name)
       : [];
-    await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, lead.phone, tpl.name, tpl.language,
+    const result = await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, lead.phone, tpl.name, tpl.language,
       comps.length > 0 ? comps : undefined);
+    console.log(`[crm-auto] executeLegacy send_template result=${JSON.stringify(result)}`);
+    if (result.success) {
+      addMessage(lead.phone, {
+        role: "assistant",
+        content: renderTemplateText(tpl.components, automation.templateVariables, lead, funnel?.name) || `[template: ${tpl.name}]`,
+        ts: Date.now(),
+        type: "text",
+      }, lead.clientId, { connId: conn.id });
+    }
   }
 }
 
