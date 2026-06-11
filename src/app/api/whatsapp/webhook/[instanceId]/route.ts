@@ -504,8 +504,9 @@ export async function POST(
     const funnels = getFunnels();
 
     // Busca primária: connection.uazapiToken === instanceId (token UUID na URL)
+    // Aceita qualquer tipo de conexão (uazapi ou meta — UazAPI também usa tipo "meta")
     const matchedFunnel = funnels.find((f) =>
-      f.connections?.some((c) => c.type === "uazapi" && c.uazapiToken === instanceId)
+      f.connections?.some((c) => c.uazapiToken === instanceId)
     );
 
     // Fallback 1: token enviado no body pelo UazapiGO (instanceToken ou token)
@@ -517,18 +518,17 @@ export async function POST(
       : undefined;
 
     // Fallback 2: body.instanceId ou body.instance = nome da instância enviado pelo UazapiGO
-    // (UazapiGO envia o nome da instância no body, ex: "nexo")
     const bodyInstanceName = (body.instanceId ?? body.instance) as string | undefined;
     const fallbackByBodyName = !matchedFunnel && !fallbackByBodyToken && bodyInstanceName
       ? funnels.find((f) =>
-          f.connections?.some((c) => c.type === "uazapi" && c.id === bodyInstanceName)
+          f.connections?.some((c) => c.id === bodyInstanceName)
         )
       : undefined;
 
     // Fallback 3: connection.id === instanceId (caso raro onde URL contém o nome)
     const fallbackByUrlName = !matchedFunnel && !fallbackByBodyToken && !fallbackByBodyName
       ? funnels.find((f) =>
-          f.connections?.some((c) => c.type === "uazapi" && c.id === instanceId)
+          f.connections?.some((c) => c.id === instanceId)
         )
       : undefined;
 
@@ -540,9 +540,15 @@ export async function POST(
     // 2. token da conexão do funil encontrada
     // 3. bodyToken enviado pelo UazapiGO
     // 4. token global como último recurso
-    const uazConn = funnel?.connections?.find((c) => c.type === "uazapi");
+    // Token bruto desta requisição (UUID na URL ou token enviado no body)
+    const instanceUazTokenRaw = instanceId.includes("-") ? instanceId : (bodyToken ?? "");
+    // Encontra a conexão exata pelo token, depois por tipo uazapi, depois a primeira.
+    // Suporta type="uazapi" e type="meta" (UazAPI usando API oficial do Meta).
+    const uazConn = funnel?.connections?.find((c) => instanceUazTokenRaw && c.uazapiToken === instanceUazTokenRaw)
+      ?? funnel?.connections?.find((c) => c.type === "uazapi")
+      ?? funnel?.connections?.[0];
     const instanceUazToken = instanceId.includes("-")
-      ? instanceId  // UUID → é o próprio token UazapiGO
+      ? instanceId
       : (uazConn?.uazapiToken ?? bodyToken ?? config.uazapiToken ?? "");
 
     // ── Upsert lead no CRM ────────────────────────────────────────────────

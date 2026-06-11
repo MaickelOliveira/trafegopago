@@ -132,8 +132,11 @@ export function getAllConversationsByClientId(clientId: string): Array<{
     let phone = key.startsWith(prefix) ? key.slice(prefix.length) : key;
     // Chaves no formato clientId:connId:phone — remove também o connId do início
     const convConnId = conv.connId ?? null;
+    // isIsolated = connId está NA chave (não só no objeto) → conversa isolada por conexão
+    let isIsolated = false;
     if (convConnId && phone.startsWith(convConnId + ":")) {
       phone = phone.slice(convConnId.length + 1);
+      isIsolated = true;
     }
     const lastMessage = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
     result.push({
@@ -144,16 +147,28 @@ export function getAllConversationsByClientId(clientId: string): Array<{
       lastActivity: conv.lastActivity,
       unread: conv.unread ?? false,
       aiPaused: conv.aiPaused ?? false,
+      _isolated: isIsolated,
     });
   }
-  // Deduplica por (phone, connId): mantém a entrada mais recente
+  // Deduplica por (phone, connId): chave isolada sempre vence a legada;
+  // entre iguais mantém a mais recente.
   const deduped = new Map<string, (typeof result)[0]>();
   for (const c of result) {
     const dk = `${c.connId ?? ""}:${c.phone}`;
     const existing = deduped.get(dk);
-    if (!existing || c.lastActivity > existing.lastActivity) deduped.set(dk, c);
+    if (!existing) {
+      deduped.set(dk, c);
+    } else if (c._isolated && !existing._isolated) {
+      deduped.set(dk, c); // chave isolada sempre vence a legada mista
+    } else if (!c._isolated && existing._isolated) {
+      // legada perde para isolada — não substitui
+    } else if (c.lastActivity > existing.lastActivity) {
+      deduped.set(dk, c);
+    }
   }
-  return [...deduped.values()].sort((a, b) => b.lastActivity - a.lastActivity);
+  return [...deduped.values()]
+    .map(({ _isolated: _, ...rest }) => rest)
+    .sort((a, b) => b.lastActivity - a.lastActivity);
 }
 
 export function markAsRead(phone: string, clientId?: string | null, connId?: string | null) {
