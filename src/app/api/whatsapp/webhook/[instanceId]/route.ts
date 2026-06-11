@@ -503,21 +503,21 @@ export async function POST(
     // Isso serve como autenticação: impossível de adivinhar
     const funnels = getFunnels();
 
-    // Busca primária: connection.uazapiToken === instanceId (token UUID na URL)
-    // Aceita qualquer tipo de conexão (uazapi ou meta — UazAPI também usa tipo "meta")
+    // Busca primária: por uazapiToken OU por connection.id === instanceId na URL
+    // Conexões "meta" não armazenam uazapiToken; o token na URL pode ser o c.id.
     const matchedFunnel = funnels.find((f) =>
-      f.connections?.some((c) => c.uazapiToken === instanceId)
+      f.connections?.some((c) => c.uazapiToken === instanceId || c.id === instanceId)
     );
 
     // Fallback 1: token enviado no body pelo UazapiGO (instanceToken ou token)
     const bodyToken = (body.instanceToken ?? body.token) as string | undefined;
     const fallbackByBodyToken = !matchedFunnel && bodyToken
       ? funnels.find((f) =>
-          f.connections?.some((c) => c.uazapiToken === bodyToken)
+          f.connections?.some((c) => c.uazapiToken === bodyToken || c.id === bodyToken)
         )
       : undefined;
 
-    // Fallback 2: body.instanceId ou body.instance = nome da instância enviado pelo UazapiGO
+    // Fallback 2: body.instanceId ou body.instance = nome da instância
     const bodyInstanceName = (body.instanceId ?? body.instance) as string | undefined;
     const fallbackByBodyName = !matchedFunnel && !fallbackByBodyToken && bodyInstanceName
       ? funnels.find((f) =>
@@ -525,7 +525,7 @@ export async function POST(
         )
       : undefined;
 
-    // Fallback 3: connection.id === instanceId (caso raro onde URL contém o nome)
+    // Fallback 3: connection.id === instanceId (redundante mas mantido por segurança)
     const fallbackByUrlName = !matchedFunnel && !fallbackByBodyToken && !fallbackByBodyName
       ? funnels.find((f) =>
           f.connections?.some((c) => c.id === instanceId)
@@ -535,18 +535,19 @@ export async function POST(
     const funnel = matchedFunnel ?? fallbackByBodyToken ?? fallbackByBodyName ?? fallbackByUrlName ?? null;
     const clientId = funnel?.clientId ?? null;
 
-    // Token para enviar a resposta:
-    // 1. instanceId na URL se for UUID (contém "-") → é o próprio token UazapiGO
-    // 2. token da conexão do funil encontrada
-    // 3. bodyToken enviado pelo UazapiGO
-    // 4. token global como último recurso
-    // Token bruto desta requisição (UUID na URL ou token enviado no body)
+    // Token bruto desta requisição
     const instanceUazTokenRaw = instanceId.includes("-") ? instanceId : (bodyToken ?? "");
-    // Encontra a conexão exata pelo token, depois por tipo uazapi, depois a primeira.
-    // Suporta type="uazapi" e type="meta" (UazAPI usando API oficial do Meta).
-    const uazConn = funnel?.connections?.find((c) => instanceUazTokenRaw && c.uazapiToken === instanceUazTokenRaw)
-      ?? funnel?.connections?.find((c) => c.type === "uazapi")
-      ?? funnel?.connections?.[0];
+
+    // Encontra a conexão EXATA que recebeu esta mensagem — essencial para isolar
+    // conversas por conexão (connId). Tenta em ordem: token na URL, id na URL,
+    // token no body, tipo uazapi, primeira disponível.
+    const uazConn =
+      funnel?.connections?.find((c) => instanceUazTokenRaw && c.uazapiToken === instanceUazTokenRaw) ??
+      funnel?.connections?.find((c) => c.id === instanceId) ??
+      funnel?.connections?.find((c) => instanceUazTokenRaw && c.id === instanceUazTokenRaw) ??
+      funnel?.connections?.find((c) => c.type === "uazapi") ??
+      funnel?.connections?.[0];
+
     const instanceUazToken = instanceId.includes("-")
       ? instanceId
       : (uazConn?.uazapiToken ?? bodyToken ?? config.uazapiToken ?? "");
