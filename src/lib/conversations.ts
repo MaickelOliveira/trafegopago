@@ -51,13 +51,16 @@ function clientPhoneVariants(phone: string, clientId: string): string[] {
 
 export function getHistory(phone: string, clientId?: string | null, connId?: string | null): ChatMessage[] {
   const all = load();
-  // Se connId fornecido, tenta chave isolada por conexão primeiro
+  // Se connId fornecido, tenta chave isolada por conexão com todas as variantes de telefone
+  // (webhook armazena com +55, lead pode ter sem — ambos devem bater)
   if (clientId && connId) {
-    const connKey = `${clientId}:${connId}:${phone}`;
-    const conv = all[connKey];
-    if (conv) {
-      if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
-      return conv.messages;
+    for (const v of phoneVariants(phone)) {
+      const connKey = `${clientId}:${connId}:${v}`;
+      const conv = all[connKey];
+      if (conv) {
+        if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
+        return conv.messages;
+      }
     }
   }
   // Se clientId fornecido, tenta chaves prefixadas (clientId:phone)
@@ -155,10 +158,12 @@ export function getAllConversationsByClientId(clientId: string): Array<{
 
 export function markAsRead(phone: string, clientId?: string | null, connId?: string | null) {
   const all = load();
-  // Tenta chave isolada por conexão primeiro
+  // Tenta chave isolada por conexão com todas as variantes de telefone
   if (clientId && connId) {
-    const connKey = `${clientId}:${connId}:${phone}`;
-    if (all[connKey]) { all[connKey].unread = false; save(all); return; }
+    for (const v of phoneVariants(phone)) {
+      const connKey = `${clientId}:${connId}:${v}`;
+      if (all[connKey]) { all[connKey].unread = false; save(all); return; }
+    }
   }
   // Tenta chave prefixada (clientId:phone)
   if (clientId) {
