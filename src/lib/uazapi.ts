@@ -356,10 +356,12 @@ export function splitMessage(text: string, maxLen = 300): string[] {
   // Corrige quebras acidentais em expressões numéricas:
   //   "24/\n\n7"  → "24/7"   (fração/horário partido)
   //   "1\n\n2-"  → "12-"    (data/número partido)
+  //   "1.997,\n\n00"  → "1.997,00"  (valor decimal/monetário partido na vírgula)
   const trimmed = text
     .trim()
     .replace(/(\d+\/)\s*\n[\s\n]*(\d)/g, "$1$2")
-    .replace(/(\d)\s*\n[\s\n]+(\d[-.:\/])/g, "$1$2");
+    .replace(/(\d)\s*\n[\s\n]+(\d[-.:\/])/g, "$1$2")
+    .replace(/(\d),\s*\n[\s\n]*(\d)/g, "$1,$2");
 
   if (trimmed.length <= maxLen) return [trimmed];
 
