@@ -1,11 +1,41 @@
-import { NextResponse } from "next/server";
-import { getWppSessions } from "@/lib/wppconnect-sessions";
-import { checkConnectionStatus, listSessions } from "@/lib/wppconnect-api";
+import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
+import { getWppSessions, getWppSessionById } from "@/lib/wppconnect-sessions";
+import { checkConnectionStatus, listSessions, getQrCode, startSession } from "@/lib/wppconnect-api";
 
 export const dynamic = "force-dynamic";
 
+function detectBase(req: NextRequest): string {
+  const fwdHost  = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? "https";
+  return fwdHost ? `${fwdProto}://${fwdHost}` : `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+}
+
 /** Debug: lista sessões WPPConnect locais (sem token) + status ao vivo + sessões no servidor WPPConnect. */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // ?probe=<sessionId> — replica o fluxo do botão "Conectar": chama start-session
+  // e busca o QR, retornando um hash p/ comparar se sessões diferentes geram QRs iguais.
+  const probeId = req.nextUrl.searchParams.get("probe");
+  if (probeId) {
+    const s = getWppSessionById(probeId);
+    if (!s) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
+
+    const baseUrl = detectBase(req);
+    const webhookUrl = `${baseUrl}/api/whatsapp/webhook/wppconnect/${s.id}`;
+    await startSession(s.sessionName, s.sessionToken, webhookUrl).catch(() => {});
+    await new Promise((r) => setTimeout(r, 3000));
+
+    let qr: string | null = null;
+    for (let i = 0; i < 5; i++) {
+      qr = await getQrCode(s.sessionName, s.sessionToken);
+      if (qr) break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    const qrHash = qr ? createHash("sha256").update(qr).digest("hex").slice(0, 16) : null;
+    return NextResponse.json({ id: s.id, sessionName: s.sessionName, qrLength: qr?.length ?? 0, qrHash });
+  }
+
   const local = getWppSessions();
 
   const sessions = await Promise.all(
