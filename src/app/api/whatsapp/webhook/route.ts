@@ -149,10 +149,10 @@ export async function POST(req: NextRequest) {
         }
       }
     }
-    // Busca pelo nome da instância (instanceId no body)
+    // Busca pelo nome da instância (instanceId no body) — aceita qualquer tipo
     if (!clientId && uazInstanceId) {
       for (const f of funnels) {
-        const conn = f.connections?.find(c => c.type === "uazapi" && c.id === uazInstanceId);
+        const conn = f.connections?.find(c => c.id === uazInstanceId);
         if (conn) {
           funnelIdOverride = funnelIdOverride ?? f.id;
           clientId = f.clientId ?? null;
@@ -259,9 +259,10 @@ export async function POST(req: NextRequest) {
 
     if (!text.trim()) return NextResponse.json({ ok: true });
 
-    // Salva a mensagem na conversa (sempre — independente de IA ou fromMe)
+    // Salva a mensagem na conversa com connId para isolar por conexão
     const ts = Date.now();
-    addMessage(phone, { role: fromMe ? "assistant" : "user", content: text, ts }, clientId);
+    const msgOpts = incomingConnectionId ? { connId: incomingConnectionId } : undefined;
+    addMessage(phone, { role: fromMe ? "assistant" : "user", content: text, ts }, clientId, msgOpts);
 
     // Se foi você quem mandou pelo celular, só salva — não responde via IA
     if (fromMe) return NextResponse.json({ ok: true });
@@ -326,6 +327,7 @@ export async function POST(req: NextRequest) {
       const _phone = phone;
       const _clientId = clientId;
       const _connectionId = connectionId;
+      const _incomingConnId = incomingConnectionId;
       const _pendingId = pending.id;
 
       // setTimeout in-process: responde após waitSeconds usando imports do topo do arquivo
@@ -343,7 +345,7 @@ export async function POST(req: NextRequest) {
             markDone(batch.id);
             console.log(`[webhook] Gemini respondeu (${geminiText?.length ?? 0} chars): ${geminiText?.slice(0, 80)}`);
             if (geminiText) {
-              addMessage(_phone, { role: "assistant", content: geminiText, ts: Date.now() }, _clientId);
+              addMessage(_phone, { role: "assistant", content: geminiText, ts: Date.now() }, _clientId, _incomingConnId ? { connId: _incomingConnId } : undefined);
               await sendMessageUnified(_phone, geminiText, _cid, _connectionId ?? undefined);
               console.log(`[webhook] Mensagem enviada para ${_phone}`);
             }
@@ -372,7 +374,7 @@ export async function POST(req: NextRequest) {
 
     if (!reply) return NextResponse.json({ ok: true });
 
-    addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId);
+    addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, incomingConnectionId ? { connId: incomingConnectionId } : undefined);
 
     if (cid !== "sem-cliente") {
       await sendMessageUnified(phone, reply, cid, connectionId ?? undefined);
