@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { deleteLead, updateLead } from "@/lib/leads";
+import { getFunnels } from "@/lib/funnels";
 
 /**
  * POST /api/crm/leads/bulk
@@ -13,10 +14,11 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { action, ids, colId, aiPaused } = body as {
+  const { action, ids, colId, funnelId, aiPaused } = body as {
     action: string;
     ids: string[];
     colId?: string;
+    funnelId?: string;
     aiPaused?: boolean;
   };
 
@@ -37,6 +39,16 @@ export async function POST(req: NextRequest) {
       try { updateLead(id, { status: colId }); } catch { /* ignora */ }
     }
     return NextResponse.json({ ok: true, moved: ids.length });
+  }
+
+  if (action === "migrate") {
+    if (!funnelId) return NextResponse.json({ error: "funnelId obrigatório para migrar" }, { status: 400 });
+    const targetFunnel = getFunnels().find(f => f.id === funnelId);
+    const targetColId = colId ?? targetFunnel?.columns?.[0]?.id ?? "entrada";
+    for (const id of ids) {
+      try { updateLead(id, { funnelId, status: targetColId }); } catch { /* ignora */ }
+    }
+    return NextResponse.json({ ok: true, migrated: ids.length });
   }
 
   if (action === "ai") {

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
+import type { Funnel } from "@/lib/funnels";
 
 interface ColumnMapping {
   name: string;
@@ -23,6 +24,7 @@ interface ImportResult {
 
 interface Props {
   clientId: string;
+  availableFunnels?: Funnel[];
   onClose: () => void;
   onImported: (funnelId: string) => void;
 }
@@ -57,7 +59,7 @@ function detectMapping(headers: string[]): ColumnMapping {
 
 type Step = "upload" | "mapping" | "confirm" | "result";
 
-export default function ImportModal({ clientId, onClose, onImported }: Props) {
+export default function ImportModal({ clientId, availableFunnels = [], onClose, onImported }: Props) {
   const [step, setStep] = useState<Step>("upload");
   const [dragging, setDragging] = useState(false);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -65,6 +67,7 @@ export default function ImportModal({ clientId, onClose, onImported }: Props) {
   const [mapping, setMapping] = useState<ColumnMapping>({ name: "", phone: "", email: "", stage: "", notes: "", value: "" });
   const [uniqueStages, setUniqueStages] = useState<string[]>([]);
   const [funnelName, setFunnelName] = useState("");
+  const [existingFunnelId, setExistingFunnelId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -142,13 +145,18 @@ export default function ImportModal({ clientId, onClose, onImported }: Props) {
 
   async function doImport() {
     if (!file) return;
+    if (!existingFunnelId && !funnelName.trim()) { setError("Informe o nome do funil ou selecione um funil existente."); return; }
     setLoading(true);
     setError("");
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("clientId", clientId);
-      fd.append("funnelName", funnelName);
+      if (existingFunnelId) {
+        fd.append("existingFunnelId", existingFunnelId);
+      } else {
+        fd.append("funnelName", funnelName);
+      }
       fd.append("mapping", JSON.stringify(mapping));
 
       const res = await fetch("/api/crm/import", { method: "POST", body: fd });
@@ -262,14 +270,54 @@ export default function ImportModal({ clientId, onClose, onImported }: Props) {
           {/* STEP 3: Confirmação */}
           {step === "confirm" && (
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nome do funil a criar</label>
-                <input
-                  value={funnelName}
-                  onChange={(e) => setFunnelName(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                />
-              </div>
+              {/* Destino: novo funil ou existente */}
+              {availableFunnels.length > 0 && (
+                <div className="rounded-xl border border-slate-200 p-3 space-y-2">
+                  <p className="text-sm font-semibold text-slate-700">Destino dos leads</p>
+                  <div className="flex gap-3">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="funnelMode" checked={!existingFunnelId} onChange={() => setExistingFunnelId("")} />
+                      Criar novo funil
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="funnelMode" checked={!!existingFunnelId} onChange={() => setExistingFunnelId(availableFunnels[0]?.id ?? "")} />
+                      Funil existente
+                    </label>
+                  </div>
+                  {existingFunnelId ? (
+                    <select
+                      value={existingFunnelId}
+                      onChange={(e) => setExistingFunnelId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+                    >
+                      {availableFunnels.map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={funnelName}
+                      onChange={(e) => setFunnelName(e.target.value)}
+                      placeholder="Nome do novo funil"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                    />
+                  )}
+                  {existingFunnelId && (
+                    <p className="text-xs text-amber-600">Todos os leads serão colocados na primeira coluna do funil selecionado.</p>
+                  )}
+                </div>
+              )}
+
+              {!availableFunnels.length && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Nome do funil a criar</label>
+                  <input
+                    value={funnelName}
+                    onChange={(e) => setFunnelName(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+                  />
+                </div>
+              )}
 
               <div className="rounded-xl bg-slate-50 p-4 space-y-2">
                 <p className="text-sm font-semibold text-slate-700">Resumo da importação</p>
@@ -279,6 +327,7 @@ export default function ImportModal({ clientId, onClose, onImported }: Props) {
                 </div>
               </div>
 
+              {!existingFunnelId && (
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Etapas que serão criadas no funil</p>
                 <div className="flex flex-wrap gap-2">
@@ -289,6 +338,7 @@ export default function ImportModal({ clientId, onClose, onImported }: Props) {
                   ))}
                 </div>
               </div>
+              )}
             </div>
           )}
 
@@ -338,7 +388,7 @@ export default function ImportModal({ clientId, onClose, onImported }: Props) {
               </button>
             )}
             {step === "confirm" && (
-              <button onClick={doImport} disabled={loading || !funnelName.trim()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+              <button onClick={doImport} disabled={loading || (!existingFunnelId && !funnelName.trim())} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
                 {loading ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Importando...</> : "📥 Importar agora"}
               </button>
             )}

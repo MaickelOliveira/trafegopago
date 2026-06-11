@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { createFunnel, updateFunnel } from "@/lib/funnels";
+import { createFunnel, updateFunnel, getFunnels } from "@/lib/funnels";
 import { upsertLeadByPhone } from "@/lib/leads";
 import * as XLSX from "xlsx";
 import { randomUUID } from "crypto";
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   const clientId = formData.get("clientId") as string | null;
+  const existingFunnelId = (formData.get("existingFunnelId") as string | null) || null;
   const funnelName = (formData.get("funnelName") as string | null) || `Importação Kommo — ${new Date().toLocaleDateString("pt-BR")}`;
   const mappingRaw = formData.get("mapping") as string | null;
 
@@ -44,8 +45,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "mapping inválido" }, { status: 400 });
   }
 
-  if (!mapping.phone || !mapping.stage) {
-    return NextResponse.json({ error: "Mapeamento de phone e stage são obrigatórios" }, { status: 400 });
+  if (!mapping.phone) {
+    return NextResponse.json({ error: "Mapeamento de phone é obrigatório" }, { status: 400 });
   }
 
   // Parse do arquivo
@@ -63,36 +64,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Planilha vazia ou sem dados." }, { status: 400 });
   }
 
-  // Coleta etapas únicas preservando a ordem de aparição
-  const stagesOrdered: string[] = [];
-  const stageSet = new Set<string>();
-  for (const row of rows) {
-    const stage = String(row[mapping.stage] ?? "").trim();
-    if (stage && !stageSet.has(stage)) {
-      stageSet.add(stage);
-      stagesOrdered.push(stage);
+  let funnel;
+  let stageIdMap: Record<string, string> = {};
+
+  if (existingFunnelId) {
+    // Importar para funil existente — todos os leads vão para a primeira coluna
+    const found = getFunnels().find(f => f.id === existingFunnelId);
+    if (!found) return NextResponse.json({ error: "Funil não encontrado." }, { status: 404 });
+    funnel = found;
+  } else {
+    // Coleta etapas únicas preservando a ordem de aparição
+    const stagesOrdered: string[] = [];
+    const stageSet = new Set<string>();
+    for (const row of rows) {
+      const stage = String(row[mapping.stage] ?? "").trim();
+      if (stage && !stageSet.has(stage)) {
+        stageSet.add(stage);
+        stagesOrdered.push(stage);
+      }
     }
-  }
 
-  if (stagesOrdered.length === 0) {
-    return NextResponse.json({ error: "Nenhuma etapa encontrada na coluna mapeada." }, { status: 400 });
-  }
+    if (stagesOrdered.length === 0 && mapping.stage) {
+      return NextResponse.json({ error: "Nenhuma etapa encontrada na coluna mapeada." }, { status: 400 });
+    }
 
-  // Cria o funil com as etapas do Kommo
-  const columns = stagesOrdered.map((label, idx) => ({
-    id: randomUUID(),
-    label,
-    color: STAGE_COLORS[idx % STAGE_COLORS.length],
-  }));
+    // Cria o funil com as etapas do Kommo
+    const columns = stagesOrdered.map((label, idx) => ({
+      id: randomUUID(),
+      label,
+      color: STAGE_COLORS[idx % STAGE_COLORS.length],
+    }));
 
-  const funnel = createFunnel(funnelName, columns);
-  // Vincula o funil ao cliente correto para aparecer no CRM
-  updateFunnel(funnel.id, { clientId });
+    funnel = createFunnel(funnelName, columns.length ? columns : [{ id: randomUUID(), label: "Contato inicial", color: STAGE_COLORS[0] }]);
+    updateFunnel(funnel.id, { clientId });
 
-  // Mapeia label da etapa → id da coluna criada
-  const stageIdMap: Record<string, string> = {};
-  for (const col of funnel.columns) {
-    stageIdMap[col.label] = col.id;
+    // Mapeia label da etapa → id da coluna criada
+    for (const col of funnel.columns) {
+      stageIdMap[col.label] = col.id;
+    }
   }
 
   // Importa cada lead
@@ -111,8 +120,10 @@ export async function POST(req: NextRequest) {
       phone = "55" + phone;
     }
 
-    const stageLabel = String(row[mapping.stage] ?? "").trim();
-    const statusId = stageIdMap[stageLabel] ?? funnel.columns[0].id;
+    const stageLabel = mapping.stage ? String(row[mapping.stage] ?? "").trim() : "";
+    const statusId = existingFunnelId
+      ? funnel.columns[0].id
+      : (stageIdMap[stageLabel] ?? funnel.columns[0].id);
 
     const valueRaw = mapping.value ? String(row[mapping.value] ?? "").replace(/[^\d,\.]/g, "").replace(",", ".") : "";
     const value = valueRaw ? parseFloat(valueRaw) : null;

@@ -530,6 +530,7 @@ export function KanbanBoard({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [bulkMoveCol, setBulkMoveCol] = useState("");
+  const [bulkMigrateFunnel, setBulkMigrateFunnel] = useState("");
 
   function toggleSelect(id: string, e: React.MouseEvent) {
     e.stopPropagation();
@@ -544,6 +545,7 @@ export function KanbanBoard({
   function clearSelection() {
     setSelectedIds(new Set());
     setBulkMoveCol("");
+    setBulkMigrateFunnel("");
     setSelectionMode(false);
   }
 
@@ -551,7 +553,7 @@ export function KanbanBoard({
     setSelectedIds(new Set(filtered.map((l) => l.id)));
   }
 
-  async function executeBulk(action: "delete" | "move" | "ai", extra?: Record<string, unknown>) {
+  async function executeBulk(action: "delete" | "move" | "ai" | "migrate", extra?: Record<string, unknown>) {
     if (selectedIds.size === 0) return;
     const ids = Array.from(selectedIds);
 
@@ -570,6 +572,9 @@ export function KanbanBoard({
       setLeads((prev) => prev.filter((l) => !selectedIds.has(l.id)));
     } else if (action === "move" && extra?.colId) {
       setLeads((prev) => prev.map((l) => selectedIds.has(l.id) ? { ...l, status: extra.colId as string } : l));
+    } else if (action === "migrate" && extra?.funnelId) {
+      // Remove os leads do funil atual (eles agora pertencem a outro funil)
+      setLeads((prev) => prev.filter((l) => !selectedIds.has(l.id)));
     } else if (action === "ai") {
       const paused = !!extra?.aiPaused;
       setLeads((prev) => prev.map((l) => selectedIds.has(l.id) ? { ...l, aiPaused: paused } : l));
@@ -1081,6 +1086,31 @@ export function KanbanBoard({
 
           <div className="w-px h-4 bg-blue-200" />
 
+          {/* Migrar para outro funil */}
+          <select
+            value={bulkMigrateFunnel}
+            onChange={(e) => setBulkMigrateFunnel(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-blue-400"
+          >
+            <option value="">↗ Migrar para funil...</option>
+            {funnels.filter(f => f.id !== funnel.id).map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => {
+              if (!bulkMigrateFunnel) return;
+              if (!confirm(`Mover ${selectedIds.size} lead(s) para o funil selecionado? Eles serão colocados na primeira coluna.`)) return;
+              executeBulk("migrate", { funnelId: bulkMigrateFunnel });
+            }}
+            disabled={!bulkMigrateFunnel || bulkProcessing}
+            className="rounded-lg bg-violet-600 text-white text-xs font-semibold px-3 py-1.5 hover:bg-violet-700 disabled:opacity-40 transition"
+          >
+            {bulkProcessing ? "..." : "Migrar"}
+          </button>
+
+          <div className="w-px h-4 bg-blue-200" />
+
           {/* Pausar/Reativar IA */}
           <button
             onClick={() => executeBulk("ai", { aiPaused: true })}
@@ -1263,6 +1293,7 @@ export function KanbanBoard({
       {showImport && (
         <ImportModal
           clientId={filterClient}
+          availableFunnels={funnels}
           onClose={() => setShowImport(false)}
           onImported={(funnelId) => {
             setShowImport(false);
