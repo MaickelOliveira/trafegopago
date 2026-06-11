@@ -27,47 +27,13 @@ function phonePartOf(key: string, clientId: string, conv: Conversation): string 
   return rest;
 }
 
-/**
- * Junta conversas duplicadas do mesmo lead (mesmo clientId, telefone em formatos
- * diferentes — ex: com e sem o "55") em uma única chave.
- * Sem ?apply=1 mostra apenas o plano (dry-run); com ?apply=1 executa de fato.
- */
-export async function GET(req: NextRequest) {
-  const phone = req.nextUrl.searchParams.get("phone") ?? "";
-  const clientId = req.nextUrl.searchParams.get("clientId") ?? "";
-  const connId = req.nextUrl.searchParams.get("connId") || null;
-  const apply = req.nextUrl.searchParams.get("apply") === "1";
+function belongsToClient(key: string, conv: Conversation, clientId: string): boolean {
+  return conv.clientId === clientId || key.startsWith(`${clientId}:`) || conv.clientId == null;
+}
 
-  if (!phone || !clientId) {
-    return NextResponse.json({ error: "Informe phone e clientId" }, { status: 400 });
-  }
-
-  const digits = phone.replace(/\D/g, "");
-  const variants = new Set(phoneVariants(digits));
-
-  if (!existsSync(FILE)) {
-    return NextResponse.json({ error: "conversations.json não encontrado" }, { status: 404 });
-  }
-  const all: Record<string, Conversation> = JSON.parse(readFileSync(FILE, "utf-8"));
-
-  // Encontra todas as chaves que correspondem a esse telefone (em qualquer variante),
-  // pertencem ao clientId informado e (se connId informado) à mesma conexão ou sem conexão definida.
-  const matches = Object.entries(all).filter(([key, conv]) => {
-    if (conv.clientId && conv.clientId !== clientId && !key.startsWith(`${clientId}:`)) return false;
-    if (connId && conv.connId && conv.connId !== connId) return false;
-    const phonePart = phonePartOf(key, clientId, conv).replace(/\D/g, "");
-    return variants.has(phonePart);
-  });
-
-  if (matches.length < 2) {
-    return NextResponse.json({
-      message: `Nada para juntar — encontrada(s) ${matches.length} conversa(s) para esse telefone.`,
-      matches: matches.map(([key]) => key),
-    });
-  }
-
-  // Escolhe a conversa "primária": mais mensagens; empate → tem contactName real; empate → atividade mais recente.
-  const sorted = [...matches].sort(([, a], [, b]) => {
+/** Junta um grupo de chaves duplicadas em uma só (a que tiver mais histórico). */
+function mergeEntries(all: Record<string, Conversation>, entries: [string, Conversation][], apply: boolean) {
+  const sorted = [...entries].sort(([, a], [, b]) => {
     if (b.messages.length !== a.messages.length) return b.messages.length - a.messages.length;
     const aName = a.contactName ? 1 : 0;
     const bName = b.contactName ? 1 : 0;
@@ -83,11 +49,8 @@ export async function GET(req: NextRequest) {
     toMerge: others.map(([key, conv]) => ({ key, messages: conv.messages.length, contactName: conv.contactName ?? null })),
   };
 
-  if (!apply) {
-    return NextResponse.json({ dryRun: true, plan });
-  }
+  if (!apply) return { dryRun: true, plan };
 
-  // Junta as mensagens de todas as conversas em ordem cronológica
   const mergedMessages = [...primaryConv.messages];
   for (const [, conv] of others) mergedMessages.push(...conv.messages);
   mergedMessages.sort((a, b) => a.ts - b.ts);
@@ -103,7 +66,84 @@ export async function GET(req: NextRequest) {
   for (const [key] of others) delete all[key];
   all[primaryKey] = primaryConv;
 
-  writeFileSync(FILE, JSON.stringify(all, null, 2));
+  return { dryRun: false, applied: true, plan };
+}
 
-  return NextResponse.json({ dryRun: false, applied: true, plan });
+/**
+ * Junta conversas duplicadas do mesmo lead (mesmo clientId, telefone em formatos
+ * diferentes — ex: com e sem o "55") em uma única chave.
+ *
+ * - Com `phone`: junta as duplicatas desse telefone específico.
+ * - Sem `phone` (apenas `clientId`): varre todas as conversas do cliente, agrupa por
+ *   telefone canônico e reporta/junta todos os grupos duplicados encontrados.
+ *
+ * Sem ?apply=1 mostra apenas o plano (dry-run); com ?apply=1 executa de fato.
+ */
+export async function GET(req: NextRequest) {
+  const phone = req.nextUrl.searchParams.get("phone");
+  const clientId = req.nextUrl.searchParams.get("clientId") ?? "";
+  const connId = req.nextUrl.searchParams.get("connId") || null;
+  const apply = req.nextUrl.searchParams.get("apply") === "1";
+
+  if (!clientId) {
+    return NextResponse.json({ error: "Informe clientId" }, { status: 400 });
+  }
+  if (!existsSync(FILE)) {
+    return NextResponse.json({ error: "conversations.json não encontrado" }, { status: 404 });
+  }
+  const all: Record<string, Conversation> = JSON.parse(readFileSync(FILE, "utf-8"));
+
+  if (phone) {
+    const digits = phone.replace(/\D/g, "");
+    const variants = new Set(phoneVariants(digits));
+
+    const matches = Object.entries(all).filter(([key, conv]) => {
+      if (!belongsToClient(key, conv, clientId)) return false;
+      if (connId && conv.connId && conv.connId !== connId) return false;
+      const phonePart = phonePartOf(key, clientId, conv).replace(/\D/g, "");
+      return variants.has(phonePart);
+    });
+
+    if (matches.length < 2) {
+      return NextResponse.json({
+        message: `Nada para juntar — encontrada(s) ${matches.length} conversa(s) para esse telefone.`,
+        matches: matches.map(([key]) => key),
+      });
+    }
+
+    const result = mergeEntries(all, matches, apply);
+    if (apply) writeFileSync(FILE, JSON.stringify(all, null, 2));
+    return NextResponse.json(result);
+  }
+
+  // Modo varredura: agrupa todas as conversas do cliente por telefone canônico
+  const owned = Object.entries(all).filter(([key, conv]) => belongsToClient(key, conv, clientId));
+  const groups = new Map<string, [string, Conversation][]>();
+  for (const entry of owned) {
+    const [key, conv] = entry;
+    const phonePart = phonePartOf(key, clientId, conv).replace(/\D/g, "");
+    if (!phonePart) continue;
+    const canonical = phoneVariants(phonePart)[0];
+    const arr = groups.get(canonical) ?? [];
+    arr.push(entry);
+    groups.set(canonical, arr);
+  }
+
+  const results: Record<string, unknown>[] = [];
+  let changed = false;
+  for (const [canonical, entries] of groups) {
+    if (entries.length < 2) continue;
+    const connIds = new Set(entries.map(([, c]) => c.connId).filter(Boolean));
+    if (connIds.size > 1) {
+      results.push({ canonical, ambiguous: true, reason: "múltiplas conexões diferentes", keys: entries.map(([k]) => k) });
+      continue;
+    }
+    const result = mergeEntries(all, entries, apply);
+    if (apply && "applied" in result) changed = true;
+    results.push({ canonical, ...result });
+  }
+
+  if (apply && changed) writeFileSync(FILE, JSON.stringify(all, null, 2));
+
+  return NextResponse.json({ dryRun: !apply, totalGroups: results.length, groups: results });
 }
