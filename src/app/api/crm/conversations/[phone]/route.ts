@@ -22,13 +22,22 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const clientId = req.nextUrl.searchParams.get("clientId") ?? undefined;
   const funnelId = req.nextUrl.searchParams.get("funnelId") ?? undefined;
 
-  // Resolve connId a partir do funil do lead para buscar a chave correta (clientId:connId:phone)
+  // Resolve connId a partir do funil do lead — mesma lógica do webhook [instanceId]
+  // para garantir que a chave clientId:connId:phone bata com o que foi armazenado.
   let connId: string | undefined;
   if (funnelId) {
     const wppSession = getWppSessions().find((s) => s.funnelId === funnelId);
-    connId = wppSession?.id ?? getFunnelById(funnelId)?.connections?.[0]?.id;
+    if (wppSession) {
+      connId = wppSession.id;
+    } else {
+      const funnel = getFunnelById(funnelId);
+      // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
+      connId = funnel?.connections?.find((c) => c.type === "uazapi")?.id
+        ?? funnel?.connections?.[0]?.id;
+    }
   }
 
+  // Se não achou mensagens com connId, getHistory já faz fallback para chave legada
   const messages = getHistory(normalized, clientId, connId);
   return NextResponse.json({ messages });
 }
@@ -64,7 +73,9 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
         connId = wppSession.id;
       } else {
         const funnel = getFunnelById(funnelId);
-        const conn = funnel?.connections?.[0];
+        // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
+        const conn = funnel?.connections?.find((c) => c.type === "uazapi")
+          ?? funnel?.connections?.[0];
         if (conn) {
           connId = conn.id;
           connType = conn.type ?? "uazapi";
