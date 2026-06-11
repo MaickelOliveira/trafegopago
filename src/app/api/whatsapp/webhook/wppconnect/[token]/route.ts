@@ -238,6 +238,31 @@ export async function POST(
   // Log completo para ajudar a diagnosticar history sync em caso de reincidência
   console.log(`[WPPConnect Webhook] session=${wppSession.sessionName} event=${body.event} from=${body.from} fromMe=${body.fromMe} chatId=${body.chatId} timestamp_raw=${(body.timestamp as number) ?? (body.t as number) ?? "n/a"}`);
 
+  // ── DEBUG: captura os últimos eventos recebidos (qualquer tipo/evento) ──
+  // Usado para diagnosticar mensagens enviadas direto pelo celular do operador
+  // que não aparecem na conversa do CRM. Ver /api/debug/wpp-events.
+  try {
+    const debugEventsFile = path.join(process.cwd(), "data", "debug-wpp-events.json");
+    const existingEvents: unknown[] = existsSync(debugEventsFile)
+      ? (JSON.parse(readFileSync(debugEventsFile, "utf-8")) as unknown[])
+      : [];
+    existingEvents.unshift({
+      ts: new Date().toISOString(),
+      session: wppSession.sessionName,
+      event: body.event,
+      fromMe: body.fromMe,
+      self: body.self,
+      type: body.type,
+      from: body.from,
+      chatId: body.chatId,
+      to: body.to,
+      isGroupMsg: body.isGroupMsg,
+      text: ((body.body as string) || (body.caption as string) || "").slice(0, 200),
+    });
+    if (existingEvents.length > 30) existingEvents.length = 30;
+    writeFileSync(debugEventsFile, JSON.stringify(existingEvents, null, 2));
+  } catch { /* debug only */ }
+
   // ── Ignora mensagens históricas do sync de reconexão ──────────────────────
   // WPPConnect dispara "onmessage" para mensagens antigas ao reconectar.
   // O campo timestamp pode vir em SEGUNDOS ou MILISSEGUNDOS — normalizamos.
