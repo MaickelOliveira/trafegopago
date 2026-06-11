@@ -259,7 +259,12 @@ export function LeadModal({
       const res = await fetch(`/api/crm/conversations/${lead.phone}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text || undefined, imageUrl: img || undefined }),
+        body: JSON.stringify({
+          message: text || undefined,
+          imageUrl: img || undefined,
+          clientId: lead.clientId,
+          funnelId: lead.funnelId,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {

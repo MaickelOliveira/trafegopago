@@ -71,10 +71,18 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
 
-  const { message, imageUrl } = await req.json() as { message?: string; imageUrl?: string };
+  const { message, imageUrl, clientId: bodyClientId, funnelId: bodyFunnelId } = await req.json() as {
+    message?: string;
+    imageUrl?: string;
+    clientId?: string;
+    funnelId?: string;
+  };
   if (!message?.trim() && !imageUrl?.trim()) return NextResponse.json({ error: "message ou imageUrl obrigatório" }, { status: 400 });
 
-  const clientId = getClientId(normalized);
+  // Prefere o clientId/funnelId do lead enviados pelo front-end: getClientId()
+  // resolve pelo telefone e pode escolher o cliente errado quando o mesmo número
+  // tem conversas em mais de um cliente (ex: número usado para testes).
+  const clientId = bodyClientId ?? getClientId(normalized);
 
   // Busca conexão do funil do lead
   let token: string | null = null;
@@ -87,7 +95,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
 
   if (clientId) {
     const lead = getLeadByPhone(clientId, normalized);
-    funnelId = lead?.funnelId;
+    funnelId = bodyFunnelId ?? lead?.funnelId;
 
     // 1ª tentativa: usa a MESMA conexão da conversa mais recente deste telefone —
     // é a conexão que de fato já trocou mensagens com o lead (histórico e token
