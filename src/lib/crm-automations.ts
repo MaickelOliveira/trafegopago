@@ -8,6 +8,7 @@ import { sendText, sendList, sendMedia } from "./uazapi";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
 import { getWppSessions } from "./wppconnect-sessions";
 import { markPhoneSending } from "./wppconnect-sent";
+import { addMessage } from "./conversations";
 import { getTemplates, sendTemplate } from "./waba-templates";
 import type { TemplateComponent } from "./waba-templates";
 
@@ -185,6 +186,24 @@ function buildMetaComponents(
   return result;
 }
 
+/** Renderiza o texto do BODY do template com as variáveis ({{1}}, {{2}}...) substituídas. */
+function renderTemplateText(
+  tplComponents: TemplateComponent[],
+  templateVariables: Record<string, string[]> | undefined,
+  lead: Lead,
+  funnelName?: string,
+): string {
+  const body = tplComponents.find((c) => c.type === "BODY");
+  let text = body?.text ?? "";
+  const varMappings = templateVariables?.BODY;
+  if (varMappings) {
+    varMappings.forEach((mapping, i) => {
+      text = text.replace(`{{${i + 1}}}`, interpolate(mapping, lead, funnelName));
+    });
+  }
+  return text;
+}
+
 // ── Step execution ────────────────────────────────────────────────────────────
 
 type FunnelLike = { id: string; name: string; connections?: { id: string; uazapiToken?: string; metaPhoneNumberId?: string; metaToken?: string }[] };
@@ -203,10 +222,20 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
         // UazapiGO path
         const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
         console.log(`[crm-auto] UazapiGO send: phone=${lead.phone} msg="${msg.slice(0,50)}" imageUrl=${step.imageUrl ?? "none"}`);
+        let ok = false;
         if (step.imageUrl) {
-          await sendMedia(conn.uazapiToken, lead.phone, "image", step.imageUrl, msg || undefined);
+          ok = await sendMedia(conn.uazapiToken, lead.phone, "image", step.imageUrl, msg || undefined);
         } else if (msg) {
-          await sendText(conn.uazapiToken, lead.phone, msg);
+          ok = await sendText(conn.uazapiToken, lead.phone, msg);
+        }
+        if (ok) {
+          addMessage(lead.phone, {
+            role: "assistant",
+            content: step.imageUrl ? (msg || "[image]") : msg,
+            ts: Date.now(),
+            type: step.imageUrl ? "image" : "text",
+            ...(step.imageUrl ? { mediaUrl: step.imageUrl } : {}),
+          }, lead.clientId, { connId: conn.id });
         }
       } else {
         // WPPConnect path — procura por UUID e também por sessionName (fallback)
@@ -225,9 +254,26 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
             // Envia mídia com legenda (foto/vídeo/documento)
             const ok = await wppSendMedia(wppSess.sessionName, wppSess.sessionToken, lead.phone, step.imageUrl, msg || undefined, isLid);
             console.log(`[crm-auto] WPP sendMedia result=${ok}`);
+            if (ok) {
+              addMessage(lead.phone, {
+                role: "assistant",
+                content: msg || "[image]",
+                ts: Date.now(),
+                type: "image",
+                mediaUrl: step.imageUrl,
+              }, lead.clientId, { connId: wppSess.id });
+            }
           } else if (msg) {
             const ok = await wppSendText(wppSess.sessionName, wppSess.sessionToken, lead.phone, msg, isLid);
             console.log(`[crm-auto] WPP sendText result=${ok}`);
+            if (ok) {
+              addMessage(lead.phone, {
+                role: "assistant",
+                content: msg,
+                ts: Date.now(),
+                type: "text",
+              }, lead.clientId, { connId: wppSess.id });
+            }
           } else {
             console.log(`[crm-auto] WPP send skipped: message is empty after interpolation`);
           }
@@ -245,8 +291,17 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
       const comps = step.templateVariables
         ? buildMetaComponents(tpl.components, step.templateVariables, lead, funnelName)
         : [];
-      await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, lead.phone, tpl.name, tpl.language,
+      const result = await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, lead.phone, tpl.name, tpl.language,
         comps.length > 0 ? comps : undefined);
+      console.log(`[crm-auto] send_template result=${JSON.stringify(result)}`);
+      if (result.success) {
+        addMessage(lead.phone, {
+          role: "assistant",
+          content: renderTemplateText(tpl.components, step.templateVariables, lead, funnelName) || `[template: ${tpl.name}]`,
+          ts: Date.now(),
+          type: "text",
+        }, lead.clientId, { connId: conn.id });
+      }
       break;
     }
     case "send_list": {
