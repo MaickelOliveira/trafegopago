@@ -62,6 +62,19 @@ export function ClientWhatsAppConnect() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  // Busca um QR novo sem mexer no estado de loading (usado no refresh automático)
+  const refreshQr = useCallback(async (connectionId: string) => {
+    try {
+      const res = await fetch("/api/cliente/connection-qr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId }),
+      });
+      const data = await res.json();
+      if (data.qr) setQrData((prev) => ({ ...prev, [connectionId]: data.qr }));
+    } catch {}
+  }, []);
+
   async function generateQr(connectionId: string) {
     setLoadingQr(connectionId);
     try {
@@ -75,6 +88,23 @@ export function ClientWhatsAppConnect() {
     } catch {}
     setLoadingQr(null);
   }
+
+  // O QR Code expira a cada ~20s — busca um novo automaticamente enquanto
+  // estiver sendo exibido e a conexão ainda não tiver sido concluída.
+  const connectionsRef = useRef(connections);
+  connectionsRef.current = connections;
+  const qrDataRef = useRef(qrData);
+  qrDataRef.current = qrData;
+
+  useEffect(() => {
+    if (!open) return;
+    const t = setInterval(() => {
+      for (const conn of connectionsRef.current) {
+        if (!conn.connected && qrDataRef.current[conn.id]) refreshQr(conn.id);
+      }
+    }, 20000);
+    return () => clearInterval(t);
+  }, [open, refreshQr]);
 
   const allConnected = connections.length > 0 && connections.every((c) => c.connected);
   const anyConnected = connections.some((c) => c.connected);
