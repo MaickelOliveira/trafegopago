@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readFileSync, existsSync, writeFileSync } from "fs";
+import path from "path";
 import { getSession } from "@/lib/auth";
 import { getHistory, addMessage, getClientId, getAllConversationsByClientId } from "@/lib/conversations";
 import { markSent, markPhoneSending } from "@/lib/wppconnect-sent";
@@ -198,11 +200,36 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
           text: { body: msgText },
         }),
       }).catch((e) => { console.error("[conversations/send] Meta API error:", e); return null; });
-      ok = res?.ok === true;
+      const bodyText = await res?.text().catch(() => "") ?? "";
+      let data: { error?: { message?: string; code?: number } } | null = null;
+      try { data = bodyText ? JSON.parse(bodyText) : null; } catch { /* corpo não-JSON */ }
+      // Mesmo com status 2xx, a Graph API pode retornar um objeto "error" no corpo
+      // (ex: janela de 24h fechada) — sem checar isso, marcávamos como enviado indevidamente.
+      ok = res?.ok === true && !data?.error;
+
+      // ── DEBUG: captura a resposta da Graph API para diagnosticar envios "fantasma" ──
+      try {
+        const debugFile = path.join(process.cwd(), "data", "debug-meta-send.json");
+        const existing: unknown[] = existsSync(debugFile)
+          ? (JSON.parse(readFileSync(debugFile, "utf-8")) as unknown[])
+          : [];
+        existing.unshift({
+          ts: new Date().toISOString(),
+          phoneNumberId: metaPhoneNumberId,
+          to: normalized,
+          status: res?.status ?? null,
+          ok,
+          body: bodyText.slice(0, 500),
+        });
+        if (existing.length > 20) existing.length = 20;
+        writeFileSync(debugFile, JSON.stringify(existing, null, 2));
+      } catch { /* debug only */ }
+
       if (!ok) {
-        const errBody = await res?.text().catch(() => "");
-        console.error(`[conversations/send] Meta API falhou status=${res?.status} phoneNumberId=${metaPhoneNumberId} body=${errBody?.slice(0, 300)}`);
-        errorMsg = "Falha ao enviar via Meta API (token de acesso desta conexão pode estar expirado/inválido)";
+        console.error(`[conversations/send] Meta API falhou status=${res?.status} phoneNumberId=${metaPhoneNumberId} body=${bodyText.slice(0, 300)}`);
+        errorMsg = data?.error?.message
+          ? `Falha ao enviar via Meta API: ${data.error.message}`
+          : "Falha ao enviar via Meta API (token de acesso desta conexão pode estar expirado/inválido)";
       }
     }
   } else if (token) {

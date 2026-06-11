@@ -86,11 +86,16 @@ export async function sendMessageDirect(
         }),
       }
     );
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => "");
-      console.error(`[sendMessageDirect] FALHOU status=${res.status} phoneNumberId=${phoneNumberId} phone=${phone} body=${errBody.slice(0, 300)}`);
+    const bodyText = await res.text().catch(() => "");
+    let data: { error?: { message?: string } } | null = null;
+    try { data = bodyText ? JSON.parse(bodyText) : null; } catch { /* corpo não-JSON */ }
+    // Mesmo com status 2xx, a Graph API pode retornar um objeto "error" no corpo
+    // (ex: janela de 24h fechada) — sem checar isso, marcávamos como enviado indevidamente.
+    const ok = res.ok && !data?.error;
+    if (!ok) {
+      console.error(`[sendMessageDirect] FALHOU status=${res.status} phoneNumberId=${phoneNumberId} phone=${phone} body=${bodyText.slice(0, 300)}`);
     }
-    return res.ok;
+    return ok;
   } catch (e) {
     console.error(`[sendMessageDirect] EXCEÇÃO phoneNumberId=${phoneNumberId} phone=${phone}:`, e);
     return false;
