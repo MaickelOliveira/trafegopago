@@ -193,7 +193,7 @@ export function markAsRead(phone: string, clientId?: string | null, connId?: str
 }
 
 /** Normaliza telefone removendo código de país 55 para busca fuzzy */
-function phoneVariants(phone: string): string[] {
+export function phoneVariants(phone: string): string[] {
   const digits = phone.replace(/\D/g, "");
 
   // Obtém número local sem prefixo 55
