@@ -42,9 +42,9 @@ export async function POST(
   // Mapeamento de campos
   const { nameField, phoneField, emailField } = wh.fieldMapping;
   // Campos comuns como fallback se o mapeamento não encontrar
-  const name = payload[nameField] || payload.nome || payload.name || "Desconhecido";
-  const rawPhone = payload[phoneField] || payload.telefone || payload.phone || payload.celular || "";
-  const email = emailField ? (payload[emailField] || payload.email || null) : (payload.email || null);
+  const name = payload[nameField] || payload.nome || payload.name || payload["your-name"] || "Desconhecido";
+  const rawPhone = payload[phoneField] || payload.telefone || payload.phone || payload.celular || payload["your-phone"] || "";
+  const email = emailField ? (payload[emailField] || payload.email || payload["your-email"] || null) : (payload.email || payload["your-email"] || null);
 
   const phone = rawPhone.replace(/\D/g, "");
   if (!phone) {
@@ -55,6 +55,7 @@ export async function POST(
   const SKIP_KEYS = new Set([
     nameField, phoneField, emailField ?? "",
     "nome", "name", "telefone", "phone", "celular", "email",
+    "your-name", "your-phone", "your-email",
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
     "fbclid", "gclid", "campanha",
   ]);
