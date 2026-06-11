@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
         addMessage(phone, { role: "user", content: text, ts }, clientId, { connId: connId ?? undefined, contactName: pushName !== phone ? pushName : undefined });
 
         // ── Verifica se IA está pausada ──────────────────────────────────
-        const currentLead = getLeadByPhone(cid, phone);
+        const currentLead = getLeadByPhone(cid, phone, effectiveFunnelId);
         if (currentLead?.aiPaused) {
           console.log(`[meta] IA pausada para phone=${phone} cid=${cid} — ignorando`);
           continue;
