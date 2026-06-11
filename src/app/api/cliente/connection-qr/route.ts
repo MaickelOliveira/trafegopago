@@ -4,8 +4,14 @@ import { getClientById } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { connectInstance, getQrCode as getUazapiQr } from "@/lib/uazapi";
-import { getQrCode as getWppQr } from "@/lib/wppconnect-api";
+import { getQrCode as getWppQr, logoutSession, startSession } from "@/lib/wppconnect-api";
 import QRCode from "qrcode";
+
+function detectBase(req: NextRequest): string {
+  const fwdHost  = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? "https";
+  return fwdHost ? `${fwdProto}://${fwdHost}` : `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+}
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -54,7 +60,23 @@ export async function POST(req: NextRequest) {
   );
   const wppSession = wppSessions.find((s) => s.id === connectionId);
   if (wppSession) {
-    const qr = await getWppQr(wppSession.sessionName, wppSession.sessionToken);
+    // Sempre faz logout antes de reiniciar a sessão: o servidor WPPConnect mantém o
+    // QR em cache e não o renova sozinho — sem isso, o QR exibido fica travado/expirado.
+    await logoutSession(wppSession.sessionName, wppSession.sessionToken).catch(() => {});
+    await new Promise((r) => setTimeout(r, 2000));
+
+    const baseUrl = detectBase(req);
+    const webhookUrl = `${baseUrl}/api/whatsapp/webhook/wppconnect/${wppSession.id}`;
+    await startSession(wppSession.sessionName, wppSession.sessionToken, webhookUrl).catch(() => {});
+    await new Promise((r) => setTimeout(r, 3000));
+
+    let qr: string | null = null;
+    for (let i = 0; i < 10; i++) {
+      qr = await getWppQr(wppSession.sessionName, wppSession.sessionToken);
+      if (qr) break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
     return NextResponse.json({ qr });
   }
 

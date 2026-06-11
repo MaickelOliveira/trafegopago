@@ -1103,7 +1103,26 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     setQrStage("generating");
 
     let poll: ReturnType<typeof setInterval>;
+    let refreshTimer: ReturnType<typeof setInterval>;
     let alive = true;
+    let connecting = false;
+
+    const webhookUrl = `${appBaseUrl}/api/whatsapp/webhook/wppconnect/${id}`;
+
+    const connectAndFetchQr = async (force: boolean) => {
+      if (connecting || !alive) return;
+      connecting = true;
+      try {
+        const res = await fetch(`/api/whatsapp/wppconnect-manager/${id}/connect`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force, webhookUrl }),
+        });
+        const d = await res.json() as { qr?: string | null };
+        if (alive && d.qr) { setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true; }
+      } catch { /**/ } finally {
+        connecting = false;
+      }
+    };
 
     const startPolling = () => {
       poll = setInterval(async () => {
@@ -1113,24 +1132,20 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
           const d = await res.json() as { connected?: boolean; qr?: string | null };
           if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true; }
           if (d.connected && qrShownRef.current) {
-            setQrStage("done"); clearInterval(poll); alive = false;
+            setQrStage("done"); clearInterval(poll); clearInterval(refreshTimer); alive = false;
             setTimeout(() => { setWppModal({ type: "none" }); fetchSessions(); }, 1500);
           }
         } catch { /**/ }
       }, 3000);
     };
 
-    const webhookUrl = `${appBaseUrl}/api/whatsapp/webhook/wppconnect/${id}`;
-    fetch(`/api/whatsapp/wppconnect-manager/${id}/connect`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force: forceLogout, webhookUrl }),
-    }).then(r => r.json()).then((d: { qr?: string | null }) => {
-      if (!alive) return;
-      if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true; }
-      startPolling();
-    }).catch(() => { if (alive) startPolling(); });
+    connectAndFetchQr(forceLogout).then(() => { if (alive) startPolling(); });
 
-    return () => { alive = false; clearInterval(poll); };
+    // O QR do WPPConnect expira em ~20-30s e o servidor não o renova sozinho —
+    // refaz o ciclo logout+start a cada 25s para manter um QR válido na tela.
+    refreshTimer = setInterval(() => connectAndFetchQr(true), 25000);
+
+    return () => { alive = false; clearInterval(poll); clearInterval(refreshTimer); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wppModal.type === "qr" ? `${(wppModal as { id: string }).id}-${(wppModal as { forceLogout: boolean }).forceLogout}` : null]);
 
