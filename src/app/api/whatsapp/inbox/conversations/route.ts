@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
           : undefined;
       const contactName = c.contactName ?? validLeadName ?? null;
       if (lead && lead.aiPaused !== undefined && lead.aiPaused !== c.aiPaused) {
-        setAiPaused(c.phone, lead.aiPaused); // corrige conversations.json
+        setAiPaused(c.phone, lead.aiPaused, clientId, c.connId); // corrige conversations.json
         return { ...c, contactName, aiPaused: lead.aiPaused, ...(realPhone ? { realPhone } : {}) };
       }
       return { ...c, contactName, ...(realPhone ? { realPhone } : {}) };

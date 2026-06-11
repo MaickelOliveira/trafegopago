@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     const savedContent = type === "text" ? content : `[${type}]`;
     addMessage(cleanPhone, { role: "assistant", content: savedContent, ts, type: type === "video" ? undefined : type }, clientId, { connId: activeConnId });
     // Pausa a IA nos dois storages
-    setAiPaused(cleanPhone, true);
+    setAiPaused(cleanPhone, true, clientId, activeConnId);
     // Busca o lead real pelo telefone (sem depender de funnelId) e atualiza
     const existingLead = getLeadByPhone(clientId, cleanPhone);
     if (existingLead) updateLead(existingLead.id, { aiPaused: true });

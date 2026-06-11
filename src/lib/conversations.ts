@@ -237,18 +237,25 @@ export function phoneVariants(phone: string): string[] {
   return [...new Set([...variants, digits])];
 }
 
-export function setAiPaused(phone: string, paused: boolean, clientId?: string | null) {
+export function setAiPaused(phone: string, paused: boolean, clientId?: string | null, connId?: string | null) {
   const all = load();
   let changed = false;
+  // Chave isolada por conexão (mesmo padrão de markAsRead/getHistory)
+  if (clientId && connId) {
+    for (const v of phoneVariants(phone)) {
+      const connKey = `${clientId}:${connId}:${v}`;
+      if (all[connKey] && all[connKey].aiPaused !== paused) { all[connKey].aiPaused = paused; changed = true; }
+    }
+  }
   // Atualiza chaves prefixadas se clientId fornecido
   if (clientId) {
     for (const v of clientPhoneVariants(phone, clientId)) {
-      if (all[v]) { all[v].aiPaused = paused; changed = true; }
+      if (all[v] && all[v].aiPaused !== paused) { all[v].aiPaused = paused; changed = true; }
     }
   }
   // Também atualiza chaves sem prefixo (dados antigos)
   for (const v of phoneVariants(phone)) {
-    if (all[v]) { all[v].aiPaused = paused; changed = true; }
+    if (all[v] && all[v].aiPaused !== paused) { all[v].aiPaused = paused; changed = true; }
   }
   if (changed) save(all);
 }
