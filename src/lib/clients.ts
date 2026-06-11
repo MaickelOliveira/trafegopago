@@ -154,19 +154,29 @@ export function getAgentConfigForConnection(
   return client.agentConfig;
 }
 
-/** Retorna todos os agentConfigs do cliente, sem duplicatas por whatsappConnectionId.
+/** Retorna todos os agentConfigs do cliente, sem duplicatas.
  *  Se agentConfigs[] existe e tem entradas, usa somente ele (ignora o legado agentConfig).
  *  Caso contrário, cai no agentConfig único como fallback. */
 export function getAllAgentConfigs(client: Client): AgentConfig[] {
   const raw = (client.agentConfigs && client.agentConfigs.length > 0)
     ? [...client.agentConfigs]
     : (client.agentConfig ? [client.agentConfig] : []);
-  // Deduplica por whatsappConnectionId (mantém a primeira ocorrência)
-  const seen = new Set<string>();
-  return raw.filter((cfg) => {
-    const key = cfg.whatsappConnectionId ?? `__no_conn_${Math.random()}`;
-    if (cfg.whatsappConnectionId && seen.has(key)) return false;
-    if (cfg.whatsappConnectionId) seen.add(key);
+
+  // Se algum entry tem whatsappConnectionId, descarta os que não têm (são entradas órfãs/legado)
+  const withConn = raw.filter((cfg) => !!cfg.whatsappConnectionId);
+  const source = withConn.length > 0 ? withConn : raw;
+
+  // Deduplica por whatsappConnectionId, depois por name como fallback
+  const seenConn = new Set<string>();
+  const seenName = new Set<string>();
+  return source.filter((cfg) => {
+    if (cfg.whatsappConnectionId) {
+      if (seenConn.has(cfg.whatsappConnectionId)) return false;
+      seenConn.add(cfg.whatsappConnectionId);
+    } else if (cfg.name) {
+      if (seenName.has(cfg.name)) return false;
+      seenName.add(cfg.name);
+    }
     return true;
   });
 }
