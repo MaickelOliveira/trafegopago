@@ -18,11 +18,12 @@ type CacheEntry = { messages: ChatMessage[]; fetchedAt: number };
 const _convCache = new Map<string, CacheEntry>();
 const CACHE_TTL = 30_000; // 30s
 
-export function prefetchConversation(phone: string, clientId: string | null) {
-  const key = `${clientId ?? ""}:${phone}`;
+export function prefetchConversation(phone: string, clientId: string | null, funnelId?: string | null) {
+  const key = `${clientId ?? ""}:${funnelId ?? ""}:${phone}`;
   const cached = _convCache.get(key);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return;
-  const qs = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
+  const funnelParam = funnelId ? `&funnelId=${encodeURIComponent(funnelId)}` : "";
+  const qs = clientId ? `?clientId=${encodeURIComponent(clientId)}${funnelParam}` : "";
   fetch(`/api/crm/conversations/${phone}${qs}`)
     .then((r) => r.ok ? r.json() : null)
     .then((data) => { if (data) _convCache.set(key, { messages: data.messages ?? [], fetchedAt: Date.now() }); })
@@ -194,7 +195,7 @@ export function LeadModal({
   }
 
   async function fetchMessages(silent = false) {
-    const cacheKey = `${lead.clientId ?? ""}:${lead.phone}`;
+    const cacheKey = `${lead.clientId ?? ""}:${lead.funnelId ?? ""}:${lead.phone}`;
     // Se não é polling silencioso, verifica cache primeiro (hit = sem loading)
     if (!silent) {
       const cached = _convCache.get(cacheKey);
@@ -205,7 +206,8 @@ export function LeadModal({
       setLoadingChat(true);
     }
     try {
-      const qs = lead.clientId ? `?clientId=${encodeURIComponent(lead.clientId)}` : "";
+      const funnelParam = lead.funnelId ? `&funnelId=${encodeURIComponent(lead.funnelId)}` : "";
+      const qs = lead.clientId ? `?clientId=${encodeURIComponent(lead.clientId)}${funnelParam}` : "";
       const res = await fetch(`/api/crm/conversations/${lead.phone}${qs}`);
       if (res.ok) {
         const data = await res.json();

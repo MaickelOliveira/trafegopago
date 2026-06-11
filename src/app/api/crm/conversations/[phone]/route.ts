@@ -19,9 +19,17 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
 
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
-  // Usa o clientId passado pelo LeadModal para buscar a conversa correta (chave prefixada clientId:phone)
   const clientId = req.nextUrl.searchParams.get("clientId") ?? undefined;
-  const messages = getHistory(normalized, clientId);
+  const funnelId = req.nextUrl.searchParams.get("funnelId") ?? undefined;
+
+  // Resolve connId a partir do funil do lead para buscar a chave correta (clientId:connId:phone)
+  let connId: string | undefined;
+  if (funnelId) {
+    const wppSession = getWppSessions().find((s) => s.funnelId === funnelId);
+    connId = wppSession?.id ?? getFunnelById(funnelId)?.connections?.[0]?.id;
+  }
+
+  const messages = getHistory(normalized, clientId, connId);
   return NextResponse.json({ messages });
 }
 
@@ -44,6 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   let metaToken: string | null = null;
   let connType: string = "uazapi";
   let wppSession: ReturnType<typeof getWppSessions>[number] | undefined;
+  let connId: string | undefined;
 
   if (clientId) {
     const lead = getLeadByPhone(clientId, normalized);
@@ -51,10 +60,13 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     if (funnelId) {
       // Verifica WPPConnect primeiro (sessões ficam em store separado)
       wppSession = getWppSessions().find(s => s.funnelId === funnelId);
-      if (!wppSession) {
+      if (wppSession) {
+        connId = wppSession.id;
+      } else {
         const funnel = getFunnelById(funnelId);
         const conn = funnel?.connections?.[0];
         if (conn) {
+          connId = conn.id;
           connType = conn.type ?? "uazapi";
           if (conn.type === "meta") {
             metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
@@ -133,7 +145,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   }
 
   const savedContent = imgUrl ? (msgText ? `[imagem] ${msgText}` : "[imagem]") : msgText;
-  if (savedContent) addMessage(normalized, { role: "assistant", content: savedContent, ts: Date.now() }, clientId);
+  if (savedContent) addMessage(normalized, { role: "assistant", content: savedContent, ts: Date.now() }, clientId, connId ? { connId } : undefined);
 
   return NextResponse.json({ ok: true });
 }

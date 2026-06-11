@@ -1172,7 +1172,7 @@ export function KanbanBoard({
                       key={lead.id}
                       draggable={!selectionMode}
                       onDragStart={() => onDragStart(lead.id)}
-                      onMouseEnter={() => { if (lead.source === "whatsapp") prefetchConversation(lead.phone, lead.clientId); }}
+                      onMouseEnter={() => { if (lead.source === "whatsapp") prefetchConversation(lead.phone, lead.clientId, lead.funnelId); }}
                       onClick={() => { if (selectionMode) { toggleSelect(lead.id, { stopPropagation: () => {} } as React.MouseEvent); } else { setSelected(lead); } }}
                       className={clsx(
                         "rounded-lg border bg-white p-3 shadow-sm cursor-pointer hover:shadow-md transition select-none",
