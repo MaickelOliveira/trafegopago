@@ -143,6 +143,16 @@ export default function ImportModal({ clientId, availableFunnels = [], onClose, 
     reader.readAsArrayBuffer(file!);
   }
 
+  function moveStage(idx: number, dir: -1 | 1) {
+    setUniqueStages((prev) => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }
+
   async function doImport() {
     if (!file) return;
     if (!existingFunnelId && !funnelName.trim()) { setError("Informe o nome do funil ou selecione um funil existente."); return; }
@@ -156,6 +166,7 @@ export default function ImportModal({ clientId, availableFunnels = [], onClose, 
         fd.append("existingFunnelId", existingFunnelId);
       } else {
         fd.append("funnelName", funnelName);
+        fd.append("stagesOrdered", JSON.stringify(uniqueStages));
       }
       fd.append("mapping", JSON.stringify(mapping));
 
@@ -329,13 +340,36 @@ export default function ImportModal({ clientId, availableFunnels = [], onClose, 
 
               {!existingFunnelId && (
               <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Etapas que serão criadas no funil</p>
-                <div className="flex flex-wrap gap-2">
-                  {uniqueStages.map((s, i) => (
-                    <span key={s} className="rounded-full px-3 py-1 text-xs font-medium text-white" style={{ backgroundColor: ["#6366F1","#3B82F6","#F59E0B","#F97316","#10B981","#EF4444","#8B5CF6","#06B6D4","#84CC16","#EC4899"][i % 10] }}>
-                      {s}
-                    </span>
-                  ))}
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Etapas do funil — arraste para reordenar</p>
+                {/* Coluna fixa de entrada */}
+                <div className="flex items-center gap-2 mb-1 px-2 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200">
+                  <span className="w-5 h-5 rounded-full bg-[#6366F1] shrink-0" />
+                  <span className="text-xs font-semibold text-indigo-700 flex-1">Entrada de contatos</span>
+                  <span className="text-[10px] text-indigo-400 italic">1ª coluna — fixa</span>
+                </div>
+                {/* Etapas reordenáveis do Kommo */}
+                <div className="space-y-1 mt-1">
+                  {uniqueStages.map((s, i) => {
+                    const colors = ["#3B82F6","#F59E0B","#F97316","#10B981","#EF4444","#8B5CF6","#06B6D4","#84CC16","#EC4899","#6366F1"];
+                    return (
+                      <div key={s} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 group">
+                        <span className="w-5 h-5 rounded-full shrink-0" style={{ backgroundColor: colors[i % colors.length] }} />
+                        <span className="text-xs font-medium text-slate-700 flex-1">{s}</span>
+                        <div className="flex gap-0.5 opacity-60 group-hover:opacity-100">
+                          <button
+                            onClick={() => moveStage(i, -1)}
+                            disabled={i === 0}
+                            className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 disabled:opacity-20 text-slate-500 text-xs"
+                          >▲</button>
+                          <button
+                            onClick={() => moveStage(i, 1)}
+                            disabled={i === uniqueStages.length - 1}
+                            className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 disabled:opacity-20 text-slate-500 text-xs"
+                          >▼</button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               )}

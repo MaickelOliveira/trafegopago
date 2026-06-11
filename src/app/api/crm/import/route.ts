@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
   const clientId = formData.get("clientId") as string | null;
   const existingFunnelId = (formData.get("existingFunnelId") as string | null) || null;
   const funnelName = (formData.get("funnelName") as string | null) || `Importação Kommo — ${new Date().toLocaleDateString("pt-BR")}`;
+  const stagesOrderedRaw = formData.get("stagesOrdered") as string | null;
   const mappingRaw = formData.get("mapping") as string | null;
 
   if (!file || !clientId || !mappingRaw) {
@@ -73,14 +74,16 @@ export async function POST(req: NextRequest) {
     if (!found) return NextResponse.json({ error: "Funil não encontrado." }, { status: 404 });
     funnel = found;
   } else {
-    // Coleta etapas únicas do Kommo preservando a ordem de aparição
-    const stagesOrdered: string[] = [];
-    const stageSet = new Set<string>();
-    for (const row of rows) {
-      const stage = String(row[mapping.stage] ?? "").trim();
-      if (stage && !stageSet.has(stage)) {
-        stageSet.add(stage);
-        stagesOrdered.push(stage);
+    // Usa a ordem definida pelo usuário no modal, ou coleta do arquivo
+    let stagesOrdered: string[];
+    if (stagesOrderedRaw) {
+      try { stagesOrdered = JSON.parse(stagesOrderedRaw); } catch { stagesOrdered = []; }
+    } else {
+      stagesOrdered = [];
+      const stageSet = new Set<string>();
+      for (const row of rows) {
+        const stage = String(row[mapping.stage] ?? "").trim();
+        if (stage && !stageSet.has(stage)) { stageSet.add(stage); stagesOrdered.push(stage); }
       }
     }
 
