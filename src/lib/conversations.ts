@@ -177,18 +177,27 @@ export function markAsRead(phone: string, clientId?: string | null, connId?: str
   if (clientId && connId) {
     for (const v of phoneVariants(phone)) {
       const connKey = `${clientId}:${connId}:${v}`;
-      if (all[connKey]) { all[connKey].unread = false; save(all); return; }
+      if (all[connKey]) {
+        if (all[connKey].unread) { all[connKey].unread = false; save(all); }
+        return;
+      }
     }
   }
   // Tenta chave prefixada (clientId:phone)
   if (clientId) {
     for (const v of clientPhoneVariants(phone, clientId)) {
-      if (all[v]) { all[v].unread = false; save(all); return; }
+      if (all[v]) {
+        if (all[v].unread) { all[v].unread = false; save(all); }
+        return;
+      }
     }
   }
   // Fallback: chave sem prefixo
   for (const v of phoneVariants(phone)) {
-    if (all[v]) { all[v].unread = false; save(all); return; }
+    if (all[v]) {
+      if (all[v].unread) { all[v].unread = false; save(all); }
+      return;
+    }
   }
 }
 

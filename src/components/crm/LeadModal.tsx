@@ -253,12 +253,24 @@ export function LeadModal({
     isAtBottomRef.current = true;
     // Optimistic UI: show image preview or text
     const previewContent = img ? (text ? `[imagem] ${text}` : "[imagem]") : text;
-    setMessages((prev) => [...prev, { role: "assistant", content: previewContent, ts: Date.now() }]);
-    await fetch(`/api/crm/conversations/${lead.phone}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text || undefined, imageUrl: img || undefined }),
-    });
+    const optimisticTs = Date.now();
+    setMessages((prev) => [...prev, { role: "assistant", content: previewContent, ts: optimisticTs }]);
+    try {
+      const res = await fetch(`/api/crm/conversations/${lead.phone}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text || undefined, imageUrl: img || undefined }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        // Remove a mensagem otimista — não foi enviada nem salva no histórico
+        setMessages((prev) => prev.filter((m) => m.ts !== optimisticTs));
+        alert(`Erro ao enviar mensagem: ${data?.error ?? "verifique a conexão"}`);
+      }
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.ts !== optimisticTs));
+      alert("Erro ao enviar mensagem. Verifique sua conexão.");
+    }
     setSending(false);
   }
 

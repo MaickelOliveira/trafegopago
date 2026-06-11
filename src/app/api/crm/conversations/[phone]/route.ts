@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getHistory, addMessage, getClientId, getAllConversationsByClientId } from "@/lib/conversations";
 import { markSent, markPhoneSending } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
-import { getFunnelById } from "@/lib/funnels";
+import { getFunnelById, getFunnels } from "@/lib/funnels";
 import { sendText, sendMedia as uazapiSendMedia } from "@/lib/uazapi";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "@/lib/wppconnect-api";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
@@ -88,7 +88,39 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   if (clientId) {
     const lead = getLeadByPhone(clientId, normalized);
     funnelId = lead?.funnelId;
-    if (funnelId) {
+
+    // 1ª tentativa: usa a MESMA conexão da conversa mais recente deste telefone —
+    // é a conexão que de fato já trocou mensagens com o lead (histórico e token
+    // corretos), evitando enviar/salvar por uma conexão duplicada/desativada.
+    const tail9 = normalized.slice(-9);
+    const matched = getAllConversationsByClientId(clientId)
+      .filter((c) => {
+        const d = c.phone.replace(/\D/g, "");
+        return d === normalized || d.endsWith(tail9) || normalized.endsWith(d.slice(-9));
+      })
+      .sort((a, b) => b.lastActivity - a.lastActivity);
+
+    const allFunnels = getFunnels().filter((f) => f.clientId === clientId);
+    for (const conv of matched) {
+      if (!conv.connId) continue;
+      const wpp = getWppSessions().find((s) => s.id === conv.connId);
+      if (wpp) { wppSession = wpp; connId = wpp.id; break; }
+      const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === conv.connId);
+      if (conn && ((conn.type === "meta" && conn.metaPhoneNumberId && conn.metaToken) || (conn.type === "uazapi" && conn.uazapiToken))) {
+        connId = conn.id;
+        connType = conn.type ?? "uazapi";
+        if (conn.type === "meta") {
+          metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
+          metaToken = conn.metaToken ?? null;
+        } else {
+          token = conn.uazapiToken ?? null;
+        }
+        break;
+      }
+    }
+
+    // 2ª tentativa (fallback original): conexão do funil do lead
+    if (!wppSession && !connId && funnelId) {
       // Verifica WPPConnect primeiro (sessões ficam em store separado)
       wppSession = getWppSessions().find(s => s.funnelId === funnelId);
       if (wppSession) {
@@ -119,6 +151,9 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   const msgText = message?.trim() ?? "";
   const imgUrl = imageUrl?.trim() ?? "";
 
+  let ok = false;
+  let errorMsg: string | undefined;
+
   // Envia pela conexão correta
   if (wppSession) {
     const lead = clientId ? getLeadByPhone(clientId, normalized) : undefined;
@@ -127,12 +162,11 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     if (imgUrl) {
       // Envia imagem com legenda — marca antes para que o eco fromMe não pause a IA
       markPhoneSending(normalized);
-      await wppSendMedia(wppSession.sessionName, wppSession.sessionToken, normalized, imgUrl, msgText || undefined, isLid);
-    }
-    if (msgText && !imgUrl) {
+      ok = await wppSendMedia(wppSession.sessionName, wppSession.sessionToken, normalized, imgUrl, msgText || undefined, isLid);
+    } else if (msgText) {
       // Só texto
       markSent(normalized, msgText);
-      let ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, msgText, isLid);
+      ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, msgText, isLid);
       if (!ok && !isLid) {
         console.log(`[conversations/send] Retrying with isLid=true phone=${normalized}`);
         ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, normalized, msgText, true);
@@ -143,9 +177,10 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
       }
       console.log(`[conversations/send] WPPConnect ok=${ok} session=${wppSession.sessionName} phone=${normalized} isLid=${isLid}`);
     }
+    if (!ok) errorMsg = "Falha ao enviar via WPPConnect (sessão desconectada — escaneie o QR Code novamente)";
   } else if (connType === "meta" && metaPhoneNumberId && metaToken) {
     if (msgText) {
-      await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
+      const res = await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${metaToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -154,20 +189,28 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
           type: "text",
           text: { body: msgText },
         }),
-      }).catch(e => console.error("[conversations/send] Meta API error:", e));
+      }).catch((e) => { console.error("[conversations/send] Meta API error:", e); return null; });
+      ok = res?.ok === true;
+      if (!ok) {
+        const errBody = await res?.text().catch(() => "");
+        console.error(`[conversations/send] Meta API falhou status=${res?.status} phoneNumberId=${metaPhoneNumberId} body=${errBody?.slice(0, 300)}`);
+        errorMsg = "Falha ao enviar via Meta API (token de acesso desta conexão pode estar expirado/inválido)";
+      }
     }
   } else if (token) {
     if (imgUrl) {
-      await uazapiSendMedia(token, normalized, "image", imgUrl, msgText || undefined);
+      ok = await uazapiSendMedia(token, normalized, "image", imgUrl, msgText || undefined);
     } else if (msgText) {
-      await sendText(token, normalized, msgText);
+      ok = await sendText(token, normalized, msgText);
     }
+    if (!ok) errorMsg = "Falha ao enviar via UazAPI (instância desconectada?)";
   } else {
     console.warn("[conversations/send] sem token para enviar ao phone:", normalized);
+    errorMsg = "Nenhuma conexão de WhatsApp configurada para este lead";
   }
 
   // Pausa a IA — mesma lógica do fromMe no webhook
-  if (clientId) {
+  if (clientId && ok) {
     const agCfg = getClientById(clientId)?.agentConfig;
     const resumeKeyword = agCfg?.aiResumeKeyword?.trim();
     if (resumeKeyword && msgText.toLowerCase() === resumeKeyword.toLowerCase()) {
@@ -177,8 +220,10 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     }
   }
 
-  const savedContent = imgUrl ? (msgText ? `[imagem] ${msgText}` : "[imagem]") : msgText;
-  if (savedContent) addMessage(normalized, { role: "assistant", content: savedContent, ts: Date.now() }, clientId, connId ? { connId } : undefined);
+  if (ok) {
+    const savedContent = imgUrl ? (msgText ? `[imagem] ${msgText}` : "[imagem]") : msgText;
+    if (savedContent) addMessage(normalized, { role: "assistant", content: savedContent, ts: Date.now() }, clientId, connId ? { connId } : undefined);
+  }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok, error: ok ? undefined : errorMsg });
 }

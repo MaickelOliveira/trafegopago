@@ -92,6 +92,12 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const isAtBottomRef = useRef(true);
   // true enquanto o usuário estiver rolado para cima — impede auto-scroll em polls
   const userScrolledUpRef = useRef(false);
+  // Sempre aponta para a seleção atual — usado para descartar respostas
+  // de fetchMessages que chegam atrasadas após o usuário trocar de conversa
+  const selectedRef = useRef(selected);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   const selectedConv = conversations.find((c) => c.phone === selected?.phone && c.connId === selected?.connId);
 
@@ -141,6 +147,10 @@ export default function InboxView({ clientId, initialConversations = [], initial
       const res = await fetch(`/api/whatsapp/inbox/messages?phone=${encodeURIComponent(phone)}&clientId=${encodeURIComponent(clientId)}${connParam}`);
       if (!res.ok) return;
       const data = await res.json();
+      // Descarta a resposta se o usuário já trocou de conversa/conexão enquanto
+      // a requisição estava em andamento (evita misturar histórico de abas)
+      const cur = selectedRef.current;
+      if (!cur || cur.phone !== phone || (cur.connId ?? null) !== (connId ?? null)) return;
       setMessages(data.messages ?? []);
       setConversations((prev) => prev.map((c) => (c.phone === phone && c.connId === (connId ?? null)) ? { ...c, unread: false } : c));
     } catch {} finally {

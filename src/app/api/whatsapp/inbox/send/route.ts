@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
   }
 
   let ok = false;
+  let errorMsg: string | undefined;
   const ts = Date.now();
 
   // ── WPPConnect ──
@@ -69,12 +70,14 @@ export async function POST(req: NextRequest) {
         }
       }
       console.log(`[inbox/send] WPPConnect send ok=${ok} session=${wppSession.sessionName} phone=${cleanPhone} isLid=${isLid}`);
+      if (!ok) errorMsg = "Falha ao enviar via WPPConnect (sessão desconectada — escaneie o QR Code novamente)";
     } else {
       return NextResponse.json({ error: "Tipo de mídia não suportado via WPPConnect ainda" }, { status: 400 });
     }
   } else if (conn?.type === "meta" && conn.metaPhoneNumberId && conn.metaToken) {
     if (type === "text") {
       ok = await sendMessageDirect(cleanPhone, content, conn.metaPhoneNumberId, conn.metaToken);
+      if (!ok) errorMsg = "Falha ao enviar via Meta API (token de acesso desta conexão pode estar expirado/inválido)";
     } else {
       // Meta não suporta áudio via base64, seria necessário upload separado
       return NextResponse.json({ error: "Tipo de mídia não suportado via Meta API ainda" }, { status: 400 });
@@ -85,6 +88,9 @@ export async function POST(req: NextRequest) {
     } else {
       ok = await sendMedia(conn.uazapiToken, cleanPhone, type as "audio" | "image" | "video", content, caption);
     }
+    if (!ok) errorMsg = "Falha ao enviar via UazAPI (instância desconectada?)";
+  } else {
+    errorMsg = "Conexão encontrada sem credenciais configuradas (token ausente)";
   }
 
   if (ok) {
@@ -99,5 +105,5 @@ export async function POST(req: NextRequest) {
     if (existingLead) updateLead(existingLead.id, { aiPaused: true });
   }
 
-  return NextResponse.json({ ok });
+  return NextResponse.json({ ok, error: ok ? undefined : errorMsg });
 }
