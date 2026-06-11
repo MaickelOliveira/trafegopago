@@ -85,7 +85,7 @@ export function ClientPortalHeader({
                 : "text-slate-500 hover:bg-slate-50"
             )}
           >
-            🖤 Campanhas
+            📊 Dashboard
           </Link>
           )}
 
@@ -165,7 +165,7 @@ export function ClientPortalHeader({
             </Link>
           )}
 
-          {/* Funcionários — somente cliente dono */}
+          {/* Colaboradores — somente cliente dono */}
           {!isEmployee && (
             <Link
               href="/cliente/funcionarios"
@@ -176,7 +176,7 @@ export function ClientPortalHeader({
                   : "text-slate-500 hover:bg-slate-50"
               )}
             >
-              👥 Funcionários
+              👥 Colaboradores
             </Link>
           )}
 
