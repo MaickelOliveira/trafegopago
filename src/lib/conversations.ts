@@ -259,9 +259,21 @@ export function addMessage(
   opts?: { connId?: string; contactName?: string }
 ) {
   const all = load();
-  // Procura chave existente: primeiro com prefixo clientId, depois sem prefixo
+  const connIdVal = opts?.connId;
+  // Chave padrão: inclui connId quando disponível para isolar histórico por conexão
+  const defaultKey = clientId
+    ? (connIdVal ? `${clientId}:${connIdVal}:${phone}` : `${clientId}:${phone}`)
+    : phone;
+  // Procura chave existente: primeiro isolada por conexão (testando variantes do telefone,
+  // pois quem chama pode passar o telefone em formato diferente do usado pelo webhook
+  // que originou a conversa), depois com prefixo clientId, depois sem prefixo
   let existingKey: string | undefined;
-  if (clientId) {
+  if (clientId && connIdVal) {
+    existingKey = phoneVariants(phone)
+      .map((v) => `${clientId}:${connIdVal}:${v}`)
+      .find((k) => all[k]);
+  }
+  if (!existingKey && clientId) {
     existingKey = clientPhoneVariants(phone, clientId).find((v) => all[v]);
   }
   if (!existingKey) {
@@ -270,17 +282,7 @@ export function addMessage(
       (v) => all[v] && (!clientId || !all[v].clientId || all[v].clientId === clientId)
     );
   }
-  // Chave padrão: inclui connId quando disponível para isolar histórico por conexão
-  const connIdVal = opts?.connId;
-  const defaultKey = clientId
-    ? (connIdVal ? `${clientId}:${connIdVal}:${phone}` : `${clientId}:${phone}`)
-    : phone;
-  // Se connId fornecido, usa sempre a chave isolada (ignora histórico compartilhado)
-  if (clientId && connIdVal) {
-    existingKey = `${clientId}:${connIdVal}:${phone}`;
-  } else {
-    existingKey = existingKey ?? defaultKey;
-  }
+  existingKey = existingKey ?? defaultKey;
   const conv: Conversation = all[existingKey] ?? { messages: [], clientId, lastActivity: 0 };
 
   // Deduplicação: ignora mensagem idêntica com mesmo role em janela de 10s
