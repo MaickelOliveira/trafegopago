@@ -160,16 +160,22 @@ export default function InboxView({ clientId, initialConversations = [], initial
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, fetchMessages, selectedConv?.connId]);
 
-  // Quando muda de conexão, deseleciona conversa atual se ela não pertence à nova conexão
+  // Quando muda de conexão, deseleciona conversa que não pertence à nova conexão.
+  // Não depende de `selected` para não rodar ao clicar numa conversa — quando o
+  // mesmo telefone existe em múltiplas conexões, o find poderia achar a da outra
+  // conexão e resetar selected imediatamente após o clique.
   useEffect(() => {
     if (selected) {
-      const conv = conversations.find((c) => c.phone === selected);
-      if (conv && conv.connId && conv.connId !== selectedConn) {
+      const convInConn = conversations.find(
+        (c) => c.phone === selected && c.connId === selectedConn
+      );
+      if (!convInConn) {
         setSelected(null);
         setMessages([]);
       }
     }
-  }, [selectedConn, selected, conversations]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConn, conversations]);
 
   const handleSelect = (phone: string) => {
     setSelected(phone);
