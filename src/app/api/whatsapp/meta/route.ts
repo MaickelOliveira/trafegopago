@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       let clientId: string | null = null;
       let metaToken: string | null = null;
       let connId: string | null = null;
+      let entradaColumnId = "entrada";
 
       for (const f of funnels) {
         const conn = f.connections?.find(c => c.type === "meta" && c.metaPhoneNumberId === phoneNumberId);
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
         funnelId = f.id;
         metaToken = conn.metaToken ?? null;
         connId = conn.id;
+        entradaColumnId = f.columns?.[0]?.id ?? "entrada";
         // Prioriza agentConfig (fonte autoritativa do cliente) sobre funnel.clientId
         const allClients = getClients();
         const clientByAgent = allClients.find(c =>
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
           funnelId: effectiveFunnelId,
           source: "whatsapp",
           ...(isNew || existingLead?.name === phone ? { name: pushName } : {}),
-          ...(isNew ? { status: "entrada" } : {}),
+          ...(isNew ? { status: entradaColumnId } : {}),
         });
 
         // ── Histórico ────────────────────────────────────────────────────
