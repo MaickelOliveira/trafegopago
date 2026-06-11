@@ -125,15 +125,15 @@ export async function closeSession(sessionName: string, token: string): Promise<
 // Logout completo (apaga a sessão)
 export async function logoutSession(sessionName: string, token: string): Promise<void> {
   if (!base()) return;
-  try {
-    await fetch(`${base()}/api/${sessionName}/logout-session`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${token}` },
-    });
-  } catch {
-    // Tenta close como fallback
-    await closeSession(sessionName, token).catch(() => {});
-  }
+  // logout-session só tem efeito em sessões já autenticadas — uma sessão presa
+  // na tela de QR (nunca escaneada) ignora essa chamada e mantém o navegador
+  // (e o QR em cache) ativo. close-session encerra o navegador independente do
+  // estado, então chamamos os dois sempre, sem depender do resultado um do outro.
+  await fetch(`${base()}/api/${sessionName}/logout-session`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}` },
+  }).catch(() => {});
+  await closeSession(sessionName, token);
 }
 
 // Normaliza número brasileiro para formato WhatsApp (13 dígitos: 55 + DDD + 9 + 8 dígitos)
