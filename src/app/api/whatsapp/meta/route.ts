@@ -72,12 +72,13 @@ export async function POST(req: NextRequest) {
         const ts = Date.now();
 
         // ── Lead / CRM ────────────────────────────────────────────────────
-        const existingLead = getLeadByPhone(cid, phone);
+        const effectiveFunnelId = funnelId ?? "default";
+        const existingLead = getLeadByPhone(cid, phone, effectiveFunnelId);
         const isNew = !existingLead;
 
         upsertLeadByPhone(cid, phone, {
           clientId: cid,
-          funnelId: funnelId ?? "default",
+          funnelId: effectiveFunnelId,
           source: "whatsapp",
           ...(isNew || existingLead?.name === phone ? { name: pushName } : {}),
           ...(isNew ? { status: "entrada" } : {}),
