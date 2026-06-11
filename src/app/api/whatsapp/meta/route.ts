@@ -8,6 +8,7 @@ import { getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
 import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
 import { sendMessageDirect } from "@/lib/whatsapp-send";
+import { splitMessage } from "@/lib/uazapi";
 
 // GET — verificação do webhook Meta
 export async function GET(req: NextRequest) {
@@ -144,11 +145,16 @@ export async function POST(req: NextRequest) {
             console.error(`[meta] sendMetaReply ABORTADO — metaToken=${!!metaToken} phoneNumberId=${!!phoneNumberId} phone=${phone} cid=${cid}`);
             return;
           }
-          const ok = await sendMessageDirect(phone, replyText, phoneNumberId, metaToken);
-          if (ok) {
-            addMessage(phone, { role: "assistant", content: replyText, ts: Date.now() }, clientId, { connId: connId ?? undefined });
-          } else {
-            console.error(`[meta] sendMetaReply FALHOU — mensagem NÃO entregue ao WhatsApp. phone=${phone} phoneNumberId=${phoneNumberId}`);
+          const chunks = agentCfg?.splitMessages
+            ? splitMessage(replyText, agentCfg.maxMessageLength ?? 300)
+            : [replyText];
+          for (const chunk of chunks) {
+            const ok = await sendMessageDirect(phone, chunk, phoneNumberId, metaToken);
+            if (ok) {
+              addMessage(phone, { role: "assistant", content: chunk, ts: Date.now() }, clientId, { connId: connId ?? undefined });
+            } else {
+              console.error(`[meta] sendMetaReply FALHOU — mensagem NÃO entregue ao WhatsApp. phone=${phone} phoneNumberId=${phoneNumberId}`);
+            }
           }
         }
 

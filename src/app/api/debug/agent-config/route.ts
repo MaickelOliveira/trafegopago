@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientById, getAllAgentConfigs } from "@/lib/clients";
+import { getClientById, getAllAgentConfigs, getAgentConfigForConnection } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
+import { getWppSessions } from "@/lib/wppconnect-sessions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +14,35 @@ export async function GET(req: NextRequest) {
   if (!client) return NextResponse.json({ error: "client not found" }, { status: 404 });
 
   const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  const connections = funnels.flatMap((f) => f.connections ?? []).map((c) => ({
-    id: c.id,
-    type: c.type,
-    phone: c.phone,
-  }));
+  const connections: { id: string; type: string; phone?: string }[] = funnels
+    .flatMap((f) => f.connections ?? [])
+    .map((c) => ({ id: c.id, type: c.type, phone: c.phone }));
+
+  // Sessões WPPConnect vinculadas aos funis deste cliente
+  const clientFunnelIds = new Set(funnels.map((f) => f.id));
+  const wppSessions = getWppSessions().filter((s) => s.funnelId && clientFunnelIds.has(s.funnelId));
+  for (const s of wppSessions) {
+    connections.push({ id: s.id, type: "wppconnect", phone: s.sessionName });
+  }
+
+  // Para cada conexão, mostra qual agentConfig é REALMENTE resolvido (incluindo fallback)
+  const resolved = connections.map((c) => {
+    const cfg = getAgentConfigForConnection(client, c.id);
+    return {
+      connectionId: c.id,
+      connectionType: c.type,
+      connectionPhone: c.phone,
+      resolvedAgent: cfg
+        ? {
+            name: cfg.name,
+            enabled: cfg.enabled,
+            splitMessages: cfg.splitMessages,
+            maxMessageLength: cfg.maxMessageLength,
+            messageWaitSeconds: cfg.messageWaitSeconds,
+          }
+        : null,
+    };
+  });
 
   const configs = getAllAgentConfigs(client).map((cfg) => ({
     name: cfg.name,
@@ -29,5 +54,5 @@ export async function GET(req: NextRequest) {
     followUpEnabled: cfg.followUpEnabled,
   }));
 
-  return NextResponse.json({ clientId, connections, configs });
+  return NextResponse.json({ clientId, connections, resolved, configs });
 }
