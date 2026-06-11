@@ -116,7 +116,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result);
   }
 
-  // Modo varredura: agrupa todas as conversas do cliente por telefone canônico
+  // Modo varredura: agrupa todas as conversas do cliente por (conexão + telefone canônico).
+  // Mantém conversas de conexões diferentes em grupos separados (não mescla entre conexões distintas).
   const owned = Object.entries(all).filter(([key, conv]) => belongsToClient(key, conv, clientId));
   const groups = new Map<string, [string, Conversation][]>();
   for (const entry of owned) {
@@ -124,23 +125,19 @@ export async function GET(req: NextRequest) {
     const phonePart = phonePartOf(key, clientId, conv).replace(/\D/g, "");
     if (!phonePart) continue;
     const canonical = phoneVariants(phonePart)[0];
-    const arr = groups.get(canonical) ?? [];
+    const groupKey = `${conv.connId ?? "_legacy_"}::${canonical}`;
+    const arr = groups.get(groupKey) ?? [];
     arr.push(entry);
-    groups.set(canonical, arr);
+    groups.set(groupKey, arr);
   }
 
   const results: Record<string, unknown>[] = [];
   let changed = false;
-  for (const [canonical, entries] of groups) {
+  for (const [groupKey, entries] of groups) {
     if (entries.length < 2) continue;
-    const connIds = new Set(entries.map(([, c]) => c.connId).filter(Boolean));
-    if (connIds.size > 1) {
-      results.push({ canonical, ambiguous: true, reason: "múltiplas conexões diferentes", keys: entries.map(([k]) => k) });
-      continue;
-    }
     const result = mergeEntries(all, entries, apply);
     if (apply && "applied" in result) changed = true;
-    results.push({ canonical, ...result });
+    results.push({ group: groupKey, ...result });
   }
 
   if (apply && changed) writeFileSync(FILE, JSON.stringify(all, null, 2));
