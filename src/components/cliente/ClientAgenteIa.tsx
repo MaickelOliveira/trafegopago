@@ -39,6 +39,8 @@ function displayConnection(phone: string, type: string): string {
 }
 
 export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
+  const defaultIdx = agentConfigs.findIndex((c) => c.enabled) === -1 ? 0 : agentConfigs.findIndex((c) => c.enabled);
+  const [selectedIdx, setSelectedIdx] = useState(defaultIdx);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingQr, setLoadingQr] = useState<string | null>(null);
@@ -102,13 +104,52 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
     setSendingChange(false);
   }
 
-  // Prefere o primeiro agentConfig ativado; fallback para o primeiro da lista
-  const mainAgent = agentConfigs.find((c) => c.enabled) ?? agentConfigs[0];
-  const allConnected = connections.length > 0 && connections.every((c) => c.connected);
-  const anyConnected = connections.some((c) => c.connected);
+  const mainAgent = agentConfigs[selectedIdx] ?? agentConfigs[0];
+  // Mostra apenas a conexão vinculada ao agente selecionado (ou todas se não houver vínculo)
+  const agentConnections = mainAgent?.whatsappConnectionId
+    ? connections.filter((c) => c.id === mainAgent.whatsappConnectionId)
+    : connections;
+  const anyConnected = agentConnections.some((c) => c.connected);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+
+      {/* ── SELETOR DE AGENTES (quando há mais de um) ── */}
+      {agentConfigs.length > 1 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Selecione o agente</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {agentConfigs.map((cfg, idx) => (
+              <button
+                key={cfg.whatsappConnectionId ?? idx}
+                onClick={() => { setSelectedIdx(idx); setPromptExpanded(false); }}
+                className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
+                  selectedIdx === idx
+                    ? "border-violet-400 bg-violet-50 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50/30"
+                }`}
+              >
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${cfg.enabled ? "bg-violet-100" : "bg-slate-100"}`}>
+                  🤖
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-semibold truncate ${selectedIdx === idx ? "text-violet-800" : "text-slate-700"}`}>
+                    {cfg.name || `Agente ${idx + 1}`}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${cfg.enabled ? "text-emerald-600" : "text-slate-400"}`}>
+                    {cfg.enabled ? "● Ativo" : "○ Inativo"}
+                  </p>
+                </div>
+                {selectedIdx === idx && (
+                  <svg className="w-4 h-4 text-violet-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── HERO ── */}
       <div className={`rounded-2xl p-6 text-white relative overflow-hidden ${mainAgent?.enabled && anyConnected ? "bg-gradient-to-br from-violet-600 to-indigo-700" : "bg-gradient-to-br from-slate-500 to-slate-700"}`}>
@@ -414,18 +455,6 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
             </div>
           )}
 
-          {agentConfigs.length > 1 && (
-            <div className="flex items-center justify-between px-5 py-3.5 bg-slate-50/50">
-              <div className="flex items-center gap-3">
-                <span className="text-base">🔗</span>
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Agentes adicionais</p>
-                  <p className="text-xs text-slate-400">Agentes configurados para conexões específicas</p>
-                </div>
-              </div>
-              <span className="text-sm text-slate-500">+{agentConfigs.length - 1}</span>
-            </div>
-          )}
         </div>
       </section>
 
@@ -479,13 +508,13 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
             <span className="w-4 h-4 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin" />
             Verificando conexão...
           </div>
-        ) : connections.length === 0 ? (
+        ) : agentConnections.length === 0 ? (
           <div className="rounded-xl border border-slate-100 bg-white p-5 text-slate-500 text-sm">
             Nenhuma conexão configurada. Entre em contato com o suporte.
           </div>
         ) : (
           <div className="space-y-3">
-            {connections.map((conn) => {
+            {agentConnections.map((conn) => {
               const badge = statusLabel(conn);
               const qr = qrData[conn.id];
               return (
