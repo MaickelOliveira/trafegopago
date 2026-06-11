@@ -992,7 +992,7 @@ export function KanbanBoard({
           )}
         </button>
 
-        {/* Selecionar vários */}
+        {/* Selecionar vários / Selecionar todos */}
         <button
           onClick={() => {
             setSelectionMode((v) => {
@@ -1009,6 +1009,14 @@ export function KanbanBoard({
         >
           ☑ {selectionMode ? "Cancelar seleção" : "Selecionar vários"}
         </button>
+        {selectionMode && (
+          <button
+            onClick={selectAll}
+            className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition shrink-0"
+          >
+            ☑☑ Selecionar todos ({filtered.length})
+          </button>
+        )}
 
         <button
           onClick={() => setShowImport(true)}

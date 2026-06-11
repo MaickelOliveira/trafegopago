@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     if (!found) return NextResponse.json({ error: "Funil não encontrado." }, { status: 404 });
     funnel = found;
   } else {
-    // Coleta etapas únicas preservando a ordem de aparição
+    // Coleta etapas únicas do Kommo preservando a ordem de aparição
     const stagesOrdered: string[] = [];
     const stageSet = new Set<string>();
     for (const row of rows) {
@@ -84,21 +84,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (stagesOrdered.length === 0 && mapping.stage) {
-      return NextResponse.json({ error: "Nenhuma etapa encontrada na coluna mapeada." }, { status: 400 });
-    }
-
-    // Cria o funil com as etapas do Kommo
-    const columns = stagesOrdered.map((label, idx) => ({
+    // Primeira coluna: "Entrada de contatos" (entrada obrigatória)
+    // Depois: todas as etapas do Kommo
+    const entradaCol = { id: randomUUID(), label: "Entrada de contatos", color: "#6366F1" };
+    const kommoColumns = stagesOrdered.map((label, idx) => ({
       id: randomUUID(),
       label,
-      color: STAGE_COLORS[idx % STAGE_COLORS.length],
+      color: STAGE_COLORS[(idx + 1) % STAGE_COLORS.length],
     }));
+    const columns = [entradaCol, ...kommoColumns];
 
-    funnel = createFunnel(funnelName, columns.length ? columns : [{ id: randomUUID(), label: "Contato inicial", color: STAGE_COLORS[0] }]);
+    funnel = createFunnel(funnelName, columns);
     updateFunnel(funnel.id, { clientId });
 
-    // Mapeia label da etapa → id da coluna criada
+    // Mapeia label da etapa do Kommo → id da coluna criada
     for (const col of funnel.columns) {
       stageIdMap[col.label] = col.id;
     }
