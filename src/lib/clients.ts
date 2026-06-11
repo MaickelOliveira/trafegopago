@@ -154,14 +154,21 @@ export function getAgentConfigForConnection(
   return client.agentConfig;
 }
 
-/** Retorna todos os agentConfigs do cliente.
+/** Retorna todos os agentConfigs do cliente, sem duplicatas por whatsappConnectionId.
  *  Se agentConfigs[] existe e tem entradas, usa somente ele (ignora o legado agentConfig).
  *  Caso contrário, cai no agentConfig único como fallback. */
 export function getAllAgentConfigs(client: Client): AgentConfig[] {
-  if (client.agentConfigs && client.agentConfigs.length > 0) {
-    return [...client.agentConfigs];
-  }
-  return client.agentConfig ? [client.agentConfig] : [];
+  const raw = (client.agentConfigs && client.agentConfigs.length > 0)
+    ? [...client.agentConfigs]
+    : (client.agentConfig ? [client.agentConfig] : []);
+  // Deduplica por whatsappConnectionId (mantém a primeira ocorrência)
+  const seen = new Set<string>();
+  return raw.filter((cfg) => {
+    const key = cfg.whatsappConnectionId ?? `__no_conn_${Math.random()}`;
+    if (cfg.whatsappConnectionId && seen.has(key)) return false;
+    if (cfg.whatsappConnectionId) seen.add(key);
+    return true;
+  });
 }
 
 export function getClientByEmail(email: string): Client | undefined {
