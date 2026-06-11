@@ -233,16 +233,29 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
   }
 
   async function saveEdit() {
-    if (!editing || editCols.length === 0) return;
+    if (!editing) return;
+    if (editCols.length === 0) { alert("O funil precisa ter ao menos uma coluna."); return; }
     setSaving(true);
-    const res = await fetch(`/api/crm/funnels/${editing.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: editName.trim() || editing.name, columns: editCols }),
-    });
-    const updated = await res.json();
-    onUpdated(funnels.map((f) => f.id === updated.id ? updated : f));
-    setEditing(null); setSaving(false);
+    try {
+      const res = await fetch(`/api/crm/funnels/${editing.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName.trim() || editing.name, columns: editCols }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Erro ao salvar funil: ${(err as { error?: string }).error ?? res.status}`);
+        setSaving(false);
+        return;
+      }
+      const updated = await res.json() as Funnel;
+      onUpdated(funnels.map((f) => f.id === updated.id ? updated : f));
+      setEditing(null);
+    } catch {
+      alert("Erro de rede ao salvar. Verifique sua conexão.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function createMetaConversion(colIdx: number) {
