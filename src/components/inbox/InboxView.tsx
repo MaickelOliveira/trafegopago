@@ -69,7 +69,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const [selectedConn, setSelectedConn] = useState<string | null>(
     initialConnections.length > 0 ? initialConnections[0].id : null
   );
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<{ phone: string; connId: string | null } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -93,7 +93,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
   // true enquanto o usuário estiver rolado para cima — impede auto-scroll em polls
   const userScrolledUpRef = useRef(false);
 
-  const selectedConv = conversations.find((c) => c.phone === selected);
+  const selectedConv = conversations.find((c) => c.phone === selected?.phone && c.connId === selected?.connId);
 
   useEffect(() => {
     const prevCount = lastMsgCountRef.current;
@@ -142,7 +142,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
       if (!res.ok) return;
       const data = await res.json();
       setMessages(data.messages ?? []);
-      setConversations((prev) => prev.map((c) => c.phone === phone ? { ...c, unread: false } : c));
+      setConversations((prev) => prev.map((c) => (c.phone === phone && c.connId === (connId ?? null)) ? { ...c, unread: false } : c));
     } catch {} finally {
       if (!silent) setLoadingMessages(false);
     }
@@ -153,12 +153,12 @@ export default function InboxView({ clientId, initialConversations = [], initial
     isAtBottomRef.current = true;
     userScrolledUpRef.current = false;
     lastMsgCountRef.current = 0;
-    const connId = selectedConv?.connId ?? null;
-    fetchMessages(selected, false, connId);
-    msgPollRef.current = setInterval(() => fetchMessages(selected, true, connId), 3000);
+    const { phone, connId } = selected;
+    fetchMessages(phone, false, connId);
+    msgPollRef.current = setInterval(() => fetchMessages(phone, true, connId), 3000);
     return () => { if (msgPollRef.current) clearInterval(msgPollRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, fetchMessages, selectedConv?.connId]);
+  }, [selected, fetchMessages]);
 
   // Quando muda de conexão, deseleciona conversa que não pertence à nova conexão.
   // Não depende de `selected` para não rodar ao clicar numa conversa — quando o
@@ -167,7 +167,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
   useEffect(() => {
     if (selected) {
       const convInConn = conversations.find(
-        (c) => c.phone === selected && c.connId === selectedConn
+        (c) => c.phone === selected.phone && c.connId === selected.connId
       );
       if (!convInConn) {
         setSelected(null);
@@ -177,8 +177,8 @@ export default function InboxView({ clientId, initialConversations = [], initial
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConn, conversations]);
 
-  const handleSelect = (phone: string) => {
-    setSelected(phone);
+  const handleSelect = (phone: string, connId: string | null) => {
+    setSelected({ phone, connId });
     setText("");
   };
 
@@ -203,7 +203,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone: selected,
+          phone: selected.phone,
           content: img,
           type: "image",
           caption: t || undefined,
@@ -211,7 +211,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
           connId: selectedConv?.connId ?? selectedConn ?? undefined,
         }),
       }).catch(console.error);
-      if (!t) { setSending(false); fetchMessages(selected, true, selectedConv?.connId); return; }
+      if (!t) { setSending(false); fetchMessages(selected.phone, true, selectedConv?.connId); return; }
     }
 
     if (t) {
@@ -223,7 +223,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            phone: selected,
+            phone: selected.phone,
             content: t,
             type: "text",
             clientId,
@@ -242,7 +242,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
     }
 
     setSending(false);
-    fetchMessages(selected, true, selectedConv?.connId);
+    fetchMessages(selected.phone, true, selectedConv?.connId);
   };
 
   function handleQuickSelect(reply: QuickReply) {
@@ -314,7 +314,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone: selected,
+          phone: selected.phone,
           content: `data:audio/ogg;base64,${base64}`,
           type: "audio",
           clientId,
@@ -323,7 +323,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
       });
     } catch {} finally {
       setSending(false);
-      if (selected) fetchMessages(selected, false, selectedConv?.connId);
+      if (selected) fetchMessages(selected.phone, false, selectedConv?.connId);
     }
   };
 
@@ -425,7 +425,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
             </div>
           )}
           {connConversations.map((conv) => {
-            const isActive = conv.phone === selected;
+            const isActive = conv.phone === selected?.phone && conv.connId === selected?.connId;
             const name = conv.contactName || displayPhone(conv.phone);
             const preview = conv.lastMessage
               ? conv.lastMessage.type === "audio"
@@ -437,7 +437,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
             return (
               <button
                 key={conv.phone}
-                onClick={() => handleSelect(conv.phone)}
+                onClick={() => handleSelect(conv.phone, conv.connId)}
                 className={`w-full text-left flex items-center px-3 py-3 border-b border-[#2a3942] hover:bg-[#2a3942] transition-colors ${isActive ? "bg-[#2a3942]" : ""}`}
               >
                 <div className="w-10 h-10 rounded-full bg-[#6b7280] flex items-center justify-center text-white font-semibold text-sm shrink-0 mr-3">
@@ -490,13 +490,13 @@ export default function InboxView({ clientId, initialConversations = [], initial
           {/* Header do chat */}
           <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] border-b border-[#2a3942]">
             <div className="w-10 h-10 rounded-full bg-[#6b7280] flex items-center justify-center text-white font-semibold text-sm">
-              {(selectedConv?.contactName || displayPhone(selected)).charAt(0).toUpperCase()}
+              {(selectedConv?.contactName || displayPhone(selected.phone)).charAt(0).toUpperCase()}
             </div>
             <div>
               <p className="font-medium text-sm text-[#e9edef]">
-                {selectedConv?.contactName || displayPhone(selected)}
+                {selectedConv?.contactName || displayPhone(selected.phone)}
               </p>
-              <p className="text-xs text-[#8696a0]">{displayPhone(selectedConv?.realPhone ?? selected)}</p>
+              <p className="text-xs text-[#8696a0]">{displayPhone(selectedConv?.realPhone ?? selected.phone)}</p>
             </div>
             {activeConn && (
               <div className="ml-auto flex items-center gap-1.5 text-xs text-[#8696a0] bg-[#2a3942] rounded-full px-3 py-1">
@@ -515,10 +515,10 @@ export default function InboxView({ clientId, initialConversations = [], initial
                   await fetch("/api/whatsapp/inbox/ai-pause", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ phone: selected, clientId, paused: false }),
+                    body: JSON.stringify({ phone: selected.phone, clientId, paused: false }),
                   });
                   setConversations((prev) =>
-                    prev.map((c) => c.phone === selected ? { ...c, aiPaused: false } : c)
+                    prev.map((c) => (c.phone === selected?.phone && c.connId === selected?.connId) ? { ...c, aiPaused: false } : c)
                   );
                 }}
                 className="text-xs text-[#00a884] hover:text-[#06cf9c] font-medium ml-4 shrink-0"
