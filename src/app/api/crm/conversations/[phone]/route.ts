@@ -22,8 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const clientId = req.nextUrl.searchParams.get("clientId") ?? undefined;
   const funnelId = req.nextUrl.searchParams.get("funnelId") ?? undefined;
 
-  // Resolve connId a partir do funil do lead — mesma lógica do webhook [instanceId]
-  // para garantir que a chave clientId:connId:phone bata com o que foi armazenado.
+  // Resolve connId do funil do lead (tentativa primária)
   let connId: string | undefined;
   if (funnelId) {
     const wppSession = getWppSessions().find((s) => s.funnelId === funnelId);
@@ -31,14 +30,37 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
       connId = wppSession.id;
     } else {
       const funnel = getFunnelById(funnelId);
-      // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
       connId = funnel?.connections?.find((c) => c.type === "uazapi")?.id
         ?? funnel?.connections?.[0]?.id;
     }
   }
 
-  // Se não achou mensagens com connId, getHistory já faz fallback para chave legada
-  const messages = getHistory(normalized, clientId, connId);
+  // Tenta com o connId do funil do lead
+  if (connId) {
+    const msgs = getHistory(normalized, clientId, connId);
+    if (msgs.length > 0) return NextResponse.json({ messages: msgs });
+  }
+
+  // Fallback: busca a conversa mais recente para este telefone em QUALQUER conexão.
+  // Necessário quando o lead está em um funil diferente do que recebeu a mensagem.
+  if (clientId) {
+    const allConvs = getAllConversationsByClientId(clientId);
+    const tail9 = normalized.slice(-9); // últimos 9 dígitos para comparação fuzzy
+    const matched = allConvs
+      .filter((c) => {
+        const d = c.phone.replace(/\D/g, "");
+        return d === normalized || d.endsWith(tail9) || normalized.endsWith(d.slice(-9));
+      })
+      .sort((a, b) => b.lastActivity - a.lastActivity);
+
+    for (const conv of matched) {
+      const msgs = getHistory(conv.phone, clientId, conv.connId ?? undefined);
+      if (msgs.length > 0) return NextResponse.json({ messages: msgs });
+    }
+  }
+
+  // Último recurso: chave legada sem connId
+  const messages = getHistory(normalized, clientId);
   return NextResponse.json({ messages });
 }
 
