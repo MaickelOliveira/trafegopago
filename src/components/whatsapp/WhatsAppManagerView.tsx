@@ -1120,7 +1120,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
       try {
         const res = await fetch(`/api/whatsapp/wppconnect-manager/${id}/connect`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ force, webhookUrl }),
+          body: JSON.stringify({ force, webhookUrl, previousQr: lastQr }),
         });
         const d = await res.json() as { qr?: string | null };
         if (alive && d.qr && d.qr !== lastQr) {
@@ -1143,6 +1143,9 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
               lastQr = d.qr; qrSetAt = Date.now();
               setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
             } else if (!d.connected && Date.now() - qrSetAt > 25000) {
+              // QR expirado (ref do WhatsApp dura ~25s): tira da tela em vez de
+              // deixar um código inválido visível enquanto gera um novo.
+              setQrImage(null); setQrStage("generating");
               connectAndFetchQr(true);
             }
           }
