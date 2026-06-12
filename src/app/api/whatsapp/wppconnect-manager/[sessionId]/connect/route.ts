@@ -22,10 +22,11 @@ export async function POST(
   // em cache e não o renova sozinho — sem o logout, start-session é um no-op e
   // qrcode-session continua devolvendo o mesmo QR (já expirado).
   // close-session (dentro de logoutSession) fecha o navegador, mas o Puppeteer leva
-  // alguns segundos pra liberar o userDataDir — se start-session rodar antes disso,
-  // ele falha silenciosamente e o QR antigo (já expirado) continua sendo devolvido.
+  // alguns segundos pra liberar o lock do userDataDir — se start-session rodar antes
+  // disso, ele falha silenciosamente e o QR antigo (já expirado) continua sendo
+  // devolvido. 5s não bastava na maioria das vezes; usa 15s.
   await logoutSession(wppSession.sessionName, wppSession.sessionToken).catch(() => {});
-  await new Promise(r => setTimeout(r, 5000));
+  await new Promise(r => setTimeout(r, 15000));
 
   // Reinicia sessão e tenta obter QR com até 10 tentativas (WPPConnect pode demorar até ~20s para gerar)
   const restart = async (): Promise<string | null> => {
