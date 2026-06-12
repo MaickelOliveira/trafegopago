@@ -24,18 +24,30 @@ export async function POST(
   await logoutSession(wppSession.sessionName, wppSession.sessionToken).catch(() => {});
   await new Promise(r => setTimeout(r, 2000));
 
-  // Reinicia sessão para gerar QR
-  if (body.webhookUrl) {
-    await startSession(wppSession.sessionName, wppSession.sessionToken, body.webhookUrl).catch(() => {});
-    await new Promise(r => setTimeout(r, 3000));
-  }
+  // Reinicia sessão e tenta obter QR com até 10 tentativas (WPPConnect pode demorar até ~20s para gerar)
+  const restart = async (): Promise<string | null> => {
+    if (body.webhookUrl) {
+      await startSession(wppSession.sessionName, wppSession.sessionToken, body.webhookUrl).catch(() => {});
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    let qr: string | null = null;
+    for (let i = 0; i < 10; i++) {
+      qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken);
+      if (qr) break;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    return qr;
+  };
 
-  // Tenta obter QR com até 10 tentativas (WPPConnect pode demorar até ~20s para gerar)
-  let qr: string | null = null;
-  for (let i = 0; i < 10; i++) {
-    qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken);
-    if (qr) break;
-    await new Promise(r => setTimeout(r, 2000));
+  let qr = await restart();
+
+  // Se não veio QR, a sessão anterior provavelmente ficou presa: close-session falha
+  // quando não há sessão autenticada (bug do servidor WPPConnect), então o navegador
+  // antigo não fecha e o Puppeteer recusa abrir outro para o mesmo userDataDir. O
+  // WPPConnect encerra essa sessão zumbi sozinho após um tempo — aguarda e tenta de novo.
+  if (!qr) {
+    await new Promise(r => setTimeout(r, 45000));
+    qr = await restart();
   }
 
   return NextResponse.json({ status: "connecting", qr });
