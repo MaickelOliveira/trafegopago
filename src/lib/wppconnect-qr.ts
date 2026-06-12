@@ -9,9 +9,8 @@ const QR_CACHE_TTL_MS = 90_000;
 
 const qrCache = new Map<string, CachedQr>();
 
-export function setCachedQr(sessionName: string, qrcodeBase64: string, urlcode: string): void {
-  const qr = qrcodeBase64.startsWith("data:") ? qrcodeBase64 : `data:image/png;base64,${qrcodeBase64}`;
-  qrCache.set(sessionName, { qr, urlcode, ts: Date.now() });
+export function setCachedQr(sessionName: string, qrDataUri: string, urlcode: string): void {
+  qrCache.set(sessionName, { qr: qrDataUri, urlcode, ts: Date.now() });
 }
 
 export function getCachedQr(sessionName: string): string | null {
