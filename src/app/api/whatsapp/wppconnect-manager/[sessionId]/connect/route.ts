@@ -3,6 +3,12 @@ import { getSession } from "@/lib/auth";
 import { getQrCode, logoutSession, startSession } from "@/lib/wppconnect-api";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 
+// O wppconnect.create() roda um ciclo interno de ~60s (autoClose) e só libera a
+// sessão para um novo start-session depois que esse ciclo termina — chamadas
+// dentro dessa janela são no-op e devolvem o QR antigo (já expirado) em cache.
+const RESTART_INTERVAL_MS = 62000;
+const lastStartAttempt = new Map<string, number>();
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> },
@@ -17,29 +23,34 @@ export async function POST(
   if (!wppSession) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
 
   const body = await req.json() as { force?: boolean; webhookUrl?: string; previousQr?: string | null };
+  const { sessionName, sessionToken } = wppSession;
 
-  // Sempre faz logout antes de reiniciar a sessão: o servidor WPPConnect mantém o QR
-  // em cache e não o renova sozinho — sem o logout, start-session é um no-op e
-  // qrcode-session continua devolvendo o mesmo QR (já expirado).
-  // close-session (dentro de logoutSession) fecha o navegador, mas o Puppeteer leva
-  // alguns segundos pra liberar o lock do userDataDir — se start-session rodar antes
-  // disso, ele falha silenciosamente e o QR antigo (já expirado) continua sendo
-  // devolvido. 5s não bastava na maioria das vezes; usa 15s.
-  await logoutSession(wppSession.sessionName, wppSession.sessionToken).catch(() => {});
-  await new Promise(r => setTimeout(r, 15000));
-
-  if (body.webhookUrl) {
-    await startSession(wppSession.sessionName, wppSession.sessionToken, body.webhookUrl).catch(() => {});
-    await new Promise(r => setTimeout(r, 3000));
+  // "Trocar número" (force=true): a sessão está autenticada com outro número —
+  // logout-session só tem efeito em sessões autenticadas, então só faz sentido aqui.
+  // Em sessões ainda na tela de QR ele só gera erro no servidor sem efeito nenhum.
+  if (body.force) {
+    await logoutSession(sessionName, sessionToken).catch(() => {});
   }
 
-  // qrcode-session pode continuar devolvendo o QR antigo (já expirado) por um tempo
-  // após o restart — só considera "pronto" quando vier um QR DIFERENTE do anterior.
-  // Se não conseguir dentro do tempo, devolve null: o frontend tenta de novo no
-  // próximo ciclo de polling.
+  const last = lastStartAttempt.get(sessionName) ?? 0;
+  const restarted = !!body.webhookUrl && (body.force || Date.now() - last >= RESTART_INTERVAL_MS);
+
+  if (restarted) {
+    lastStartAttempt.set(sessionName, Date.now());
+    await startSession(sessionName, sessionToken, body.webhookUrl as string).catch(() => {});
+  }
+
+  if (!restarted) {
+    const qr = await getQrCode(sessionName, sessionToken);
+    return NextResponse.json({ status: "connecting", qr: qr && qr !== body.previousQr ? qr : null });
+  }
+
+  // Acabou de reiniciar: o catchQR roda assíncrono após o start-session, então
+  // espera o novo QR aparecer. Se não vier um QR diferente do anterior dentro do
+  // tempo, devolve null — o frontend tenta de novo no próximo ciclo de polling.
   let qr: string | null = null;
   for (let i = 0; i < 10; i++) {
-    qr = await getQrCode(wppSession.sessionName, wppSession.sessionToken);
+    qr = await getQrCode(sessionName, sessionToken);
     if (qr && qr !== body.previousQr) break;
     qr = null;
     await new Promise(r => setTimeout(r, 2000));

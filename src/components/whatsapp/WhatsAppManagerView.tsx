@@ -1106,9 +1106,11 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     let alive = true;
     let connecting = false;
     // O "ref" do QR do WhatsApp expira em ~25s, mesmo que a imagem do WPPConnect
-    // não mude (urlcode fica congelado após a primeira captura). Por isso reinicia
-    // ao atingir os 25s — close-session força o fechamento do navegador
-    // independente do autoClose, então não precisa esperar os 60s.
+    // não mude (urlcode fica congelado após a primeira captura). O servidor
+    // WPPConnect só libera um QR novo depois que o ciclo interno de ~60s
+    // (autoClose) termina — por isso, ao atingir os 25s, tira o QR expirado da
+    // tela e fica tentando a cada 3s até o backend devolver um QR diferente
+    // (pode levar até ~40s).
     let lastQr: string | null = null;
     let qrSetAt = 0;
 
@@ -1145,8 +1147,10 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
             } else if (!d.connected && Date.now() - qrSetAt > 25000) {
               // QR expirado (ref do WhatsApp dura ~25s): tira da tela em vez de
               // deixar um código inválido visível enquanto gera um novo.
+              // force=false aqui — o logout (se necessário) já foi feito na
+              // primeira chamada; repeti-lo numa sessão sem login só gera erro.
               setQrImage(null); setQrStage("generating");
-              connectAndFetchQr(true);
+              connectAndFetchQr(false);
             }
           }
           if (d.connected && qrShownRef.current) {
