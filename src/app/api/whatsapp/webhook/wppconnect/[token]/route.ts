@@ -283,6 +283,19 @@ export async function POST(
 
   // WPPConnect envia event = "onmessage" (incoming) ou "onselfmessage" (fromMe) ou outros
   const event = (body.event as string ?? "").toLowerCase();
+
+  // ── DEBUG TEMPORÁRIO: investiga o formato do evento "qrcode" para cachear o QR ──
+  if (event === "qrcode") {
+    const bodyForLog = Object.fromEntries(
+      Object.entries(body).map(([k, v]) => {
+        if (typeof v === "string" && v.length > 100) return [k, `<${v.length}chars:${v.slice(0, 40)}...>`];
+        return [k, v];
+      }),
+    );
+    console.log(`[WPPConnect Webhook QR-DEBUG] session=${wppSession.sessionName} BODY=${JSON.stringify(bodyForLog)}`);
+    return NextResponse.json({ ok: true });
+  }
+
   if (event !== "onmessage" && event !== "onanymessage" && event !== "message" && event !== "onselfmessage") {
     // Log de eventos filtrados para diagnóstico (inclui fromMe e outros)
     if (event) {
