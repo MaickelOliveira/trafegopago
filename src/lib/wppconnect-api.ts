@@ -77,18 +77,17 @@ export async function startSession(
 
 // Retorna o QR Code como base64 (data:image/png;base64,...)
 export async function getQrCode(sessionName: string, token: string): Promise<string | null> {
-  // Prioriza o QR recebido via webhook "qrcode" (tempo real, ~15-20s) —
-  // qrcode-session às vezes fica em cache travado num QR antigo.
-  const cached = getCachedQr(sessionName);
-  if (cached) return cached;
-
-  if (!base()) return null;
+  // qrcode-session é a fonte primária — às vezes acompanha as renovações
+  // naturais do QR (~15-20s). O cache do webhook "qrcode" (gerado a partir
+  // do urlcode, com margem correta) só dispara uma vez por start-session,
+  // então fica como fallback para quando qrcode-session não retorna nada.
+  if (!base()) return getCachedQr(sessionName);
   try {
     const res = await fetch(
       `${base()}/api/${sessionName}/qrcode-session`,
       { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
     );
-    if (!res.ok) return null;
+    if (!res.ok) return getCachedQr(sessionName);
     // WPPConnect pode retornar PNG binário direto ou JSON com base64
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("image/")) {
@@ -99,10 +98,10 @@ export async function getQrCode(sessionName: string, token: string): Promise<str
     }
     const data = await res.json() as Record<string, unknown>;
     const qr = (data.qrcode as string) || (data.base64 as string) || null;
-    if (!qr) return null;
+    if (!qr) return getCachedQr(sessionName);
     return qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`;
   } catch {
-    return null;
+    return getCachedQr(sessionName);
   }
 }
 
