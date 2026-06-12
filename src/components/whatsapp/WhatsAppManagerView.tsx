@@ -1105,11 +1105,10 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     let poll: ReturnType<typeof setInterval>;
     let alive = true;
     let connecting = false;
-    // O WPPConnect mantém o último QR em cache mesmo após o autoClose (~60s) fechar
-    // a sessão — /qrcode-session continua devolvendo a MESMA imagem para sempre.
-    // Por isso o reinício é baseado em TEMPO: se o QR não muda por ~58s (tempo do
-    // autoClose), a sessão original já deve ter encerrado — reinicia agora, momento
-    // em que o lock do Chrome já foi liberado e o restart não colide com ela.
+    // O "ref" do QR do WhatsApp expira em ~25s, mesmo que a imagem do WPPConnect
+    // não mude (urlcode fica congelado após a primeira captura). Por isso reinicia
+    // proativamente perto dos 20s — close-session força o fechamento do navegador
+    // independente do autoClose, então não precisa esperar os 60s.
     let lastQr: string | null = null;
     let qrSetAt = 0;
 
@@ -1124,7 +1123,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
           body: JSON.stringify({ force, webhookUrl }),
         });
         const d = await res.json() as { qr?: string | null };
-        if (alive && d.qr) {
+        if (alive && d.qr && d.qr !== lastQr) {
           setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
           lastQr = d.qr; qrSetAt = Date.now();
         }
@@ -1143,8 +1142,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
             if (d.qr !== lastQr) {
               lastQr = d.qr; qrSetAt = Date.now();
               setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
-            } else if (!d.connected && Date.now() - qrSetAt > 58000) {
-              qrSetAt = Date.now();
+            } else if (!d.connected && Date.now() - qrSetAt > 20000) {
               connectAndFetchQr(true);
             }
           }
