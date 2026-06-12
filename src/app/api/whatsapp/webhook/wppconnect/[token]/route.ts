@@ -12,6 +12,7 @@ import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName, startTyping, stopTyping } from "@/lib/wppconnect-api";
+import { setCachedQr } from "@/lib/wppconnect-qr";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
@@ -284,15 +285,13 @@ export async function POST(
   // WPPConnect envia event = "onmessage" (incoming) ou "onselfmessage" (fromMe) ou outros
   const event = (body.event as string ?? "").toLowerCase();
 
-  // ── DEBUG TEMPORÁRIO: investiga o formato do evento "qrcode" para cachear o QR ──
+  // ── Evento "qrcode": dispara em tempo real a cada regeneração do QR pelo
+  // WhatsApp (~15-20s). Cacheia em memória para a plataforma servir sempre
+  // o QR mais recente, sem depender do qrcode-session (que às vezes trava).
   if (event === "qrcode") {
-    const bodyForLog = Object.fromEntries(
-      Object.entries(body).map(([k, v]) => {
-        if (typeof v === "string" && v.length > 100) return [k, `<${v.length}chars:${v.slice(0, 40)}...>`];
-        return [k, v];
-      }),
-    );
-    console.log(`[WPPConnect Webhook QR-DEBUG] session=${wppSession.sessionName} BODY=${JSON.stringify(bodyForLog)}`);
+    const qrcode = body.qrcode as string | undefined;
+    const urlcode = (body.urlcode as string | undefined) ?? "";
+    if (qrcode) setCachedQr(wppSession.sessionName, qrcode, urlcode);
     return NextResponse.json({ ok: true });
   }
 

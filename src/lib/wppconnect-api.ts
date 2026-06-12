@@ -1,5 +1,6 @@
 import { getConfig } from "./clients";
 import { markSent, markPhoneSending } from "./wppconnect-sent";
+import { getCachedQr, clearCachedQr } from "./wppconnect-qr";
 
 function base(): string {
   const url = process.env.WPPCONNECT_SERVER || getConfig().wppconnectServer || "";
@@ -54,6 +55,9 @@ export async function startSession(
   token: string,
   webhookUrl: string,
 ): Promise<void> {
+  // Invalida o QR cacheado da sessão anterior — o próximo evento "qrcode"
+  // do webhook vai repopular com o QR da nova sessão.
+  clearCachedQr(sessionName);
   if (!base()) return;
   try {
     await fetch(`${base()}/api/${sessionName}/start-session`, {
@@ -73,6 +77,11 @@ export async function startSession(
 
 // Retorna o QR Code como base64 (data:image/png;base64,...)
 export async function getQrCode(sessionName: string, token: string): Promise<string | null> {
+  // Prioriza o QR recebido via webhook "qrcode" (tempo real, ~15-20s) —
+  // qrcode-session às vezes fica em cache travado num QR antigo.
+  const cached = getCachedQr(sessionName);
+  if (cached) return cached;
+
   if (!base()) return null;
   try {
     const res = await fetch(
@@ -140,6 +149,7 @@ export async function closeSession(sessionName: string, token: string): Promise<
 
 // Logout completo (apaga a sessão)
 export async function logoutSession(sessionName: string, token: string): Promise<void> {
+  clearCachedQr(sessionName);
   if (!base()) return;
   // logout-session só tem efeito em sessões já autenticadas — uma sessão presa
   // na tela de QR (nunca escaneada) ignora essa chamada e mantém o navegador
