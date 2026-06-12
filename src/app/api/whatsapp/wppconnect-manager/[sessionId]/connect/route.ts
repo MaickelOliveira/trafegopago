@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getQrCode, logoutSession, startSession } from "@/lib/wppconnect-api";
+import { getQrCode, logoutSession, shouldRestartWppSession, startSession } from "@/lib/wppconnect-api";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
-
-// O wppconnect.create() roda um ciclo interno de ~60s (autoClose) e só libera a
-// sessão para um novo start-session depois que esse ciclo termina — chamadas
-// dentro dessa janela são no-op e devolvem o QR antigo (já expirado) em cache.
-const RESTART_INTERVAL_MS = 62000;
-const lastStartAttempt = new Map<string, number>();
 
 export async function POST(
   req: NextRequest,
@@ -32,11 +26,9 @@ export async function POST(
     await logoutSession(sessionName, sessionToken).catch(() => {});
   }
 
-  const last = lastStartAttempt.get(sessionName) ?? 0;
-  const restarted = !!body.webhookUrl && (body.force || Date.now() - last >= RESTART_INTERVAL_MS);
+  const restarted = !!body.webhookUrl && shouldRestartWppSession(sessionName, body.force);
 
   if (restarted) {
-    lastStartAttempt.set(sessionName, Date.now());
     await startSession(sessionName, sessionToken, body.webhookUrl as string).catch(() => {});
   }
 

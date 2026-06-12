@@ -32,6 +32,22 @@ export async function generateToken(sessionName: string): Promise<string | null>
   }
 }
 
+// O wppconnect.create() roda um ciclo interno de ~60s (autoClose) e só libera a
+// sessão para um novo start-session depois que esse ciclo termina — chamadas
+// dentro dessa janela são no-op e devolvem o QR antigo (já expirado) em cache.
+const RESTART_INTERVAL_MS = 62000;
+const lastStartAttempt = new Map<string, number>();
+
+// true se já passou RESTART_INTERVAL_MS desde a última tentativa (ou force=true)
+// — e já marca a tentativa atual. Compartilhado entre o painel do gestor e o do
+// cliente pra evitar start-session duplicado/concorrente na mesma sessão.
+export function shouldRestartWppSession(sessionName: string, force = false): boolean {
+  const last = lastStartAttempt.get(sessionName) ?? 0;
+  if (!force && Date.now() - last < RESTART_INTERVAL_MS) return false;
+  lastStartAttempt.set(sessionName, Date.now());
+  return true;
+}
+
 // Inicia (ou reinicia) uma sessão com webhook configurado
 export async function startSession(
   sessionName: string,

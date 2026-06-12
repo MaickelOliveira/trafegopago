@@ -4,7 +4,7 @@ import { getClientById } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { connectInstance, getQrCode as getUazapiQr } from "@/lib/uazapi";
-import { getQrCode as getWppQr, logoutSession, startSession } from "@/lib/wppconnect-api";
+import { getQrCode as getWppQr, shouldRestartWppSession, startSession } from "@/lib/wppconnect-api";
 import QRCode from "qrcode";
 
 function detectBase(req: NextRequest): string {
@@ -60,23 +60,26 @@ export async function POST(req: NextRequest) {
   );
   const wppSession = wppSessions.find((s) => s.id === connectionId);
   if (wppSession) {
-    // Sempre faz logout antes de reiniciar a sessão: o servidor WPPConnect mantém o
-    // QR em cache e não o renova sozinho — sem isso, o QR exibido fica travado/expirado.
-    await logoutSession(wppSession.sessionName, wppSession.sessionToken).catch(() => {});
-    await new Promise((r) => setTimeout(r, 2000));
-
+    // logout-session só tem efeito em sessão já autenticada — aqui a sessão está
+    // sempre desconectada (é a única tela onde esse botão aparece), então é inútil
+    // e só gera erro no servidor. O wppconnect.create() roda um ciclo interno de
+    // ~60s (autoClose) — só reinicia depois que esse ciclo termina (compartilhado
+    // com o painel do gestor, evita start-session duplicado na mesma sessão).
     const baseUrl = detectBase(req);
     const webhookUrl = `${baseUrl}/api/whatsapp/webhook/wppconnect/${wppSession.id}`;
-    await startSession(wppSession.sessionName, wppSession.sessionToken, webhookUrl).catch(() => {});
-    await new Promise((r) => setTimeout(r, 3000));
 
-    let qr: string | null = null;
-    for (let i = 0; i < 10; i++) {
-      qr = await getWppQr(wppSession.sessionName, wppSession.sessionToken);
-      if (qr) break;
-      await new Promise((r) => setTimeout(r, 2000));
+    if (shouldRestartWppSession(wppSession.sessionName)) {
+      await startSession(wppSession.sessionName, wppSession.sessionToken, webhookUrl).catch(() => {});
+      let qr: string | null = null;
+      for (let i = 0; i < 10; i++) {
+        qr = await getWppQr(wppSession.sessionName, wppSession.sessionToken);
+        if (qr) break;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      return NextResponse.json({ qr });
     }
 
+    const qr = await getWppQr(wppSession.sessionName, wppSession.sessionToken);
     return NextResponse.json({ qr });
   }
 
