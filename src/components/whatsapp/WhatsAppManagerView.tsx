@@ -1105,6 +1105,13 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     let poll: ReturnType<typeof setInterval>;
     let alive = true;
     let connecting = false;
+    // O WPPConnect mantém o último QR em cache mesmo após o autoClose (~60s) fechar
+    // a sessão — /qrcode-session continua devolvendo a MESMA imagem para sempre.
+    // Por isso o reinício é baseado em TEMPO: se o QR não muda por ~58s (tempo do
+    // autoClose), a sessão original já deve ter encerrado — reinicia agora, momento
+    // em que o lock do Chrome já foi liberado e o restart não colide com ela.
+    let lastQr: string | null = null;
+    let qrSetAt = 0;
 
     const webhookUrl = `${appBaseUrl}/api/whatsapp/webhook/wppconnect/${id}`;
 
@@ -1117,7 +1124,10 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
           body: JSON.stringify({ force, webhookUrl }),
         });
         const d = await res.json() as { qr?: string | null };
-        if (alive && d.qr) { setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true; }
+        if (alive && d.qr) {
+          setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
+          lastQr = d.qr; qrSetAt = Date.now();
+        }
       } catch { /**/ } finally {
         connecting = false;
       }
@@ -1130,14 +1140,13 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
           const res = await fetch(`/api/whatsapp/wppconnect-manager/${id}/status`);
           const d = await res.json() as { connected?: boolean; qr?: string | null };
           if (d.qr) {
-            setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
-          } else if (qrShownRef.current && !d.connected) {
-            // A sessão anterior encerrou sozinha (autoClose do WPPConnect, ~60s sem
-            // scan) e não retorna mais QR — reinicia para gerar uma nova sessão/QR.
-            qrShownRef.current = false;
-            setQrImage(null);
-            setQrStage("generating");
-            connectAndFetchQr(true);
+            if (d.qr !== lastQr) {
+              lastQr = d.qr; qrSetAt = Date.now();
+              setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
+            } else if (!d.connected && Date.now() - qrSetAt > 58000) {
+              qrSetAt = Date.now();
+              connectAndFetchQr(true);
+            }
           }
           if (d.connected && qrShownRef.current) {
             setQrStage("done"); clearInterval(poll); alive = false;
