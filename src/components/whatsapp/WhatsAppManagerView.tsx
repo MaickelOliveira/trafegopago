@@ -1103,7 +1103,6 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     setQrStage("generating");
 
     let poll: ReturnType<typeof setInterval>;
-    let refreshTimer: ReturnType<typeof setInterval>;
     let alive = true;
     let connecting = false;
 
@@ -1130,9 +1129,18 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
         try {
           const res = await fetch(`/api/whatsapp/wppconnect-manager/${id}/status`);
           const d = await res.json() as { connected?: boolean; qr?: string | null };
-          if (d.qr) { setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true; }
+          if (d.qr) {
+            setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
+          } else if (qrShownRef.current && !d.connected) {
+            // A sessão anterior encerrou sozinha (autoClose do WPPConnect, ~60s sem
+            // scan) e não retorna mais QR — reinicia para gerar uma nova sessão/QR.
+            qrShownRef.current = false;
+            setQrImage(null);
+            setQrStage("generating");
+            connectAndFetchQr(true);
+          }
           if (d.connected && qrShownRef.current) {
-            setQrStage("done"); clearInterval(poll); clearInterval(refreshTimer); alive = false;
+            setQrStage("done"); clearInterval(poll); alive = false;
             setTimeout(() => { setWppModal({ type: "none" }); fetchSessions(); }, 1500);
           }
         } catch { /**/ }
@@ -1141,11 +1149,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
 
     connectAndFetchQr(forceLogout).then(() => { if (alive) startPolling(); });
 
-    // O QR do WPPConnect expira em ~20-30s e o servidor não o renova sozinho —
-    // refaz o ciclo logout+start a cada 25s para manter um QR válido na tela.
-    refreshTimer = setInterval(() => connectAndFetchQr(true), 25000);
-
-    return () => { alive = false; clearInterval(poll); clearInterval(refreshTimer); };
+    return () => { alive = false; clearInterval(poll); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wppModal.type === "qr" ? `${(wppModal as { id: string }).id}-${(wppModal as { forceLogout: boolean }).forceLogout}` : null]);
 
