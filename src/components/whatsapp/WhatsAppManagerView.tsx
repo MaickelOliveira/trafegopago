@@ -1105,12 +1105,11 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     let poll: ReturnType<typeof setInterval>;
     let alive = true;
     let connecting = false;
-    // O "ref" do QR do WhatsApp expira em ~25s, mesmo que a imagem do WPPConnect
-    // não mude (urlcode fica congelado após a primeira captura). O servidor
-    // WPPConnect só libera um QR novo depois que o ciclo interno de ~60s
-    // (autoClose) termina — por isso, ao atingir os 25s, tira o QR expirado da
-    // tela e fica tentando a cada 3s até o backend devolver um QR diferente
-    // (pode levar até ~40s).
+    // O WhatsApp Web renova o "ref" do QR sozinho a cada ~15-20s, e o WPPConnect
+    // acompanha essa renovação — o polling do /status abaixo já pega o QR novo
+    // (d.qr muda) e troca a imagem sem precisar de loading. Só entra em "Gerando
+    // novo QR..." se passar 65s sem nenhuma renovação: nesse caso o ciclo interno
+    // de ~60s (autoClose) do WPPConnect terminou e precisa de um start-session novo.
     let lastQr: string | null = null;
     let qrSetAt = 0;
 
@@ -1144,11 +1143,12 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
             if (d.qr !== lastQr) {
               lastQr = d.qr; qrSetAt = Date.now();
               setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
-            } else if (!d.connected && Date.now() - qrSetAt > 25000) {
-              // QR expirado (ref do WhatsApp dura ~25s): tira da tela em vez de
-              // deixar um código inválido visível enquanto gera um novo.
-              // force=false aqui — o logout (se necessário) já foi feito na
-              // primeira chamada; repeti-lo numa sessão sem login só gera erro.
+            } else if (!d.connected && Date.now() - qrSetAt > 65000) {
+              // 65s sem nenhuma renovação natural do QR: o ciclo interno do
+              // WPPConnect (~60s) terminou — tira o QR (expirado) da tela e
+              // força um start-session novo. force=false — o logout (se
+              // necessário) já foi feito na primeira chamada; repeti-lo numa
+              // sessão sem login só gera erro.
               setQrImage(null); setQrStage("generating");
               connectAndFetchQr(false);
             }
