@@ -37,6 +37,11 @@ const PERM_LABELS: { key: keyof EmployeePermissions; label: string; desc: string
     label: "Enviar mensagens",
     desc: "Pode enviar mensagens pelo Inbox",
   },
+  {
+    key: "canViewWaba",
+    label: "Ver Disparos WA",
+    desc: "Acessa a aba de Disparos WhatsApp Oficial (templates)",
+  },
 ];
 
 const DEFAULT_PERMS: EmployeePermissions = {
@@ -46,6 +51,7 @@ const DEFAULT_PERMS: EmployeePermissions = {
   canViewCreatives: true,
   canViewAgentIa: false,
   canManageLeadMessages: true,
+  canViewWaba: false,
 };
 
 export function FuncionariosView({

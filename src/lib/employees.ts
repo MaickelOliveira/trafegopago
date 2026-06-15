@@ -12,6 +12,7 @@ export type EmployeePermissions = {
   canViewCreatives: boolean;     // ver aba Criativos — padrão: true
   canViewAgentIa: boolean;       // ver aba Agente de IA — padrão: false
   canManageLeadMessages: boolean;// enviar mensagens pelo inbox — padrão: true
+  canViewWaba: boolean;          // ver aba Disparos WA (templates oficiais) — padrão: false
 };
 
 export const DEFAULT_PERMISSIONS: EmployeePermissions = {
@@ -21,6 +22,7 @@ export const DEFAULT_PERMISSIONS: EmployeePermissions = {
   canViewCreatives: true,
   canViewAgentIa: false,
   canManageLeadMessages: true,
+  canViewWaba: false,
 };
 
 export type Employee = {

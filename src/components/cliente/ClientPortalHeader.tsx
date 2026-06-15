@@ -30,6 +30,7 @@ export function ClientPortalHeader({
   const canViewCreatives = !isEmployee || (permissions?.canViewCreatives ?? false);
   const canViewAutomations = !isEmployee || (permissions?.canViewAutomations ?? false);
   const canViewAgentIa = !isEmployee || (permissions?.canViewAgentIa ?? false);
+  const canViewWaba = !isEmployee || (permissions?.canViewWaba ?? false);
 
   useEffect(() => {
     if (!canViewCreatives) return;
@@ -162,6 +163,21 @@ export function ClientPortalHeader({
               )}
             >
               🤖 Agente de IA
+            </Link>
+          )}
+
+          {/* Disparos WA — visível se canViewWaba */}
+          {canViewWaba && (
+            <Link
+              href="/cliente/disparos-wa"
+              className={clsx(
+                "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
+                pathname.startsWith("/cliente/disparos-wa")
+                  ? "bg-green-50 text-green-700 font-medium"
+                  : "text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              📨 Disparos WA
             </Link>
           )}
 
