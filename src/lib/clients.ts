@@ -66,6 +66,9 @@ export type AgentConfig = {
   aiResumeKeyword?: string;      // Palavra-chave enviada pelo gestor para reativar a IA (ex: "atendimento finalizado")
   testPhone?: string;            // Número de teste: quando preenchido, a IA responde APENAS este número
   knowledgeBase?: KnowledgeBaseDoc[]; // Documentos PDF/TXT que a IA pode consultar
+  spreadsheetId?: string;        // ID da planilha do Google Sheets vinculada ao agente
+  spreadsheetName?: string;      // Nome da planilha (exibição)
+  sheetTabName?: string;         // Nome da aba/sheet dentro da planilha usada pelo agente
 };
 
 export type Client = {

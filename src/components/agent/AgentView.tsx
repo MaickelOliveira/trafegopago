@@ -61,7 +61,12 @@ type AgentCfg = {
   maxMessageLength?: number;
   aiResumeKeyword?: string;
   testPhone?: string;
+  spreadsheetId?: string;
+  spreadsheetName?: string;
+  sheetTabName?: string;
 };
+
+type SheetTab = { title: string; sheetId: number };
 
 function Toggle({ label, sub, checked, onChange, color = "violet" }: {
   label: string; sub?: string; checked: boolean; onChange: (v: boolean) => void; color?: string;
@@ -131,6 +136,15 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [uploading, setUploading] = useState(false);
   const [calendars, setCalendars] = useState<{ id: string; name: string; primary: boolean }[]>([]);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
+
+  // Google Sheets — planilha de hóspedes/reservas
+  const [spreadsheets, setSpreadsheets] = useState<{ id: string; name: string }[]>([]);
+  const [loadingSpreadsheets, setLoadingSpreadsheets] = useState(false);
+  const [spreadsheetTabs, setSpreadsheetTabs] = useState<SheetTab[]>([]);
+  const [spreadsheetHeaders, setSpreadsheetHeaders] = useState<string[] | null>(null);
+  const [loadingSpreadsheetInfo, setLoadingSpreadsheetInfo] = useState(false);
+  const [spreadsheetError, setSpreadsheetError] = useState("");
+  const [manualSpreadsheetInput, setManualSpreadsheetInput] = useState("");
   const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string; category: string; language: string }[]>([]);
 
   // Avisos
@@ -175,6 +189,57 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     setLoadingCalendars(false);
   }
 
+  async function loadSpreadsheets(connId?: string | null) {
+    const cid = connId !== undefined ? connId : selectedConnId;
+    setLoadingSpreadsheets(true);
+    try {
+      const connParam = cid ? `&connId=${encodeURIComponent(cid)}` : "";
+      const res = await fetch(`/api/agent/spreadsheets?clientId=${clientId}${connParam}`);
+      const data = await res.json();
+      if (res.ok) setSpreadsheets(data.spreadsheets ?? []);
+      else setSpreadsheetError(data.error ?? "Erro ao listar planilhas");
+    } catch {
+      setSpreadsheetError("Falha na conexão");
+    }
+    setLoadingSpreadsheets(false);
+  }
+
+  // Resolve uma planilha (por ID ou link colado), busca suas abas e, se uma
+  // aba estiver selecionada (ou for a primeira), busca também o cabeçalho.
+  async function loadSpreadsheetInfo(idOrUrl: string, sheetName?: string, connId?: string | null) {
+    const cid = connId !== undefined ? connId : selectedConnId;
+    setLoadingSpreadsheetInfo(true);
+    setSpreadsheetError("");
+    try {
+      const connParam = cid ? `&connId=${encodeURIComponent(cid)}` : "";
+      const sheetParam = sheetName ? `&sheetName=${encodeURIComponent(sheetName)}` : "";
+      const res = await fetch(`/api/agent/spreadsheet-info?clientId=${clientId}${connParam}&spreadsheetId=${encodeURIComponent(idOrUrl)}${sheetParam}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setSpreadsheetError(data.error ?? "Erro ao acessar planilha");
+        setSpreadsheetTabs([]);
+        setSpreadsheetHeaders(null);
+        return;
+      }
+      const tabs: SheetTab[] = data.tabs ?? [];
+      setSpreadsheetTabs(tabs);
+      const tabName = sheetName ?? tabs[0]?.title ?? "";
+      setCfg((c) => ({ ...c, spreadsheetId: data.spreadsheetId, spreadsheetName: data.title, sheetTabName: tabName }));
+      if (data.headers) {
+        setSpreadsheetHeaders(data.headers);
+      } else if (tabName) {
+        await loadSpreadsheetInfo(data.spreadsheetId, tabName, cid);
+        return;
+      } else {
+        setSpreadsheetHeaders([]);
+      }
+    } catch {
+      setSpreadsheetError("Falha na conexão");
+    } finally {
+      setLoadingSpreadsheetInfo(false);
+    }
+  }
+
   async function loadConnConfig(connId: string | null) {
     const url = connId
       ? `/api/agent?clientId=${clientId}&connId=${encodeURIComponent(connId)}`
@@ -188,6 +253,17 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     setCfg(d);
     if (!connId && d._agentConfigsSummary) setConfigsSummary(d._agentConfigsSummary);
     if (d.calendarConnected) loadCalendars();
+
+    // Reseta estado da seção de planilhas e recarrega preview se já houver uma configurada
+    setSpreadsheets([]);
+    setSpreadsheetTabs([]);
+    setSpreadsheetHeaders(null);
+    setSpreadsheetError("");
+    setManualSpreadsheetInput("");
+    if (d.calendarConnected && d.spreadsheetId) {
+      loadSpreadsheetInfo(d.spreadsheetId, d.sheetTabName, connId);
+    }
+
     await loadKbDocs(connId);
   }
 
@@ -703,6 +779,131 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               </>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Google Sheets — Planilha de hóspedes/reservas */}
+      <div className="rounded-2xl border border-teal-200 bg-white p-5 space-y-4 shadow-sm">
+        <p className="text-xs font-semibold text-teal-600 uppercase tracking-wide">📊 Planilha do Google Sheets</p>
+        <p className="text-xs text-slate-500">
+          Quando o cliente informar nome(s) de pessoas para a hospedagem (e telefone, data, pagamento, etc.),
+          a IA registra automaticamente uma nova linha na planilha abaixo, preenchendo as colunas existentes.
+        </p>
+
+        {!cfg.calendarConnected ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+            Conecte sua conta Google na seção &quot;Google Calendar&quot; acima para selecionar uma planilha.
+          </div>
+        ) : (
+          <>
+            {cfg.spreadsheetId && (
+              <div className="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 space-y-1">
+                <p className="text-sm font-semibold text-slate-800">
+                  ✓ {cfg.spreadsheetName || cfg.spreadsheetId}
+                </p>
+                <a
+                  href={`https://docs.google.com/spreadsheets/d/${cfg.spreadsheetId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-teal-600 underline"
+                >
+                  Abrir no Google Sheets ↗
+                </a>
+              </div>
+            )}
+
+            {/* Seletor via Google Drive */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-600">Selecionar uma planilha do seu Google Drive</label>
+              {spreadsheets.length === 0 ? (
+                <button
+                  onClick={() => loadSpreadsheets()}
+                  disabled={loadingSpreadsheets}
+                  className="rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 transition disabled:opacity-50"
+                >
+                  {loadingSpreadsheets ? "Carregando..." : "Carregar planilhas do Drive"}
+                </button>
+              ) : (
+                <select
+                  value={cfg.spreadsheetId ?? ""}
+                  onChange={(e) => {
+                    const sp = spreadsheets.find((s) => s.id === e.target.value);
+                    if (sp) loadSpreadsheetInfo(sp.id);
+                  }}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="">— selecione uma planilha —</option>
+                  {spreadsheets.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Colar link/ID manualmente */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-600">Ou cole o link/ID da planilha</label>
+              <div className="flex gap-2">
+                <input
+                  value={manualSpreadsheetInput}
+                  onChange={(e) => setManualSpreadsheetInput(e.target.value)}
+                  placeholder="https://docs.google.com/spreadsheets/d/..."
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
+                />
+                <button
+                  onClick={() => loadSpreadsheetInfo(manualSpreadsheetInput)}
+                  disabled={!manualSpreadsheetInput.trim() || loadingSpreadsheetInfo}
+                  className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition shrink-0"
+                >
+                  Usar
+                </button>
+              </div>
+            </div>
+
+            {loadingSpreadsheetInfo && (
+              <p className="text-xs text-slate-400">Carregando informações da planilha...</p>
+            )}
+            {spreadsheetError && (
+              <p className="text-xs text-red-600">{spreadsheetError}</p>
+            )}
+
+            {/* Seletor de aba */}
+            {spreadsheetTabs.length > 1 && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-slate-600">Aba da planilha</label>
+                <select
+                  value={cfg.sheetTabName ?? ""}
+                  onChange={(e) => cfg.spreadsheetId && loadSpreadsheetInfo(cfg.spreadsheetId, e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  {spreadsheetTabs.map((t) => (
+                    <option key={t.sheetId} value={t.title}>{t.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Preview das colunas detectadas */}
+            {spreadsheetHeaders && (
+              spreadsheetHeaders.length > 0 ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-slate-600">Colunas detectadas — a IA preenche cada uma:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {spreadsheetHeaders.map((h) => (
+                      <span key={h} className="rounded-full bg-teal-100 text-teal-700 text-[11px] px-2 py-0.5 font-medium">
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-amber-600">
+                  Nenhum cabeçalho encontrado na primeira linha desta aba. Adicione os nomes das colunas
+                  (ex: Nome, Telefone, Data, Pagou) na linha 1 da planilha.
+                </p>
+              )
+            )}
+          </>
         )}
       </div>
 

@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { getConfig } from "./clients";
 
-function getOAuth2Client(baseUrl?: string) {
+export function getOAuth2Client(baseUrl?: string) {
   const config = getConfig();
   const clientId = process.env.GOOGLE_CLIENT_ID || config.googleClientId;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || config.googleClientSecret;
@@ -15,7 +15,11 @@ export function getAuthUrl(clientId: string, baseUrl?: string): string {
   return oauth2.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: ["https://www.googleapis.com/auth/calendar"],
+    scope: [
+      "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive.metadata.readonly",
+    ],
     state: clientId,
   });
 }

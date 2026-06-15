@@ -3,6 +3,7 @@ import { getClientById, getAgentConfigForConnection, type AgentMedia, type Knowl
 import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
+import { getSheetHeadersCached, appendRow } from "./google-sheets";
 import { getHistory } from "./conversations";
 import type { ChatMessage } from "./conversations";
 
@@ -11,7 +12,8 @@ export type GeminiAction =
   | { type: "followup_agendado"; horas: number; mensagem: string }
   | { type: "lembrete_agendado"; dataHora: string; mensagem: string }
   | { type: "resumo_solicitado"; motivo: string; phone: string }
-  | { type: "agendamento_cancelado"; eventId: string };
+  | { type: "agendamento_cancelado"; eventId: string }
+  | { type: "planilha_linha_adicionada"; linha: Record<string, string> };
 
 const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
@@ -102,7 +104,68 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
 ];
 
-const TOOLS: Tool[] = [{ functionDeclarations: TOOL_DECLARATIONS }];
+function slugifyHeader(header: string, used: Set<string>): string {
+  let base = header
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!base) base = "coluna";
+  let key = base;
+  let i = 2;
+  while (used.has(key)) { key = `${base}_${i}`; i++; }
+  used.add(key);
+  return key;
+}
+
+function isPhoneHeader(header: string): boolean {
+  return /telefone|celular|whatsapp|fone|contato/i.test(header);
+}
+
+function isDateHeader(header: string): boolean {
+  return /data|dia|check.?in|entrada/i.test(header);
+}
+
+type SheetTool = {
+  declaration: FunctionDeclaration;
+  keyToHeader: Record<string, string>;
+  headers: string[];
+};
+
+// Monta dinamicamente a function declaration de "adicionar_linha_planilha"
+// com base no cabeçalho real da planilha configurada — cada coluna se torna
+// uma propriedade do schema (Gemini não suporta mapas/objetos genéricos).
+function buildSheetTool(headers: string[]): SheetTool {
+  const used = new Set<string>();
+  const properties: Record<string, { type: SchemaType.STRING; description: string }> = {};
+  const keyToHeader: Record<string, string> = {};
+
+  for (const header of headers) {
+    const key = slugifyHeader(header, used);
+    keyToHeader[key] = header;
+    let description = `Valor para a coluna "${header}" da planilha.`;
+    if (isPhoneHeader(header)) {
+      description += " Se não for informado, é preenchido automaticamente com o telefone de contato do cliente.";
+    } else if (isDateHeader(header)) {
+      description += " Use o formato DD/MM/AAAA. Se não for informado, é preenchido automaticamente com a data de hoje.";
+    }
+    properties[key] = { type: SchemaType.STRING, description };
+  }
+
+  return {
+    declaration: {
+      name: "adicionar_linha_planilha",
+      description: `Adiciona uma nova linha na planilha de controle deste negócio (colunas: ${headers.join(", ")}). Chame esta função sempre que o cliente informar dados de uma reserva/hospedagem, como nome de pessoas, telefone, datas ou pagamento. Se o cliente informar os nomes de várias pessoas para a mesma reserva, chame esta função uma vez para CADA pessoa. Preencha todas as colunas que conseguir identificar a partir da conversa.`,
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties,
+        required: [],
+      },
+    },
+    keyToHeader,
+    headers,
+  };
+}
 
 function sanitizeForWhatsApp(text: string): string {
   let result = text
@@ -148,7 +211,7 @@ function sanitizeForWhatsApp(text: string): string {
   return result;
 }
 
-function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[]): string {
+function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[]): string {
   const now = new Date();
   const today = now.toLocaleDateString("pt-BR", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -168,7 +231,7 @@ Você pode:
 - Registrar follow-ups automáticos
 - Enviar resumos da conversa para o gestor
 - Ler e interpretar imagens enviadas pelo usuário (visão)
-- Transcrever e compreender áudios enviados pelo usuário
+- Transcrever e compreender áudios enviados pelo usuário${sheetHeaders?.length ? "\n- Registrar dados de reservas/hospedagem em uma planilha do Google Sheets" : ""}
 
 Regras gerais:
 - Sempre responda em português, mensagens curtas e amigáveis
@@ -215,10 +278,15 @@ REGRAS OBRIGATÓRIAS DE FORMATAÇÃO PARA WHATSAPP:
     ? `\n\n--- BASE DE CONHECIMENTO ---\nOs documentos abaixo contêm informações importantes do negócio. Consulte-os ao responder perguntas sobre produtos, serviços, preços ou qualquer informação específica do cliente:\n\n${kbDocs.map((d) => `### ${d.name} (${d.filename})\n${d.content.trim()}`).join("\n\n---\n\n")}\n--- FIM DA BASE DE CONHECIMENTO ---`
     : "";
 
+  // Planilha do Google Sheets — informa as colunas para a IA saber o que coletar
+  const sheetPart = sheetHeaders?.length
+    ? `\n\nPlanilha de reservas/hospedagem conectada — colunas: ${sheetHeaders.join(", ")}.\nSempre que o cliente informar nome(s) de pessoas que vão para a hospedagem (e demais dados como telefone, data ou pagamento), use a função adicionar_linha_planilha para registrar cada pessoa. Não pergunte sobre colunas que o cliente não mencionou — preencha apenas o que for informado.`
+    : "";
+
   if (customPrompt?.trim()) {
-    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}${kbPart}`;
+    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}${kbPart}${sheetPart}`;
   }
-  return `${base}${mediaPart}${kbPart}`;
+  return `${base}${mediaPart}${kbPart}${sheetPart}`;
 }
 
 export async function runGeminiAgent(
@@ -245,7 +313,21 @@ export async function runGeminiAgent(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const mediaLibrary = agentCfg.mediaLibrary;
-  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase);
+
+  // Planilha do Google Sheets — busca o cabeçalho real (cacheado) para montar
+  // dinamicamente a function declaration com as colunas desta planilha.
+  let sheetTool: SheetTool | null = null;
+  if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetTabName) {
+    try {
+      const headers = await getSheetHeadersCached(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, agentCfg.sheetTabName);
+      if (headers.length > 0) sheetTool = buildSheetTool(headers);
+    } catch (e) {
+      console.warn(`[gemini-agent] Falha ao ler cabeçalho da planilha — clientId=${clientId}:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, sheetTool?.headers);
+  const tools: Tool[] = [{ functionDeclarations: [...TOOL_DECLARATIONS, ...(sheetTool ? [sheetTool.declaration] : [])] }];
 
   const modelsToTry = [
     "gemini-3.1-flash-lite",
@@ -294,7 +376,7 @@ export async function runGeminiAgent(
     const model = genAI.getGenerativeModel({
       model: usedModel,
       systemInstruction: sysPrompt,
-      tools: TOOLS,
+      tools,
     });
 
     console.log(`[gemini-agent] Tentando modelo: ${usedModel} clientId=${clientId} phone=${phone}`);
@@ -471,6 +553,27 @@ export async function runGeminiAgent(
               const motivo = (args.motivo as string) || "Solicitado pela IA";
               actions.push({ type: "resumo_solicitado", motivo, phone });
               result = { ok: true };
+            }
+
+            else if (call.name === "adicionar_linha_planilha") {
+              if (agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetTabName && sheetTool) {
+                const linha: Record<string, string> = {};
+                for (const [key, header] of Object.entries(sheetTool.keyToHeader)) {
+                  let valor = (args[key] as string | undefined)?.trim();
+                  if (!valor) {
+                    if (isPhoneHeader(header)) valor = phone;
+                    else if (isDateHeader(header)) {
+                      valor = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+                    }
+                  }
+                  if (valor) linha[header] = valor;
+                }
+                await appendRow(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, agentCfg.sheetTabName, sheetTool.headers, linha);
+                actions.push({ type: "planilha_linha_adicionada", linha });
+                result = { ok: true };
+              } else {
+                result = { error: "Planilha não configurada" };
+              }
             }
           } catch (e) {
             console.error(`[gemini-agent] Tool ${call.name} error:`, e);
