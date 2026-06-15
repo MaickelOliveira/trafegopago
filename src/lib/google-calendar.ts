@@ -10,7 +10,7 @@ export function getOAuth2Client(baseUrl?: string) {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
-export function getAuthUrl(clientId: string, baseUrl?: string): string {
+export function getAuthUrl(clientId: string, baseUrl?: string, connId?: string | null): string {
   const oauth2 = getOAuth2Client(baseUrl);
   return oauth2.generateAuthUrl({
     access_type: "offline",
@@ -20,7 +20,7 @@ export function getAuthUrl(clientId: string, baseUrl?: string): string {
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/drive.metadata.readonly",
     ],
-    state: clientId,
+    state: JSON.stringify({ clientId, connId: connId ?? null }),
   });
 }
 

@@ -404,8 +404,11 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       }
 
       setWaConnections(conns);
-      // Auto-select first connection
-      const firstId = conns[0]?.id ?? null;
+      // Auto-seleciona a conexão indicada pelo redirect do OAuth (se existir), senão a primeira
+      const redirectConnId = searchParams.get("connId");
+      const firstId = (redirectConnId && conns.some((c) => c.id === redirectConnId))
+        ? redirectConnId
+        : conns[0]?.id ?? null;
       setSelectedConnId(firstId);
       await loadConnConfig(firstId);
     } catch { /* ignore */ } finally {

@@ -157,6 +157,25 @@ export function getAgentConfigForConnection(
   return client.agentConfig;
 }
 
+/** Salva o AgentConfig para uma conexão específica (espelha getAgentConfigForConnection).
+ *  Com connectionId, faz upsert em agentConfigs[]; sem connectionId, salva no agentConfig padrão. */
+export function upsertAgentConfigForConnection(
+  client: Client,
+  connectionId: string | null | undefined,
+  updated: AgentConfig
+): void {
+  if (connectionId) {
+    const existing = client.agentConfigs ?? [];
+    const idx = existing.findIndex((c) => c.whatsappConnectionId === connectionId);
+    const newConfigs = [...existing];
+    if (idx >= 0) newConfigs[idx] = updated;
+    else newConfigs.push({ ...updated, whatsappConnectionId: connectionId });
+    upsertClient({ ...client, agentConfigs: newConfigs });
+  } else {
+    upsertClient({ ...client, agentConfig: updated });
+  }
+}
+
 /** Retorna todos os agentConfigs do cliente, sem duplicatas.
  *  Se agentConfigs[] existe e tem entradas, usa somente ele (ignora o legado agentConfig).
  *  Caso contrário, cai no agentConfig único como fallback. */
