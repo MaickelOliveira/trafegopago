@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { WabaTemplate } from "@/lib/waba-templates";
 
 export interface QuickReply {
   id: string;
@@ -10,17 +11,27 @@ export interface QuickReply {
   imageUrl?: string;
 }
 
+/** Texto (sem variáveis) dos componentes de um template, para exibição/filtro */
+function templatePreviewText(tpl: WabaTemplate): string {
+  return tpl.components
+    .filter((c) => c.type !== "BUTTONS" && c.text)
+    .map((c) => c.text)
+    .join(" — ");
+}
+
 // ─── Picker (shown while typing /) ────────────────────────────────────────────
 
 interface PickerProps {
   clientId: string;
   query: string; // text after "/" (empty = show all)
   onSelect: (reply: QuickReply) => void;
+  onSelectTemplate?: (tpl: WabaTemplate) => void;
   onOpenManager: () => void;
 }
 
-export function QuickRepliesPicker({ clientId, query, onSelect, onOpenManager }: PickerProps) {
+export function QuickRepliesPicker({ clientId, query, onSelect, onSelectTemplate, onOpenManager }: PickerProps) {
   const [replies, setReplies] = useState<QuickReply[]>([]);
+  const [templates, setTemplates] = useState<WabaTemplate[]>([]);
   const [cursor, setCursor] = useState(0);
 
   useEffect(() => {
@@ -28,28 +39,52 @@ export function QuickRepliesPicker({ clientId, query, onSelect, onOpenManager }:
       .then((r) => r.ok ? r.json() : [])
       .then(setReplies)
       .catch(() => {});
-  }, [clientId]);
 
-  const filtered = replies.filter((r) => {
+    if (onSelectTemplate) {
+      fetch(`/api/waba/templates?clientId=${encodeURIComponent(clientId)}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((data: WabaTemplate[]) => setTemplates(Array.isArray(data) ? data.filter((t) => t.status === "APPROVED") : []))
+        .catch(() => {});
+    }
+  }, [clientId, onSelectTemplate]);
+
+  const filteredReplies = useMemo(() => replies.filter((r) => {
     if (!query) return true;
     const q = query.toLowerCase();
     return r.shortcut.toLowerCase().includes(q) || r.title.toLowerCase().includes(q);
-  });
+  }), [replies, query]);
+
+  const filteredTemplates = useMemo(() => templates.filter((t) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return t.name.toLowerCase().includes(q) || templatePreviewText(t).toLowerCase().includes(q);
+  }), [templates, query]);
+
+  // Lista combinada para navegação por teclado: respostas rápidas primeiro, templates depois
+  const combined = useMemo(() => [
+    ...filteredReplies.map((r) => ({ kind: "reply" as const, item: r })),
+    ...filteredTemplates.map((t) => ({ kind: "template" as const, item: t })),
+  ], [filteredReplies, filteredTemplates]);
 
   useEffect(() => { setCursor(0); }, [query]);
 
   // Keyboard navigation (caller must forward keydown events)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => Math.min(c + 1, filtered.length - 1)); }
+      if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => Math.min(c + 1, combined.length - 1)); }
       if (e.key === "ArrowUp")   { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
-      if (e.key === "Enter" && filtered[cursor]) { e.preventDefault(); e.stopPropagation(); onSelect(filtered[cursor]); }
+      if (e.key === "Enter" && combined[cursor]) {
+        e.preventDefault(); e.stopPropagation();
+        const entry = combined[cursor];
+        if (entry.kind === "reply") onSelect(entry.item);
+        else onSelectTemplate?.(entry.item);
+      }
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [filtered, cursor, onSelect]);
+  }, [combined, cursor, onSelect, onSelectTemplate]);
 
-  if (filtered.length === 0 && !query) {
+  if (combined.length === 0 && !query) {
     return (
       <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50">
@@ -61,29 +96,157 @@ export function QuickRepliesPicker({ clientId, query, onSelect, onOpenManager }:
     );
   }
 
-  if (filtered.length === 0) return null;
+  if (combined.length === 0) return null;
+
+  return (
+    <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
+      {filteredReplies.length > 0 && (
+        <>
+          <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 bg-slate-50">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">⚡ Respostas rápidas</span>
+            <button onClick={onOpenManager} className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold">Gerenciar</button>
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {filteredReplies.map((r, i) => (
+              <button
+                key={r.id}
+                onClick={() => onSelect(r)}
+                className={`w-full text-left px-4 py-2.5 flex gap-3 items-start transition ${i === cursor ? "bg-indigo-50" : "hover:bg-slate-50"}`}
+              >
+                <span className="text-xs font-mono font-bold text-indigo-600 shrink-0 mt-0.5">/{r.shortcut}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800 truncate">{r.title}</p>
+                  <p className="text-xs text-slate-500 truncate">{r.text}</p>
+                </div>
+                {r.imageUrl && <span className="text-base shrink-0">🖼️</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {filteredTemplates.length > 0 && (
+        <>
+          <div className="flex items-center justify-between px-4 py-2 border-b border-t border-slate-100 bg-slate-50">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">✅ Templates aprovados (Oficial)</span>
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {filteredTemplates.map((t, i) => {
+              const idx = filteredReplies.length + i;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => onSelectTemplate?.(t)}
+                  className={`w-full text-left px-4 py-2.5 flex gap-3 items-start transition ${idx === cursor ? "bg-indigo-50" : "hover:bg-slate-50"}`}
+                >
+                  <span className="text-xs font-mono font-bold text-emerald-600 shrink-0 mt-0.5">/{t.name}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{t.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{templatePreviewText(t)}</p>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5 shrink-0">Oficial</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Painel de variáveis (templates aprovados com {{n}}) ──────────────────────
+
+interface VariablesPanelProps {
+  template: WabaTemplate;
+  sending?: boolean;
+  onSend: (components: { type: string; parameters: { type: "text"; text: string }[] }[]) => void;
+  onCancel: () => void;
+}
+
+export function WabaTemplateVariablesPanel({ template, sending, onSend, onCancel }: VariablesPanelProps) {
+  const varComps = template.components.filter((c) => c.text && /\{\{\d+\}\}/.test(c.text));
+  const [values, setValues] = useState<Record<string, string[]>>({});
+
+  function setValue(compType: string, idx: number, value: string) {
+    setValues((prev) => {
+      const arr = [...(prev[compType] ?? [])];
+      arr[idx] = value;
+      return { ...prev, [compType]: arr };
+    });
+  }
+
+  function handleSend() {
+    const components = template.components
+      .filter((c) => c.text && /\{\{\d+\}\}/.test(c.text))
+      .map((c) => {
+        const matches = [...c.text!.matchAll(/\{\{(\d+)\}\}/g)];
+        const parameters = matches.map((_, i) => ({ type: "text" as const, text: values[c.type]?.[i] ?? "" }));
+        return { type: c.type.toLowerCase(), parameters };
+      });
+    onSend(components);
+  }
+
+  const missing = varComps.some((c) => {
+    const matches = [...c.text!.matchAll(/\{\{(\d+)\}\}/g)];
+    return matches.some((_, i) => !values[c.type]?.[i]?.trim());
+  });
 
   return (
     <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 bg-slate-50">
-        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">⚡ Respostas rápidas</span>
-        <button onClick={onOpenManager} className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold">Gerenciar</button>
+        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">✅ Template: {template.name}</span>
+        <button onClick={onCancel} className="text-xs text-slate-400 hover:text-slate-600 font-semibold">Cancelar</button>
       </div>
-      <div className="max-h-56 overflow-y-auto">
-        {filtered.map((r, i) => (
-          <button
-            key={r.id}
-            onClick={() => onSelect(r)}
-            className={`w-full text-left px-4 py-2.5 flex gap-3 items-start transition ${i === cursor ? "bg-indigo-50" : "hover:bg-slate-50"}`}
-          >
-            <span className="text-xs font-mono font-bold text-indigo-600 shrink-0 mt-0.5">/{r.shortcut}</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-800 truncate">{r.title}</p>
-              <p className="text-xs text-slate-500 truncate">{r.text}</p>
+      <div className="max-h-72 overflow-y-auto px-4 py-3 space-y-3">
+        {/* Prévia */}
+        <div className="rounded-lg bg-[#e9f5fe] px-3 py-2 space-y-1">
+          {template.components.filter((c) => c.type !== "BUTTONS" && c.text).map((c) => (
+            <p key={c.type} className={`text-sm text-slate-800 whitespace-pre-wrap ${c.type === "HEADER" ? "font-bold" : ""} ${c.type === "FOOTER" ? "text-slate-400 text-[11px]" : ""}`}>
+              {c.text!.split(/(\{\{\d+\}\})/).map((part, i) =>
+                /\{\{\d+\}\}/.test(part)
+                  ? <span key={i} className="bg-blue-100 text-blue-700 rounded px-0.5 font-mono">{part}</span>
+                  : part,
+              )}
+            </p>
+          ))}
+        </div>
+
+        {/* Campos de variáveis */}
+        {varComps.map((comp) => {
+          const matches = [...comp.text!.matchAll(/\{\{(\d+)\}\}/g)];
+          return (
+            <div key={comp.type}>
+              <p className="text-[10px] font-semibold text-slate-500 mb-1.5 uppercase">
+                {comp.type === "HEADER" ? "🔝 Cabeçalho" : "📝 Corpo da mensagem"}
+              </p>
+              <div className="space-y-1.5">
+                {matches.map((m, i) => (
+                  <div key={m[1]} className="flex items-center gap-2">
+                    <span className="text-xs font-mono bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 shrink-0">{`{{${m[1]}}}`}</span>
+                    <input
+                      value={values[comp.type]?.[i] ?? ""}
+                      onChange={(e) => setValue(comp.type, i, e.target.value)}
+                      placeholder="Digite o valor..."
+                      className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-400"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-            {r.imageUrl && <span className="text-base shrink-0">🖼️</span>}
-          </button>
-        ))}
+          );
+        })}
+      </div>
+      <div className="flex justify-end gap-2 px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+        <button onClick={onCancel} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 font-medium">
+          Cancelar
+        </button>
+        <button
+          onClick={handleSend}
+          disabled={sending || missing}
+          className="rounded-lg bg-emerald-600 text-white px-4 py-1.5 text-sm font-bold hover:bg-emerald-700 disabled:opacity-40 transition"
+        >
+          {sending ? "Enviando..." : "Enviar template"}
+        </button>
       </div>
     </div>
   );

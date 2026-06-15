@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { QuickRepliesPicker, QuickRepliesManager } from "@/components/shared/QuickRepliesPopover";
+import { QuickRepliesPicker, QuickRepliesManager, WabaTemplateVariablesPanel } from "@/components/shared/QuickRepliesPopover";
 import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
+import type { WabaTemplate } from "@/lib/waba-templates";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -81,6 +82,8 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const [quickQuery, setQuickQuery] = useState<string | null>(null);
   const [showQuickManager, setShowQuickManager] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [pendingTemplate, setPendingTemplate] = useState<WabaTemplate | null>(null);
+  const [sendingTemplate, setSendingTemplate] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -259,6 +262,54 @@ export default function InboxView({ clientId, initialConversations = [], initial
     setText(reply.text);
     if (reply.imageUrl) setPendingImage(reply.imageUrl);
     setQuickQuery(null);
+  }
+
+  function handleTemplateSelect(tpl: WabaTemplate) {
+    const hasVars = tpl.components.some((c) => c.text && /\{\{\d+\}\}/.test(c.text));
+    setQuickQuery(null);
+    if (hasVars) {
+      setPendingTemplate(tpl);
+    } else {
+      sendTemplateMessage(tpl);
+    }
+  }
+
+  async function sendTemplateMessage(tpl: WabaTemplate, components?: { type: string; parameters: { type: "text"; text: string }[] }[]) {
+    if (!selected || sendingTemplate) return;
+    setSendingTemplate(true);
+    setPendingTemplate(null);
+    isAtBottomRef.current = true;
+    userScrolledUpRef.current = false;
+
+    const previewText = `📋 ${tpl.components.filter((c) => c.type !== "BUTTONS" && c.text).map((c) => {
+      const sendComp = components?.find((sc) => sc.type.toUpperCase() === c.type);
+      const params = sendComp?.parameters ?? [];
+      return c.text!.replace(/\{\{(\d+)\}\}/g, (m, n) => params[parseInt(n) - 1]?.text ?? m);
+    }).join("\n\n")}`;
+    setMessages((prev) => [...prev, { role: "assistant", content: previewText, ts: Date.now(), type: "text" }]);
+
+    try {
+      const res = await fetch("/api/whatsapp/inbox/send-template", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateId: tpl.id,
+          phone: selected.phone,
+          clientId,
+          connId: selectedConv?.connId ?? selectedConn ?? undefined,
+          components,
+        }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !data.ok) {
+        alert(`Erro ao enviar template: ${data?.error ?? "verifique a configuração da API Oficial"}`);
+      }
+    } catch {
+      alert("Erro ao enviar template. Verifique sua conexão.");
+    }
+
+    setSendingTemplate(false);
+    fetchMessages(selected.phone, true, selectedConv?.connId);
   }
 
   function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -602,12 +653,23 @@ export default function InboxView({ clientId, initialConversations = [], initial
             )}
 
             <div className="relative flex items-end gap-2 px-3 py-3">
+              {/* Painel de variáveis do template (sobrepõe o picker) */}
+              {pendingTemplate && (
+                <WabaTemplateVariablesPanel
+                  template={pendingTemplate}
+                  sending={sendingTemplate}
+                  onSend={(components) => sendTemplateMessage(pendingTemplate, components)}
+                  onCancel={() => setPendingTemplate(null)}
+                />
+              )}
+
               {/* Quick replies picker (shown when typing /) */}
-              {quickQuery !== null && (
+              {!pendingTemplate && quickQuery !== null && (
                 <QuickRepliesPicker
                   clientId={clientId}
                   query={quickQuery}
                   onSelect={handleQuickSelect}
+                  onSelectTemplate={handleTemplateSelect}
                   onOpenManager={() => { setQuickQuery(null); setShowQuickManager(true); }}
                 />
               )}

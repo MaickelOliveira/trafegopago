@@ -5,8 +5,9 @@ import { clsx } from "clsx";
 import type { Lead } from "@/lib/leads";
 import type { Funnel } from "@/lib/funnels";
 import type { ChatMessage } from "@/lib/conversations";
-import { QuickRepliesPicker, QuickRepliesManager } from "@/components/shared/QuickRepliesPopover";
+import { QuickRepliesPicker, QuickRepliesManager, WabaTemplateVariablesPanel } from "@/components/shared/QuickRepliesPopover";
 import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
+import type { WabaTemplate } from "@/lib/waba-templates";
 
 function withCountryCode(p: string) {
   const d = p.replace(/\D/g, "");
@@ -164,6 +165,8 @@ export function LeadModal({
   const [quickQuery, setQuickQuery] = useState<string | null>(null); // null = fechado, string = filtro ativo
   const [showQuickManager, setShowQuickManager] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null); // imagem da resposta rápida
+  const [pendingTemplate, setPendingTemplate] = useState<WabaTemplate | null>(null);
+  const [sendingTemplate, setSendingTemplate] = useState(false);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -283,6 +286,54 @@ export function LeadModal({
     setMsgInput(reply.text);
     if (reply.imageUrl) setPendingImage(reply.imageUrl);
     setQuickQuery(null);
+  }
+
+  function handleTemplateSelect(tpl: WabaTemplate) {
+    const hasVars = tpl.components.some((c) => c.text && /\{\{\d+\}\}/.test(c.text));
+    setQuickQuery(null);
+    if (hasVars) {
+      setPendingTemplate(tpl);
+    } else {
+      sendTemplateMessage(tpl);
+    }
+  }
+
+  async function sendTemplateMessage(tpl: WabaTemplate, components?: { type: string; parameters: { type: "text"; text: string }[] }[]) {
+    if (sendingTemplate || !lead.clientId) return;
+    setSendingTemplate(true);
+    setPendingTemplate(null);
+    isAtBottomRef.current = true;
+
+    const previewText = `📋 ${tpl.components.filter((c) => c.type !== "BUTTONS" && c.text).map((c) => {
+      const sendComp = components?.find((sc) => sc.type.toUpperCase() === c.type);
+      const params = sendComp?.parameters ?? [];
+      return c.text!.replace(/\{\{(\d+)\}\}/g, (m, n) => params[parseInt(n) - 1]?.text ?? m);
+    }).join("\n\n")}`;
+    const optimisticTs = Date.now();
+    setMessages((prev) => [...prev, { role: "assistant", content: previewText, ts: optimisticTs }]);
+
+    try {
+      const res = await fetch("/api/whatsapp/inbox/send-template", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateId: tpl.id,
+          phone: lead.phone,
+          clientId: lead.clientId,
+          components,
+        }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !data.ok) {
+        setMessages((prev) => prev.filter((m) => m.ts !== optimisticTs));
+        alert(`Erro ao enviar template: ${data?.error ?? "verifique a configuração da API Oficial"}`);
+      }
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.ts !== optimisticTs));
+      alert("Erro ao enviar template. Verifique sua conexão.");
+    }
+
+    setSendingTemplate(false);
   }
 
   function handleMsgInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -759,12 +810,23 @@ export function LeadModal({
               )}
 
               <div className="relative px-4 py-3 flex gap-3 items-end">
+                {/* Painel de variáveis do template (sobrepõe o picker) */}
+                {pendingTemplate && (
+                  <WabaTemplateVariablesPanel
+                    template={pendingTemplate}
+                    sending={sendingTemplate}
+                    onSend={(components) => sendTemplateMessage(pendingTemplate, components)}
+                    onCancel={() => setPendingTemplate(null)}
+                  />
+                )}
+
                 {/* Quick replies picker (shown when query is not null) */}
-                {quickQuery !== null && lead.clientId && (
+                {!pendingTemplate && quickQuery !== null && lead.clientId && (
                   <QuickRepliesPicker
                     clientId={lead.clientId}
                     query={quickQuery}
                     onSelect={handleQuickSelect}
+                    onSelectTemplate={handleTemplateSelect}
                     onOpenManager={() => { setQuickQuery(null); setShowQuickManager(true); }}
                   />
                 )}
