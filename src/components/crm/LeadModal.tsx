@@ -320,6 +320,7 @@ export function LeadModal({
           templateId: tpl.id,
           phone: lead.phone,
           clientId: lead.clientId,
+          funnelId: lead.funnelId,
           components,
         }),
       });

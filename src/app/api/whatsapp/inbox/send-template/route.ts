@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTemplateById, sendTemplate, type WabaTemplate } from "@/lib/waba-templates";
-import { addMessage, setAiPaused, getAllConversationsByClientId } from "@/lib/conversations";
+import { addMessage, setAiPaused, getAllConversationsByClientId, getHistory } from "@/lib/conversations";
 import { getLeadByPhone, updateLead } from "@/lib/leads";
+import { getFunnelById } from "@/lib/funnels";
+import { getWppSessions } from "@/lib/wppconnect-sessions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +24,15 @@ function renderPreview(tpl: WabaTemplate, components?: SendComponent[]): string 
 /**
  * Envia um template aprovado da API Oficial para um lead específico (via inbox/CRM)
  * e registra a mensagem no histórico da conversa.
- * Body: { templateId, phone, clientId, connId?, components? }
+ * Body: { templateId, phone, clientId, connId?, funnelId?, components? }
  */
 export async function POST(req: NextRequest) {
-  const { templateId, phone, clientId, connId, components } = await req.json() as {
+  const { templateId, phone, clientId, connId, funnelId, components } = await req.json() as {
     templateId: string;
     phone: string;
     clientId: string;
     connId?: string;
+    funnelId?: string;
     components?: SendComponent[];
   };
 
@@ -56,8 +59,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: result.error }, { status: 502 });
   }
 
-  // Resolve connId — usa o informado ou tenta achar pela conversa mais recente deste telefone
+  // Resolve connId — replica a mesma ordem de prioridade usada por /api/crm/conversations/[phone]
+  // (GET) para garantir que a mensagem seja salva na mesma chave que o chat irá reler.
   let activeConnId = connId;
+  if (!activeConnId && funnelId) {
+    const wppSession = getWppSessions().find((s) => s.funnelId === funnelId);
+    const funnelConnId = wppSession?.id
+      ?? getFunnelById(funnelId)?.connections?.find((c) => c.type === "uazapi")?.id
+      ?? getFunnelById(funnelId)?.connections?.[0]?.id;
+    if (funnelConnId && getHistory(cleanPhone, clientId, funnelConnId).length > 0) {
+      activeConnId = funnelConnId;
+    }
+  }
   if (!activeConnId) {
     const tail9 = cleanPhone.slice(-9);
     const matched = getAllConversationsByClientId(clientId)
@@ -66,7 +79,7 @@ export async function POST(req: NextRequest) {
         return d === cleanPhone || d.endsWith(tail9) || cleanPhone.endsWith(d.slice(-9));
       })
       .sort((a, b) => b.lastActivity - a.lastActivity);
-    activeConnId = matched[0]?.connId ?? undefined;
+    activeConnId = matched.find((c) => getHistory(c.phone, clientId, c.connId ?? undefined).length > 0)?.connId ?? undefined;
   }
 
   const previewText = `📋 ${renderPreview(tpl, components)}`;
