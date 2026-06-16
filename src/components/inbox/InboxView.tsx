@@ -721,18 +721,12 @@ export default function InboxView({ clientId, initialConversations = [], initial
             </div>
           </div>
 
-          {/* Quick Replies Manager */}
-          {showQuickManager && (
-            <QuickRepliesManager
-              clientId={clientId}
-              onClose={() => setShowQuickManager(false)}
-            />
-          )}
         </div>
       )}
 
-      {/* Quick Replies Manager (quando aberto sem conversa selecionada) */}
-      {!selected && showQuickManager && (
+      {/* Quick Replies Manager — renderizado fora dos painéis overflow-hidden para que
+          inputs e eventos de teclado funcionem corretamente */}
+      {showQuickManager && (
         <QuickRepliesManager
           clientId={clientId}
           onClose={() => setShowQuickManager(false)}
