@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { WabaTemplate } from "@/lib/waba-templates";
+import type { WabaConnection } from "@/app/api/waba/connections/route";
 
 export interface QuickReply {
   id: string;
@@ -32,6 +33,7 @@ interface PickerProps {
 export function QuickRepliesPicker({ clientId, query, onSelect, onSelectTemplate, onOpenManager }: PickerProps) {
   const [replies, setReplies] = useState<QuickReply[]>([]);
   const [templates, setTemplates] = useState<WabaTemplate[]>([]);
+  const [connections, setConnections] = useState<WabaConnection[]>([]);
   const [cursor, setCursor] = useState(0);
 
   useEffect(() => {
@@ -44,6 +46,10 @@ export function QuickRepliesPicker({ clientId, query, onSelect, onSelectTemplate
       fetch(`/api/waba/templates?clientId=${encodeURIComponent(clientId)}`)
         .then((r) => r.ok ? r.json() : [])
         .then((data: WabaTemplate[]) => setTemplates(Array.isArray(data) ? data.filter((t) => t.status === "APPROVED") : []))
+        .catch(() => {});
+      fetch(`/api/waba/connections?clientId=${encodeURIComponent(clientId)}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then(setConnections)
         .catch(() => {});
     }
   }, [clientId, onSelectTemplate]);
@@ -130,23 +136,49 @@ export function QuickRepliesPicker({ clientId, query, onSelect, onSelectTemplate
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">✅ Templates aprovados (Oficial)</span>
           </div>
           <div className="max-h-56 overflow-y-auto">
-            {filteredTemplates.map((t, i) => {
-              const idx = filteredReplies.length + i;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => onSelectTemplate?.(t)}
-                  className={`w-full text-left px-4 py-2.5 flex gap-3 items-start transition ${idx === cursor ? "bg-indigo-50" : "hover:bg-slate-50"}`}
-                >
-                  <span className="text-xs font-mono font-bold text-emerald-600 shrink-0 mt-0.5">/{t.name}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">{t.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{templatePreviewText(t)}</p>
+            {(() => {
+              const groups = new Map<string, WabaTemplate[]>();
+              for (const t of filteredTemplates) {
+                const key = t.phoneNumberId ?? "";
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key)!.push(t);
+              }
+              const multiAccount = groups.size > 1;
+              let globalIdx = filteredReplies.length;
+              return [...groups.entries()].map(([phoneId, tpls]) => {
+                const conn = connections.find((c) => c.phoneNumberId === phoneId);
+                const label = conn
+                  ? `${conn.phone} · ${conn.funnelName}`
+                  : phoneId ? `ID: ...${phoneId.slice(-6)}` : "Sem conta";
+                return (
+                  <div key={phoneId || "no-account"}>
+                    {multiAccount && (
+                      <div className="flex items-center gap-2 px-4 pt-2 pb-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">🔵 {label}</span>
+                        <div className="flex-1 border-t border-slate-100" />
+                      </div>
+                    )}
+                    {tpls.map((t) => {
+                      const idx = globalIdx++;
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => onSelectTemplate?.(t)}
+                          className={`w-full text-left px-4 py-2.5 flex gap-3 items-start transition ${idx === cursor ? "bg-indigo-50" : "hover:bg-slate-50"}`}
+                        >
+                          <span className="text-xs font-mono font-bold text-emerald-600 shrink-0 mt-0.5">/{t.name}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{t.name}</p>
+                            <p className="text-xs text-slate-500 truncate">{templatePreviewText(t)}</p>
+                          </div>
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5 shrink-0">Oficial</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5 shrink-0">Oficial</span>
-                </button>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </>
       )}

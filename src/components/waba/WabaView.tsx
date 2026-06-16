@@ -344,8 +344,24 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
                 Criar primeiro template
               </button>
             </div>
-          ) : (
-            templates.map((tpl) => (
+          ) : (() => {
+            // Agrupa templates por conta (phoneNumberId)
+            const groups = new Map<string, WabaTemplate[]>();
+            for (const tpl of templates) {
+              const key = tpl.phoneNumberId ?? "sem-conta";
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key)!.push(tpl);
+            }
+            return [...groups.entries()].map(([phoneId, tpls]) => {
+              const conn = metaConnections.find((c) => c.phoneNumberId === phoneId);
+              const label = conn ? `${conn.phone} · ${conn.funnelName}` : phoneId === "sem-conta" ? "Sem conta configurada" : `ID: ${phoneId}`;
+              return (
+                <div key={phoneId} className="space-y-3">
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">🔵 {label}</span>
+                    <div className="flex-1 border-t border-slate-100" />
+                  </div>
+                  {tpls.map((tpl) => (
               <div key={tpl.id} className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -415,8 +431,12 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
                   </div>
                 </div>
               </div>
-            ))
-          )}
+            ))}
+                </div>
+              );
+            });
+          })()
+          }
         </div>
       )}
 
