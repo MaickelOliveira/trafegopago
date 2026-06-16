@@ -56,7 +56,8 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
   const [sendPhone, setSendPhone] = useState("");
   const [sendFunnelId, setSendFunnelId] = useState(funnels[0]?.id ?? "");
   const [sending, setSending] = useState(false);
-  const [sendResult, setSendResult] = useState<{ sent: number; total: number } | null>(null);
+  const [sendResult, setSendResult] = useState<{ sent: number; total: number; results?: { phone: string; success: boolean; error?: string }[] } | null>(null);
+  const [varValues, setVarValues] = useState<Record<string, string[]>>({});
 
   // Create form
   const [form, setForm] = useState({
@@ -180,6 +181,17 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
     if (!sendTemplate) return;
     setSending(true);
     setSendResult(null);
+
+    // Monta componentes com as variáveis preenchidas
+    const varComps = sendTemplate.components.filter((c) => c.text && /\{\{\d+\}\}/.test(c.text));
+    const components = varComps.length > 0
+      ? varComps.map((c) => {
+          const matches = [...c.text!.matchAll(/\{\{(\d+)\}\}/g)];
+          const parameters = matches.map((_, i) => ({ type: "text" as const, text: varValues[c.type]?.[i] ?? "" }));
+          return { type: c.type.toLowerCase(), parameters };
+        })
+      : undefined;
+
     const res = await fetch("/api/waba/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -188,6 +200,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
         phones: sendTarget === "phone" ? [sendPhone] : "all",
         clientId,
         funnelId: sendTarget === "all" ? sendFunnelId : undefined,
+        components,
       }),
     });
     if (res.ok) {
@@ -530,10 +543,10 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
       {/* Modal de envio */}
       {sendTemplate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-slate-900">Disparar: <span className="font-mono text-violet-700">{sendTemplate.name}</span></h3>
-              <button onClick={() => { setSendTemplate(null); setSendResult(null); }} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+              <button onClick={() => { setSendTemplate(null); setSendResult(null); setVarValues({}); }} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
             </div>
 
             <div className="space-y-3">
@@ -566,9 +579,53 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
               )}
             </div>
 
+            {/* Campos para variáveis {{n}} do template */}
+            {sendTemplate.components.some((c) => c.text && /\{\{\d+\}\}/.test(c.text)) && (
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Preencha as variáveis do template</p>
+                {sendTemplate.components.filter((c) => c.text && /\{\{\d+\}\}/.test(c.text)).map((comp) => {
+                  const matches = [...comp.text!.matchAll(/\{\{(\d+)\}\}/g)];
+                  return (
+                    <div key={comp.type} className="space-y-1.5">
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase">
+                        {comp.type === "HEADER" ? "Cabeçalho" : "Corpo"}
+                      </p>
+                      {matches.map((m, i) => (
+                        <div key={m[1]} className="flex items-center gap-2">
+                          <span className="text-xs font-mono bg-blue-100 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 shrink-0">{`{{${m[1]}}}`}</span>
+                          <input
+                            value={varValues[comp.type]?.[i] ?? ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setVarValues((prev) => {
+                                const arr = [...(prev[comp.type] ?? [])];
+                                arr[i] = val;
+                                return { ...prev, [comp.type]: arr };
+                              });
+                            }}
+                            placeholder="Digite o valor..."
+                            className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400 bg-white"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {sendResult && (
-              <div className={clsx("rounded-lg p-3 text-sm font-medium", sendResult.sent === sendResult.total ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700")}>
-                ✓ {sendResult.sent}/{sendResult.total} mensagens enviadas com sucesso
+              <div className={clsx("rounded-lg p-3 text-sm font-medium space-y-1", sendResult.sent === sendResult.total && sendResult.total > 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700")}>
+                <p>{sendResult.sent === sendResult.total && sendResult.total > 0 ? "✓" : "✗"} {sendResult.sent}/{sendResult.total} mensagens enviadas com sucesso</p>
+                {sendResult.results?.filter((r) => !r.success).map((r) => {
+                  let errMsg = r.error ?? "erro desconhecido";
+                  try { errMsg = JSON.parse(errMsg)?.error?.message ?? errMsg; } catch { /* keep raw */ }
+                  return (
+                    <p key={r.phone} className="text-xs opacity-80 font-normal">
+                      {r.phone}: {errMsg}
+                    </p>
+                  );
+                })}
               </div>
             )}
 
@@ -581,7 +638,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
                 {sending ? "Enviando..." : "Disparar Agora"}
               </button>
               <button
-                onClick={() => { setSendTemplate(null); setSendResult(null); }}
+                onClick={() => { setSendTemplate(null); setSendResult(null); setVarValues({}); }}
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition"
               >
                 Fechar
