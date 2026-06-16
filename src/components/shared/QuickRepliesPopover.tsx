@@ -353,7 +353,7 @@ export function QuickRepliesManager({ clientId, onClose }: ManagerProps) {
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Atalho <span className="text-slate-400">(sem /)</span></label>
+              <label className="block text-xs text-slate-500 mb-1">Atalho <span className="text-slate-400">(sem /)</span> <span className="text-red-400">*</span></label>
               <input
                 value={form.shortcut}
                 onChange={(e) => setForm((f) => ({ ...f, shortcut: e.target.value.replace(/\s/g, "").replace(/^\//, "") }))}
@@ -362,7 +362,7 @@ export function QuickRepliesManager({ clientId, onClose }: ManagerProps) {
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Título</label>
+              <label className="block text-xs text-slate-500 mb-1">Título <span className="text-red-400">*</span></label>
               <input
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
@@ -372,7 +372,7 @@ export function QuickRepliesManager({ clientId, onClose }: ManagerProps) {
             </div>
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Texto da mensagem</label>
+            <label className="block text-xs text-slate-500 mb-1">Texto da mensagem <span className="text-red-400">*</span></label>
             <textarea
               value={form.text}
               onChange={(e) => setForm((f) => ({ ...f, text: e.target.value }))}
@@ -417,7 +417,7 @@ export function QuickRepliesManager({ clientId, onClose }: ManagerProps) {
             <button
               onClick={saveReply}
               disabled={saving || !form.shortcut.trim() || !form.title.trim() || !form.text.trim()}
-              className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-bold hover:bg-indigo-700 disabled:opacity-40 transition"
+              className="rounded-lg px-4 py-2 text-sm font-bold transition disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed bg-indigo-600 text-white hover:bg-indigo-700"
             >
               {saving ? "Salvando..." : editingId ? "Atualizar" : "Criar resposta"}
             </button>
