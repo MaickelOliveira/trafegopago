@@ -64,6 +64,7 @@ type AgentCfg = {
   spreadsheetId?: string;
   spreadsheetName?: string;
   sheetTabName?: string;
+  sheetMappings?: { tipo: string; label: string; tabName: string }[];
 };
 
 type SheetTab = { title: string; sheetId: number };
@@ -789,8 +790,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       <div className="rounded-2xl border border-teal-200 bg-white p-5 space-y-4 shadow-sm">
         <p className="text-xs font-semibold text-teal-600 uppercase tracking-wide">📊 Planilha do Google Sheets</p>
         <p className="text-xs text-slate-500">
-          Quando o cliente informar nome(s) de pessoas para a hospedagem (e telefone, data, pagamento, etc.),
-          a IA registra automaticamente uma nova linha na planilha abaixo, preenchendo as colunas existentes.
+          A IA registra automaticamente uma nova linha na aba correta da planilha conforme o tipo de reserva
+          (hospedagem, day use, almoço, etc.), preenchendo as colunas de cada aba.
         </p>
 
         {!cfg.calendarConnected ? (
@@ -801,15 +802,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           <>
             {cfg.spreadsheetId && (
               <div className="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3 space-y-1">
-                <p className="text-sm font-semibold text-slate-800">
-                  ✓ {cfg.spreadsheetName || cfg.spreadsheetId}
-                </p>
-                <a
-                  href={`https://docs.google.com/spreadsheets/d/${cfg.spreadsheetId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-teal-600 underline"
-                >
+                <p className="text-sm font-semibold text-slate-800">✓ {cfg.spreadsheetName || cfg.spreadsheetId}</p>
+                <a href={`https://docs.google.com/spreadsheets/d/${cfg.spreadsheetId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-600 underline">
                   Abrir no Google Sheets ↗
                 </a>
               </div>
@@ -819,26 +813,16 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-600">Selecionar uma planilha do seu Google Drive</label>
               {spreadsheets.length === 0 ? (
-                <button
-                  onClick={() => loadSpreadsheets()}
-                  disabled={loadingSpreadsheets}
-                  className="rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 transition disabled:opacity-50"
-                >
+                <button onClick={() => loadSpreadsheets()} disabled={loadingSpreadsheets}
+                  className="rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50 transition disabled:opacity-50">
                   {loadingSpreadsheets ? "Carregando..." : "Carregar planilhas do Drive"}
                 </button>
               ) : (
-                <select
-                  value={cfg.spreadsheetId ?? ""}
-                  onChange={(e) => {
-                    const sp = spreadsheets.find((s) => s.id === e.target.value);
-                    if (sp) loadSpreadsheetInfo(sp.id);
-                  }}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                >
+                <select value={cfg.spreadsheetId ?? ""}
+                  onChange={(e) => { const sp = spreadsheets.find((s) => s.id === e.target.value); if (sp) loadSpreadsheetInfo(sp.id); }}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500">
                   <option value="">— selecione uma planilha —</option>
-                  {spreadsheets.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
+                  {spreadsheets.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               )}
             </div>
@@ -847,64 +831,86 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-600">Ou cole o link/ID da planilha</label>
               <div className="flex gap-2">
-                <input
-                  value={manualSpreadsheetInput}
-                  onChange={(e) => setManualSpreadsheetInput(e.target.value)}
+                <input value={manualSpreadsheetInput} onChange={(e) => setManualSpreadsheetInput(e.target.value)}
                   placeholder="https://docs.google.com/spreadsheets/d/..."
-                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition"
-                />
-                <button
-                  onClick={() => loadSpreadsheetInfo(manualSpreadsheetInput)}
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100 transition" />
+                <button onClick={() => loadSpreadsheetInfo(manualSpreadsheetInput)}
                   disabled={!manualSpreadsheetInput.trim() || loadingSpreadsheetInfo}
-                  className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition shrink-0"
-                >
+                  className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition shrink-0">
                   Usar
                 </button>
               </div>
             </div>
 
-            {loadingSpreadsheetInfo && (
-              <p className="text-xs text-slate-400">Carregando informações da planilha...</p>
-            )}
-            {spreadsheetError && (
-              <p className="text-xs text-red-600">{spreadsheetError}</p>
-            )}
+            {loadingSpreadsheetInfo && <p className="text-xs text-slate-400">Carregando informações da planilha...</p>}
+            {spreadsheetError && <p className="text-xs text-red-600">{spreadsheetError}</p>}
 
-            {/* Seletor de aba */}
-            {spreadsheetTabs.length > 1 && (
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-slate-600">Aba da planilha</label>
-                <select
-                  value={cfg.sheetTabName ?? ""}
-                  onChange={(e) => cfg.spreadsheetId && loadSpreadsheetInfo(cfg.spreadsheetId, e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                >
-                  {spreadsheetTabs.map((t) => (
-                    <option key={t.sheetId} value={t.title}>{t.title}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Preview das colunas detectadas */}
-            {spreadsheetHeaders && (
-              spreadsheetHeaders.length > 0 ? (
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-slate-600">Colunas detectadas — a IA preenche cada uma:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {spreadsheetHeaders.map((h) => (
-                      <span key={h} className="rounded-full bg-teal-100 text-teal-700 text-[11px] px-2 py-0.5 font-medium">
-                        {h}
-                      </span>
-                    ))}
-                  </div>
+            {/* Mapeamento tipo de reserva → aba */}
+            {spreadsheetTabs.length > 0 && cfg.spreadsheetId && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700">Mapeamento: Tipo de Reserva → Aba da Planilha</label>
+                  <button
+                    onClick={() => setCfg((c) => ({
+                      ...c,
+                      sheetMappings: [...(c.sheetMappings ?? []), { tipo: `tipo_${Date.now()}`, label: "", tabName: spreadsheetTabs[0]?.title ?? "" }],
+                    }))}
+                    className="rounded-lg border border-teal-300 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-100 transition"
+                  >
+                    + Adicionar tipo
+                  </button>
                 </div>
-              ) : (
-                <p className="text-xs text-amber-600">
-                  Nenhum cabeçalho encontrado na primeira linha desta aba. Adicione os nomes das colunas
-                  (ex: Nome, Telefone, Data, Pagou) na linha 1 da planilha.
+                <p className="text-[11px] text-slate-400">
+                  A IA usa o &quot;Nome do tipo&quot; para decidir em qual aba registrar cada reserva. Ex: &quot;Hospedagem&quot; → aba &quot;Pernoite&quot;.
                 </p>
-              )
+
+                {(cfg.sheetMappings ?? []).length === 0 && (
+                  <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                    Nenhum mapeamento configurado. Clique em &quot;+ Adicionar tipo&quot; para configurar cada tipo de reserva.
+                  </p>
+                )}
+
+                <div className="space-y-2">
+                  {(cfg.sheetMappings ?? []).map((m, idx) => (
+                    <div key={m.tipo} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-[10px] text-slate-400 mb-0.5">Nome do tipo (label)</p>
+                          <input
+                            value={m.label}
+                            onChange={(e) => setCfg((c) => {
+                              const ms = [...(c.sheetMappings ?? [])];
+                              ms[idx] = { ...ms[idx], label: e.target.value };
+                              return { ...c, sheetMappings: ms };
+                            })}
+                            placeholder="ex: Hospedagem, Day Use, Almoço..."
+                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-teal-400"
+                          />
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 mb-0.5">Aba na planilha</p>
+                          <select
+                            value={m.tabName}
+                            onChange={(e) => setCfg((c) => {
+                              const ms = [...(c.sheetMappings ?? [])];
+                              ms[idx] = { ...ms[idx], tabName: e.target.value };
+                              return { ...c, sheetMappings: ms };
+                            })}
+                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-teal-400"
+                          >
+                            <option value="">— selecione —</option>
+                            {spreadsheetTabs.map((t) => <option key={t.sheetId} value={t.title}>{t.title}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setCfg((c) => ({ ...c, sheetMappings: (c.sheetMappings ?? []).filter((_, i) => i !== idx) }))}
+                        className="text-slate-400 hover:text-red-500 transition text-lg leading-none px-1 shrink-0"
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </>
         )}

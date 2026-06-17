@@ -68,7 +68,14 @@ export type AgentConfig = {
   knowledgeBase?: KnowledgeBaseDoc[]; // Documentos PDF/TXT que a IA pode consultar
   spreadsheetId?: string;        // ID da planilha do Google Sheets vinculada ao agente
   spreadsheetName?: string;      // Nome da planilha (exibição)
-  sheetTabName?: string;         // Nome da aba/sheet dentro da planilha usada pelo agente
+  sheetTabName?: string;         // Legado — aba única; use sheetMappings para múltiplas abas
+  sheetMappings?: SheetTabMapping[]; // Mapeamento tipo-de-reserva → aba da planilha
+};
+
+export type SheetTabMapping = {
+  tipo: string;    // ex: "hospedagem", "day_use" (slug interno)
+  label: string;   // ex: "Hospedagem", "Day Use" (exibição e valor para a IA)
+  tabName: string; // nome exato da aba no Google Sheets
 };
 
 export type Client = {

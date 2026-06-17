@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration, type Part } from "@google/generative-ai";
-import { getClientById, getAgentConfigForConnection, type AgentMedia, type KnowledgeBaseDoc } from "./clients";
+import { getClientById, getAgentConfigForConnection, type AgentMedia, type KnowledgeBaseDoc, type SheetTabMapping } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
@@ -128,13 +128,14 @@ function isDateHeader(header: string): boolean {
 
 type SheetTool = {
   declaration: FunctionDeclaration;
+  // Para aba única (legado): keyToHeader e headers preenchidos; tabMap vazio
+  // Para múltiplas abas: tabMap por label, keyToHeader é a união de todas as abas
   keyToHeader: Record<string, string>;
   headers: string[];
+  tabMap: Map<string, { headers: string[]; keyToHeader: Record<string, string> }>;
 };
 
-// Monta dinamicamente a function declaration de "adicionar_linha_planilha"
-// com base no cabeçalho real da planilha configurada — cada coluna se torna
-// uma propriedade do schema (Gemini não suporta mapas/objetos genéricos).
+// Monta a tool para aba única (modo legado)
 function buildSheetTool(headers: string[]): SheetTool {
   const used = new Set<string>();
   const properties: Record<string, { type: SchemaType.STRING; description: string }> = {};
@@ -144,11 +145,8 @@ function buildSheetTool(headers: string[]): SheetTool {
     const key = slugifyHeader(header, used);
     keyToHeader[key] = header;
     let description = `Valor para a coluna "${header}" da planilha.`;
-    if (isPhoneHeader(header)) {
-      description += " Se não for informado, é preenchido automaticamente com o telefone de contato do cliente.";
-    } else if (isDateHeader(header)) {
-      description += " Use o formato DD/MM/AAAA. Se não for informado, é preenchido automaticamente com a data de hoje.";
-    }
+    if (isPhoneHeader(header)) description += " Se não for informado, é preenchido automaticamente com o telefone de contato do cliente.";
+    else if (isDateHeader(header)) description += " Use o formato DD/MM/AAAA. Se não for informado, é preenchido automaticamente com a data de hoje.";
     properties[key] = { type: SchemaType.STRING, description };
   }
 
@@ -156,14 +154,64 @@ function buildSheetTool(headers: string[]): SheetTool {
     declaration: {
       name: "adicionar_linha_planilha",
       description: `Adiciona uma nova linha na planilha de controle deste negócio (colunas: ${headers.join(", ")}). Chame esta função sempre que o cliente informar dados de uma reserva/hospedagem, como nome de pessoas, telefone, datas ou pagamento. Se o cliente informar os nomes de várias pessoas para a mesma reserva, chame esta função uma vez para CADA pessoa. Preencha todas as colunas que conseguir identificar a partir da conversa.`,
-      parameters: {
-        type: SchemaType.OBJECT,
-        properties,
-        required: [],
-      },
+      parameters: { type: SchemaType.OBJECT, properties, required: [] },
     },
     keyToHeader,
     headers,
+    tabMap: new Map(),
+  };
+}
+
+// Monta a tool para múltiplas abas — cada aba vira uma opção de "tipo_reserva"
+function buildSheetToolMulti(
+  tabResults: Array<{ mapping: SheetTabMapping; headers: string[] }>
+): SheetTool {
+  const tabMap = new Map<string, { headers: string[]; keyToHeader: Record<string, string> }>();
+
+  // Constrói o mapa por label e coleta todos os headers únicos
+  const allHeadersSet = new Set<string>();
+  for (const { mapping, headers } of tabResults) {
+    const used = new Set<string>();
+    const k2h: Record<string, string> = {};
+    for (const h of headers) {
+      const key = slugifyHeader(h, used);
+      k2h[key] = h;
+      allHeadersSet.add(h);
+    }
+    tabMap.set(mapping.label, { headers, keyToHeader: k2h });
+  }
+
+  // União de todas as colunas para o schema da tool
+  const allHeaders = [...allHeadersSet];
+  const used = new Set<string>();
+  const properties: Record<string, { type: SchemaType.STRING; description: string }> = {};
+  const keyToHeader: Record<string, string> = {};
+
+  for (const header of allHeaders) {
+    const key = slugifyHeader(header, used);
+    keyToHeader[key] = header;
+    let description = `Valor para a coluna "${header}".`;
+    if (isPhoneHeader(header)) description += " Se não for informado, preenche automaticamente com o telefone do cliente.";
+    else if (isDateHeader(header)) description += " Formato DD/MM/AAAA. Se não for informado, preenche com a data de hoje.";
+    properties[key] = { type: SchemaType.STRING, description };
+  }
+
+  const labels = tabResults.map((t) => t.mapping.label);
+  // Adiciona tipo_reserva como primeiro campo
+  properties["tipo_reserva"] = {
+    type: SchemaType.STRING,
+    description: `Tipo de reserva que determina em qual aba da planilha a linha será registrada. Valores possíveis: ${labels.map((l) => `"${l}"`).join(", ")}. Escolha com base no contexto da conversa.`,
+  };
+
+  return {
+    declaration: {
+      name: "adicionar_linha_planilha",
+      description: `Registra uma nova linha na aba correta da planilha de controle, conforme o tipo de reserva (${labels.join(", ")}). Chame sempre que o cliente informar dados de reserva (nomes, telefone, datas, pagamento). Para várias pessoas na mesma reserva, chame uma vez por pessoa. Preencha todas as colunas identificáveis.`,
+      parameters: { type: SchemaType.OBJECT, properties, required: ["tipo_reserva"] },
+    },
+    keyToHeader,
+    headers: allHeaders,
+    tabMap,
   };
 }
 
@@ -314,13 +362,22 @@ export async function runGeminiAgent(
   const genAI = new GoogleGenerativeAI(apiKey);
   const mediaLibrary = agentCfg.mediaLibrary;
 
-  // Planilha do Google Sheets — busca o cabeçalho real (cacheado) para montar
-  // dinamicamente a function declaration com as colunas desta planilha.
+  // Planilha do Google Sheets — carrega cabeçalhos (cacheados) para montar a tool dinamicamente.
+  // Suporta múltiplas abas (sheetMappings) e aba única legada (sheetTabName).
   let sheetTool: SheetTool | null = null;
-  if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetTabName) {
+  if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId) {
     try {
-      const headers = await getSheetHeadersCached(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, agentCfg.sheetTabName);
-      if (headers.length > 0) sheetTool = buildSheetTool(headers);
+      if (agentCfg.sheetMappings && agentCfg.sheetMappings.length > 0) {
+        const tabResults: Array<{ mapping: typeof agentCfg.sheetMappings[0]; headers: string[] }> = [];
+        for (const mapping of agentCfg.sheetMappings) {
+          const headers = await getSheetHeadersCached(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, mapping.tabName);
+          if (headers.length > 0) tabResults.push({ mapping, headers });
+        }
+        if (tabResults.length > 0) sheetTool = buildSheetToolMulti(tabResults);
+      } else if (agentCfg.sheetTabName) {
+        const headers = await getSheetHeadersCached(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, agentCfg.sheetTabName);
+        if (headers.length > 0) sheetTool = buildSheetTool(headers);
+      }
     } catch (e) {
       console.warn(`[gemini-agent] Falha ao ler cabeçalho da planilha — clientId=${clientId}:`, e instanceof Error ? e.message : e);
     }
@@ -556,21 +613,47 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "adicionar_linha_planilha") {
-              if (agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetTabName && sheetTool) {
-                const linha: Record<string, string> = {};
-                for (const [key, header] of Object.entries(sheetTool.keyToHeader)) {
-                  let valor = (args[key] as string | undefined)?.trim();
-                  if (!valor) {
-                    if (isPhoneHeader(header)) valor = phone;
-                    else if (isDateHeader(header)) {
-                      valor = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-                    }
+              if (agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && sheetTool) {
+                // Determina qual aba usar: multi-abas ou legado
+                let targetTab: string;
+                let tabKeyToHeader: Record<string, string>;
+                let tabHeaders: string[];
+
+                const tipoArg = (args["tipo_reserva"] as string | undefined)?.trim();
+                let resolved = false;
+                if (sheetTool.tabMap.size > 0 && tipoArg) {
+                  const tabInfo = sheetTool.tabMap.get(tipoArg);
+                  if (tabInfo) {
+                    targetTab = agentCfg.sheetMappings!.find((m) => m.label === tipoArg)!.tabName;
+                    tabKeyToHeader = tabInfo.keyToHeader;
+                    tabHeaders = tabInfo.headers;
+                    resolved = true;
+                  } else {
+                    result = { error: `Tipo de reserva desconhecido: "${tipoArg}". Use um dos tipos configurados.` };
                   }
-                  if (valor) linha[header] = valor;
+                } else if (agentCfg.sheetTabName) {
+                  targetTab = agentCfg.sheetTabName;
+                  tabKeyToHeader = sheetTool.keyToHeader;
+                  tabHeaders = sheetTool.headers;
+                  resolved = true;
+                } else {
+                  result = { error: "Planilha não configurada corretamente" };
                 }
-                await appendRow(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, agentCfg.sheetTabName, sheetTool.headers, linha);
-                actions.push({ type: "planilha_linha_adicionada", linha });
-                result = { ok: true };
+
+                if (resolved) {
+                  const linha: Record<string, string> = {};
+                  for (const [key, header] of Object.entries(tabKeyToHeader!)) {
+                    let valor = (args[key] as string | undefined)?.trim();
+                    if (!valor) {
+                      if (isPhoneHeader(header)) valor = phone;
+                      else if (isDateHeader(header)) valor = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+                    }
+                    if (valor) linha[header] = valor;
+                  }
+                  await appendRow(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, targetTab!, tabHeaders!, linha);
+                  actions.push({ type: "planilha_linha_adicionada", linha });
+                  result = { ok: true };
+                }
               } else {
                 result = { error: "Planilha não configurada" };
               }
