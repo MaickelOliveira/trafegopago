@@ -365,9 +365,10 @@ export async function runGeminiAgent(
   const mediaLibrary = agentCfg.mediaLibrary;
 
   // Planilha do Google Sheets — carrega cabeçalhos (cacheados) para montar a tool dinamicamente.
-  // Suporta múltiplas abas (sheetMappings) e aba única legada (sheetTabName).
+  // Quando appsScriptUrl está configurado, o preenchimento é feito pelo extrator externo
+  // (sheet-extractor.ts) e a tool é omitida do agente para economizar tokens.
   let sheetTool: SheetTool | null = null;
-  if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId) {
+  if (!agentCfg.appsScriptUrl && agentCfg.googleRefreshToken && agentCfg.spreadsheetId) {
     try {
       if (agentCfg.sheetMappings && agentCfg.sheetMappings.length > 0) {
         const tabResults: Array<{ mapping: typeof agentCfg.sheetMappings[0]; headers: string[] }> = [];

@@ -65,6 +65,7 @@ type AgentCfg = {
   spreadsheetName?: string;
   sheetTabName?: string;
   sheetMappings?: { tipo: string; label: string; tabName: string }[];
+  appsScriptUrl?: string;
 };
 
 type SheetTab = { title: string; sheetId: number };
@@ -914,6 +915,22 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             )}
           </>
         )}
+
+        {/* Apps Script URL — preenchimento gratuito sem consumir tokens do Gemini principal */}
+        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+          <label className="block text-xs font-semibold text-slate-700">URL do Google Apps Script (opcional)</label>
+          <input
+            type="url"
+            value={cfg.appsScriptUrl ?? ""}
+            onChange={(e) => setCfg((c) => ({ ...c, appsScriptUrl: e.target.value || undefined }))}
+            placeholder="https://script.google.com/macros/s/…/exec"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400"
+          />
+          <p className="text-[11px] text-slate-400">
+            Quando preenchida, a IA deixa de usar a ferramenta de planilha (economizando tokens) e um modelo barato
+            extrai os dados da conversa e envia direto para o Apps Script — gratuito, sem OAuth.
+          </p>
+        </div>
       </div>
 
       {/* Follow-up sequência */}

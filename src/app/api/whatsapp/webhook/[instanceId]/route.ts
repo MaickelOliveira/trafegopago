@@ -235,6 +235,7 @@ import {
   markProcessing,
 } from "@/lib/pending-responses";
 import { processKanbanActions } from "@/lib/kanban-agent";
+import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 
 type Body = Record<string, unknown>;
 
@@ -973,6 +974,21 @@ export async function POST(
             if (agCfg && actions.length > 0) {
               await processGeminiActions(actions, instanceUazToken, clientName, agCfg, phone);
             }
+            // Extração via modelo barato + Apps Script (fire-and-forget, sem bloquear a resposta)
+            if (agCfg?.appsScriptUrl && agCfg.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
+              const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
+              if (apiKey) {
+                extractAndWriteToSheet({
+                  apiKey,
+                  appsScriptUrl: agCfg.appsScriptUrl,
+                  spreadsheetId: agCfg.spreadsheetId,
+                  googleRefreshToken: agCfg.googleRefreshToken,
+                  sheetMappings: agCfg.sheetMappings,
+                  messages: getHistory(phone, cid),
+                  phone,
+                }).catch((e) => console.warn("[webhook] sheet-extractor erro:", e instanceof Error ? e.message : e));
+              }
+            }
           })
           .catch((e) => {
             console.error(`[webhook/${instanceId}] Gemini ERRO para phone=${phone}:`, e);
@@ -1031,6 +1047,21 @@ export async function POST(
     if (agentCfg && geminiActions.length > 0) {
       const clientName = getClientById(cid)?.name ?? cid;
       await processGeminiActions(geminiActions, instanceUazToken, clientName, agentCfg, phone);
+    }
+
+    if (agentCfg?.appsScriptUrl && agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+      const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
+      if (apiKey) {
+        extractAndWriteToSheet({
+          apiKey,
+          appsScriptUrl: agentCfg.appsScriptUrl,
+          spreadsheetId: agentCfg.spreadsheetId,
+          googleRefreshToken: agentCfg.googleRefreshToken,
+          sheetMappings: agentCfg.sheetMappings,
+          messages: getHistory(phone, cid),
+          phone,
+        }).catch((e) => console.warn("[webhook] sheet-extractor erro:", e instanceof Error ? e.message : e));
+      }
     }
 
     return NextResponse.json({ ok: true });

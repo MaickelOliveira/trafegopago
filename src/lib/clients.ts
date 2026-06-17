@@ -70,6 +70,7 @@ export type AgentConfig = {
   spreadsheetName?: string;      // Nome da planilha (exibição)
   sheetTabName?: string;         // Legado — aba única; use sheetMappings para múltiplas abas
   sheetMappings?: SheetTabMapping[]; // Mapeamento tipo-de-reserva → aba da planilha
+  appsScriptUrl?: string;        // URL do Google Apps Script para preenchimento da planilha (gratuito, sem OAuth)
 };
 
 export type SheetTabMapping = {
