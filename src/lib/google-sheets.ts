@@ -83,19 +83,17 @@ export async function appendRow(
   const sheets = await getSheetsClient(refreshToken);
 
   const isAutoNum = (h: string) => /^[nN][°º]?$/.test(h.trim()) || h.trim() === "#";
-  const skipFirst = headers.length > 0 && isAutoNum(headers[0]);
-  const startCol = skipFirst ? "B" : "A";
-  const dataHeaders = skipFirst ? headers.slice(1) : headers;
-  const row = dataHeaders.map((h) => values[h] ?? "");
+  const hasAutoNum = headers.length > 0 && isAutoNum(headers[0]);
 
-  // Encontra a primeira linha vazia na coluna de início (ignora auto-numeração em A)
+  // Lê coluna B (ou A, se não houver Nº) para encontrar a primeira linha vazia
+  const scanCol = hasAutoNum ? "B" : "A";
   const { data: colData } = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${sheetName}!${startCol}:${startCol}`,
+    range: `${sheetName}!${scanCol}:${scanCol}`,
   });
   const existing = colData.values ?? [];
   // existing[0] = cabeçalho; procura a partir do índice 1
-  let targetIndex = existing.length; // padrão: depois da última linha com dado
+  let targetIndex = existing.length;
   for (let i = 1; i < existing.length; i++) {
     if (!existing[i] || existing[i].length === 0 || String(existing[i][0]).trim() === "") {
       targetIndex = i;
@@ -104,9 +102,19 @@ export async function appendRow(
   }
   const targetRow = targetIndex + 1; // converte para 1-indexed
 
+  // Monta a linha: se tiver coluna Nº, preenche com o número sequencial
+  let row: string[];
+  if (hasAutoNum) {
+    const seqNum = String(targetRow - 1); // linha 2 = registro 1, linha 3 = 2, etc.
+    const dataRow = headers.slice(1).map((h) => values[h] ?? "");
+    row = [seqNum, ...dataRow];
+  } else {
+    row = headers.map((h) => values[h] ?? "");
+  }
+
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${sheetName}!${startCol}${targetRow}`,
+    range: `${sheetName}!A${targetRow}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [row] },
   });
