@@ -259,7 +259,7 @@ function sanitizeForWhatsApp(text: string): string {
   return result;
 }
 
-function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[]): string {
+function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[], sheetTypes?: string[]): string {
   const now = new Date();
   const today = now.toLocaleDateString("pt-BR", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -279,7 +279,7 @@ Você pode:
 - Registrar follow-ups automáticos
 - Enviar resumos da conversa para o gestor
 - Ler e interpretar imagens enviadas pelo usuário (visão)
-- Transcrever e compreender áudios enviados pelo usuário${sheetHeaders?.length ? "\n- Registrar dados de reservas/hospedagem em uma planilha do Google Sheets" : ""}
+- Transcrever e compreender áudios enviados pelo usuário${sheetHeaders?.length ? "\n- Registrar dados de reservas, compra de ingressos ou cadastros em uma planilha do Google Sheets" : ""}
 
 Regras gerais:
 - Sempre responda em português, mensagens curtas e amigáveis
@@ -328,7 +328,9 @@ REGRAS OBRIGATÓRIAS DE FORMATAÇÃO PARA WHATSAPP:
 
   // Planilha do Google Sheets — informa as colunas para a IA saber o que coletar
   const sheetPart = sheetHeaders?.length
-    ? `\n\nPlanilha de reservas/hospedagem conectada — colunas: ${sheetHeaders.join(", ")}.\nSempre que o cliente informar nome(s) de pessoas que vão para a hospedagem (e demais dados como telefone, data ou pagamento), use a função adicionar_linha_planilha para registrar cada pessoa. Não pergunte sobre colunas que o cliente não mencionou — preencha apenas o que for informado.`
+    ? sheetTypes?.length
+      ? `\n\nPlanilha de controle conectada. Tipos de reserva configurados: ${sheetTypes.map((t) => `"${t}"`).join(", ")}.\nSempre que o cliente confirmar uma reserva, comprar ingressos ou fornecer dados de cadastro (nome, telefone, data, pagamento etc.), use IMEDIATAMENTE a função adicionar_linha_planilha com o tipo_reserva correto. Para cada pessoa/participante, chame a função uma vez. Preencha todas as colunas que conseguir identificar na conversa.`
+      : `\n\nPlanilha de reservas conectada — colunas: ${sheetHeaders.join(", ")}.\nSempre que o cliente fornecer dados de reserva (nome, telefone, data, pagamento), use IMEDIATAMENTE a função adicionar_linha_planilha para cada pessoa. Preencha apenas as colunas informadas.`
     : "";
 
   if (customPrompt?.trim()) {
@@ -383,7 +385,8 @@ export async function runGeminiAgent(
     }
   }
 
-  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, sheetTool?.headers);
+  const sheetTypes = sheetTool?.tabMap.size ? [...sheetTool.tabMap.keys()] : undefined;
+  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, sheetTool?.headers, sheetTypes);
   const tools: Tool[] = [{ functionDeclarations: [...TOOL_DECLARATIONS, ...(sheetTool ? [sheetTool.declaration] : [])] }];
 
   const modelsToTry = [
