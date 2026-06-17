@@ -616,13 +616,15 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "adicionar_linha_planilha") {
+              console.log(`[planilha] tool chamada — args=${JSON.stringify(args).slice(0, 300)} tabMap.size=${sheetTool?.tabMap.size ?? 0} spreadsheetId=${agentCfg?.spreadsheetId ?? "N/A"}`);
               if (agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && sheetTool) {
                 // Determina qual aba usar: multi-abas ou legado
-                let targetTab: string;
-                let tabKeyToHeader: Record<string, string>;
-                let tabHeaders: string[];
+                let targetTab = "";
+                let tabKeyToHeader: Record<string, string> = {};
+                let tabHeaders: string[] = [];
 
                 const tipoArg = (args["tipo_reserva"] as string | undefined)?.trim();
+                console.log(`[planilha] tipo_reserva="${tipoArg}" tabMap.keys=[${[...sheetTool.tabMap.keys()].join(", ")}]`);
                 let resolved = false;
                 if (sheetTool.tabMap.size > 0 && tipoArg) {
                   const tabInfo = sheetTool.tabMap.get(tipoArg);
@@ -653,7 +655,9 @@ export async function runGeminiAgent(
                     }
                     if (valor) linha[header] = valor;
                   }
+                  console.log(`[planilha] appendRow → tab="${targetTab}" linha=${JSON.stringify(linha)}`);
                   await appendRow(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, targetTab!, tabHeaders!, linha);
+                  console.log(`[planilha] appendRow OK`);
                   actions.push({ type: "planilha_linha_adicionada", linha });
                   result = { ok: true };
                 }
