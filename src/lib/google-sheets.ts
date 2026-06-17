@@ -7,6 +7,8 @@ async function getSheetsClient(refreshToken: string) {
   return google.sheets({ version: "v4", auth: oauth2 });
 }
 
+export { getSheetsClient as getSheetsClientFromToken };
+
 async function getDriveClient(refreshToken: string) {
   const oauth2 = getOAuth2Client();
   oauth2.setCredentials({ refresh_token: refreshToken });
