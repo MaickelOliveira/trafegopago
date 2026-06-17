@@ -975,6 +975,7 @@ export async function POST(
               await processGeminiActions(actions, instanceUazToken, clientName, agCfg, phone);
             }
             // Extração via modelo barato + Apps Script (fire-and-forget, sem bloquear a resposta)
+            console.log(`[webhook] extrator-check appsScriptUrl=${!!agCfg?.appsScriptUrl} refreshToken=${!!agCfg?.googleRefreshToken} spreadsheetId=${!!agCfg?.spreadsheetId} mappings=${agCfg?.sheetMappings?.length ?? 0}`);
             if (agCfg?.appsScriptUrl && agCfg.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
               const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
               if (apiKey) {

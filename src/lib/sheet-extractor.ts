@@ -18,6 +18,7 @@ export async function extractAndWriteToSheet(opts: {
 }): Promise<void> {
   const { apiKey, appsScriptUrl, spreadsheetId, googleRefreshToken, sheetMappings, messages, phone } = opts;
 
+  console.log(`[sheet-extractor] iniciando — phone=${phone} messages=${messages.length} mappings=${sheetMappings.length} url=${appsScriptUrl.slice(0, 40)}...`);
   if (!messages.length || !sheetMappings.length) return;
 
   // Carrega headers de cada aba (vem do cache — sem custo real na maioria dos casos)
