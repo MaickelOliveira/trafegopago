@@ -88,7 +88,7 @@ ${conversation}`;
       const res = await fetch(appsScriptUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(row),
+        body: JSON.stringify({ ...row, spreadsheetId }),
       });
       console.log(`[sheet-extractor] Apps Script aba="${row.aba}" → ${res.status}`);
     } catch (e) {
