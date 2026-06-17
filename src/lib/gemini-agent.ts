@@ -406,7 +406,7 @@ export async function runGeminiAgent(
 
   // Mescla mensagens consecutivas do mesmo papel (pode ocorrer com batching)
   const mergedHistory: { role: "user" | "model"; parts: { text: string }[] }[] = [];
-  for (const m of historyWithoutCurrent.slice(-20)) {
+  for (const m of historyWithoutCurrent.slice(-12)) {
     const role = m.role === "user" ? "user" : "model";
     if (mergedHistory.length > 0 && mergedHistory[mergedHistory.length - 1].role === role) {
       mergedHistory[mergedHistory.length - 1].parts[0].text += "\n" + m.content;
@@ -420,7 +420,7 @@ export async function runGeminiAgent(
     mergedHistory.pop();
   }
 
-  const rawHistory = mergedHistory.slice(-10);
+  const rawHistory = mergedHistory.slice(-6);
   const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
   // Garante que o histórico começa com 'user' — Gemini rejeita se começar com 'model'
   // firstUserIdx === -1: nenhum user encontrado → histórico vazio
@@ -460,18 +460,11 @@ export async function runGeminiAgent(
       if (toolCalls.length === 0) {
         finalText = (candidate.text() ?? "").trim();
 
-        // Gemini 2.5 Pro às vezes retorna texto vazio após tool calls —
-        // pede explicitamente uma resposta de texto ao usuário.
+        // Quando o modelo retorna texto vazio após tool calls, usa fallback local
+        // para evitar uma chamada extra (que enviaria todo o contexto novamente).
         if (!finalText) {
-          try {
-            console.log("[gemini-agent] Texto vazio após tools — solicitando resposta ao modelo");
-            const retryResp = await chat.sendMessage(
-              "Responda ao usuário em português com base nas ações que acabou de executar."
-            );
-            finalText = (retryResp.response.text() ?? "").trim();
-          } catch (retryErr) {
-            console.warn("[gemini-agent] Retry de texto falhou:", retryErr);
-          }
+          console.log("[gemini-agent] Texto vazio após tools — usando fallback local");
+          finalText = "Tudo registrado! Pode continuar. 😊";
         }
 
         break;
