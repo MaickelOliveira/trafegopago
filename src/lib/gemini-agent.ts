@@ -461,11 +461,10 @@ export async function runGeminiAgent(
       if (toolCalls.length === 0) {
         finalText = (candidate.text() ?? "").trim();
 
-        // Quando o modelo retorna texto vazio após tool calls, usa fallback local
-        // para evitar uma chamada extra (que enviaria todo o contexto novamente).
+        // Modelo chamou tools mas não gerou texto — não envia mensagem ao usuário.
+        // As actions (enviar_resumo, planilha etc.) continuam sendo processadas normalmente.
         if (!finalText) {
-          console.log("[gemini-agent] Texto vazio após tools — usando fallback local");
-          finalText = "Tudo registrado! Pode continuar. 😊";
+          console.log("[gemini-agent] Texto vazio após tools — nenhuma mensagem enviada ao usuário");
         }
 
         break;
