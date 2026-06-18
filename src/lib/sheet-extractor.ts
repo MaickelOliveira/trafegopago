@@ -6,7 +6,9 @@ import type { SheetTabMapping } from "./clients";
 type TabInfo = { label: string; tabName: string; headers: string[] };
 
 // Usa Gemini 2.0 Flash (modelo barato) para extrair dados de reserva
-// da conversa e escrever diretamente no Google Sheets via OAuth (sem Apps Script).
+// da conversa e escrever diretamente no Google Sheets via OAuth.
+// Só deve ser chamado quando o agente principal chamou enviar_resumo
+// (dados coletados ou pagamento confirmado) — evita linhas duplicadas.
 export async function extractAndWriteToSheet(opts: {
   apiKey: string;
   spreadsheetId: string;
@@ -20,7 +22,7 @@ export async function extractAndWriteToSheet(opts: {
   console.log(`[sheet-extractor] iniciando — phone=${phone} messages=${messages.length} mappings=${sheetMappings.length}`);
   if (!messages.length || !sheetMappings.length) return;
 
-  // Carrega headers de cada aba (cacheados — sem custo real na maioria dos casos)
+  // Carrega headers de cada aba (cacheados)
   const tabs: TabInfo[] = [];
   for (const m of sheetMappings) {
     try {
@@ -32,29 +34,51 @@ export async function extractAndWriteToSheet(opts: {
   }
   if (tabs.length === 0) return;
 
-  // Apenas as últimas 6 mensagens para manter o prompt pequeno
-  const recent = messages.slice(-6);
+  // Últimas 10 mensagens para ter contexto completo da reserva
+  const recent = messages.slice(-10);
   const conversation = recent
-    .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 400)}`)
+    .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 500)}`)
     .join("\n");
 
-  // Mostra tabName (chave real) e label (rótulo amigável) para o modelo
   const tabsInfo = tabs
     .map((t) => `• aba="${t.tabName}" (tipo: ${t.label}) → colunas: ${t.headers.join(", ")}`)
     .join("\n");
 
-  const prompt = `Você extrai dados de reservas de conversas de WhatsApp.
+  const prompt = `Você extrai dados de reservas de conversas de WhatsApp para preencher uma planilha de controle.
 
-Abas da planilha disponíveis (use o valor de "aba" exatamente como mostrado):
+Abas disponíveis (use o valor de "aba" exatamente como mostrado):
 ${tabsInfo}
 
 Telefone do cliente: ${phone}
 
-Analise a conversa abaixo e extraia APENAS dados que o cliente confirmou (nome, data, pessoas, valores etc.).
+REGRAS OBRIGATÓRIAS DE EXTRAÇÃO:
+1. Só extraia se houver no mínimo: nome do responsável + telefone confirmados
+2. "Responsável" = nome completo de quem faz a reserva (quem está conversando)
+3. "Data" = data desejada para o evento (hospedagem, almoço, day use ou festa)
+4. "Pessoas" = lista de participantes no formato: "Nome Sobrenome (XX anos) - R$XX, Nome2 (XX anos) - R$XX"
+   - Inclua TODOS os participantes com nome, idade (se informada) e valor individual
+   - Se não souber a idade, omita: "Nome Sobrenome - R$XX"
+5. "Telefone" = use o telefone do cliente: ${phone}
+6. "Qtd. Pessoas" = número total de pessoas (adultos + crianças)
+7. "Valor por Pessoa" = NÃO PREENCHER — deixe vazio
+8. "Valor Total" = valor total cobrado pela reserva
+9. "Valor Pago" = preencha SOMENTE se o cliente confirmou que pagou ou enviou comprovante nesta conversa
+10. "Falta Pagar" = preencha SOMENTE se houve pagamento parcial (calcule: Valor Total - Valor Pago)
+11. "Status" = "Pendente" (sem pagamento), "Pago" (pagamento integral confirmado), "Parcial" (pagamento parcial)
+12. "Cidade" = cidade do cliente se mencionada
+13. "Observações" = restrições alimentares, pedidos especiais, ou qualquer informação extra relevante
+
+Determine a aba correta baseando-se no tipo de reserva mencionado na conversa:
+- Almoço de fim de semana → aba de almoço
+- Day Use → aba de day use
+- Hospedagem → aba de hospedagem
+- Festa junina / Arraiá / ingressos → aba de festa/arraiá
+- Se não houver aba específica, use a aba mais adequada disponível
+
 Retorne SOMENTE um array JSON — sem markdown, sem explicação:
 [{"aba": "valor exato do campo aba mostrado acima", "dados": {"NomeColuna": "valor"}}]
 
-Se não houver dados de reserva confirmados, retorne: []
+Se não houver dados suficientes (mínimo: nome + telefone), retorne: []
 
 Conversa:
 ${conversation}`;
@@ -81,12 +105,14 @@ ${conversation}`;
     return;
   }
 
-  // Remove markdown se o modelo insistir
   const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
   let rows: Array<{ aba: string; dados: Record<string, string> }>;
   try {
     rows = JSON.parse(jsonStr);
-    if (!Array.isArray(rows) || rows.length === 0) return;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      console.log("[sheet-extractor] Nenhum dado para registrar");
+      return;
+    }
   } catch {
     console.warn("[sheet-extractor] JSON inválido:", jsonStr.slice(0, 200));
     return;
@@ -108,7 +134,7 @@ ${conversation}`;
     }
     try {
       await appendRow(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, row.dados);
-      console.log(`[sheet-extractor] appendRow OK aba="${tab.tabName}" dados=${JSON.stringify(row.dados)}`);
+      console.log(`[sheet-extractor] appendRow OK aba="${tab.tabName}" responsável="${row.dados["Responsável"] ?? "?"}" telefone="${row.dados["Telefone"] ?? phone}"`);
     } catch (e) {
       console.error(`[sheet-extractor] appendRow ERRO aba="${tab.tabName}":`, e instanceof Error ? e.message : e);
     }

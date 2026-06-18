@@ -979,8 +979,10 @@ export async function POST(
               }
             }
             // Extração via Gemini 2.0 Flash + Google Sheets direto (fire-and-forget)
-            console.log(`[webhook] extrator-check refreshToken=${!!agCfg?.googleRefreshToken} spreadsheetId=${!!agCfg?.spreadsheetId} mappings=${agCfg?.sheetMappings?.length ?? 0}`);
-            if (agCfg?.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
+            // Só dispara quando o agente chamou enviar_resumo — evita linhas duplicadas
+            const hasResumo = actions.some((a) => a.type === "resumo_solicitado");
+            console.log(`[webhook] extrator-check hasResumo=${hasResumo} refreshToken=${!!agCfg?.googleRefreshToken} spreadsheetId=${!!agCfg?.spreadsheetId} mappings=${agCfg?.sheetMappings?.length ?? 0}`);
+            if (hasResumo && agCfg?.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
               const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
               if (apiKey) {
                 extractAndWriteToSheet({
@@ -1058,8 +1060,10 @@ export async function POST(
     }
 
     // Extração via Gemini 2.0 Flash + Google Sheets direto (fire-and-forget)
-    console.log(`[webhook] extrator-check-imediato refreshToken=${!!agentCfg?.googleRefreshToken} spreadsheetId=${!!agentCfg?.spreadsheetId} mappings=${agentCfg?.sheetMappings?.length ?? 0}`);
-    if (agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+    // Só dispara quando o agente chamou enviar_resumo — evita linhas duplicadas
+    const hasResumoImediato = geminiActions.some((a) => a.type === "resumo_solicitado");
+    console.log(`[webhook] extrator-check-imediato hasResumo=${hasResumoImediato} refreshToken=${!!agentCfg?.googleRefreshToken} spreadsheetId=${!!agentCfg?.spreadsheetId} mappings=${agentCfg?.sheetMappings?.length ?? 0}`);
+    if (hasResumoImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
         extractAndWriteToSheet({
