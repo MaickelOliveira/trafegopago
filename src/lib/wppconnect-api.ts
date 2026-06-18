@@ -70,6 +70,7 @@ export async function startSession(
         webhook: webhookUrl,
         waitQrCode: false,
         whatsappVersion: "",
+        autoReadMessages: false,
       }),
     });
   } catch { }
