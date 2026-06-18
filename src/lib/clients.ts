@@ -55,6 +55,7 @@ export type AgentConfig = {
   googleRefreshToken?: string;   // OAuth refresh token do Google Calendar
   summaryPhone?: string;         // Legado — use avisos[] para novos destinatários
   avisos?: AvisoRecipient[];     // Destinatários de avisos (números e grupos WhatsApp)
+  metaSummaryTemplateName?: string; // Template Meta aprovado para avisos via API oficial (ex: "aviso2")
   followUps: FollowUpStep[];     // Sequência de follow-ups configurados
   followUpContext?: string;      // Contexto curto do negócio para a IA decidir se envia follow-up (ex: "pousada, clientes pessoa física, filtrar fornecedores")
   systemPrompt?: string;         // Instruções do agente para este cliente

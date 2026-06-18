@@ -7,8 +7,12 @@ import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
 import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
-import { sendMessageDirect } from "@/lib/whatsapp-send";
+import { sendMessageDirect, getGeminiApiKey } from "@/lib/whatsapp-send";
 import { splitMessage } from "@/lib/uazapi";
+import { sendTemplate } from "@/lib/waba-templates";
+import { generateSummaryText } from "@/lib/summary-generator";
+import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
+import type { GeminiAction } from "@/lib/gemini-agent";
 
 // GET — verificação do webhook Meta
 export async function GET(req: NextRequest) {
@@ -158,6 +162,81 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // ── processMetaActions: aviso + sheet extractor ─────────────────
+        async function processMetaActions(actions: GeminiAction[]) {
+          if (!actions.length || !agentCfg || !metaToken || !phoneNumberId) return;
+          const resumoAction = actions.find((a) => a.type === "resumo_solicitado");
+          if (!resumoAction) return;
+
+          // Sheet extractor
+          if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+            const hist = getHistory(phone, clientId, connId ?? undefined);
+            extractAndWriteToSheet({
+              apiKey: agentCfg.geminiApiKey || getGeminiApiKey() || "",
+              spreadsheetId: agentCfg.spreadsheetId,
+              googleRefreshToken: agentCfg.googleRefreshToken,
+              sheetMappings: agentCfg.sheetMappings,
+              messages: hist,
+              phone,
+              motivo: resumoAction.motivo,
+            }).catch((e) => console.error("[meta] sheet-extractor ERRO:", e));
+          }
+
+          // Avisos
+          const recipients = agentCfg.avisos?.length
+            ? agentCfg.avisos
+            : agentCfg.summaryPhone
+              ? [{ id: "legacy", label: "Gestor", value: agentCfg.summaryPhone, type: "phone" as const }]
+              : [];
+          if (!recipients.length) return;
+
+          const clientName = client?.name ?? cid;
+          const geminiKey = agentCfg.geminiApiKey || getGeminiApiKey() || "";
+          const summaryText = await generateSummaryText(clientName, agentCfg, phone, resumoAction.motivo, geminiKey);
+
+          // Variáveis do template aviso2:
+          // {{1}} = número do lead, {{2}} = nome do lead, {{3}} = motivo + resumo
+          const var1 = phone.replace(/\D/g, "");
+          const var2 = pushName !== phone ? pushName : phone;
+          const var3 = `Motivo: ${resumoAction.motivo}\n\n${summaryText}`;
+          const templateName = agentCfg.metaSummaryTemplateName;
+
+          await Promise.all(
+            recipients
+              .filter((r) => {
+                if (r.type !== "phone") {
+                  console.warn(`[meta] aviso para grupo ignorado (WABA não suporta grupos): ${r.value}`);
+                  return false;
+                }
+                return true;
+              })
+              .map(async (r) => {
+                if (templateName) {
+                  const result = await sendTemplate(
+                    phoneNumberId!,
+                    metaToken!,
+                    r.value,
+                    templateName,
+                    "pt_BR",
+                    [{ type: "body", parameters: [
+                      { type: "text", text: var1 },
+                      { type: "text", text: var2 },
+                      { type: "text", text: var3 },
+                    ]}],
+                  );
+                  if (!result.success) console.error(`[meta] sendTemplate ERRO:`, result.error);
+                  else console.log(`[meta] sendTemplate OK → ${r.value}`);
+                } else {
+                  // Fallback texto livre (funciona dentro da janela de 24h)
+                  const fullMsg =
+                    `📋 *Resumo — ${clientName}*\n\n` +
+                    `📞 wa.me/${var1}\n📝 ${resumoAction.motivo}\n\n${summaryText}`;
+                  await sendMessageDirect(r.value, fullMsg, phoneNumberId!, metaToken!);
+                }
+              })
+          );
+        }
+
         // ── Batching (messageWaitSeconds > 0) ────────────────────────────
         if (waitSeconds > 0) {
           const pending = upsertPending(cid, phone, text, waitSeconds);
@@ -171,9 +250,10 @@ export async function POST(req: NextRequest) {
             const h = getHistory(phone, clientId, connId ?? undefined);
             console.log(`[meta] Gemini batch phone=${phone} cid=${cid} msgs=${batch.messages.length}`);
             runGeminiAgent(combined, h, cid, phone, connId ?? undefined)
-              .then(async ({ text: reply }) => {
+              .then(async ({ text: reply, actions }) => {
                 markDone(batch.id);
                 if (reply) await sendMetaReply(reply);
+                await processMetaActions(actions);
               })
               .catch((e) => {
                 console.error(`[meta] Gemini ERRO batch phone=${phone}:`, e);
@@ -187,8 +267,9 @@ export async function POST(req: NextRequest) {
         // ── Resposta imediata ────────────────────────────────────────────
         console.log(`[meta] Gemini imediato phone=${phone} cid=${cid}`);
         const history = getHistory(phone, clientId, connId ?? undefined);
-        const { text: reply } = await runGeminiAgent(text, history, cid, phone, connId ?? undefined);
+        const { text: reply, actions } = await runGeminiAgent(text, history, cid, phone, connId ?? undefined);
         if (reply) await sendMetaReply(reply);
+        await processMetaActions(actions);
       }
     }
   }

@@ -66,6 +66,7 @@ type AgentCfg = {
   sheetTabName?: string;
   sheetMappings?: { tipo: string; label: string; tabName: string }[];
   appsScriptUrl?: string;
+  metaSummaryTemplateName?: string;
 };
 
 type SheetTab = { title: string; sheetId: number };
@@ -1344,6 +1345,19 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             </div>
           </div>
         )}
+
+        {/* Template Meta para avisos */}
+        <div className="mt-3 space-y-1">
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Template Meta para avisos</label>
+          <input
+            type="text"
+            value={cfg.metaSummaryTemplateName ?? ""}
+            onChange={(e) => setCfg((c) => ({ ...c, metaSummaryTemplateName: e.target.value || undefined }))}
+            placeholder="ex: aviso2"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400"
+          />
+          <p className="text-xs text-slate-400">Para API oficial Meta. Nome do template aprovado com 3 variáveis: {"{{"}<span>1</span>{"}}"} = telefone, {"{{"}<span>2</span>{"}}"} = nome, {"{{"}<span>3</span>{"}}"} = resumo.</p>
+        </div>
       </div>
 
       {/* Cron */}
