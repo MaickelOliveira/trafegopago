@@ -39,35 +39,46 @@ export async function extractAndWriteToSheet(opts: {
     .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 400)}`)
     .join("\n");
 
+  // Para cada aba, mostra o tabName (chave real) e o label (rótulo amigável)
   const tabsInfo = tabs
-    .map((t) => `• "${t.label}" → colunas: ${t.headers.join(", ")}`)
+    .map((t) => `• aba="${t.tabName}" (tipo: ${t.label}) → colunas: ${t.headers.join(", ")}`)
     .join("\n");
 
   const prompt = `Você extrai dados de reservas de conversas de WhatsApp.
 
-Abas da planilha disponíveis:
+Abas da planilha disponíveis (use o valor de "aba" exatamente como mostrado):
 ${tabsInfo}
 
 Telefone do cliente: ${phone}
 
 Analise a conversa abaixo e extraia APENAS dados que o cliente confirmou (nome, data, pessoas, valores etc.).
 Retorne SOMENTE um array JSON — sem markdown, sem explicação:
-[{"aba": "nome exato da aba", "dados": {"NomeColuna": "valor"}}]
+[{"aba": "valor exato do campo aba mostrado acima", "dados": {"NomeColuna": "valor"}}]
 
 Se não houver dados de reserva confirmados, retorne: []
 
 Conversa:
 ${conversation}`;
 
+  const modelsToTry = ["gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite" });
 
-  let text: string;
-  try {
-    const result = await model.generateContent(prompt);
-    text = result.response.text().trim();
-  } catch (e) {
-    console.warn("[sheet-extractor] Gemini falhou:", e instanceof Error ? e.message : e);
+  let text: string | null = null;
+  for (const modelId of modelsToTry) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelId });
+      const result = await model.generateContent(prompt);
+      text = result.response.text().trim();
+      if (text) {
+        console.log(`[sheet-extractor] Gemini OK model=${modelId}`);
+        break;
+      }
+    } catch (e) {
+      console.warn(`[sheet-extractor] Gemini model=${modelId} falhou:`, e instanceof Error ? e.message : e);
+    }
+  }
+  if (!text) {
+    console.warn("[sheet-extractor] Todos os modelos Gemini falharam — abortando");
     return;
   }
 
@@ -81,6 +92,14 @@ ${conversation}`;
     console.warn("[sheet-extractor] JSON inválido:", jsonStr.slice(0, 200));
     return;
   }
+
+  // Garante que "aba" contém o tabName real (o modelo pode devolver o label)
+  for (const row of rows) {
+    const byLabel = tabs.find((t) => t.label === row.aba);
+    if (byLabel) row.aba = byLabel.tabName;
+    // Se o modelo já devolveu o tabName correto, mantém como está
+  }
+  console.log(`[sheet-extractor] rows após resolução de aba: ${JSON.stringify(rows.map(r => ({ aba: r.aba, keys: Object.keys(r.dados) })))}`);
 
   // Envia cada linha para o Apps Script
   for (const row of rows) {
