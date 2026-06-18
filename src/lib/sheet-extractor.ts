@@ -1,27 +1,26 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getSheetHeadersCached } from "./google-sheets";
+import { getSheetHeadersCached, appendRow } from "./google-sheets";
 import type { ChatMessage } from "./conversations";
 import type { SheetTabMapping } from "./clients";
 
 type TabInfo = { label: string; tabName: string; headers: string[] };
 
-// Usa gemini-3.1-flash-lite (modelo barato) para extrair dados de reserva
-// da conversa e escrever no Google Apps Script (gratuito, sem OAuth de Sheets).
+// Usa Gemini 2.0 Flash (modelo barato) para extrair dados de reserva
+// da conversa e escrever diretamente no Google Sheets via OAuth (sem Apps Script).
 export async function extractAndWriteToSheet(opts: {
   apiKey: string;
-  appsScriptUrl: string;
   spreadsheetId: string;
   googleRefreshToken: string;
   sheetMappings: SheetTabMapping[];
   messages: ChatMessage[];
   phone: string;
 }): Promise<void> {
-  const { apiKey, appsScriptUrl, spreadsheetId, googleRefreshToken, sheetMappings, messages, phone } = opts;
+  const { apiKey, spreadsheetId, googleRefreshToken, sheetMappings, messages, phone } = opts;
 
-  console.log(`[sheet-extractor] iniciando — phone=${phone} messages=${messages.length} mappings=${sheetMappings.length} url=${appsScriptUrl.slice(0, 40)}...`);
+  console.log(`[sheet-extractor] iniciando — phone=${phone} messages=${messages.length} mappings=${sheetMappings.length}`);
   if (!messages.length || !sheetMappings.length) return;
 
-  // Carrega headers de cada aba (vem do cache — sem custo real na maioria dos casos)
+  // Carrega headers de cada aba (cacheados — sem custo real na maioria dos casos)
   const tabs: TabInfo[] = [];
   for (const m of sheetMappings) {
     try {
@@ -39,7 +38,7 @@ export async function extractAndWriteToSheet(opts: {
     .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 400)}`)
     .join("\n");
 
-  // Para cada aba, mostra o tabName (chave real) e o label (rótulo amigável)
+  // Mostra tabName (chave real) e label (rótulo amigável) para o modelo
   const tabsInfo = tabs
     .map((t) => `• aba="${t.tabName}" (tipo: ${t.label}) → colunas: ${t.headers.join(", ")}`)
     .join("\n");
@@ -60,7 +59,7 @@ Se não houver dados de reserva confirmados, retorne: []
 Conversa:
 ${conversation}`;
 
-  const modelsToTry = ["gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
+  const modelsToTry = ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-2.5-flash"];
   const genAI = new GoogleGenerativeAI(apiKey);
 
   let text: string | null = null;
@@ -97,21 +96,21 @@ ${conversation}`;
   for (const row of rows) {
     const byLabel = tabs.find((t) => t.label === row.aba);
     if (byLabel) row.aba = byLabel.tabName;
-    // Se o modelo já devolveu o tabName correto, mantém como está
   }
-  console.log(`[sheet-extractor] rows após resolução de aba: ${JSON.stringify(rows.map(r => ({ aba: r.aba, keys: Object.keys(r.dados) })))}`);
+  console.log(`[sheet-extractor] rows: ${JSON.stringify(rows.map(r => ({ aba: r.aba, keys: Object.keys(r.dados) })))}`);
 
-  // Envia cada linha para o Apps Script
+  // Escreve cada linha diretamente no Google Sheets via OAuth
   for (const row of rows) {
+    const tab = tabs.find((t) => t.tabName === row.aba);
+    if (!tab) {
+      console.warn(`[sheet-extractor] Aba não encontrada: "${row.aba}" — pulando`);
+      continue;
+    }
     try {
-      const res = await fetch(appsScriptUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...row, spreadsheetId }),
-      });
-      console.log(`[sheet-extractor] Apps Script aba="${row.aba}" → ${res.status}`);
+      await appendRow(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, row.dados);
+      console.log(`[sheet-extractor] appendRow OK aba="${tab.tabName}" dados=${JSON.stringify(row.dados)}`);
     } catch (e) {
-      console.error("[sheet-extractor] Erro ao chamar Apps Script:", e instanceof Error ? e.message : e);
+      console.error(`[sheet-extractor] appendRow ERRO aba="${tab.tabName}":`, e instanceof Error ? e.message : e);
     }
   }
 }

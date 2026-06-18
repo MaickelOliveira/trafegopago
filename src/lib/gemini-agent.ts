@@ -364,27 +364,10 @@ export async function runGeminiAgent(
   const genAI = new GoogleGenerativeAI(apiKey);
   const mediaLibrary = agentCfg.mediaLibrary;
 
-  // Planilha do Google Sheets — carrega cabeçalhos (cacheados) para montar a tool dinamicamente.
-  // Quando appsScriptUrl está configurado, o preenchimento é feito pelo extrator externo
-  // (sheet-extractor.ts) e a tool é omitida do agente para economizar tokens.
-  let sheetTool: SheetTool | null = null;
-  if (!agentCfg.appsScriptUrl && agentCfg.googleRefreshToken && agentCfg.spreadsheetId) {
-    try {
-      if (agentCfg.sheetMappings && agentCfg.sheetMappings.length > 0) {
-        const tabResults: Array<{ mapping: typeof agentCfg.sheetMappings[0]; headers: string[] }> = [];
-        for (const mapping of agentCfg.sheetMappings) {
-          const headers = await getSheetHeadersCached(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, mapping.tabName);
-          if (headers.length > 0) tabResults.push({ mapping, headers });
-        }
-        if (tabResults.length > 0) sheetTool = buildSheetToolMulti(tabResults);
-      } else if (agentCfg.sheetTabName) {
-        const headers = await getSheetHeadersCached(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, agentCfg.sheetTabName);
-        if (headers.length > 0) sheetTool = buildSheetTool(headers);
-      }
-    } catch (e) {
-      console.warn(`[gemini-agent] Falha ao ler cabeçalho da planilha — clientId=${clientId}:`, e instanceof Error ? e.message : e);
-    }
-  }
+  // Planilha do Google Sheets — preenchimento sempre feito pelo extrator externo
+  // (sheet-extractor.ts com Gemini 2.0 Flash) após cada resposta do agente principal.
+  // A sheet tool é omitida aqui para economizar tokens do agente principal.
+  const sheetTool: SheetTool | null = null;
 
   const sheetTypes = sheetTool?.tabMap.size ? [...sheetTool.tabMap.keys()] : undefined;
   const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, sheetTool?.headers, sheetTypes);

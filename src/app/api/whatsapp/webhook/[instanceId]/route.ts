@@ -978,14 +978,13 @@ export async function POST(
                 console.error(`[webhook] processGeminiActions ERRO phone=${phone}:`, e instanceof Error ? e.message : e);
               }
             }
-            // Extração via modelo barato + Apps Script (fire-and-forget, sem bloquear a resposta)
-            console.log(`[webhook] extrator-check appsScriptUrl=${!!agCfg?.appsScriptUrl} refreshToken=${!!agCfg?.googleRefreshToken} spreadsheetId=${!!agCfg?.spreadsheetId} mappings=${agCfg?.sheetMappings?.length ?? 0}`);
-            if (agCfg?.appsScriptUrl && agCfg.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
+            // Extração via Gemini 2.0 Flash + Google Sheets direto (fire-and-forget)
+            console.log(`[webhook] extrator-check refreshToken=${!!agCfg?.googleRefreshToken} spreadsheetId=${!!agCfg?.spreadsheetId} mappings=${agCfg?.sheetMappings?.length ?? 0}`);
+            if (agCfg?.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
               const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
               if (apiKey) {
                 extractAndWriteToSheet({
                   apiKey,
-                  appsScriptUrl: agCfg.appsScriptUrl,
                   spreadsheetId: agCfg.spreadsheetId,
                   googleRefreshToken: agCfg.googleRefreshToken,
                   sheetMappings: agCfg.sheetMappings,
@@ -1058,13 +1057,13 @@ export async function POST(
       }
     }
 
-    console.log(`[webhook] extrator-check-imediato appsScriptUrl=${!!agentCfg?.appsScriptUrl} refreshToken=${!!agentCfg?.googleRefreshToken} spreadsheetId=${!!agentCfg?.spreadsheetId} mappings=${agentCfg?.sheetMappings?.length ?? 0}`);
-    if (agentCfg?.appsScriptUrl && agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+    // Extração via Gemini 2.0 Flash + Google Sheets direto (fire-and-forget)
+    console.log(`[webhook] extrator-check-imediato refreshToken=${!!agentCfg?.googleRefreshToken} spreadsheetId=${!!agentCfg?.spreadsheetId} mappings=${agentCfg?.sheetMappings?.length ?? 0}`);
+    if (agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
         extractAndWriteToSheet({
           apiKey,
-          appsScriptUrl: agentCfg.appsScriptUrl,
           spreadsheetId: agentCfg.spreadsheetId,
           googleRefreshToken: agentCfg.googleRefreshToken,
           sheetMappings: agentCfg.sheetMappings,
