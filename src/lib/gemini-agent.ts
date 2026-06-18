@@ -259,7 +259,7 @@ function sanitizeForWhatsApp(text: string): string {
   return result;
 }
 
-function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[], sheetTypes?: string[]): string {
+function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[], sheetTypes?: string[], hasSheet?: boolean): string {
   const now = new Date();
   const today = now.toLocaleDateString("pt-BR", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -333,10 +333,17 @@ REGRAS OBRIGATÓRIAS DE FORMATAÇÃO PARA WHATSAPP:
       : `\n\nPlanilha de reservas conectada — colunas: ${sheetHeaders.join(", ")}.\nSempre que o cliente fornecer dados de reserva (nome, telefone, data, pagamento), use IMEDIATAMENTE a função adicionar_linha_planilha para cada pessoa. Preencha apenas as colunas informadas.`
     : "";
 
+  const resumoPart = hasSheet
+    ? `\n\nREGRAS OBRIGATÓRIAS para registrar na planilha (via enviar_resumo):
+- Quando o cliente fornecer os dados da reserva (nome, participantes, data), chame enviar_resumo com motivo iniciando exatamente com: "DADOS RECEBIDOS: " seguido de um breve resumo
+- Quando o cliente enviar comprovante ou confirmar pagamento Pix, chame enviar_resumo com motivo iniciando exatamente com: "PAGAMENTO PIX: " seguido do valor pago
+- NUNCA chame enviar_resumo com outro texto para esses dois casos — o sistema usa esses prefixos para gravar na planilha automaticamente`
+    : "";
+
   if (customPrompt?.trim()) {
-    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}${kbPart}${sheetPart}`;
+    return `${dateTimeInfo}\n\n${customPrompt.trim()}\n\n--- Capacidades do sistema ---\n${base}${mediaPart}${kbPart}${sheetPart}${resumoPart}`;
   }
-  return `${base}${mediaPart}${kbPart}${sheetPart}`;
+  return `${base}${mediaPart}${kbPart}${sheetPart}${resumoPart}`;
 }
 
 export async function runGeminiAgent(
@@ -369,7 +376,8 @@ export async function runGeminiAgent(
   // A sheet tool é omitida aqui para economizar tokens do agente principal.
   const sheetTool = null;
 
-  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, undefined, undefined);
+  const hasSheet = !!(agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length);
+  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, undefined, undefined, hasSheet);
   const tools: Tool[] = [{ functionDeclarations: [...TOOL_DECLARATIONS] }];
 
   const modelsToTry = [
