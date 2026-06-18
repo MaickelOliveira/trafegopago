@@ -11,21 +11,25 @@ function buildInsertPrompt(tabsInfo: string, phone: string, conversation: string
 Abas disponíveis (use o valor de "aba" exatamente como mostrado):
 ${tabsInfo}
 
-Telefone do cliente: ${phone}
+ID interno do cliente: ${phone}
 
 REGRAS OBRIGATÓRIAS:
 1. Só extraia se houver no mínimo: nome do responsável confirmado na conversa
 2. "Responsável" = nome completo de quem faz a reserva
 3. "Data" = data desejada para o evento (hospedagem, almoço, day use ou festa)
-4. "Pessoas" = todos os participantes: "Nome Sobrenome (XX anos) - R$XX, Nome2 (XX anos) - R$XX"
-   Se não souber a idade, omita: "Nome Sobrenome - R$XX"
-5. "Telefone" = ${phone}
+4. "Pessoas" = OBRIGATÓRIO listar TODOS os participantes com valor individual calculado pelo atendente:
+   Formato: "Nome Sobrenome (XX anos) - R$XX,00, Nome2 (XX anos) - R$XX,00"
+   - Use os valores que o atendente calculou para cada faixa etária (adulto, criança, gratuito)
+   - Se criança gratuita, escreva "Gratuito" no lugar do valor
+   - NUNCA omita os valores — eles são obrigatórios neste campo
+5. "Telefone" = número de telefone/celular/WhatsApp que o cliente informou na conversa (não o ID interno)
+   Se o cliente não informou um número explícito, deixe vazio
 6. "Qtd. Pessoas" = número total de pessoas (adultos + crianças)
 7. "Valor por Pessoa" = NÃO PREENCHER — deixe vazio
 8. "Valor Total" = valor total cobrado pela reserva
-9. "Valor Pago" = NÃO PREENCHER — deixe vazio (será preenchido quando o cliente enviar o comprovante)
-10. "Falta Pagar" = NÃO PREENCHER — deixe vazio
-11. "Status" = sempre "Pendente" (pagamento ainda não confirmado)
+9. "Valor Pago" = NÃO PREENCHER — deixe vazio
+10. "Falta Pagar" = igual ao Valor Total (pois nada foi pago ainda — reserva recém criada)
+11. "Status" = sempre "Pendente"
 12. "Cidade" = cidade do cliente se mencionada
 13. "Observações" = restrições alimentares, pedidos especiais ou informações extras
 
@@ -50,21 +54,21 @@ function buildUpdatePrompt(tabsInfo: string, phone: string, conversation: string
 Abas disponíveis (use o valor de "aba" exatamente como mostrado):
 ${tabsInfo}
 
-Telefone do cliente: ${phone}
+ID interno do cliente: ${phone}
 
 O cliente acabou de confirmar o pagamento (enviou comprovante ou confirmou Pix).
-Extraia APENAS os campos de pagamento para ATUALIZAR a linha existente deste cliente.
+Extraia os campos abaixo para ATUALIZAR a linha existente deste cliente.
 
 REGRAS:
-1. "Valor Pago" = valor que o cliente pagou (extraia da conversa)
-2. "Falta Pagar" = calcule apenas se for pagamento parcial (Valor Total - Valor Pago). Se pagou integral, deixe vazio
-3. "Status" = "Pago" se pagou o valor total, "Parcial" se pagou apenas parte
-4. NÃO inclua outros campos — retorne apenas os 3 acima (mais os que souber com certeza)
+1. "Telefone" = número de telefone/celular que o cliente informou na conversa (para localizar a linha). Se não encontrar, deixe vazio
+2. "Valor Pago" = valor que o cliente pagou (extraia da conversa)
+3. "Falta Pagar" = Valor Total - Valor Pago se pagou parcialmente. Se pagou o total, deixe vazio (ou "R$ 0,00")
+4. "Status" = "Pago" se pagou o valor total, "Parcial" se pagou apenas parte
 
 Determine a aba correta pelo tipo de reserva mencionado na conversa.
 
 Retorne SOMENTE um array JSON — sem markdown, sem explicação:
-[{"aba": "valor exato do campo aba mostrado acima", "dados": {"Status": "Pago", "Valor Pago": "R$XXX,XX"}}]
+[{"aba": "valor exato do campo aba mostrado acima", "dados": {"Telefone": "44999990000", "Status": "Pago", "Valor Pago": "R$XXX,XX"}}]
 
 Conversa:
 ${conversation}`;
@@ -163,13 +167,18 @@ export async function extractAndWriteToSheet(opts: {
 
     if (isPagamento) {
       // Modo UPDATE: encontra a linha existente pelo telefone e atualiza
+      // Prefere o telefone extraído da conversa; cai no LID como último recurso
+      const lookupPhone = row.dados["Telefone"] || phone;
+      // Remove Telefone dos dados para não sobrescrever o valor original na planilha
+      const updateData = { ...row.dados };
+      delete updateData["Telefone"];
       try {
-        const rowIndex = await findLastRowByPhone(googleRefreshToken, spreadsheetId, tab.tabName, phone);
+        const rowIndex = await findLastRowByPhone(googleRefreshToken, spreadsheetId, tab.tabName, lookupPhone);
         if (rowIndex) {
-          await updateRowFields(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, rowIndex, row.dados);
-          console.log(`[sheet-extractor] updateRow OK aba="${tab.tabName}" row=${rowIndex} campos=${JSON.stringify(row.dados)}`);
+          await updateRowFields(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, rowIndex, updateData);
+          console.log(`[sheet-extractor] updateRow OK aba="${tab.tabName}" row=${rowIndex} campos=${JSON.stringify(updateData)}`);
         } else {
-          console.warn(`[sheet-extractor] Linha não encontrada para phone=${phone} em aba="${tab.tabName}"`);
+          console.warn(`[sheet-extractor] Linha não encontrada para phone=${lookupPhone} em aba="${tab.tabName}"`);
         }
       } catch (e) {
         console.error(`[sheet-extractor] updateRow ERRO aba="${tab.tabName}":`, e instanceof Error ? e.message : e);
@@ -177,7 +186,7 @@ export async function extractAndWriteToSheet(opts: {
     } else {
       // Modo INSERT: adiciona nova linha com Status = Pendente
       if (!row.dados["Status"]) row.dados["Status"] = "Pendente";
-      if (!row.dados["Telefone"]) row.dados["Telefone"] = phone;
+      // Não sobrescreve o telefone se o modelo extraiu um da conversa
       try {
         await appendRow(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, row.dados);
         console.log(`[sheet-extractor] appendRow OK aba="${tab.tabName}" responsável="${row.dados["Responsável"] ?? "?"}"`);
