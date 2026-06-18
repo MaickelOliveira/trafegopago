@@ -72,6 +72,9 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
     submitNow: false,
   });
   const [creating, setCreating] = useState(false);
+  const [buttons, setButtons] = useState<{type: "QUICK_REPLY"|"URL"|"PHONE_NUMBER"; text: string; url?: string; phone?: string}[]>([]);
+  const [editingTemplate, setEditingTemplate] = useState<WabaTemplate | null>(null);
+  const [newBtnType, setNewBtnType] = useState<"QUICK_REPLY"|"URL"|"PHONE_NUMBER">("QUICK_REPLY");
 
   // Import do Meta
   const [showImport, setShowImport] = useState(false);
@@ -145,34 +148,95 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
     setDeleting(null);
   }
 
+  function startEdit(tpl: WabaTemplate) {
+    const header = tpl.components.find((c) => c.type === "HEADER");
+    const body = tpl.components.find((c) => c.type === "BODY");
+    const footer = tpl.components.find((c) => c.type === "FOOTER");
+    const btnComp = tpl.components.find((c) => c.type === "BUTTONS");
+    setForm({
+      name: tpl.name,
+      category: tpl.category,
+      language: tpl.language,
+      headerText: header?.text ?? "",
+      bodyText: body?.text ?? "",
+      footerText: footer?.text ?? "",
+      wabaId: tpl.wabaId ?? "",
+      connId: metaConnections.find((c) => c.phoneNumberId === tpl.phoneNumberId)?.id ?? metaConnections[0]?.id ?? "",
+      submitNow: false,
+    });
+    setButtons(btnComp?.buttons ?? []);
+    setEditingTemplate(tpl);
+    setActiveTab("create");
+  }
+
+  function resetForm() {
+    setForm((f) => ({ ...f, name: "", headerText: "", bodyText: "", footerText: "" }));
+    setButtons([]);
+    setEditingTemplate(null);
+  }
+
+  function addButton() {
+    const maxQR = 3, maxURL = 2, maxPhone = 1;
+    const counts = { QUICK_REPLY: buttons.filter(b => b.type === "QUICK_REPLY").length, URL: buttons.filter(b => b.type === "URL").length, PHONE_NUMBER: buttons.filter(b => b.type === "PHONE_NUMBER").length };
+    if (newBtnType === "QUICK_REPLY" && counts.QUICK_REPLY >= maxQR) return;
+    if (newBtnType === "URL" && counts.URL >= maxURL) return;
+    if (newBtnType === "PHONE_NUMBER" && counts.PHONE_NUMBER >= maxPhone) return;
+    if (buttons.length >= 10) return;
+    setButtons((bs) => [...bs, { type: newBtnType, text: "" }]);
+  }
+
   async function createTemplate() {
-    if (!form.name.trim() || !form.bodyText.trim()) return;
+    if (!form.bodyText.trim()) return;
+    if (!editingTemplate && !form.name.trim()) return;
     setCreating(true);
-    const components = [];
+    const components: {type: string; format?: string; text?: string; buttons?: typeof buttons}[] = [];
     if (form.headerText.trim()) components.push({ type: "HEADER", format: "TEXT", text: form.headerText.trim() });
     components.push({ type: "BODY", text: form.bodyText.trim() });
     if (form.footerText.trim()) components.push({ type: "FOOTER", text: form.footerText.trim() });
+    if (buttons.length > 0) components.push({ type: "BUTTONS", buttons });
 
-    const res = await fetch("/api/waba/templates", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientId,
-        name: form.name,
-        category: form.category,
-        language: form.language,
-        components,
-        wabaId: form.wabaId || undefined,
-        phoneNumberId: selectedConn?.phoneNumberId,
-        metaToken: selectedConn?.token,
-        submitToMeta: form.submitNow && !!form.wabaId && !!selectedConn,
-      }),
-    });
-    if (res.ok) {
-      const created = await res.json() as WabaTemplate;
-      setTemplates((ts) => [...ts, created]);
-      setActiveTab("templates");
-      setForm((f) => ({ ...f, name: "", headerText: "", bodyText: "", footerText: "" }));
+    if (editingTemplate) {
+      const res = await fetch(`/api/waba/templates/${editingTemplate.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          components,
+          category: form.category,
+          language: form.language,
+          wabaId: form.wabaId || undefined,
+          phoneNumberId: selectedConn?.phoneNumberId,
+          metaToken: selectedConn?.token,
+          submitToMeta: form.submitNow && !!form.wabaId && !!selectedConn,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json() as WabaTemplate;
+        setTemplates((ts) => ts.map((t) => t.id === editingTemplate.id ? updated : t));
+        setActiveTab("templates");
+        resetForm();
+      }
+    } else {
+      const res = await fetch("/api/waba/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          name: form.name,
+          category: form.category,
+          language: form.language,
+          components,
+          wabaId: form.wabaId || undefined,
+          phoneNumberId: selectedConn?.phoneNumberId,
+          metaToken: selectedConn?.token,
+          submitToMeta: form.submitNow && !!form.wabaId && !!selectedConn,
+        }),
+      });
+      if (res.ok) {
+        const created = await res.json() as WabaTemplate;
+        setTemplates((ts) => [...ts, created]);
+        setActiveTab("templates");
+        resetForm();
+      }
     }
     setCreating(false);
   }
@@ -324,7 +388,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
                 : "border-transparent text-slate-500 hover:text-slate-700"
             )}
           >
-            {tab === "templates" ? `Templates (${templates.length})` : "+ Criar Template"}
+            {tab === "templates" ? `Templates (${templates.length})` : editingTemplate ? "✏️ Editar Template" : "+ Criar Template"}
           </button>
         ))}
       </div>
@@ -378,10 +442,23 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
 
                     {/* Conteúdo do template */}
                     {tpl.components.map((c, i) => (
-                      <div key={i} className={clsx("text-xs mt-1", c.type === "BODY" ? "text-slate-700" : "text-slate-500 italic")}>
-                        {c.type === "HEADER" && <span className="font-semibold">Cabeçalho: </span>}
-                        {c.type === "FOOTER" && <span>Rodapé: </span>}
-                        {c.text}
+                      <div key={i} className={clsx("text-xs mt-1", c.type === "BODY" ? "text-slate-700" : c.type === "BUTTONS" ? "" : "text-slate-500 italic")}>
+                        {c.type === "HEADER" && <><span className="font-semibold">Cabeçalho: </span>{c.text}</>}
+                        {c.type === "FOOTER" && <><span>Rodapé: </span>{c.text}</>}
+                        {c.type === "BODY" && c.text}
+                        {c.type === "BUTTONS" && c.buttons && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {c.buttons.map((b, bi) => (
+                              <span key={bi} className={clsx("rounded-full px-2 py-0.5 text-[10px] font-medium border",
+                                b.type === "QUICK_REPLY" ? "border-violet-200 bg-violet-50 text-violet-700" :
+                                b.type === "URL" ? "border-blue-200 bg-blue-50 text-blue-700" :
+                                "border-green-200 bg-green-50 text-green-700"
+                              )}>
+                                {b.type === "QUICK_REPLY" ? "↩" : b.type === "URL" ? "🔗" : "📞"} {b.text}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
 
@@ -411,6 +488,13 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
                         ▶ Disparar
                       </button>
                     )}
+                    <button
+                      onClick={() => startEdit(tpl)}
+                      className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 transition"
+                      title="Editar template"
+                    >
+                      ✏️
+                    </button>
                     {tpl.metaId && (
                       <button
                         onClick={() => syncStatus(tpl.id)}
@@ -440,20 +524,29 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
         </div>
       )}
 
-      {/* Aba: Criar Template */}
+      {/* Aba: Criar / Editar Template */}
       {activeTab === "create" && (
         <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">Novo Template</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-slate-800">{editingTemplate ? `Editar: ${editingTemplate.name}` : "Novo Template"}</h2>
+            {editingTemplate && (
+              <span className={clsx("rounded-full px-2 py-0.5 text-[10px] font-bold", STATUS_STYLE[editingTemplate.status] ?? STATUS_STYLE.DRAFT)}>
+                {STATUS_LABEL[editingTemplate.status] ?? editingTemplate.status}
+              </span>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Nome do Template <span className="text-slate-400">(snake_case)</span></label>
               <input
                 value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) => !editingTemplate && setForm((f) => ({ ...f, name: e.target.value }))}
+                readOnly={!!editingTemplate}
                 placeholder="ex: oferta_semana, boas_vindas"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400"
+                className={clsx("w-full rounded-lg border px-3 py-2 text-sm outline-none", editingTemplate ? "border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed" : "border-slate-200 focus:border-violet-400")}
               />
+              {editingTemplate && <p className="text-[10px] text-slate-400 mt-0.5">O nome do template não pode ser alterado após criação.</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Categoria</label>
@@ -501,6 +594,73 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
             />
           </div>
 
+          {/* Botões */}
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-slate-600">Botões (opcional)</label>
+
+            {buttons.map((btn, i) => (
+              <div key={i} className="flex items-start gap-2 rounded-lg border border-slate-200 p-3">
+                <span className={clsx("rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0 mt-1",
+                  btn.type === "QUICK_REPLY" ? "bg-violet-100 text-violet-700" :
+                  btn.type === "URL" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                )}>
+                  {btn.type === "QUICK_REPLY" ? "↩ Resposta" : btn.type === "URL" ? "🔗 Site" : "📞 Ligar"}
+                </span>
+                <div className="flex-1 space-y-1.5">
+                  <input
+                    value={btn.text}
+                    onChange={(e) => setButtons((bs) => bs.map((b, j) => j === i ? { ...b, text: e.target.value } : b))}
+                    placeholder="Texto do botão (ex: Saiba mais)"
+                    className="w-full rounded border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-violet-400"
+                  />
+                  {btn.type === "URL" && (
+                    <input
+                      value={btn.url ?? ""}
+                      onChange={(e) => setButtons((bs) => bs.map((b, j) => j === i ? { ...b, url: e.target.value } : b))}
+                      placeholder="https://seusite.com.br"
+                      className="w-full rounded border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-blue-400"
+                    />
+                  )}
+                  {btn.type === "PHONE_NUMBER" && (
+                    <input
+                      value={btn.phone ?? ""}
+                      onChange={(e) => setButtons((bs) => bs.map((b, j) => j === i ? { ...b, phone: e.target.value } : b))}
+                      placeholder="5544999990000"
+                      className="w-full rounded border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-green-400"
+                    />
+                  )}
+                </div>
+                <button
+                  onClick={() => setButtons((bs) => bs.filter((_, j) => j !== i))}
+                  className="text-slate-400 hover:text-red-500 transition text-lg leading-none mt-1 px-1"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+
+            {buttons.length < 10 && (
+              <div className="flex items-center gap-2">
+                <select
+                  value={newBtnType}
+                  onChange={(e) => setNewBtnType(e.target.value as "QUICK_REPLY"|"URL"|"PHONE_NUMBER")}
+                  className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-violet-400"
+                >
+                  <option value="QUICK_REPLY">↩ Personalizado (resposta rápida)</option>
+                  <option value="URL">🔗 Acessar o site</option>
+                  <option value="PHONE_NUMBER">📞 Ligar</option>
+                </select>
+                <button
+                  onClick={addButton}
+                  className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs text-slate-500 hover:border-violet-400 hover:text-violet-600 transition"
+                >
+                  + Adicionar botão
+                </button>
+              </div>
+            )}
+            <p className="text-[10px] text-slate-400">Máx: 3 respostas rápidas · 2 links · 1 telefone</p>
+          </div>
+
           <div className="border-t border-slate-100 pt-4 space-y-3">
             <p className="text-xs font-semibold text-slate-600">Configuração Meta (para envio e aprovação)</p>
             <div className="grid grid-cols-2 gap-3">
@@ -545,13 +705,17 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
           <div className="flex gap-2 pt-1">
             <button
               onClick={createTemplate}
-              disabled={creating || !form.name.trim() || !form.bodyText.trim()}
+              disabled={creating || (!editingTemplate && !form.name.trim()) || !form.bodyText.trim()}
               className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition"
             >
-              {creating ? "Criando..." : form.submitNow ? "Criar e Enviar para Meta" : "Criar Rascunho"}
+              {creating
+                ? (editingTemplate ? "Salvando..." : "Criando...")
+                : editingTemplate
+                  ? (form.submitNow ? "Salvar e Reenviar para Meta" : "Salvar Alterações")
+                  : (form.submitNow ? "Criar e Enviar para Meta" : "Criar Rascunho")}
             </button>
             <button
-              onClick={() => setActiveTab("templates")}
+              onClick={() => { setActiveTab("templates"); resetForm(); }}
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition"
             >
               Cancelar
