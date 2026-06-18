@@ -93,11 +93,11 @@ const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: "enviar_resumo",
-    description: "Envia um aviso ou resumo da conversa para o grupo/número de avisos configurado pelo gestor. Use sempre que o cliente enviar dados de reserva, confirmar pagamento via Pix, ou fizer perguntas que você não sabe responder.",
+    description: "Envia um aviso da conversa para o gestor. OBRIGATÓRIO usar: (1) quando cliente fornecer dados completos de reserva — motivo deve começar com 'DADOS RECEBIDOS:'; (2) quando cliente enviar comprovante ou confirmar Pix — motivo deve começar com 'PAGAMENTO PIX:'; (3) dúvidas sem resposta no conhecimento.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        motivo: { type: SchemaType.STRING, description: "Motivo do resumo (ex: lead quente, pediu orçamento)" },
+        motivo: { type: SchemaType.STRING, description: "Resumo do motivo. Para reservas use prefixo 'DADOS RECEBIDOS:'. Para pagamentos use prefixo 'PAGAMENTO PIX:'." },
       },
       required: ["motivo"],
     },
@@ -334,10 +334,11 @@ REGRAS OBRIGATÓRIAS DE FORMATAÇÃO PARA WHATSAPP:
     : "";
 
   const resumoPart = hasSheet
-    ? `\n\nREGRAS OBRIGATÓRIAS para registrar na planilha (via enviar_resumo):
-- Quando o cliente fornecer os dados da reserva (nome, participantes, data), chame enviar_resumo com motivo iniciando exatamente com: "DADOS RECEBIDOS: " seguido de um breve resumo
-- Quando o cliente enviar comprovante ou confirmar pagamento Pix, chame enviar_resumo com motivo iniciando exatamente com: "PAGAMENTO PIX: " seguido do valor pago
-- NUNCA chame enviar_resumo com outro texto para esses dois casos — o sistema usa esses prefixos para gravar na planilha automaticamente`
+    ? `\n\nRegistro automático de reservas (planilha conectada):
+Você tem a ferramenta enviar_resumo disponível. Acione-a como chamada de ferramenta nos seguintes momentos:
+- Dados de reserva recebidos: use motivo iniciando com as palavras exatas DADOS RECEBIDOS seguido de um resumo curto
+- Comprovante ou confirmação de Pix recebidos: use motivo iniciando com as palavras exatas PAGAMENTO PIX seguido do valor
+Importante: acione a ferramenta, não escreva o nome dela como texto na resposta.`
     : "";
 
   if (customPrompt?.trim()) {
@@ -661,6 +662,15 @@ export async function runGeminiAgent(
     console.error(`[gemini-agent] Todos os modelos falharam. clientId=${clientId} phone=${phone}`);
     return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
   }
+
+  // Remove linhas em que o modelo escreveu uma chamada de ferramenta como texto puro
+  // (ex: enviar_resumo(motivo="...") no corpo da resposta em vez de via function call)
+  const KNOWN_TOOLS = /^(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
+  finalText = finalText
+    .split("\n")
+    .filter((line) => !KNOWN_TOOLS.test(line.trim()))
+    .join("\n")
+    .trim();
 
   // Sanitiza markdown residual para WhatsApp
   console.log(`[sanitize-IN] ${JSON.stringify(finalText.slice(0, 300))}`);
