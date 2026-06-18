@@ -17,6 +17,7 @@ import QRCode from "qrcode";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
+import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
@@ -885,6 +886,22 @@ export async function POST(
           if (actions.length && activeClient && agentCfg) {
             await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, _phone, isLidPhone, _clientId, connId).catch(() => {});
           }
+          // Extrator planilha — dispara somente quando enviar_resumo foi chamado
+          const resumoActionBatch = actions.find((a) => a.type === "resumo_solicitado");
+          if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+            const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
+            if (apiKey) {
+              extractAndWriteToSheet({
+                apiKey,
+                spreadsheetId: agentCfg.spreadsheetId,
+                googleRefreshToken: agentCfg.googleRefreshToken,
+                sheetMappings: agentCfg.sheetMappings,
+                messages: getHistory(_phone, _clientId, connId),
+                phone: _phone,
+                motivo: resumoActionBatch.type === "resumo_solicitado" ? resumoActionBatch.motivo : undefined,
+              }).catch((e) => console.warn("[WPPConnect] sheet-extractor erro:", e instanceof Error ? e.message : e));
+            }
+          }
         })
         .catch((e) => {
           console.error("[WPPConnect webhook] Erro no batch:", e);
@@ -910,6 +927,22 @@ export async function POST(
     }
     if (actions.length && activeClient && agentCfg) {
       await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId, connId).catch(() => {});
+    }
+    // Extrator planilha — dispara somente quando enviar_resumo foi chamado
+    const resumoActionImediato = actions.find((a) => a.type === "resumo_solicitado");
+    if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+      const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
+      if (apiKey) {
+        extractAndWriteToSheet({
+          apiKey,
+          spreadsheetId: agentCfg.spreadsheetId,
+          googleRefreshToken: agentCfg.googleRefreshToken,
+          sheetMappings: agentCfg.sheetMappings,
+          messages: getHistory(phone, clientId, connId),
+          phone,
+          motivo: resumoActionImediato.type === "resumo_solicitado" ? resumoActionImediato.motivo : undefined,
+        }).catch((e) => console.warn("[WPPConnect] sheet-extractor erro:", e instanceof Error ? e.message : e));
+      }
     }
   } catch (e) {
     console.error("[WPPConnect webhook] Erro no Gemini:", e);
