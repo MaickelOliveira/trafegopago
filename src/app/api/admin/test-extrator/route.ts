@@ -17,7 +17,6 @@ export async function GET(req: Request) {
   const configSummary = configs.map((cfg) => ({
     connId: cfg.whatsappConnectionId,
     name: cfg.name,
-    appsScriptUrl: cfg.appsScriptUrl ? cfg.appsScriptUrl.slice(0, 60) + "..." : null,
     hasRefreshToken: !!cfg.googleRefreshToken,
     spreadsheetId: cfg.spreadsheetId,
     mappingsCount: cfg.sheetMappings?.length ?? 0,
@@ -27,11 +26,6 @@ export async function GET(req: Request) {
   // Testa o Apps Script diretamente com payload de teste
   const testResults: Record<string, unknown>[] = [];
   for (const cfg of configs) {
-    if (!cfg.appsScriptUrl) {
-      testResults.push({ connId: cfg.whatsappConnectionId, result: "SKIP — sem appsScriptUrl" });
-      continue;
-    }
-
     const apiKey = getGeminiApiKey(cfg.geminiApiKey);
     if (!apiKey) {
       testResults.push({ connId: cfg.whatsappConnectionId, result: "SKIP — sem apiKey" });
@@ -43,38 +37,10 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Testa chamada direta ao Apps Script (sem extração de IA)
-    try {
-      const testPayload = {
-        aba: cfg.sheetMappings[0].tabName,
-        dados: { "Responsável": "TESTE EXTRATOR", "Telefone": "00000000000" },
-        spreadsheetId: cfg.spreadsheetId,
-      };
-      const res = await fetch(cfg.appsScriptUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(testPayload),
-      });
-      const body = await res.text();
-      testResults.push({
-        connId: cfg.whatsappConnectionId,
-        appsScriptStatus: res.status,
-        appsScriptResponse: body.slice(0, 300),
-        testPayload,
-      });
-    } catch (e) {
-      testResults.push({
-        connId: cfg.whatsappConnectionId,
-        result: "ERRO fetch",
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
-
     // Testa extrator completo com mensagem fake
     try {
       await extractAndWriteToSheet({
         apiKey,
-        appsScriptUrl: cfg.appsScriptUrl,
         spreadsheetId: cfg.spreadsheetId,
         googleRefreshToken: cfg.googleRefreshToken,
         sheetMappings: cfg.sheetMappings,
