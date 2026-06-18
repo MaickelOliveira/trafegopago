@@ -122,6 +122,77 @@ export async function appendRow(
   });
 }
 
+// Converte índice de coluna (0-based) para letra(s): 0→A, 25→Z, 26→AA
+function colLetter(index: number): string {
+  let result = "";
+  let i = index + 1;
+  while (i > 0) {
+    const rem = (i - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    i = Math.floor((i - 1) / 26);
+  }
+  return result;
+}
+
+// Encontra o índice (1-based) da ÚLTIMA linha que contenha o telefone na coluna
+// "Telefone" (ou similar). Retorna null se não encontrar.
+export async function findLastRowByPhone(
+  refreshToken: string,
+  spreadsheetId: string,
+  sheetName: string,
+  phone: string
+): Promise<number | null> {
+  const sheets = await getSheetsClient(refreshToken);
+
+  const { data: hData } = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!1:1`,
+  });
+  const headers: string[] = (hData.values?.[0] ?? []).map((v) => String(v ?? "").trim());
+  const phoneColIdx = headers.findIndex((h) => /telefone|celular|whatsapp|fone|contato/i.test(h));
+  if (phoneColIdx === -1) return null;
+
+  const col = colLetter(phoneColIdx);
+  const { data } = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!${col}:${col}`,
+  });
+  const rows = data.values ?? [];
+  const phoneDigits = phone.replace(/\D/g, "");
+
+  let lastMatch: number | null = null;
+  for (let i = 1; i < rows.length; i++) {
+    const cell = String(rows[i]?.[0] ?? "").replace(/\D/g, "");
+    if (cell && (cell === phoneDigits || phoneDigits.endsWith(cell) || cell.endsWith(phoneDigits))) {
+      lastMatch = i + 1; // 1-indexed
+    }
+  }
+  return lastMatch;
+}
+
+// Atualiza campos específicos em uma linha existente (rowIndex é 1-based).
+export async function updateRowFields(
+  refreshToken: string,
+  spreadsheetId: string,
+  sheetName: string,
+  headers: string[],
+  rowIndex: number,
+  values: Record<string, string>
+): Promise<void> {
+  const sheets = await getSheetsClient(refreshToken);
+
+  for (const [header, value] of Object.entries(values)) {
+    const idx = headers.indexOf(header);
+    if (idx === -1) continue;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheetName}!${colLetter(idx)}${rowIndex}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[value]] },
+    });
+  }
+}
+
 // Cache em memória do cabeçalho de cada planilha — evita ler a planilha a
 // cada mensagem recebida. TTL curto pois o gestor pode editar as colunas.
 type CachedHeaders = { headers: string[]; ts: number };

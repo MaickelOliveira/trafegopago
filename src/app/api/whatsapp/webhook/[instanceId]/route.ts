@@ -980,9 +980,9 @@ export async function POST(
             }
             // Extração via Gemini 2.0 Flash + Google Sheets direto (fire-and-forget)
             // Só dispara quando o agente chamou enviar_resumo — evita linhas duplicadas
-            const hasResumo = actions.some((a) => a.type === "resumo_solicitado");
-            console.log(`[webhook] extrator-check hasResumo=${hasResumo} refreshToken=${!!agCfg?.googleRefreshToken} spreadsheetId=${!!agCfg?.spreadsheetId} mappings=${agCfg?.sheetMappings?.length ?? 0}`);
-            if (hasResumo && agCfg?.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
+            const resumoAction = actions.find((a) => a.type === "resumo_solicitado");
+            console.log(`[webhook] extrator-check hasResumo=${!!resumoAction} motivo="${resumoAction?.type === "resumo_solicitado" ? resumoAction.motivo : ""}" refreshToken=${!!agCfg?.googleRefreshToken} spreadsheetId=${!!agCfg?.spreadsheetId} mappings=${agCfg?.sheetMappings?.length ?? 0}`);
+            if (resumoAction && agCfg?.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
               const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
               if (apiKey) {
                 extractAndWriteToSheet({
@@ -992,6 +992,7 @@ export async function POST(
                   sheetMappings: agCfg.sheetMappings,
                   messages: getHistory(phone, cid),
                   phone,
+                  motivo: resumoAction.type === "resumo_solicitado" ? resumoAction.motivo : undefined,
                 }).catch((e) => console.warn("[webhook] sheet-extractor erro:", e instanceof Error ? e.message : e));
               }
             }
@@ -1061,9 +1062,9 @@ export async function POST(
 
     // Extração via Gemini 2.0 Flash + Google Sheets direto (fire-and-forget)
     // Só dispara quando o agente chamou enviar_resumo — evita linhas duplicadas
-    const hasResumoImediato = geminiActions.some((a) => a.type === "resumo_solicitado");
-    console.log(`[webhook] extrator-check-imediato hasResumo=${hasResumoImediato} refreshToken=${!!agentCfg?.googleRefreshToken} spreadsheetId=${!!agentCfg?.spreadsheetId} mappings=${agentCfg?.sheetMappings?.length ?? 0}`);
-    if (hasResumoImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+    const resumoActionImediato = geminiActions.find((a) => a.type === "resumo_solicitado");
+    console.log(`[webhook] extrator-check-imediato hasResumo=${!!resumoActionImediato} motivo="${resumoActionImediato?.type === "resumo_solicitado" ? resumoActionImediato.motivo : ""}" refreshToken=${!!agentCfg?.googleRefreshToken} spreadsheetId=${!!agentCfg?.spreadsheetId} mappings=${agentCfg?.sheetMappings?.length ?? 0}`);
+    if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
         extractAndWriteToSheet({
@@ -1073,6 +1074,7 @@ export async function POST(
           sheetMappings: agentCfg.sheetMappings,
           messages: getHistory(phone, cid),
           phone,
+          motivo: resumoActionImediato.type === "resumo_solicitado" ? resumoActionImediato.motivo : undefined,
         }).catch((e) => console.warn("[webhook] sheet-extractor erro:", e instanceof Error ? e.message : e));
       }
     }

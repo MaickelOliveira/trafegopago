@@ -367,11 +367,10 @@ export async function runGeminiAgent(
   // Planilha do Google Sheets — preenchimento sempre feito pelo extrator externo
   // (sheet-extractor.ts com Gemini 2.0 Flash) após cada resposta do agente principal.
   // A sheet tool é omitida aqui para economizar tokens do agente principal.
-  const sheetTool: SheetTool | null = null;
+  const sheetTool = null;
 
-  const sheetTypes = sheetTool?.tabMap.size ? [...sheetTool.tabMap.keys()] : undefined;
-  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, sheetTool?.headers, sheetTypes);
-  const tools: Tool[] = [{ functionDeclarations: [...TOOL_DECLARATIONS, ...(sheetTool ? [sheetTool.declaration] : [])] }];
+  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, undefined, undefined);
+  const tools: Tool[] = [{ functionDeclarations: [...TOOL_DECLARATIONS] }];
 
   const modelsToTry = [
     "gemini-3.1-flash-lite",
@@ -592,54 +591,8 @@ export async function runGeminiAgent(
             }
 
             else if (call.name === "adicionar_linha_planilha") {
-              console.log(`[planilha] tool chamada — args=${JSON.stringify(args).slice(0, 300)} tabMap.size=${sheetTool?.tabMap.size ?? 0} spreadsheetId=${agentCfg?.spreadsheetId ?? "N/A"}`);
-              if (agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && sheetTool) {
-                // Determina qual aba usar: multi-abas ou legado
-                let targetTab = "";
-                let tabKeyToHeader: Record<string, string> = {};
-                let tabHeaders: string[] = [];
-
-                const tipoArg = (args["tipo_reserva"] as string | undefined)?.trim();
-                console.log(`[planilha] tipo_reserva="${tipoArg}" tabMap.keys=[${[...sheetTool.tabMap.keys()].join(", ")}]`);
-                let resolved = false;
-                if (sheetTool.tabMap.size > 0 && tipoArg) {
-                  const tabInfo = sheetTool.tabMap.get(tipoArg);
-                  if (tabInfo) {
-                    targetTab = agentCfg.sheetMappings!.find((m) => m.label === tipoArg)!.tabName;
-                    tabKeyToHeader = tabInfo.keyToHeader;
-                    tabHeaders = tabInfo.headers;
-                    resolved = true;
-                  } else {
-                    result = { error: `Tipo de reserva desconhecido: "${tipoArg}". Use um dos tipos configurados.` };
-                  }
-                } else if (agentCfg.sheetTabName) {
-                  targetTab = agentCfg.sheetTabName;
-                  tabKeyToHeader = sheetTool.keyToHeader;
-                  tabHeaders = sheetTool.headers;
-                  resolved = true;
-                } else {
-                  result = { error: "Planilha não configurada corretamente" };
-                }
-
-                if (resolved) {
-                  const linha: Record<string, string> = {};
-                  for (const [key, header] of Object.entries(tabKeyToHeader!)) {
-                    let valor = (args[key] as string | undefined)?.trim();
-                    if (!valor) {
-                      if (isPhoneHeader(header)) valor = phone;
-                      else if (isDateHeader(header)) valor = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-                    }
-                    if (valor) linha[header] = valor;
-                  }
-                  console.log(`[planilha] appendRow → tab="${targetTab}" linha=${JSON.stringify(linha)}`);
-                  await appendRow(agentCfg.googleRefreshToken, agentCfg.spreadsheetId, targetTab!, tabHeaders!, linha);
-                  console.log(`[planilha] appendRow OK`);
-                  actions.push({ type: "planilha_linha_adicionada", linha });
-                  result = { ok: true };
-                }
-              } else {
-                result = { error: "Planilha não configurada" };
-              }
+              // Planilha gerenciada pelo sheet-extractor externo — não usado aqui
+              result = { ok: true };
             }
           } catch (e) {
             console.error(`[gemini-agent] Tool ${call.name} error:`, e);
