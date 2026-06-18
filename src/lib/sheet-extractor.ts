@@ -16,7 +16,7 @@ ID interno do cliente: ${phone}
 REGRAS OBRIGATÓRIAS:
 1. Só extraia se houver no mínimo: nome do responsável confirmado na conversa
 2. "Responsável" = nome completo de quem faz a reserva
-3. "Data" = data desejada para o evento no formato DD/MM/AAAA (ex: 27/06/2026). NUNCA use formato MM/DD/AAAA
+3. "Data" = data desejada para o evento no formato ISO AAAA-MM-DD (ex: 2026-06-27). O sistema converte automaticamente para DD/MM/AAAA
    Se houver coluna "Hora" ou "Horário", use formato HH:MM em 24h (ex: 14:30). NUNCA use AM/PM
 4. "Pessoas" = OBRIGATÓRIO listar TODOS os participantes com valor individual calculado pelo atendente:
    Formato: "Nome Sobrenome (XX anos) - R$XX,00, Nome2 (XX anos) - R$XX,00"
@@ -161,13 +161,19 @@ export async function extractAndWriteToSheet(opts: {
   // Converte valores monetários de texto ("R$ 500,00") para número puro ("500")
   // para que o SOMA() do Google Sheets consiga somar — texto é ignorado pelo SOMA
   const CURRENCY_COL = /valor|pagar|pago|total|receber/i;
+  // Converte datas de ISO (AAAA-MM-DD) para DD/MM/AAAA (formato brasileiro)
+  const DATE_COL = /^data$/i;
   for (const row of rows) {
     for (const key of Object.keys(row.dados)) {
+      const val = row.dados[key];
+      if (!val) continue;
       if (CURRENCY_COL.test(key)) {
-        const raw = row.dados[key];
-        // Remove R$, espaços, pontos de milhar; troca vírgula decimal por ponto
-        const num = parseFloat(raw.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".").trim());
+        const num = parseFloat(val.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".").trim());
         if (!isNaN(num)) row.dados[key] = String(num);
+      } else if (DATE_COL.test(key)) {
+        // AAAA-MM-DD → DD/MM/AAAA
+        const iso = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) row.dados[key] = `${iso[3]}/${iso[2]}/${iso[1]}`;
       }
     }
   }
