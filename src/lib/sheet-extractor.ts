@@ -81,7 +81,9 @@ export async function extractAndWriteToSheet(opts: {
 }): Promise<void> {
   const { apiKey, spreadsheetId, googleRefreshToken, sheetMappings, messages, phone, motivo } = opts;
 
-  const isPagamento = !!(motivo && /pagamento|pix|comprovante/i.test(motivo));
+  // Só entra em modo UPDATE quando o motivo começa explicitamente com "PAGAMENTO PIX:"
+  // Evita falso positivo quando motivo diz "aguardando pagamento" (que ainda é INSERT)
+  const isPagamento = !!(motivo && /^PAGAMENTO PIX:/i.test(motivo.trim()));
   console.log(`[sheet-extractor] iniciando — phone=${phone} messages=${messages.length} mode=${isPagamento ? "UPDATE(pagamento)" : "INSERT(dados)"}`);
 
   if (!messages.length || !sheetMappings.length) return;
@@ -110,7 +112,7 @@ export async function extractAndWriteToSheet(opts: {
     ? buildUpdatePrompt(tabsInfo, phone, conversation)
     : buildInsertPrompt(tabsInfo, phone, conversation);
 
-  const modelsToTry = ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-2.5-flash"];
+  const modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash"];
   const genAI = new GoogleGenerativeAI(apiKey);
 
   let text: string | null = null;
