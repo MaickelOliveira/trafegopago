@@ -361,7 +361,10 @@ export function splitMessage(text: string, maxLen = 300): string[] {
     .trim()
     .replace(/(\d+\/)\s*\n[\s\n]*(\d)/g, "$1$2")
     .replace(/(\d)\s*\n[\s\n]+(\d[-.:\/])/g, "$1$2")
-    .replace(/(\d),\s*\n[\s\n]*(\d)/g, "$1,$2");
+    .replace(/(\d),\s*\n[\s\n]*(\d)/g, "$1,$2")
+    // Reconecta quando linha termina com hífen e a próxima começa com dígito
+    // ex: "NR-\n\n1." → "NR-1."
+    .replace(/(-)\s*\n[\s\n]*(\d)/g, "$1$2");
 
   if (trimmed.length <= maxLen) return [trimmed];
 
