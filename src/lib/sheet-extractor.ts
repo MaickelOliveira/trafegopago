@@ -156,6 +156,21 @@ export async function extractAndWriteToSheet(opts: {
     const byLabel = tabs.find((t) => t.label === row.aba);
     if (byLabel) row.aba = byLabel.tabName;
   }
+
+  // Converte valores monetários de texto ("R$ 500,00") para número puro ("500")
+  // para que o SOMA() do Google Sheets consiga somar — texto é ignorado pelo SOMA
+  const CURRENCY_COL = /valor|pagar|pago|total|receber/i;
+  for (const row of rows) {
+    for (const key of Object.keys(row.dados)) {
+      if (CURRENCY_COL.test(key)) {
+        const raw = row.dados[key];
+        // Remove R$, espaços, pontos de milhar; troca vírgula decimal por ponto
+        const num = parseFloat(raw.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".").trim());
+        if (!isNaN(num)) row.dados[key] = String(num);
+      }
+    }
+  }
+
   console.log(`[sheet-extractor] rows: ${JSON.stringify(rows.map(r => ({ aba: r.aba, keys: Object.keys(r.dados) })))}`);
 
   for (const row of rows) {
