@@ -972,7 +972,11 @@ export async function POST(
               }
             }
             if (agCfg && actions.length > 0) {
-              await processGeminiActions(actions, instanceUazToken, clientName, agCfg, phone);
+              try {
+                await processGeminiActions(actions, instanceUazToken, clientName, agCfg, phone);
+              } catch (e) {
+                console.error(`[webhook] processGeminiActions ERRO phone=${phone}:`, e instanceof Error ? e.message : e);
+              }
             }
             // Extração via modelo barato + Apps Script (fire-and-forget, sem bloquear a resposta)
             console.log(`[webhook] extrator-check appsScriptUrl=${!!agCfg?.appsScriptUrl} refreshToken=${!!agCfg?.googleRefreshToken} spreadsheetId=${!!agCfg?.spreadsheetId} mappings=${agCfg?.sheetMappings?.length ?? 0}`);
@@ -1047,9 +1051,14 @@ export async function POST(
     }
     if (agentCfg && geminiActions.length > 0) {
       const clientName = getClientById(cid)?.name ?? cid;
-      await processGeminiActions(geminiActions, instanceUazToken, clientName, agentCfg, phone);
+      try {
+        await processGeminiActions(geminiActions, instanceUazToken, clientName, agentCfg, phone);
+      } catch (e) {
+        console.error(`[webhook] processGeminiActions ERRO phone=${phone}:`, e instanceof Error ? e.message : e);
+      }
     }
 
+    console.log(`[webhook] extrator-check-imediato appsScriptUrl=${!!agentCfg?.appsScriptUrl} refreshToken=${!!agentCfg?.googleRefreshToken} spreadsheetId=${!!agentCfg?.spreadsheetId} mappings=${agentCfg?.sheetMappings?.length ?? 0}`);
     if (agentCfg?.appsScriptUrl && agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
