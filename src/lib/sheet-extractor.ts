@@ -17,6 +17,7 @@ REGRAS OBRIGATÓRIAS:
 1. Só extraia se houver no mínimo: nome do responsável confirmado na conversa
 2. "Responsável" = nome completo de quem faz a reserva
 3. "Data" = data desejada para o evento no formato DD/MM/AAAA (ex: 27/06/2026). NUNCA use formato MM/DD/AAAA
+   Se houver coluna "Hora" ou "Horário", use formato HH:MM em 24h (ex: 14:30). NUNCA use AM/PM
 4. "Pessoas" = OBRIGATÓRIO listar TODOS os participantes com valor individual calculado pelo atendente:
    Formato: "Nome Sobrenome (XX anos) - R$XX,00, Nome2 (XX anos) - R$XX,00"
    - Use os valores que o atendente calculou para cada faixa etária (adulto, criança, gratuito)
