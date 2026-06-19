@@ -259,7 +259,7 @@ function sanitizeForWhatsApp(text: string): string {
   return result;
 }
 
-function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[], sheetTypes?: string[], hasSheet?: boolean): string {
+function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[], sheetTypes?: string[], hasSheet?: boolean, hasAvisos?: boolean): string {
   const now = new Date();
   const today = now.toLocaleDateString("pt-BR", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -338,7 +338,14 @@ REGRAS OBRIGATÓRIAS DE FORMATAÇÃO PARA WHATSAPP:
 Você tem a ferramenta enviar_resumo disponível. Acione-a como chamada de ferramenta nos seguintes momentos:
 - Dados de reserva recebidos: use motivo iniciando com as palavras exatas DADOS RECEBIDOS seguido de um resumo curto
 - Comprovante ou confirmação de Pix recebidos: use motivo iniciando com as palavras exatas PAGAMENTO PIX seguido do valor
+- Quando não souber responder, precisar escalar para o gestor, ou o lead pedir atendimento humano: use motivo descrevendo o assunto
 Importante: acione a ferramenta, não escreva o nome dela como texto na resposta.`
+    : hasAvisos
+    ? `\n\nVocê tem a ferramenta enviar_resumo disponível. Use-a como chamada de ferramenta (não como texto) nos seguintes casos:
+- Quando não souber responder algo ou precisar escalar para o gestor: motivo descrevendo o assunto
+- Quando o lead pedir falar com humano ou com o responsável: motivo iniciando com ATENDIMENTO HUMANO
+- Quando o lead demonstrar intenção de compra e precisar de atendimento personalizado: motivo com resumo do interesse
+Importante: acione a ferramenta imediatamente, sem escrever o nome dela na resposta.`
     : "";
 
   if (customPrompt?.trim()) {
@@ -378,7 +385,8 @@ export async function runGeminiAgent(
   const sheetTool = null;
 
   const hasSheet = !!(agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length);
-  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, undefined, undefined, hasSheet);
+  const hasAvisos = !!(agentCfg.avisos?.length || agentCfg.summaryPhone || agentCfg.metaSummaryTemplateName);
+  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, undefined, undefined, hasSheet, hasAvisos);
   const tools: Tool[] = [{ functionDeclarations: [...TOOL_DECLARATIONS] }];
 
   const modelsToTry = [
