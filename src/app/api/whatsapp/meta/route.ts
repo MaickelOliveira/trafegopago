@@ -214,6 +214,8 @@ export async function POST(req: NextRequest) {
 
           const avisoMsg =
             `📋 *Resumo de conversa enviado ao gestor*\n\n` +
+            `📞 *Número:* wa.me/${var1}\n` +
+            `👤 *Lead:* ${var2}\n` +
             `📝 *Motivo:* ${resumoAction.motivo}\n\n` +
             `${summaryText}`;
 
