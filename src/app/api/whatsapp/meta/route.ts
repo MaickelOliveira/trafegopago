@@ -164,8 +164,13 @@ export async function POST(req: NextRequest) {
 
         // ── processMetaActions: aviso + sheet extractor ─────────────────
         async function processMetaActions(actions: GeminiAction[]) {
-          if (!actions.length || !agentCfg || !metaToken || !phoneNumberId) return;
+          console.log(`[meta-aviso] DIAG actions=${actions.length} agentCfg=${!!agentCfg} metaToken=${!!metaToken} phoneNumberId=${!!phoneNumberId}`);
+          if (!actions.length || !agentCfg || !metaToken || !phoneNumberId) {
+            console.log(`[meta-aviso] ABORTADO — falta: actions=${actions.length} agentCfg=${!!agentCfg} metaToken=${!!metaToken} phoneId=${!!phoneNumberId}`);
+            return;
+          }
           const resumoAction = actions.find((a) => a.type === "resumo_solicitado");
+          console.log(`[meta-aviso] resumo_solicitado=${!!resumoAction} motivo="${resumoAction?.motivo ?? "-"}"`);
           if (!resumoAction) return;
 
           // Sheet extractor
@@ -188,13 +193,17 @@ export async function POST(req: NextRequest) {
             : agentCfg.summaryPhone
               ? [{ id: "legacy", label: "Gestor", value: agentCfg.summaryPhone, type: "phone" as const }]
               : [];
-          if (!recipients.length) return;
+          console.log(`[meta-aviso] destinatários=${recipients.length} templateName="${agentCfg.metaSummaryTemplateName ?? "NÃO CONFIGURADO"}"`);
+          if (!recipients.length) {
+            console.log(`[meta-aviso] ABORTADO — nenhum destinatário em avisos[]`);
+            return;
+          }
 
           const clientName = client?.name ?? cid;
           const geminiKey = agentCfg.geminiApiKey || getGeminiApiKey() || "";
           const summaryText = await generateSummaryText(clientName, agentCfg, phone, resumoAction.motivo, geminiKey);
 
-          // Variáveis do template aviso2:
+          // Variáveis do template:
           // {{1}} = número do lead, {{2}} = nome do lead, {{3}} = motivo + resumo
           const var1 = phone.replace(/\D/g, "");
           const var2 = pushName !== phone ? pushName : phone;
@@ -206,13 +215,14 @@ export async function POST(req: NextRequest) {
             recipients
               .filter((r) => {
                 if (r.type !== "phone") {
-                  console.warn(`[meta] aviso para grupo ignorado (WABA não suporta grupos): ${r.value}`);
+                  console.warn(`[meta-aviso] grupo ignorado (WABA não suporta grupos): ${r.value}`);
                   return false;
                 }
                 return true;
               })
               .map(async (r) => {
                 if (templateName) {
+                  console.log(`[meta-aviso] sendTemplate → phone=${r.value} template=${templateName} phoneNumberId=${phoneNumberId}`);
                   const result = await sendTemplate(
                     phoneNumberId!,
                     metaToken!,
@@ -225,10 +235,15 @@ export async function POST(req: NextRequest) {
                       { type: "text", text: var3 },
                     ]}],
                   );
-                  if (!result.success) console.error(`[meta] sendTemplate ERRO:`, result.error);
-                  else { console.log(`[meta] sendTemplate OK → ${r.value}`); avisoSent = true; }
+                  if (!result.success) {
+                    console.error(`[meta-aviso] sendTemplate FALHOU → ${r.value}:`, result.error);
+                  } else {
+                    console.log(`[meta-aviso] sendTemplate OK → ${r.value}`);
+                    avisoSent = true;
+                  }
                 } else {
                   // Fallback texto livre (funciona dentro da janela de 24h)
+                  console.log(`[meta-aviso] fallback texto livre → ${r.value} (sem template configurado)`);
                   const fullMsg =
                     `📋 *Resumo — ${clientName}*\n\n` +
                     `📞 wa.me/${var1}\n📝 ${resumoAction.motivo}\n\n${summaryText}`;
