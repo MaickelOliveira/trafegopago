@@ -201,6 +201,7 @@ export async function POST(req: NextRequest) {
           const var3 = `Motivo: ${resumoAction.motivo}\n\n${summaryText}`;
           const templateName = agentCfg.metaSummaryTemplateName;
 
+          let avisoSent = false;
           await Promise.all(
             recipients
               .filter((r) => {
@@ -225,16 +226,26 @@ export async function POST(req: NextRequest) {
                     ]}],
                   );
                   if (!result.success) console.error(`[meta] sendTemplate ERRO:`, result.error);
-                  else console.log(`[meta] sendTemplate OK → ${r.value}`);
+                  else { console.log(`[meta] sendTemplate OK → ${r.value}`); avisoSent = true; }
                 } else {
                   // Fallback texto livre (funciona dentro da janela de 24h)
                   const fullMsg =
                     `📋 *Resumo — ${clientName}*\n\n` +
                     `📞 wa.me/${var1}\n📝 ${resumoAction.motivo}\n\n${summaryText}`;
                   await sendMessageDirect(r.value, fullMsg, phoneNumberId!, metaToken!);
+                  avisoSent = true;
                 }
               })
           );
+
+          // Registra o aviso na conversa do lead para aparecer no inbox
+          if (avisoSent) {
+            const avisoMsg =
+              `📋 *Resumo de conversa enviado ao gestor*\n\n` +
+              `📝 *Motivo:* ${resumoAction.motivo}\n\n` +
+              `${summaryText}`;
+            addMessage(phone, { role: "assistant", content: avisoMsg, ts: Date.now() }, clientId, { connId: connId ?? undefined });
+          }
         }
 
         // ── Batching (messageWaitSeconds > 0) ────────────────────────────
