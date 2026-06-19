@@ -1349,14 +1349,26 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         {/* Template Meta para avisos */}
         <div className="mt-3 space-y-1">
           <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Template Meta para avisos</label>
-          <input
-            type="text"
-            value={cfg.metaSummaryTemplateName ?? ""}
-            onChange={(e) => setCfg((c) => ({ ...c, metaSummaryTemplateName: e.target.value || undefined }))}
-            placeholder="ex: aviso2"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400"
-          />
-          <p className="text-xs text-slate-400">Para API oficial Meta. Nome do template aprovado com 3 variáveis: {"{{"}<span>1</span>{"}}"} = telefone, {"{{"}<span>2</span>{"}}"} = nome, {"{{"}<span>3</span>{"}}"} = resumo.</p>
+          {approvedTemplates.length > 0 ? (
+            <select
+              value={cfg.metaSummaryTemplateName ?? ""}
+              onChange={(e) => setCfg((c) => ({ ...c, metaSummaryTemplateName: e.target.value || undefined }))}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+            >
+              <option value="">— Nenhum (não enviar via template) —</option>
+              {approvedTemplates.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name} · {t.category === "MARKETING" ? "📣 Marketing" : "⚙️ Utilidade"} · {t.language}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400 bg-slate-50">
+              Nenhum template aprovado encontrado.{" "}
+              <a href="../disparos-wa" className="text-violet-600 underline hover:text-violet-700">Criar em Disparos WA →</a>
+            </div>
+          )}
+          <p className="text-xs text-slate-400">Para API oficial Meta. O template deve ter 3 variáveis: {"{{"}<span>1</span>{"}}"} = telefone, {"{{"}<span>2</span>{"}}"} = nome, {"{{"}<span>3</span>{"}}"} = resumo.</p>
         </div>
       </div>
 
