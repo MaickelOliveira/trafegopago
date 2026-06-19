@@ -212,7 +212,11 @@ export async function POST(req: NextRequest) {
           const var3 = `Motivo: ${resumoAction.motivo} | ${cleanSummary}`;
           const templateName = agentCfg.metaSummaryTemplateName;
 
-          let avisoSent = false;
+          const avisoMsg =
+            `📋 *Resumo de conversa enviado ao gestor*\n\n` +
+            `📝 *Motivo:* ${resumoAction.motivo}\n\n` +
+            `${summaryText}`;
+
           await Promise.all(
             recipients
               .filter((r) => {
@@ -241,7 +245,8 @@ export async function POST(req: NextRequest) {
                     console.error(`[meta-aviso] sendTemplate FALHOU → ${r.value}:`, result.error);
                   } else {
                     console.log(`[meta-aviso] sendTemplate OK → ${r.value}`);
-                    avisoSent = true;
+                    // Registra na conversa do gestor (r.value), não do lead
+                    addMessage(r.value, { role: "assistant", content: avisoMsg, ts: Date.now() }, clientId, { connId: connId ?? undefined });
                   }
                 } else {
                   // Fallback texto livre (funciona dentro da janela de 24h)
@@ -250,19 +255,10 @@ export async function POST(req: NextRequest) {
                     `📋 *Resumo — ${clientName}*\n\n` +
                     `📞 wa.me/${var1}\n📝 ${resumoAction.motivo}\n\n${summaryText}`;
                   await sendMessageDirect(r.value, fullMsg, phoneNumberId!, metaToken!);
-                  avisoSent = true;
+                  addMessage(r.value, { role: "assistant", content: avisoMsg, ts: Date.now() }, clientId, { connId: connId ?? undefined });
                 }
               })
           );
-
-          // Registra o aviso na conversa do lead para aparecer no inbox
-          if (avisoSent) {
-            const avisoMsg =
-              `📋 *Resumo de conversa enviado ao gestor*\n\n` +
-              `📝 *Motivo:* ${resumoAction.motivo}\n\n` +
-              `${summaryText}`;
-            addMessage(phone, { role: "assistant", content: avisoMsg, ts: Date.now() }, clientId, { connId: connId ?? undefined });
-          }
         }
 
         // ── Batching (messageWaitSeconds > 0) ────────────────────────────
