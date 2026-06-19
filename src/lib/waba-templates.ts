@@ -134,6 +134,9 @@ export async function sendTemplate(
       const err = await res.text();
       return { success: false, error: err };
     }
+    const data = await res.json() as { messages?: { id: string }[]; contacts?: unknown[] };
+    const wamid = data.messages?.[0]?.id ?? "sem-wamid";
+    console.log(`[sendTemplate] HTTP 200 wamid=${wamid} to=${toPhone} template=${templateName}`);
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
