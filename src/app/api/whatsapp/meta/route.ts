@@ -207,7 +207,9 @@ export async function POST(req: NextRequest) {
           // {{1}} = número do lead, {{2}} = nome do lead, {{3}} = motivo + resumo
           const var1 = phone.replace(/\D/g, "");
           const var2 = pushName !== phone ? pushName : phone;
-          const var3 = `Motivo: ${resumoAction.motivo}\n\n${summaryText}`;
+          // Meta não aceita \n, \t ou mais de 4 espaços consecutivos em parâmetros de template
+          const cleanSummary = summaryText.replace(/[\n\r\t]/g, " ").replace(/ {5,}/g, "    ").trim();
+          const var3 = `Motivo: ${resumoAction.motivo} | ${cleanSummary}`;
           const templateName = agentCfg.metaSummaryTemplateName;
 
           let avisoSent = false;
