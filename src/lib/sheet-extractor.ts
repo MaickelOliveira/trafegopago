@@ -197,11 +197,13 @@ export async function extractAndWriteToSheet(opts: {
         const num = parseFloat(val.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".").trim());
         if (!isNaN(num)) row.dados[key] = String(num);
       } else if (DATE_COL.test(key)) {
-        // AAAA-MM-DD → DD/MM/AAAA. Prefixo com aspas simples força o Google Sheets
-        // a tratar como texto literal — sem isso, planilhas com locale en-US
-        // reinterpretam "27/06/2026" e exibem como "6/27/2026" (MM/DD/AAAA).
-        const iso = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (iso) row.dados[key] = `'${iso[3]}/${iso[2]}/${iso[1]}`;
+        // Mantém o formato ISO (AAAA-MM-DD) — Google Sheets reconhece ISO 8601
+        // de forma inequívoca em qualquer locale e grava como data real (não
+        // texto), permitindo SUMIFS/ordenação por data. A EXIBIÇÃO (dd/mm/aaaa
+        // vs mm/dd/aaaa) depende do locale da planilha — ver Arquivo > Config.
+        // da planilha > Localidade > Brasil, caso esteja mostrando mm/dd/aaaa.
+        const iso = val.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (iso) row.dados[key] = iso[1];
       }
     }
   }
