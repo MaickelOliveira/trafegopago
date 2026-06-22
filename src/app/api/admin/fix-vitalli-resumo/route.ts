@@ -59,6 +59,37 @@ export async function GET() {
   type Cell = { range: string; values: [[string]] };
   const data: Cell[] = [];
 
+  // Corrige datas históricas gravadas como TEXTO (bug de uma versão anterior
+  // do extrator) em cada aba de reservas — sem isso, o filtro de data do
+  // Resumo nunca encontra essas linhas antigas (texto não compara com data).
+  let datasCorrigidas = 0;
+  for (const { def } of categorias) {
+    const { tab, dataStart, dataEnd } = def;
+    const range = `${quote(tab)}!B${dataStart}:B${dataEnd}`;
+    const { data: colData } = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const rows = colData.values ?? [];
+    const fixes: Cell[] = [];
+    rows.forEach((r, i) => {
+      const val = r[0];
+      if (typeof val !== "string") return; // já é data real (número) — pula
+      const m = val.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!m) return;
+      const iso = `${m[3]}-${m[2]}-${m[1]}`;
+      fixes.push({ range: `${quote(tab)}!B${dataStart + i}`, values: [[iso]] });
+    });
+    if (fixes.length) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: { valueInputOption: "USER_ENTERED", data: fixes },
+      });
+      datasCorrigidas += fixes.length;
+    }
+  }
+
   // Esta planilha está em locale pt-BR: o parser de fórmulas exige ";" como
   // separador de argumentos (não ","), e funciona tanto com nomes em inglês
   // (SUMIFS) quanto em português (SOMASES) — mas usamos os nomes em português
@@ -96,5 +127,5 @@ export async function GET() {
     requestBody: { valueInputOption: "USER_ENTERED", data },
   });
 
-  return NextResponse.json({ ok: true, cellsUpdated: data.length });
+  return NextResponse.json({ ok: true, cellsUpdated: data.length, datasCorrigidas });
 }
