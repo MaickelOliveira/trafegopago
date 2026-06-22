@@ -46,8 +46,9 @@ REGRAS OBRIGATÓRIAS:
    - Use os valores que o atendente calculou para cada faixa etária (adulto, criança, gratuito)
    - Se criança gratuita, escreva "Gratuito" no lugar do valor
    - NUNCA omita os valores — eles são obrigatórios neste campo
-5. "Telefone" = número de telefone/celular/WhatsApp que o cliente informou na conversa (não o ID interno)
-   Se o cliente não informou um número explícito, deixe vazio
+5. "Telefone" = número de telefone/celular/WhatsApp que o cliente informou EXPLICITAMENTE na conversa (não o ID interno)
+   Se o cliente disser que é o mesmo número do WhatsApp atual ("é esse mesmo", "é esse aqui", "pode usar esse número", "é esse número mesmo"), OU não informar nenhum número, deixe o campo VAZIO — o sistema preenche automaticamente com o número real do WhatsApp
+   NUNCA invente, suponha ou copie um número de exemplo — se não houver um número EXATO escrito pelo cliente na conversa, deixe vazio
 6. "Qtd. Pessoas" = número total de pessoas (adultos + crianças)
 7. "Valor por Pessoa" = NÃO PREENCHER — deixe vazio
 8. "Valor Total" = valor total cobrado pela reserva
@@ -196,9 +197,11 @@ export async function extractAndWriteToSheet(opts: {
         const num = parseFloat(val.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".").trim());
         if (!isNaN(num)) row.dados[key] = String(num);
       } else if (DATE_COL.test(key)) {
-        // AAAA-MM-DD → DD/MM/AAAA
+        // AAAA-MM-DD → DD/MM/AAAA. Prefixo com aspas simples força o Google Sheets
+        // a tratar como texto literal — sem isso, planilhas com locale en-US
+        // reinterpretam "27/06/2026" e exibem como "6/27/2026" (MM/DD/AAAA).
         const iso = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (iso) row.dados[key] = `${iso[3]}/${iso[2]}/${iso[1]}`;
+        if (iso) row.dados[key] = `'${iso[3]}/${iso[2]}/${iso[1]}`;
       }
     }
   }
@@ -261,6 +264,21 @@ export async function extractAndWriteToSheet(opts: {
         const col612 = findHeader(tab.headers, /6\s*[-aà]\s*12/i);
         if (col05) row.dados[col05] = String(faixa0a5);
         if (col612) row.dados[col612] = String(faixa6a12);
+      }
+
+      // Telefone: se o número extraído pelo Gemini não aparece literalmente na
+      // conversa (alucinação — ex: cliente disse "é esse mesmo número" e o
+      // modelo inventou um número de exemplo), usa o telefone real do WhatsApp.
+      const phoneHeader = findHeader(tab.headers, /telefone|celular|whatsapp|fone|contato/i);
+      if (phoneHeader) {
+        const extractedDigits = (row.dados[phoneHeader] ?? "").replace(/\D/g, "");
+        const convDigits = conversation.replace(/\D/g, "");
+        if (!extractedDigits || extractedDigits.length < 8 || !convDigits.includes(extractedDigits)) {
+          if (row.dados[phoneHeader] && row.dados[phoneHeader] !== phone) {
+            console.warn(`[sheet-extractor] Telefone "${row.dados[phoneHeader]}" não encontrado na conversa — usando número real do WhatsApp`);
+          }
+          row.dados[phoneHeader] = phone;
+        }
       }
 
       // Não sobrescreve o telefone se o modelo extraiu um da conversa
