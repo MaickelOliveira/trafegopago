@@ -170,6 +170,26 @@ export async function findLastRowByPhone(
   return lastMatch;
 }
 
+// Lê todos os valores de uma linha existente (rowIndex é 1-based), mapeados por cabeçalho.
+export async function getRowValues(
+  refreshToken: string,
+  spreadsheetId: string,
+  sheetName: string,
+  headers: string[],
+  rowIndex: number
+): Promise<Record<string, string>> {
+  const sheets = await getSheetsClient(refreshToken);
+  const lastCol = colLetter(headers.length - 1);
+  const { data } = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!A${rowIndex}:${lastCol}${rowIndex}`,
+  });
+  const row = data.values?.[0] ?? [];
+  const result: Record<string, string> = {};
+  headers.forEach((h, i) => { result[h] = String(row[i] ?? ""); });
+  return result;
+}
+
 // Atualiza campos específicos em uma linha existente (rowIndex é 1-based).
 export async function updateRowFields(
   refreshToken: string,

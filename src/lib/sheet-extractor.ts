@@ -1,9 +1,32 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getSheetHeadersCached, appendRow, findLastRowByPhone, updateRowFields } from "./google-sheets";
+import { getSheetHeadersCached, appendRow, findLastRowByPhone, updateRowFields, getRowValues } from "./google-sheets";
 import type { ChatMessage } from "./conversations";
 import type { SheetTabMapping } from "./clients";
 
 type TabInfo = { label: string; tabName: string; headers: string[] };
+
+function findHeader(headers: string[], regex: RegExp): string | undefined {
+  return headers.find((h) => regex.test(h));
+}
+
+// Conta crianças por faixa etária a partir do texto livre da coluna "Pessoas"
+// (ex: "Maickel 31 anos R$50 - Clara 9 anos R$25 - Lis 3 anos Gratuito")
+function countChildrenByAge(pessoasText: string): { faixa0a5: number; faixa6a12: number } {
+  const ages = [...pessoasText.matchAll(/(\d{1,2})\s*anos?/gi)].map((m) => parseInt(m[1], 10));
+  let faixa0a5 = 0;
+  let faixa6a12 = 0;
+  for (const age of ages) {
+    if (age <= 5) faixa0a5++;
+    else if (age <= 12) faixa6a12++;
+  }
+  return { faixa0a5, faixa6a12 };
+}
+
+function parseMoney(val: string | undefined): number {
+  if (!val) return 0;
+  const num = parseFloat(String(val).replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".").trim());
+  return isNaN(num) ? 0 : num;
+}
 
 function buildInsertPrompt(tabsInfo: string, phone: string, conversation: string): string {
   return `Você extrai dados de reservas de conversas de WhatsApp para preencher uma planilha de controle.
@@ -33,6 +56,8 @@ REGRAS OBRIGATÓRIAS:
 11. "Status" = sempre "Pendente"
 12. "Cidade" = cidade do cliente se mencionada
 13. "Observações" = restrições alimentares, pedidos especiais ou informações extras
+14. Se houver colunas de faixa etária (ex: "0 - 5 anos", "6 - 12 anos"), NÃO preencha — o sistema calcula automaticamente a partir do campo Pessoas
+15. Se houver coluna "N°"/"Nº"/"#", NÃO preencha — o sistema numera automaticamente
 
 Determine a aba correta pelo tipo de reserva mencionado na conversa:
 - Almoço de fim de semana → aba de almoço
@@ -62,14 +87,14 @@ Extraia os campos abaixo para ATUALIZAR a linha existente deste cliente.
 
 REGRAS:
 1. "Telefone" = número de telefone/celular que o cliente informou na conversa (para localizar a linha). Se não encontrar, deixe vazio
-2. "Valor Pago" = valor que o cliente pagou (extraia da conversa)
-3. "Falta Pagar" = Valor Total - Valor Pago se pagou parcialmente. Se pagou o total, deixe vazio (ou "R$ 0,00")
-4. "Status" = "Pago" se pagou o valor total, "Parcial" se pagou apenas parte
+2. "Status" = "Pago" se o cliente indicar que pagou o valor total ou enviou comprovante sem mencionar pagamento parcial. "Parcial" se mencionar explicitamente que pagou apenas parte do valor.
+3. Se Status = "Parcial", inclua "Valor Pago" com o valor que o cliente informou ter pago (apenas o número, ex: "150,00").
+4. Se Status = "Pago" (pagamento total), NÃO inclua "Valor Pago" nem "Falta Pagar" — o sistema calcula automaticamente com base no Valor Total já registrado.
 
 Determine a aba correta pelo tipo de reserva mencionado na conversa.
 
 Retorne SOMENTE um array JSON — sem markdown, sem explicação:
-[{"aba": "valor exato do campo aba mostrado acima", "dados": {"Telefone": "44999990000", "Status": "Pago", "Valor Pago": "R$XXX,XX"}}]
+[{"aba": "valor exato do campo aba mostrado acima", "dados": {"Telefone": "44999990000", "Status": "Pago"}}]
 
 Conversa:
 ${conversation}`;
@@ -187,6 +212,11 @@ export async function extractAndWriteToSheet(opts: {
       continue;
     }
 
+    const hValorTotal = findHeader(tab.headers, /valor\s*total/i);
+    const hValorPago = findHeader(tab.headers, /valor\s*pago/i);
+    const hFaltaPagar = findHeader(tab.headers, /falta\s*pagar/i);
+    const hStatus = findHeader(tab.headers, /^status$/i);
+
     if (isPagamento) {
       // Modo UPDATE: encontra a linha existente pelo telefone e atualiza
       // Prefere o telefone extraído da conversa; cai no LID como último recurso
@@ -197,6 +227,20 @@ export async function extractAndWriteToSheet(opts: {
       try {
         const rowIndex = await findLastRowByPhone(googleRefreshToken, spreadsheetId, tab.tabName, lookupPhone);
         if (rowIndex) {
+          // Calcula Valor Pago / Falta Pagar automaticamente com base no Status,
+          // lendo o Valor Total já registrado na linha — não depende do Gemini "adivinhar".
+          const statusVal = hStatus ? updateData[hStatus] : undefined;
+          if (statusVal && hValorTotal) {
+            const current = await getRowValues(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, rowIndex);
+            const valorTotal = parseMoney(current[hValorTotal]);
+            if (/^pago$/i.test(statusVal.trim())) {
+              if (hValorPago) updateData[hValorPago] = String(valorTotal);
+              if (hFaltaPagar) updateData[hFaltaPagar] = "0";
+            } else if (/parcial/i.test(statusVal)) {
+              const valorPago = parseMoney(hValorPago ? updateData[hValorPago] : undefined);
+              if (hFaltaPagar) updateData[hFaltaPagar] = String(Math.max(valorTotal - valorPago, 0));
+            }
+          }
           await updateRowFields(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, rowIndex, updateData);
           console.log(`[sheet-extractor] updateRow OK aba="${tab.tabName}" row=${rowIndex} campos=${JSON.stringify(updateData)}`);
         } else {
@@ -208,6 +252,17 @@ export async function extractAndWriteToSheet(opts: {
     } else {
       // Modo INSERT: adiciona nova linha com Status = Pendente
       if (!row.dados["Status"]) row.dados["Status"] = "Pendente";
+
+      // Calcula automaticamente as colunas de faixa etária a partir do campo "Pessoas"
+      const pessoasVal = row.dados["Pessoas"];
+      if (pessoasVal) {
+        const { faixa0a5, faixa6a12 } = countChildrenByAge(pessoasVal);
+        const col05 = findHeader(tab.headers, /0\s*[-aà]\s*5/i);
+        const col612 = findHeader(tab.headers, /6\s*[-aà]\s*12/i);
+        if (col05) row.dados[col05] = String(faixa0a5);
+        if (col612) row.dados[col612] = String(faixa6a12);
+      }
+
       // Não sobrescreve o telefone se o modelo extraiu um da conversa
       try {
         await appendRow(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, row.dados);
