@@ -671,12 +671,32 @@ export async function runGeminiAgent(
     return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
   }
 
-  // Remove linhas em que o modelo escreveu uma chamada de ferramenta como texto puro
-  // (ex: enviar_resumo(motivo="...") no corpo da resposta em vez de via function call)
-  const KNOWN_TOOLS = /^(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
+  // Extrai chamadas de enviar_resumo que o modelo escreveu como TEXTO em vez de
+  // via function call nativa (ex: bloco "tool_code" / "print(enviar_resumo(motivo='...'))").
+  // Sem isso, o motivo nunca chega a processMetaActions/sheet-extractor — o aviso
+  // e o registro na planilha simplesmente não disparam, mesmo aparecendo na resposta.
+  const RESUMO_TEXT_CALL = /enviar_resumo\s*\(\s*motivo\s*=\s*['"]([^'"]*)['"]\s*\)/gi;
+  let resumoMatch: RegExpExecArray | null;
+  while ((resumoMatch = RESUMO_TEXT_CALL.exec(finalText)) !== null) {
+    const motivo = resumoMatch[1];
+    if (!actions.some((a) => a.type === "resumo_solicitado" && a.motivo === motivo)) {
+      console.warn(`[gemini-agent] enviar_resumo vazou como texto — extraindo motivo="${motivo}"`);
+      actions.push({ type: "resumo_solicitado", motivo, phone });
+    }
+  }
+
+  // Remove qualquer vazamento de chamada de ferramenta escrita como texto/código
+  // (linha "tool_code", "print(enviar_resumo(...))", ou a chamada nua) do corpo visível.
+  const KNOWN_TOOL_CALL = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
   finalText = finalText
     .split("\n")
-    .filter((line) => !KNOWN_TOOLS.test(line.trim()))
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      if (t === "tool_code" || t === "```tool_code" || t === "```") return false;
+      if (KNOWN_TOOL_CALL.test(t)) return false;
+      return true;
+    })
     .join("\n")
     .trim();
 

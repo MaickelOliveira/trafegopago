@@ -236,6 +236,7 @@ import {
 } from "@/lib/pending-responses";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
+import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 
 type Body = Record<string, unknown>;
 
@@ -947,8 +948,9 @@ export async function POST(
             const clientName = getClientById(cid)?.name ?? cid;
             if (geminiText) {
               console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
-              const { clean, names, followup } = extractMediaMarkers(geminiText);
-              console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(names)} | library size: ${agCfg?.mediaLibrary?.length ?? 0}`);
+              const { clean, names: namesRaw, followup } = extractMediaMarkers(geminiText);
+              const names = filterUnsentMedia(clientId, uazConn?.id, phone, namesRaw);
+              console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(namesRaw)} | a enviar (após dedup): ${JSON.stringify(names)} | library size: ${agCfg?.mediaLibrary?.length ?? 0}`);
               // Salva texto limpo (sem marcadores) no histórico
               addMessage(phone, { role: "assistant", content: clean || geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
               const textToSend = clean || geminiText;
@@ -962,6 +964,7 @@ export async function POST(
               }
               if (names.length > 0 && agCfg?.mediaLibrary?.length) {
                 await sendMarkedMedia(instanceUazToken, phone, names, agCfg.mediaLibrary);
+                markMediaSent(clientId, uazConn?.id, phone, names);
               } else if (names.length > 0) {
                 console.warn(`[webhook/${instanceId}] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
               }
@@ -1027,8 +1030,9 @@ export async function POST(
 
     if (geminiText) {
       console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
-      const { clean, names, followup } = extractMediaMarkers(geminiText);
-      console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(names)} | library size: ${agentCfg?.mediaLibrary?.length ?? 0}`);
+      const { clean, names: namesRaw, followup } = extractMediaMarkers(geminiText);
+      const names = filterUnsentMedia(clientId, uazConn?.id, phone, namesRaw);
+      console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(namesRaw)} | a enviar (após dedup): ${JSON.stringify(names)} | library size: ${agentCfg?.mediaLibrary?.length ?? 0}`);
       // Salva texto limpo (sem marcadores) no histórico
       addMessage(phone, { role: "assistant", content: clean || geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
       const textToSend = clean || geminiText;
@@ -1042,6 +1046,7 @@ export async function POST(
       }
       if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
         await sendMarkedMedia(instanceUazToken, phone, names, agentCfg.mediaLibrary);
+        markMediaSent(clientId, uazConn?.id, phone, names);
       } else if (names.length > 0) {
         console.warn(`[webhook/${instanceId}] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
       }

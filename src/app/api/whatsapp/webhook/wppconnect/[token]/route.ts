@@ -18,6 +18,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
+import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
@@ -837,7 +838,13 @@ export async function POST(
     clearInterval(typingInterval);
     stopTyping(wppSession!.sessionName, wppSession!.sessionToken, phone).catch(() => {});
     // Extrai marcadores [MIDIA:nome] e [FOLLOWUP:texto] do texto antes de enviar
-    const { clean, names, followup } = extractMediaMarkers(reply);
+    const { clean, names: namesRaw, followup } = extractMediaMarkers(reply);
+    // Remove mídias já enviadas antes nesta conversa — o modelo às vezes repete
+    // o marcador em respostas seguintes mesmo com a instrução de enviar só uma vez.
+    const names = filterUnsentMedia(clientId, connId, phone, namesRaw);
+    if (names.length < namesRaw.length) {
+      console.log(`[WPPConnect sendReply] Mídia(s) já enviada(s) nesta conversa, ignorando repetição: ${JSON.stringify(namesRaw.filter((n) => !names.includes(n)))}`);
+    }
     const textToSend = clean || reply;
     const chunks = agentCfg?.splitMessages
       ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
@@ -853,6 +860,7 @@ export async function POST(
     // Envia mídias referenciadas (se houver)
     if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
       await sendWppMarkedMedia(wppSession!.sessionName, wppSession!.sessionToken, phone, names, agentCfg.mediaLibrary, isLidPhone);
+      markMediaSent(clientId, connId, phone, names);
     } else if (names.length > 0) {
       console.warn(`[WPPConnect sendReply] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
     }
