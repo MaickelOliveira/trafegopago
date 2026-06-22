@@ -19,11 +19,17 @@ export async function GET() {
   const client = getClients().find((c) => c.name?.toLowerCase().includes("vitalli"));
   if (!client) return NextResponse.json({ error: "Cliente Vítallí não encontrado" }, { status: 404 });
 
-  const cfg = client.agentConfig ?? client.agentConfigs?.[0];
+  const allConfigs = [client.agentConfig, ...(client.agentConfigs ?? [])].filter(
+    (c): c is NonNullable<typeof c> => !!c
+  );
+  const cfg = allConfigs.find((c) => c.googleRefreshToken && c.spreadsheetId);
   const refreshToken = cfg?.googleRefreshToken;
   const spreadsheetId = cfg?.spreadsheetId;
   if (!refreshToken || !spreadsheetId) {
-    return NextResponse.json({ error: "Cliente sem googleRefreshToken/spreadsheetId configurado" }, { status: 400 });
+    return NextResponse.json({
+      error: "Cliente sem googleRefreshToken/spreadsheetId configurado",
+      debug: allConfigs.map((c) => ({ name: c.name, hasToken: !!c.googleRefreshToken, hasSheet: !!c.spreadsheetId })),
+    }, { status: 400 });
   }
 
   const sheets = await getSheetsClientFromToken(refreshToken);
