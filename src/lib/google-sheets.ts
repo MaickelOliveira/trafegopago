@@ -87,8 +87,12 @@ export async function appendRow(
   const isAutoNum = (h: string) => /^[nN][°º]?$/.test(h.trim()) || h.trim() === "#";
   const hasAutoNum = headers.length > 0 && isAutoNum(headers[0]);
 
-  // Lê coluna B (ou A, se não houver Nº) para encontrar a primeira linha vazia
-  const scanCol = hasAutoNum ? "B" : "A";
+  // Detecta linha vazia pela coluna "Responsável" — não pela "Data", pois é comum
+  // o gestor pré-preencher a data em várias linhas de antemão (ex: planilha de um
+  // evento com data fixa), o que faria o scan por "Data" pular essas linhas vazias
+  // e inserir o registro muito mais abaixo do que deveria.
+  const respIdx = headers.findIndex((h) => /respons[aá]vel/i.test(h.trim()));
+  const scanCol = respIdx >= 0 ? colLetter(respIdx) : (hasAutoNum ? "B" : "A");
   const { data: colData } = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `${sheetName}!${scanCol}:${scanCol}`,

@@ -899,13 +899,17 @@ export async function POST(
           if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
             const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
             if (apiKey) {
+              // Usa o número real resolvido (lead.realPhone) em vez do LID bruto —
+              // LIDs são IDs internos do WhatsApp, não números de telefone válidos.
+              const leadBatch = getLeadByPhone(_clientId, _phone);
+              const realPhoneBatch = (leadBatch?.realPhone ?? _phone).replace(/\D/g, "");
               extractAndWriteToSheet({
                 apiKey,
                 spreadsheetId: agentCfg.spreadsheetId,
                 googleRefreshToken: agentCfg.googleRefreshToken,
                 sheetMappings: agentCfg.sheetMappings,
                 messages: getHistory(_phone, _clientId, connId),
-                phone: _phone,
+                phone: realPhoneBatch,
                 motivo: resumoActionBatch.type === "resumo_solicitado" ? resumoActionBatch.motivo : undefined,
               }).catch((e) => console.warn("[WPPConnect] sheet-extractor erro:", e instanceof Error ? e.message : e));
             }
@@ -941,13 +945,17 @@ export async function POST(
     if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
+        // Usa o número real resolvido (lead.realPhone) em vez do LID bruto —
+        // LIDs são IDs internos do WhatsApp, não números de telefone válidos.
+        const leadImediato = getLeadByPhone(clientId, phone);
+        const realPhoneImediato = (leadImediato?.realPhone ?? phone).replace(/\D/g, "");
         extractAndWriteToSheet({
           apiKey,
           spreadsheetId: agentCfg.spreadsheetId,
           googleRefreshToken: agentCfg.googleRefreshToken,
           sheetMappings: agentCfg.sheetMappings,
           messages: getHistory(phone, clientId, connId),
-          phone,
+          phone: realPhoneImediato,
           motivo: resumoActionImediato.type === "resumo_solicitado" ? resumoActionImediato.motivo : undefined,
         }).catch((e) => console.warn("[WPPConnect] sheet-extractor erro:", e instanceof Error ? e.message : e));
       }
