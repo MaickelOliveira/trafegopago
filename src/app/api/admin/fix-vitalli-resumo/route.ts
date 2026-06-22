@@ -59,32 +59,36 @@ export async function GET() {
   type Cell = { range: string; values: [[string]] };
   const data: Cell[] = [];
 
+  // Esta planilha está em locale pt-BR: o parser de fórmulas exige ";" como
+  // separador de argumentos (não ","), e funciona tanto com nomes em inglês
+  // (SUMIFS) quanto em português (SOMASES) — mas usamos os nomes em português
+  // por já termos confirmado que funcionam nela (CONT.SE pré-existente).
   for (const { row, def } of categorias) {
     const { tab, dataStart, dataEnd, col } = def;
     const t = quote(tab);
     const dateRange = `${t}!B${dataStart}:B${dataEnd}`;
-    const dateCriteria = `${dateRange},">="&$L$1,${dateRange},"<="&$L$2`;
+    const dateCriteria = `${dateRange};">="&$L$1;${dateRange};"<="&$L$2`;
 
-    data.push({ range: `Resumo!B${row}`, values: [[`=SUMIFS(${t}!${col.pessoas}${dataStart}:${col.pessoas}${dataEnd},${dateCriteria})`]] });
+    data.push({ range: `Resumo!B${row}`, values: [[`=SOMASES(${t}!${col.pessoas}${dataStart}:${col.pessoas}${dataEnd};${dateCriteria})`]] });
     if (col.idade05) {
-      data.push({ range: `Resumo!C${row}`, values: [[`=SUMIFS(${t}!${col.idade05}${dataStart}:${col.idade05}${dataEnd},${dateCriteria})`]] });
+      data.push({ range: `Resumo!C${row}`, values: [[`=SOMASES(${t}!${col.idade05}${dataStart}:${col.idade05}${dataEnd};${dateCriteria})`]] });
     } else {
       data.push({ range: `Resumo!C${row}`, values: [[""]] });
     }
     if (col.idade612) {
-      data.push({ range: `Resumo!D${row}`, values: [[`=SUMIFS(${t}!${col.idade612}${dataStart}:${col.idade612}${dataEnd},${dateCriteria})`]] });
+      data.push({ range: `Resumo!D${row}`, values: [[`=SOMASES(${t}!${col.idade612}${dataStart}:${col.idade612}${dataEnd};${dateCriteria})`]] });
     } else {
       data.push({ range: `Resumo!D${row}`, values: [[""]] });
     }
-    data.push({ range: `Resumo!E${row}`, values: [[`=SUMIFS(${t}!${col.total}${dataStart}:${col.total}${dataEnd},${dateCriteria})`]] });
-    data.push({ range: `Resumo!F${row}`, values: [[`=SUMIFS(${t}!${col.pago}${dataStart}:${col.pago}${dataEnd},${dateCriteria})`]] });
-    data.push({ range: `Resumo!G${row}`, values: [[`=SUMIFS(${t}!${col.falta}${dataStart}:${col.falta}${dataEnd},${dateCriteria})`]] });
-    data.push({ range: `Resumo!H${row}`, values: [[`=COUNTIFS(${t}!${col.total}${dataStart}:${col.total}${dataEnd},">0",${dateCriteria})`]] });
+    data.push({ range: `Resumo!E${row}`, values: [[`=SOMASES(${t}!${col.total}${dataStart}:${col.total}${dataEnd};${dateCriteria})`]] });
+    data.push({ range: `Resumo!F${row}`, values: [[`=SOMASES(${t}!${col.pago}${dataStart}:${col.pago}${dataEnd};${dateCriteria})`]] });
+    data.push({ range: `Resumo!G${row}`, values: [[`=SOMASES(${t}!${col.falta}${dataStart}:${col.falta}${dataEnd};${dateCriteria})`]] });
+    data.push({ range: `Resumo!H${row}`, values: [[`=CONT.SES(${t}!${col.total}${dataStart}:${col.total}${dataEnd};">0";${dateCriteria})`]] });
   }
 
   // Linha TOTAL GERAL (linha 8) — soma as 4 categorias acima.
   for (const colLetter of ["B", "C", "D", "E", "F", "G", "H"]) {
-    data.push({ range: `Resumo!${colLetter}8`, values: [[`=SUM(${colLetter}4:${colLetter}7)`]] });
+    data.push({ range: `Resumo!${colLetter}8`, values: [[`=SOMA(${colLetter}4:${colLetter}7)`]] });
   }
 
   await sheets.spreadsheets.values.batchUpdate({
