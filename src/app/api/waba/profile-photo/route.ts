@@ -8,13 +8,24 @@ export const dynamic = "force-dynamic";
 // obter um media handle; 2) atualiza o perfil em /{phoneNumberId}/whatsapp_business_profile
 // referenciando esse handle.
 export async function POST(req: NextRequest) {
+  console.log("[profile-photo] requisição recebida");
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) {
+    console.log("[profile-photo] Unauthorized — sem sessão válida");
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  const formData = await req.formData();
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch (e) {
+    console.error("[profile-photo] ERRO ao ler formData:", e instanceof Error ? e.message : e);
+    return NextResponse.json({ error: `Falha ao ler upload: ${e instanceof Error ? e.message : String(e)}` }, { status: 400 });
+  }
   const file = formData.get("file");
   const phoneNumberId = formData.get("phoneNumberId");
   const token = formData.get("token");
+  console.log(`[profile-photo] file=${file instanceof File ? `${file.name} (${file.size} bytes)` : "ausente"} phoneNumberId=${phoneNumberId} hasToken=${!!token}`);
 
   if (!(file instanceof File) || typeof phoneNumberId !== "string" || typeof token !== "string") {
     return NextResponse.json({ error: "file, phoneNumberId e token são obrigatórios" }, { status: 400 });
@@ -29,12 +40,20 @@ export async function POST(req: NextRequest) {
   uploadForm.append("type", file.type);
   uploadForm.append("messaging_product", "whatsapp");
 
-  const uploadRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/media`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: uploadForm,
-  });
+  console.log(`[profile-photo] chamando Meta /media — phoneNumberId=${phoneNumberId}`);
+  let uploadRes: Response;
+  try {
+    uploadRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/media`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: uploadForm,
+    });
+  } catch (e) {
+    console.error("[profile-photo] ERRO de rede ao chamar Meta /media:", e instanceof Error ? e.message : e);
+    return NextResponse.json({ error: `Erro de rede ao chamar a Meta: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 });
+  }
   const uploadBody = await uploadRes.text();
+  console.log(`[profile-photo] Meta /media status=${uploadRes.status} body=${uploadBody.slice(0, 300)}`);
   if (!uploadRes.ok) {
     return NextResponse.json({ error: `Falha no upload da imagem: ${uploadBody}` }, { status: 502 });
   }
