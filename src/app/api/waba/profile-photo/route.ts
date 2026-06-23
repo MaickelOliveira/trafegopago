@@ -68,12 +68,20 @@ export async function POST(req: NextRequest) {
   }
 
   // 2) Atualiza o perfil do WhatsApp Business com a foto enviada
-  const profileRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/whatsapp_business_profile`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", profile_picture_handle: mediaId }),
-  });
+  console.log(`[profile-photo] chamando Meta /whatsapp_business_profile — mediaId=${mediaId}`);
+  let profileRes: Response;
+  try {
+    profileRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/whatsapp_business_profile`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", profile_picture_handle: mediaId }),
+    });
+  } catch (e) {
+    console.error("[profile-photo] ERRO de rede ao chamar Meta /whatsapp_business_profile:", e instanceof Error ? e.message : e);
+    return NextResponse.json({ error: `Erro de rede ao atualizar perfil: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 });
+  }
   const profileBody = await profileRes.text();
+  console.log(`[profile-photo] Meta /whatsapp_business_profile status=${profileRes.status} body=${profileBody.slice(0, 300)}`);
   if (!profileRes.ok) {
     return NextResponse.json({ error: `Falha ao atualizar perfil: ${profileBody}` }, { status: 502 });
   }
