@@ -157,10 +157,17 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       }
 
       // ── 2. Análise Gemini: deve enviar? ─────────────────────────────────
+      // Só se aplica a conexões WPPConnect/UazAPI (texto livre). Na API oficial
+      // (Meta) o follow-up já depende de template aprovado — a checagem de
+      // "contexto inadequado" não se aplica e só causava cancelamentos indevidos.
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       const systemPrompt = agentCfg.followUpContext?.trim() || (agentCfg.systemPrompt ?? "").slice(0, 800);
+      const followUpConn = getFunnels()
+        .flatMap((f) => f.connections ?? [])
+        .find((c) => c.id === followUp.connId);
+      const isMetaConn = followUpConn?.type === "meta";
 
-      if (apiKey && history.length > 0) {
+      if (!isMetaConn && apiKey && history.length > 0) {
         const send = await shouldSendFollowUp(history, systemPrompt, followUp.message, apiKey);
         if (!send) {
           cancelFollowUp(followUp.id);
