@@ -16,7 +16,7 @@ export async function sendMessage(
   message: string,
   clientId: string,
   preferredConnectionId?: string
-): Promise<void> {
+): Promise<boolean> {
   const funnels = getFunnels().filter((f) => f.clientId === clientId);
   const allConns = funnels.flatMap((f) => (f.connections ?? []).map((c) => ({ ...c, funnelId: f.id })));
 
@@ -31,7 +31,7 @@ export async function sendMessage(
       const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
       markPhoneSending(rawPhone);
       const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message, isLid);
-      if (ok) return;
+      if (ok) return true;
     }
 
     const preferred = allConns.find((c) => c.id === preferredConnectionId);
@@ -39,12 +39,12 @@ export async function sendMessage(
       // Meta Cloud API
       if (preferred.type === "meta" && preferred.metaPhoneNumberId && preferred.metaToken) {
         const ok = await sendMessageDirect(phone, message, preferred.metaPhoneNumberId, preferred.metaToken);
-        if (ok) return;
+        if (ok) return true;
       }
       // UazAPI
       if (preferred.type === "uazapi" && preferred.uazapiToken) {
         const ok = await sendText(preferred.uazapiToken, phone, message);
-        if (ok) return;
+        if (ok) return true;
       }
     }
 
@@ -55,12 +55,13 @@ export async function sendMessage(
     const metaConn = funnel.connections?.find((c) => c.type === "meta" && c.metaPhoneNumberId && c.metaToken);
     if (metaConn) {
       const ok = await sendMessageDirect(phone, message, metaConn.metaPhoneNumberId!, metaConn.metaToken!);
-      if (ok) return;
+      if (ok) return true;
     }
   }
 
   // Fallback final: UazAPI
   await sendWhatsApp(phone, message);
+  return true;
 }
 
 export async function sendMessageDirect(

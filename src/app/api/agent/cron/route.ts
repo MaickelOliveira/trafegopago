@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDueFollowUps, markSent, cancelFollowUp, scheduleFollowUp, cancelFollowUpsForPhone } from "@/lib/followups";
+import { getDueFollowUps, markSent, cancelFollowUp, scheduleFollowUp, cancelFollowUpsForPhone, type FollowUp } from "@/lib/followups";
 import { getDuePending, markProcessing, markDone } from "@/lib/pending-responses";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
 import { sendMessage, getGeminiApiKey } from "@/lib/whatsapp-send";
@@ -7,8 +7,42 @@ import { runGeminiAgent } from "@/lib/gemini-agent";
 import { addMessage, getHistory } from "@/lib/conversations";
 import { runScheduledDailyAutomations } from "@/lib/crm-automations";
 import { getLeadByPhone } from "@/lib/leads";
+import { getFunnels } from "@/lib/funnels";
+import { getTemplateById, sendTemplate } from "@/lib/waba-templates";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ChatMessage } from "@/lib/conversations";
+
+// Envia o follow-up via template aprovado da Meta (obrigatório fora da janela
+// de 24h da API oficial). Resolve phoneNumberId/token pela conexão de origem
+// (followUp.connId) e ordena as variáveis numericamente ("1","2",... → {{1}},{{2}}).
+async function sendFollowUpTemplate(followUp: FollowUp): Promise<boolean> {
+  if (!followUp.templateId) return false;
+  const template = getTemplateById(followUp.templateId);
+  if (!template) {
+    console.error(`[agent/cron] FU ${followUp.id}: template ${followUp.templateId} não encontrado`);
+    return false;
+  }
+  const conn = getFunnels()
+    .flatMap((f) => f.connections ?? [])
+    .find((c) => c.id === followUp.connId && c.type === "meta");
+  if (!conn?.metaPhoneNumberId || !conn?.metaToken) {
+    console.error(`[agent/cron] FU ${followUp.id}: conexão Meta não encontrada para connId=${followUp.connId}`);
+    return false;
+  }
+  const vars = followUp.templateVariables ?? {};
+  const orderedValues = Object.keys(vars)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((k) => vars[k]);
+  const components = orderedValues.length > 0
+    ? [{ type: "body", parameters: orderedValues.map((v) => ({ type: "text", text: v })) }]
+    : undefined;
+  const result = await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, followUp.phone, template.name, template.language, components);
+  if (!result.success) {
+    console.error(`[agent/cron] FU ${followUp.id}: sendTemplate falhou — ${result.error}`);
+    return false;
+  }
+  return true;
+}
 
 const TERMINAL_STATUSES = ["ganho", "perdido"];
 
@@ -171,10 +205,23 @@ export async function GET(req: NextRequest) {
       }
 
       // ── 4. Enviar (sempre pela MESMA conexão/número da conversa original) ──
-      await sendMessage(followUp.phone, msgToSend, followUp.clientId, followUp.connId);
+      // Template é OBRIGATÓRIO para API oficial Meta fora da janela de 24h —
+      // texto livre (mesmo gerado por IA) é rejeitado pela Meta nesse caso.
+      let sent: boolean;
+      if (followUp.messageType === "template") {
+        sent = await sendFollowUpTemplate(followUp);
+      } else {
+        sent = await sendMessage(followUp.phone, msgToSend, followUp.clientId, followUp.connId);
+      }
+      if (sent) {
+        // Registra no histórico para aparecer no inbox da plataforma
+        addMessage(followUp.phone, { role: "assistant", content: msgToSend, ts: Date.now() }, followUp.clientId, { connId: followUp.connId });
+      } else {
+        console.error(`[agent/cron] FU ${followUp.id} FALHOU ao enviar — phone=${followUp.phone} messageType=${followUp.messageType ?? "text"}`);
+      }
       markSent(followUp.id);
       processed++;
-      console.log(`[agent/cron] Follow-up enviado: ${followUp.id} → ${followUp.phone}`);
+      console.log(`[agent/cron] Follow-up ${sent ? "enviado" : "FALHOU"}: ${followUp.id} → ${followUp.phone}`);
 
       // ── 5. Agendar próximo step ──────────────────────────────────────────
       const steps = agentCfg?.followUps ?? [];
