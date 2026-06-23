@@ -17,6 +17,17 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const TERMINAL_STATUSES = ["ganho", "perdido"];
 
+/** Monta um texto legível do template (corpo + variáveis substituídas) para exibir no histórico/inbox */
+function renderTemplatePreview(templateId: string | undefined, variables: Record<string, string> | undefined): string {
+  if (!templateId) return "";
+  const template = getTemplateById(templateId);
+  if (!template) return "";
+  const body = template.components.find((c) => c.type === "BODY")?.text ?? "";
+  if (!variables) return body;
+  const ordered = Object.keys(variables).sort((a, b) => Number(a) - Number(b));
+  return ordered.reduce((text, key, i) => text.replace(`{{${i + 1}}}`, variables[key]), body);
+}
+
 /** Interpola variáveis {{nome}}, {{nome_completo}}, {{telefone}}, {{email}} em texto fixo */
 function interpolateFollowUp(msg: string, lead: { name?: string | null; phone?: string | null; email?: string | null } | undefined): string {
   if (!msg) return msg;
@@ -187,7 +198,12 @@ export async function processDueFollowUpsAndBatches(): Promise<{
           msgToSend = aiMsg;
           console.log(`[cron-tasks] FU ${followUp.id} mensagem AI: "${aiMsg.slice(0, 80)}"`);
         }
-      } else if (followUp.messageType !== "template") {
+      } else if (followUp.messageType === "template") {
+        // followUp.message vem vazio para templates — o conteúdo real está no
+        // template aprovado da Meta. Resolve um preview legível só para exibir
+        // no histórico/inbox da plataforma (o envio em si usa sendFollowUpTemplate).
+        msgToSend = renderTemplatePreview(followUp.templateId, followUp.templateVariables) || followUp.message;
+      } else {
         msgToSend = interpolateFollowUp(followUp.message, lead);
       }
 
