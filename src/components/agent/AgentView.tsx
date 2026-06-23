@@ -148,7 +148,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [loadingSpreadsheetInfo, setLoadingSpreadsheetInfo] = useState(false);
   const [spreadsheetError, setSpreadsheetError] = useState("");
   const [manualSpreadsheetInput, setManualSpreadsheetInput] = useState("");
-  const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string; category: string; language: string; phoneNumberId?: string }[]>([]);
+  const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string; category: string; language: string; phoneNumberId?: string; components?: { type: string; text?: string }[] }[]>([]);
 
   // Avisos
   const [addingAviso, setAddingAviso] = useState(false);
@@ -992,6 +992,9 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             const filteredTemplates = step.templateCategory
               ? approvedTemplates.filter((t) => t.category === step.templateCategory)
               : approvedTemplates;
+            const selectedTpl = approvedTemplates.find((t) => t.id === step.templateId);
+            const tplBodyText = selectedTpl?.components?.find((c) => c.type === "BODY")?.text ?? "";
+            const tplVarCount = new Set(Array.from(tplBodyText.matchAll(/\{\{(\d+)\}\}/g)).map((m) => m[1])).size;
 
             return (
               <div key={step.id} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 space-y-3">
@@ -1141,7 +1144,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                         filteredTemplates.map((tpl) => (
                           <button
                             key={tpl.id}
-                            onClick={() => updateStep({ templateId: tpl.id })}
+                            onClick={() => updateStep({ templateId: tpl.id, templateVariables: {} })}
                             className={clsx(
                               "w-full text-left rounded-lg px-3 py-2 text-sm border transition",
                               step.templateId === tpl.id
@@ -1157,6 +1160,29 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                         ))
                       )}
                     </div>
+
+                    {/* Variáveis do template selecionado ({{1}}, {{2}}...) */}
+                    {selectedTpl && tplVarCount > 0 && (
+                      <div className="space-y-2 rounded-lg border border-emerald-200 bg-white p-3">
+                        <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide">
+                          Variáveis do template
+                        </p>
+                        {tplBodyText && (
+                          <p className="text-[11px] text-slate-400 italic">&ldquo;{tplBodyText}&rdquo;</p>
+                        )}
+                        {Array.from({ length: tplVarCount }, (_, i) => String(i + 1)).map((n) => (
+                          <div key={n} className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500 shrink-0 w-12">{`{{${n}}}`}</span>
+                            <input
+                              value={step.templateVariables?.[n] ?? ""}
+                              onChange={(e) => updateStep({ templateVariables: { ...step.templateVariables, [n]: e.target.value } })}
+                              placeholder={`Valor para {{${n}}}`}
+                              className="flex-1 rounded-lg border border-slate-200 px-2.5 py-1 text-sm outline-none focus:border-emerald-400"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
