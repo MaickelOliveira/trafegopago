@@ -41,7 +41,7 @@ const CATEGORIES = [
   { value: "UTILITY", label: "Utilidade", desc: "Confirmações, lembretes, atualizações" },
 ];
 
-type Tab = "templates" | "create" | "send";
+type Tab = "templates" | "create" | "send" | "profile";
 
 export function WabaView({ clientId, initialTemplates, metaConnections, funnels }: Props) {
   const [templates, setTemplates] = useState<WabaTemplate[]>(initialTemplates);
@@ -87,6 +87,43 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
 
   const selectedConn = metaConnections.find((c) => c.id === form.connId);
   const importConn = metaConnections.find((c) => c.id === importConnId);
+
+  // Foto de perfil do WhatsApp Business
+  const [profileConnId, setProfileConnId] = useState(metaConnections[0]?.id ?? "");
+  const [profileFile, setProfileFile] = useState<File | null>(null);
+  const [profilePreview, setProfilePreview] = useState<string | null>(null);
+  const [profileUploading, setProfileUploading] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const profileConn = metaConnections.find((c) => c.id === profileConnId);
+
+  function handleProfileFileChange(file: File | null) {
+    setProfileFile(file);
+    setProfileMsg(null);
+    if (profilePreview) URL.revokeObjectURL(profilePreview);
+    setProfilePreview(file ? URL.createObjectURL(file) : null);
+  }
+
+  async function uploadProfilePhoto() {
+    if (!profileFile || !profileConn) return;
+    setProfileUploading(true);
+    setProfileMsg(null);
+    const fd = new FormData();
+    fd.append("file", profileFile);
+    fd.append("phoneNumberId", profileConn.phoneNumberId);
+    fd.append("token", profileConn.token);
+    try {
+      const res = await fetch("/api/waba/profile-photo", { method: "POST", body: fd });
+      const data = await res.json();
+      if (res.ok) {
+        setProfileMsg({ type: "ok", text: "Foto de perfil atualizada! Pode levar alguns minutos para refletir no WhatsApp do cliente." });
+      } else {
+        setProfileMsg({ type: "err", text: data.error ?? "Erro ao atualizar foto de perfil" });
+      }
+    } catch {
+      setProfileMsg({ type: "err", text: "Falha na conexão" });
+    }
+    setProfileUploading(false);
+  }
 
   async function doImport() {
     const wabaId = importWabaId.trim();
@@ -377,7 +414,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200">
-        {(["templates", "create"] as Tab[]).map((tab) => (
+        {(["templates", "create", "profile"] as Tab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -388,10 +425,65 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
                 : "border-transparent text-slate-500 hover:text-slate-700"
             )}
           >
-            {tab === "templates" ? `Templates (${templates.length})` : editingTemplate ? "✏️ Editar Template" : "+ Criar Template"}
+            {tab === "templates"
+              ? `Templates (${templates.length})`
+              : tab === "create"
+              ? (editingTemplate ? "✏️ Editar Template" : "+ Criar Template")
+              : "📷 Foto de Perfil"}
           </button>
         ))}
       </div>
+
+      {/* Aba: Foto de Perfil do WhatsApp Business */}
+      {activeTab === "profile" && (
+        <div className="max-w-md space-y-4 rounded-xl border border-slate-200 p-5">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Conexão (número)</label>
+            <select
+              value={profileConnId}
+              onChange={(e) => setProfileConnId(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            >
+              {metaConnections.length === 0
+                ? <option value="">Nenhuma conexão Meta configurada</option>
+                : metaConnections.map((c) => <option key={c.id} value={c.id}>{c.phone} ({c.funnelName})</option>)
+              }
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Imagem (JPG ou PNG)</label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              onChange={(e) => handleProfileFileChange(e.target.files?.[0] ?? null)}
+              className="w-full text-sm"
+            />
+          </div>
+
+          {profilePreview && (
+            <img src={profilePreview} alt="Pré-visualização" className="h-32 w-32 rounded-full object-cover border border-slate-200" />
+          )}
+
+          <button
+            onClick={uploadProfilePhoto}
+            disabled={!profileFile || !profileConn || profileUploading}
+            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition disabled:opacity-50"
+          >
+            {profileUploading ? "Enviando..." : "Salvar foto de perfil"}
+          </button>
+
+          {profileMsg && (
+            <p className={clsx("text-sm", profileMsg.type === "ok" ? "text-green-600" : "text-red-600")}>
+              {profileMsg.text}
+            </p>
+          )}
+
+          <p className="text-xs text-slate-400">
+            A foto é enviada direto para a Meta via API oficial — substitui a foto de perfil atual do WhatsApp Business desse número.
+          </p>
+        </div>
+      )}
 
       {/* Aba: Lista de Templates */}
       {activeTab === "templates" && (
