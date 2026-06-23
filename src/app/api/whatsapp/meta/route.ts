@@ -112,6 +112,22 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        // ── Modo teste: quando configurado, a IA responde APENAS este número ──
+        if (agentCfg?.testPhone) {
+          const testNorm = agentCfg.testPhone.replace(/\D/g, "");
+          // Comparação tolerante ao 9º dígito brasileiro e variações de prefixo
+          const coreDigits = (n: string) => n.replace(/\D/g, "").slice(-8);
+          const phoneMatches =
+            phone === testNorm ||
+            phone.endsWith(testNorm.slice(-9)) ||
+            coreDigits(phone) === coreDigits(testNorm);
+          if (!phoneMatches) {
+            console.log(`[meta] MODO TESTE — ignorando phone=${phone} (permitido: ${testNorm})`);
+            continue;
+          }
+          console.log(`[meta] testPhone match — phone=${phone} ✓`);
+        }
+
         // ── Mídia no primeiro contato ────────────────────────────────────
         if (isNew && cid !== "sem-cliente" && metaToken && phoneNumberId) {
           const mediaItems = agentCfg?.mediaLibrary?.filter((m) => m.sendOnFirstContact) ?? [];
