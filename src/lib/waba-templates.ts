@@ -113,7 +113,7 @@ export async function sendTemplate(
   templateName: string,
   languageCode: string,
   components?: object[],
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; wamid?: string }> {
   try {
     const body = {
       messaging_product: "whatsapp",
@@ -142,9 +142,9 @@ export async function sendTemplate(
       console.error(`[sendTemplate] FALHOU status=${res.status} to=${toPhone} template=${templateName} erro="${err}"`);
       return { success: false, error: err };
     }
-    const wamid = data?.messages?.[0]?.id ?? "sem-wamid";
-    console.log(`[sendTemplate] HTTP 200 wamid=${wamid} to=${toPhone} template=${templateName}`);
-    return { success: true };
+    const wamid = data?.messages?.[0]?.id;
+    console.log(`[sendTemplate] HTTP 200 wamid=${wamid ?? "sem-wamid"} to=${toPhone} template=${templateName}`);
+    return { success: true, wamid };
   } catch (e) {
     return { success: false, error: String(e) };
   }

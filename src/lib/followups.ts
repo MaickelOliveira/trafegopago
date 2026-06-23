@@ -24,6 +24,8 @@ export type FollowUp = {
                                  // follow-up seja enviado pelo MESMO canal (WPPConnect,
                                  // UazAPI ou Meta) que o lead conversou, não outro
   lastError?: string;            // motivo do envio ter falhado (status "failed")
+  wamid?: string;                // id da mensagem na Meta — usado para casar com o
+                                  // status assíncrono (sent/delivered/read/failed) do webhook
 };
 
 const FILE = path.join(process.cwd(), "data", "followups.json");
@@ -73,13 +75,18 @@ export function getAllFollowUps(clientId?: string): FollowUp[] {
   return load().filter((f) => !clientId || f.clientId === clientId);
 }
 
-export function markSent(id: string): void {
+export function markSent(id: string, wamid?: string): void {
   const items = load();
   const idx = items.findIndex((f) => f.id === id);
   if (idx >= 0) {
     items[idx].status = "sent";
+    if (wamid) items[idx].wamid = wamid;
     save(items);
   }
+}
+
+export function getFollowUpByWamid(wamid: string): FollowUp | undefined {
+  return load().find((f) => f.wamid === wamid);
 }
 
 export function markFailed(id: string, error: string): void {

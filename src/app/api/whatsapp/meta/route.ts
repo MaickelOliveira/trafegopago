@@ -6,7 +6,7 @@ import { addMessage, getHistory } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
-import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
+import { startFollowUpSequence, cancelFollowUpsForPhone, getFollowUpByWamid, markFailed } from "@/lib/followups";
 import { sendMessageDirect, getGeminiApiKey } from "@/lib/whatsapp-send";
 import { splitMessage } from "@/lib/uazapi";
 import { sendTemplate } from "@/lib/waba-templates";
@@ -67,6 +67,24 @@ export async function POST(req: NextRequest) {
         );
         clientId = clientByAgent?.id ?? f.clientId ?? null;
         break;
+      }
+
+      // ── Status assíncrono de entrega (sent/delivered/read/failed) ────────
+      // A Graph API pode aceitar o envio do template (HTTP 200 + wamid) e só
+      // reportar a falha de entrega real aqui, depois, via webhook — sem isso
+      // o follow-up ficava marcado como "sent" mesmo nunca chegando ao lead.
+      for (const status of (value?.statuses ?? [])) {
+        if (status.status !== "failed") continue;
+        const wamid = status.id;
+        const errInfo = status.errors?.[0];
+        const errMsg = errInfo ? `${errInfo.code ?? ""} ${errInfo.title ?? errInfo.message ?? ""}`.trim() : "falha de entrega reportada pela Meta";
+        const followUp = wamid ? getFollowUpByWamid(wamid) : undefined;
+        if (followUp) {
+          markFailed(followUp.id, errMsg);
+          console.error(`[meta] status FAILED wamid=${wamid} followUpId=${followUp.id} erro="${errMsg}"`);
+        } else {
+          console.error(`[meta] status FAILED wamid=${wamid} (sem follow-up correspondente) erro="${errMsg}"`);
+        }
       }
 
       for (const msg of (value?.messages ?? [])) {

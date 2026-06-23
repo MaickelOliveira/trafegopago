@@ -31,7 +31,7 @@ function interpolateFollowUp(msg: string, lead: { name?: string | null; phone?: 
 // Envia o follow-up via template aprovado da Meta (obrigatório fora da janela
 // de 24h da API oficial). Resolve phoneNumberId/token pela conexão de origem
 // (followUp.connId) e ordena as variáveis numericamente ("1","2",... → {{1}},{{2}}).
-async function sendFollowUpTemplate(followUp: FollowUp): Promise<{ ok: boolean; error?: string }> {
+async function sendFollowUpTemplate(followUp: FollowUp): Promise<{ ok: boolean; error?: string; wamid?: string }> {
   if (!followUp.templateId) return { ok: false, error: "followUp sem templateId" };
   const template = getTemplateById(followUp.templateId);
   if (!template) {
@@ -59,7 +59,7 @@ async function sendFollowUpTemplate(followUp: FollowUp): Promise<{ ok: boolean; 
     console.error(`[cron-tasks] FU ${followUp.id}: sendTemplate falhou — ${result.error}`);
     return { ok: false, error: result.error ?? "sendTemplate falhou sem detalhe" };
   }
-  return { ok: true };
+  return { ok: true, wamid: result.wamid };
 }
 
 // Decide via Gemini se o follow-up ainda deve ser enviado, dado o contexto atual da conversa
@@ -197,7 +197,7 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       // ── 4. Enviar (sempre pela MESMA conexão/número da conversa original) ──
       // Template é OBRIGATÓRIO para API oficial Meta fora da janela de 24h —
       // texto livre (mesmo gerado por IA) é rejeitado pela Meta nesse caso.
-      let sendResult: { ok: boolean; error?: string };
+      let sendResult: { ok: boolean; error?: string; wamid?: string };
       if (followUp.messageType === "template") {
         sendResult = await sendFollowUpTemplate(followUp);
       } else {
@@ -213,7 +213,10 @@ export async function processDueFollowUpsAndBatches(): Promise<{
           setAiPaused(followUp.phone, false, followUp.clientId);
           updateLead(lead.id, { aiPaused: false });
         }
-        markSent(followUp.id);
+        // wamid guardado para casar com o status assíncrono (sent/delivered/read/failed)
+        // que a Meta manda depois via webhook — a API pode aceitar o envio aqui e
+        // falhar a entrega de verdade só mais tarde, fora dessa resposta síncrona.
+        markSent(followUp.id, sendResult.wamid);
       } else {
         // NÃO marca como "sent" — registra "failed" com o motivo real, visível
         // em /api/debug/followups, em vez de mascarar a falha como sucesso.
