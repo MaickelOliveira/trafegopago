@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { clsx } from "clsx";
 import { LeadModal, prefetchConversation } from "./LeadModal";
 import ImportModal from "./ImportModal";
-import type { Lead } from "@/lib/leads";
+import type { Lead, LeadReminder } from "@/lib/leads";
 import type { Funnel, FunnelColumn, TriggerPhrase } from "@/lib/funnels";
 
 type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean };
@@ -591,6 +591,12 @@ export function KanbanBoard({
   const [showNewForm, setShowNewForm] = useState(false);
   const [showFunnelMgr, setShowFunnelMgr] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showReminders, setShowReminders] = useState(false);
+  const [remindersNow, setRemindersNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setRemindersNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const [newLead, setNewLead] = useState({ name: "", phone: "", email: "", campaignName: "", value: "", clientId: clients[0]?.id ?? "" });
   const [saving, setSaving]   = useState(false);
   const draggingId = useRef<string | null>(null);
@@ -804,6 +810,15 @@ export function KanbanBoard({
   const ganhoValue  = ganhos.reduce((s, l) => s + (l.value ?? 0), 0);
   const conversion  = filtered.length > 0 ? ((ganhos.length / filtered.length) * 100).toFixed(0) : "0";
 
+  // Lembretes — agregados de todos os leads carregados (não só o funil ativo)
+  const allReminders = leads.flatMap((l) => (l.reminders ?? []).map((r) => ({ ...r, lead: l })));
+  const overdueReminders = allReminders
+    .filter((r) => !r.done && new Date(r.dueDate).getTime() <= remindersNow)
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  const upcomingReminders = allReminders
+    .filter((r) => !r.done && new Date(r.dueDate).getTime() > remindersNow)
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
   // Origens
   const originMeta     = filtered.filter((l) => l.adPlatform === "meta").length;
   const originGoogle   = filtered.filter((l) => l.adPlatform === "google").length;
@@ -866,6 +881,17 @@ export function KanbanBoard({
   function handleDeleted(id: string) {
     setLeads((prev) => prev.filter((l) => l.id !== id));
     setSelected(null);
+  }
+
+  async function completeReminder(lead: Lead, reminderId: string) {
+    const next = (lead.reminders ?? []).map((r) => (r.id === reminderId ? { ...r, done: true } : r));
+    const res = await fetch(`/api/crm/leads/${lead.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reminders: next }),
+    });
+    const updated = await res.json();
+    if (res.ok) setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
   }
 
   async function createLead() {
@@ -1168,6 +1194,19 @@ export function KanbanBoard({
         </button>
 
         <button
+          onClick={() => setShowReminders(true)}
+          title="Ver todos os lembretes agendados"
+          className="relative rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition shrink-0 flex items-center gap-1.5"
+        >
+          🔔 Lembretes
+          {overdueReminders.length > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+              {overdueReminders.length}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => setShowNewForm(true)}
           className="ml-auto rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition shrink-0"
         >
@@ -1446,6 +1485,96 @@ export function KanbanBoard({
             window.location.reload();
           }}
         />
+      )}
+
+      {/* Modal lembretes */}
+      {showReminders && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => setShowReminders(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-bold text-slate-800">🔔 Lembretes</p>
+              <button onClick={() => setShowReminders(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            {overdueReminders.length === 0 && upcomingReminders.length === 0 && (
+              <p className="text-sm text-slate-400 italic">Nenhum lembrete agendado.</p>
+            )}
+
+            {overdueReminders.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Vencidos</p>
+                <div className="space-y-2">
+                  {overdueReminders.map((r: LeadReminder & { lead: Lead }) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-800 truncate">
+                          {r.lead.name} <span className="text-slate-400 font-normal">— {r.title}</span>
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {r.lead.phone} · {new Date(r.dueDate).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => { setShowReminders(false); setSelected(r.lead); }}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                        >
+                          Ver lead
+                        </button>
+                        <button
+                          onClick={() => completeReminder(r.lead, r.id)}
+                          className="text-xs text-green-600 hover:text-green-800 font-semibold"
+                        >
+                          Concluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {upcomingReminders.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wide mb-2">Próximos</p>
+                <div className="space-y-2">
+                  {upcomingReminders.map((r: LeadReminder & { lead: Lead }) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-800 truncate">
+                          {r.lead.name} <span className="text-slate-400 font-normal">— {r.title}</span>
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {r.lead.phone} · {new Date(r.dueDate).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => { setShowReminders(false); setSelected(r.lead); }}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                        >
+                          Ver lead
+                        </button>
+                        <button
+                          onClick={() => completeReminder(r.lead, r.id)}
+                          className="text-xs text-green-600 hover:text-green-800 font-semibold"
+                        >
+                          Concluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Modal lead */}

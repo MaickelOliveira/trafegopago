@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { clsx } from "clsx";
-import type { Lead } from "@/lib/leads";
+import type { Lead, LeadReminder } from "@/lib/leads";
 import type { Funnel } from "@/lib/funnels";
 import type { ChatMessage } from "@/lib/conversations";
 import { QuickRepliesPicker, QuickRepliesManager, WabaTemplateVariablesPanel } from "@/components/shared/QuickRepliesPopover";
@@ -116,6 +116,152 @@ function FollowUpSection({ leadId }: { leadId: string }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function fmtReminderDate(iso: string) {
+  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function ReminderSection({ lead, onUpdated }: { lead: Lead; onUpdated: (lead: Lead) => void }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newDue, setNewDue] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const reminders = lead.reminders ?? [];
+  const sorted = [...reminders].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  async function persist(next: LeadReminder[]) {
+    setSaving(true);
+    const res = await fetch(`/api/crm/leads/${lead.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reminders: next }),
+    });
+    const updated = await res.json();
+    if (res.ok) onUpdated(updated);
+    setSaving(false);
+  }
+
+  function addReminder() {
+    if (!newTitle.trim() || !newDue) return;
+    const reminder: LeadReminder = {
+      id: crypto.randomUUID(),
+      title: newTitle.trim(),
+      dueDate: new Date(newDue).toISOString(),
+      note: newNote.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    };
+    persist([...reminders, reminder]);
+    setNewTitle(""); setNewDue(""); setNewNote(""); setShowAdd(false);
+  }
+
+  function toggleDone(id: string) {
+    persist(reminders.map((r) => (r.id === id ? { ...r, done: !r.done } : r)));
+  }
+
+  function removeReminder(id: string) {
+    if (!confirm("Remover este lembrete?")) return;
+    persist(reminders.filter((r) => r.id !== id));
+  }
+
+  return (
+    <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">🔔 Lembretes</p>
+        <button
+          onClick={() => setShowAdd((v) => !v)}
+          className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+        >
+          {showAdd ? "Cancelar" : "+ Novo lembrete"}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="space-y-2 bg-white rounded-lg border border-indigo-100 p-2.5">
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Título (ex: Ligar de volta)"
+            className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-400"
+          />
+          <input
+            type="datetime-local"
+            value={newDue}
+            onChange={(e) => setNewDue(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-400"
+          />
+          <textarea
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+            placeholder="Observação (opcional)"
+            rows={2}
+            className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-400 resize-none"
+          />
+          <button
+            onClick={addReminder}
+            disabled={!newTitle.trim() || !newDue || saving}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition disabled:opacity-50"
+          >
+            Salvar lembrete
+          </button>
+        </div>
+      )}
+
+      {sorted.length === 0 && !showAdd && (
+        <p className="text-xs text-slate-400 italic">Nenhum lembrete para este lead.</p>
+      )}
+
+      {sorted.length > 0 && (
+        <div className="space-y-1.5">
+          {sorted.map((r) => {
+            const overdue = !r.done && new Date(r.dueDate).getTime() <= now;
+            return (
+              <div
+                key={r.id}
+                className={clsx(
+                  "flex items-start gap-2 rounded-lg border px-3 py-2 bg-white",
+                  r.done ? "border-slate-100 opacity-50" : overdue ? "border-red-200" : "border-indigo-100"
+                )}
+              >
+                <button
+                  onClick={() => toggleDone(r.id)}
+                  title={r.done ? "Marcar como pendente" : "Marcar como concluído"}
+                  className={clsx(
+                    "flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold shrink-0 mt-0.5",
+                    r.done ? "border-green-300 bg-green-100 text-green-700" : "border-slate-300 text-slate-400 hover:border-indigo-400"
+                  )}
+                >
+                  ✓
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className={clsx("text-xs text-slate-700", r.done && "line-through")}>{r.title}</p>
+                  {r.note && <p className="text-[11px] text-slate-500 line-clamp-2">{r.note}</p>}
+                  <p className={clsx("text-[10px] mt-0.5 font-medium", overdue ? "text-red-600" : "text-indigo-600")}>
+                    {fmtReminderDate(r.dueDate)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => removeReminder(r.id)}
+                  title="Excluir lembrete"
+                  className="text-slate-300 hover:text-red-500 shrink-0"
+                >
+                  🗑
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -697,6 +843,9 @@ export function LeadModal({
                     <p className="text-sm text-slate-400 italic">Clique em "Analisar" para obter insights.</p>
                   )}
                 </div>
+
+                {/* Lembretes */}
+                <ReminderSection lead={lead} onUpdated={(u) => { setLead(u); onUpdated(u); }} />
 
                 {/* Follow-ups */}
                 <FollowUpSection leadId={lead.id} />

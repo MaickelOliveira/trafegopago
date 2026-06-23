@@ -13,6 +13,15 @@ export type LeadAI = {
   generatedAt: string;
 };
 
+export type LeadReminder = {
+  id: string;
+  title: string;     // ex: "Ligar de volta"
+  dueDate: string;   // ISO datetime
+  note?: string;
+  done?: boolean;
+  createdAt: string;
+};
+
 export type Lead = {
   id: string;
   clientId: string;
@@ -44,6 +53,7 @@ export type Lead = {
   isLid?: boolean;    // Contato usa LID interno do WhatsApp (novo protocolo) — envia com isLid:true
   realPhone?: string; // Número real resolvido do contato LID (para exibição)
   customFields?: Record<string, string>; // Campos extras do formulário de origem
+  reminders?: LeadReminder[]; // Lembretes agendados para este lead
   createdAt: string;
   updatedAt: string;
 };
