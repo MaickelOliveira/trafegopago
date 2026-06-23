@@ -113,14 +113,16 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
     fd.append("token", profileConn.token);
     try {
       const res = await fetch("/api/waba/profile-photo", { method: "POST", body: fd });
-      const data = await res.json();
+      const raw = await res.text();
+      let data: { error?: string } = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { /* corpo não-JSON (ex: erro de proxy) */ }
       if (res.ok) {
         setProfileMsg({ type: "ok", text: "Foto de perfil atualizada! Pode levar alguns minutos para refletir no WhatsApp do cliente." });
       } else {
-        setProfileMsg({ type: "err", text: data.error ?? "Erro ao atualizar foto de perfil" });
+        setProfileMsg({ type: "err", text: data.error ?? `Erro ${res.status}: ${raw.slice(0, 300) || "sem detalhes"}` });
       }
-    } catch {
-      setProfileMsg({ type: "err", text: "Falha na conexão" });
+    } catch (e) {
+      setProfileMsg({ type: "err", text: `Falha na conexão: ${e instanceof Error ? e.message : String(e)}` });
     }
     setProfileUploading(false);
   }
