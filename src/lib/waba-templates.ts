@@ -130,12 +130,19 @@ export async function sendTemplate(
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${metaToken}` },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      const err = await res.text();
+    const bodyText = await res.text();
+    let data: { messages?: { id: string }[]; contacts?: unknown[]; error?: { message?: string } } | null = null;
+    try { data = bodyText ? JSON.parse(bodyText) : null; } catch { /* corpo não-JSON */ }
+
+    // Mesmo com status 2xx, a Graph API pode retornar um objeto "error" no corpo
+    // (ex: template pausado, número fora da janela de teste) — sem checar isso,
+    // marcávamos como enviado indevidamente (mesmo bug já corrigido em sendMessageDirect).
+    if (!res.ok || data?.error) {
+      const err = data?.error?.message ?? bodyText.slice(0, 300);
+      console.error(`[sendTemplate] FALHOU status=${res.status} to=${toPhone} template=${templateName} erro="${err}"`);
       return { success: false, error: err };
     }
-    const data = await res.json() as { messages?: { id: string }[]; contacts?: unknown[] };
-    const wamid = data.messages?.[0]?.id ?? "sem-wamid";
+    const wamid = data?.messages?.[0]?.id ?? "sem-wamid";
     console.log(`[sendTemplate] HTTP 200 wamid=${wamid} to=${toPhone} template=${templateName}`);
     return { success: true };
   } catch (e) {
