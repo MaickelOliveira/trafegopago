@@ -151,10 +151,10 @@ export async function POST(req: NextRequest) {
         // ── Follow-ups ───────────────────────────────────────────────────
         if (cid !== "sem-cliente" && agentCfg?.followUpEnabled && (agentCfg.followUps?.length ?? 0) > 0) {
           if (isNew) {
-            startFollowUpSequence(cid, phone, agentCfg.followUps);
+            startFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined);
           } else {
             cancelFollowUpsForPhone(cid, phone);
-            startFollowUpSequence(cid, phone, agentCfg.followUps);
+            startFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined);
           }
         }
 

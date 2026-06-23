@@ -729,7 +729,7 @@ export async function POST(
       // Operador assumiu o atendimento → reinicia sequência de follow-up
       if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
         cancelFollowUpsForPhone(clientId, phone);
-        startFollowUpSequence(clientId, phone, agentCfgFM.followUps);
+        startFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId);
       }
     }
     return NextResponse.json({ ok: true });
@@ -753,7 +753,7 @@ export async function POST(
     console.log(`[WPP-DIAG] agentCfgFU: found=${!!agentCfgFU} followUpEnabled=${agentCfgFU?.followUpEnabled} stepsCount=${agentCfgFU?.followUps?.length ?? 0} connMatch=${agentCfgFU?.whatsappConnectionId}`);
     if (agentCfgFU?.followUpEnabled && (agentCfgFU.followUps?.length ?? 0) > 0) {
       cancelFollowUpsForPhone(clientId, phone);
-      startFollowUpSequence(clientId, phone, agentCfgFU.followUps);
+      startFollowUpSequence(clientId, phone, agentCfgFU.followUps, connId);
       console.log(`[WPP-DIAG] ✅ follow-up AGENDADO phone=${phone} steps=${agentCfgFU.followUps.length}`);
     } else {
       console.log(`[WPP-DIAG] ❌ follow-up NÃO agendado — followUpEnabled=${agentCfgFU?.followUpEnabled} steps=${agentCfgFU?.followUps?.length ?? 0}`);

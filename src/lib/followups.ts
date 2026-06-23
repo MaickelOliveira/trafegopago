@@ -20,6 +20,9 @@ export type FollowUp = {
   messageType?: "text" | "ai" | "template"; // tipo de envio
   templateId?: string;                       // id do template Meta
   templateVariables?: Record<string, string>; // variáveis do template
+  connId?: string;              // conexão/número de origem da conversa — garante que o
+                                 // follow-up seja enviado pelo MESMO canal (WPPConnect,
+                                 // UazAPI ou Meta) que o lead conversou, não outro
 };
 
 const FILE = path.join(process.cwd(), "data", "followups.json");
@@ -91,7 +94,8 @@ export function cancelFollowUp(id: string): void {
 export function startFollowUpSequence(
   clientId: string,
   phone: string,
-  steps: { id: string; delayHours: number; message: string; messageType?: string; templateId?: string; templateVariables?: Record<string, string> }[]
+  steps: { id: string; delayHours: number; message: string; messageType?: string; templateId?: string; templateVariables?: Record<string, string> }[],
+  connId?: string
 ): void {
   if (steps.length === 0) return;
   const first = steps[0];
@@ -102,6 +106,7 @@ export function startFollowUpSequence(
     scheduledAt,
     message: first.message,
     type: "followup",
+    connId,
     stepIndex: 0,
     stepId: first.id,
     messageType: first.messageType as "text" | "ai" | "template" | undefined,

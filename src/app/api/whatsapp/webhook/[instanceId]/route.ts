@@ -879,10 +879,10 @@ export async function POST(
       const agentCfg = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
       if (agentCfg?.followUpEnabled && (agentCfg.followUps?.length ?? 0) > 0) {
         if (isNew) {
-          startFollowUpSequence(cid, phone, agentCfg.followUps);
+          startFollowUpSequence(cid, phone, agentCfg.followUps, uazConn?.id);
         } else {
           cancelFollowUpsForPhone(cid, phone);
-          startFollowUpSequence(cid, phone, agentCfg.followUps);
+          startFollowUpSequence(cid, phone, agentCfg.followUps, uazConn?.id);
         }
       }
     }

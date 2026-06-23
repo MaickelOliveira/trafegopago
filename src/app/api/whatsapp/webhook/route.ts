@@ -274,11 +274,11 @@ export async function POST(req: NextRequest) {
       if (activeClientCfg?.followUpEnabled && (activeClientCfg.followUps?.length ?? 0) > 0) {
         if (isNew) {
           // Lead novo: inicia sequência de follow-ups
-          startFollowUpSequence(cid, phone, activeClientCfg.followUps);
+          startFollowUpSequence(cid, phone, activeClientCfg.followUps, incomingConnectionId ?? undefined);
         } else {
           // Lead existente respondeu: cancela follow-ups pendentes (sequência reinicia)
           cancelFollowUpsForPhone(cid, phone);
-          startFollowUpSequence(cid, phone, activeClientCfg.followUps);
+          startFollowUpSequence(cid, phone, activeClientCfg.followUps, incomingConnectionId ?? undefined);
         }
       }
     }

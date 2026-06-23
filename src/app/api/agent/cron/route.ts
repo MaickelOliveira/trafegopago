@@ -170,8 +170,8 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // ── 4. Enviar ────────────────────────────────────────────────────────
-      await sendMessage(followUp.phone, msgToSend, followUp.clientId);
+      // ── 4. Enviar (sempre pela MESMA conexão/número da conversa original) ──
+      await sendMessage(followUp.phone, msgToSend, followUp.clientId, followUp.connId);
       markSent(followUp.id);
       processed++;
       console.log(`[agent/cron] Follow-up enviado: ${followUp.id} → ${followUp.phone}`);
@@ -193,6 +193,7 @@ export async function GET(req: NextRequest) {
           messageType: nextStep.messageType as "text" | "ai" | "template" | undefined,
           templateId: nextStep.templateId,
           templateVariables: nextStep.templateVariables,
+          connId: followUp.connId,
         });
         console.log(`[agent/cron] Próximo step ${nextIdx} agendado para ${scheduledAt}`);
       }
