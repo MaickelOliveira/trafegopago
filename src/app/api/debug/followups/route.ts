@@ -47,6 +47,7 @@ export async function GET() {
     pending: all.filter((f) => f.status === "pending").length,
     sent: all.filter((f) => f.status === "sent").length,
     cancelled: all.filter((f) => f.status === "cancelled").length,
+    failed: all.filter((f) => f.status === "failed").length,
     dueNow: due.length,
   };
 

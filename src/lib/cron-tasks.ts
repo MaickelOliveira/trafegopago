@@ -3,7 +3,7 @@
 // pela rota HTTP /api/agent/cron (acionável externamente, ex: EasyPanel).
 // Antes existiam DUAS implementações divergentes que competiam pelos mesmos
 // follow-ups — unificadas aqui para evitar comportamento inconsistente.
-import { getDueFollowUps, markSent, cancelFollowUp, scheduleFollowUp, cancelFollowUpsForPhone, type FollowUp } from "./followups";
+import { getDueFollowUps, markSent, markFailed, cancelFollowUp, scheduleFollowUp, cancelFollowUpsForPhone, type FollowUp } from "./followups";
 import { getDuePending, markProcessing, markDone } from "./pending-responses";
 import { getClientById, getAllAgentConfigs, type AgentConfig } from "./clients";
 import { sendMessage, getGeminiApiKey } from "./whatsapp-send";
@@ -31,19 +31,21 @@ function interpolateFollowUp(msg: string, lead: { name?: string | null; phone?: 
 // Envia o follow-up via template aprovado da Meta (obrigatório fora da janela
 // de 24h da API oficial). Resolve phoneNumberId/token pela conexão de origem
 // (followUp.connId) e ordena as variáveis numericamente ("1","2",... → {{1}},{{2}}).
-async function sendFollowUpTemplate(followUp: FollowUp): Promise<boolean> {
-  if (!followUp.templateId) return false;
+async function sendFollowUpTemplate(followUp: FollowUp): Promise<{ ok: boolean; error?: string }> {
+  if (!followUp.templateId) return { ok: false, error: "followUp sem templateId" };
   const template = getTemplateById(followUp.templateId);
   if (!template) {
-    console.error(`[cron-tasks] FU ${followUp.id}: template ${followUp.templateId} não encontrado`);
-    return false;
+    const error = `template ${followUp.templateId} não encontrado`;
+    console.error(`[cron-tasks] FU ${followUp.id}: ${error}`);
+    return { ok: false, error };
   }
   const conn = getFunnels()
     .flatMap((f) => f.connections ?? [])
     .find((c) => c.id === followUp.connId && c.type === "meta");
   if (!conn?.metaPhoneNumberId || !conn?.metaToken) {
-    console.error(`[cron-tasks] FU ${followUp.id}: conexão Meta não encontrada para connId=${followUp.connId}`);
-    return false;
+    const error = `conexão Meta não encontrada para connId=${followUp.connId}`;
+    console.error(`[cron-tasks] FU ${followUp.id}: ${error}`);
+    return { ok: false, error };
   }
   const vars = followUp.templateVariables ?? {};
   const orderedValues = Object.keys(vars)
@@ -55,9 +57,9 @@ async function sendFollowUpTemplate(followUp: FollowUp): Promise<boolean> {
   const result = await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, followUp.phone, template.name, template.language, components);
   if (!result.success) {
     console.error(`[cron-tasks] FU ${followUp.id}: sendTemplate falhou — ${result.error}`);
-    return false;
+    return { ok: false, error: result.error ?? "sendTemplate falhou sem detalhe" };
   }
-  return true;
+  return { ok: true };
 }
 
 // Decide via Gemini se o follow-up ainda deve ser enviado, dado o contexto atual da conversa
@@ -195,14 +197,15 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       // ── 4. Enviar (sempre pela MESMA conexão/número da conversa original) ──
       // Template é OBRIGATÓRIO para API oficial Meta fora da janela de 24h —
       // texto livre (mesmo gerado por IA) é rejeitado pela Meta nesse caso.
-      let sent: boolean;
+      let sendResult: { ok: boolean; error?: string };
       if (followUp.messageType === "template") {
-        sent = await sendFollowUpTemplate(followUp);
+        sendResult = await sendFollowUpTemplate(followUp);
       } else {
-        sent = await sendMessage(sendPhone, msgToSend, followUp.clientId, followUp.connId);
+        const ok = await sendMessage(sendPhone, msgToSend, followUp.clientId, followUp.connId);
+        sendResult = { ok, error: ok ? undefined : "sendMessage falhou — ver logs de sendMessageDirect/sendWhatsApp" };
       }
 
-      if (sent) {
+      if (sendResult.ok) {
         // Registra no histórico para aparecer no inbox da plataforma
         addMessage(followUp.phone, { role: "assistant", content: msgToSend, ts: Date.now() }, followUp.clientId, { connId: followUp.connId });
         // Reativa a IA (caso estivesse pausada) para que responda quando o lead reagir
@@ -210,17 +213,20 @@ export async function processDueFollowUpsAndBatches(): Promise<{
           setAiPaused(followUp.phone, false, followUp.clientId);
           updateLead(lead.id, { aiPaused: false });
         }
+        markSent(followUp.id);
       } else {
-        console.error(`[cron-tasks] FU ${followUp.id} FALHOU ao enviar — phone=${followUp.phone} messageType=${followUp.messageType ?? "text"}`);
+        // NÃO marca como "sent" — registra "failed" com o motivo real, visível
+        // em /api/debug/followups, em vez de mascarar a falha como sucesso.
+        console.error(`[cron-tasks] FU ${followUp.id} FALHOU ao enviar — phone=${followUp.phone} messageType=${followUp.messageType ?? "text"} erro="${sendResult.error}"`);
+        markFailed(followUp.id, sendResult.error ?? "falha desconhecida");
       }
-      markSent(followUp.id);
       processed++;
-      console.log(`[cron-tasks] Follow-up ${sent ? "enviado" : "FALHOU"}: ${followUp.id} → ${followUp.phone}`);
+      console.log(`[cron-tasks] Follow-up ${sendResult.ok ? "enviado" : "FALHOU"}: ${followUp.id} → ${followUp.phone}`);
 
-      // ── 5. Agendar próximo step ──────────────────────────────────────────
+      // ── 5. Agendar próximo step (somente se o envio atual teve sucesso) ────
       const steps = agentCfg.followUps ?? [];
       const nextIdx = (followUp.stepIndex ?? 0) + 1;
-      const nextStep = steps[nextIdx];
+      const nextStep = sendResult.ok ? steps[nextIdx] : undefined;
       if (nextStep) {
         const scheduledAt = new Date(Date.now() + nextStep.delayHours * 3600000).toISOString();
         scheduleFollowUp({

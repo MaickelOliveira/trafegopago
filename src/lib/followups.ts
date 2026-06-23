@@ -3,7 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 
 export type FollowUpType = "followup" | "reminder" | "appointment_reminder";
-export type FollowUpStatus = "pending" | "sent" | "cancelled";
+export type FollowUpStatus = "pending" | "sent" | "cancelled" | "failed";
 
 export type FollowUp = {
   id: string;
@@ -23,6 +23,7 @@ export type FollowUp = {
   connId?: string;              // conexão/número de origem da conversa — garante que o
                                  // follow-up seja enviado pelo MESMO canal (WPPConnect,
                                  // UazAPI ou Meta) que o lead conversou, não outro
+  lastError?: string;            // motivo do envio ter falhado (status "failed")
 };
 
 const FILE = path.join(process.cwd(), "data", "followups.json");
@@ -77,6 +78,16 @@ export function markSent(id: string): void {
   const idx = items.findIndex((f) => f.id === id);
   if (idx >= 0) {
     items[idx].status = "sent";
+    save(items);
+  }
+}
+
+export function markFailed(id: string, error: string): void {
+  const items = load();
+  const idx = items.findIndex((f) => f.id === id);
+  if (idx >= 0) {
+    items[idx].status = "failed";
+    items[idx].lastError = error;
     save(items);
   }
 }
