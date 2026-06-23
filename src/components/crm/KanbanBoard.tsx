@@ -1032,24 +1032,21 @@ export function KanbanBoard({
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-        {/* Funnel tabs */}
-        <div className="flex gap-1 bg-slate-100 rounded-lg p-1 flex-wrap">
-          {funnels.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => {
-                setActiveFunnel(f.id);
-                if (selectedClient) localStorage.setItem(`crm_funnel_${selectedClient}`, f.id);
-              }}
-              className={clsx(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition",
-                activeFunnel === f.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              {f.name}
-            </button>
-          ))}
-          <button onClick={() => setShowFunnelMgr((v) => !v)} className="rounded-md px-2 py-1.5 text-sm text-slate-400 hover:text-slate-600 transition" title="Gerenciar funis">
+        {/* Seletor de funil */}
+        <div className="flex items-center gap-1 shrink-0">
+          <select
+            value={activeFunnel}
+            onChange={(e) => {
+              setActiveFunnel(e.target.value);
+              if (selectedClient) localStorage.setItem(`crm_funnel_${selectedClient}`, e.target.value);
+            }}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-400 max-w-[220px]"
+          >
+            {funnels.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+          <button onClick={() => setShowFunnelMgr((v) => !v)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-400 hover:text-slate-600 transition" title="Gerenciar funis">
             ⚙️
           </button>
         </div>
