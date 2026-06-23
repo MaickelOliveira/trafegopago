@@ -103,12 +103,36 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
     setProfilePreview(file ? URL.createObjectURL(file) : null);
   }
 
+  // Redimensiona/comprime a imagem no navegador antes de enviar — fotos de
+  // perfil não precisam de alta resolução, e arquivos grandes (comuns quando
+  // baixados do Facebook/Instagram) podem ser cortados pelo proxy do servidor.
+  async function compressImage(file: File, maxSize = 640, quality = 0.85): Promise<File> {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  }
+
   async function uploadProfilePhoto() {
     if (!profileFile || !profileConn) return;
     setProfileUploading(true);
     setProfileMsg(null);
     const fd = new FormData();
-    fd.append("file", profileFile);
+    try {
+      const compressed = await compressImage(profileFile);
+      fd.append("file", compressed);
+    } catch {
+      fd.append("file", profileFile);
+    }
     fd.append("phoneNumberId", profileConn.phoneNumberId);
     fd.append("token", profileConn.token);
     try {
