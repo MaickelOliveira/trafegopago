@@ -346,13 +346,13 @@ Você tem a ferramenta enviar_resumo disponível. Acione-a como chamada de ferra
 - Dados de reserva recebidos: use motivo iniciando com as palavras exatas DADOS RECEBIDOS seguido de um resumo curto
 - Comprovante ou confirmação de Pix recebidos: use motivo iniciando com as palavras exatas PAGAMENTO PIX seguido do valor
 - Quando não souber responder, precisar escalar para o gestor, ou o lead pedir atendimento humano: use motivo descrevendo o assunto
-Importante: acione a ferramenta, não escreva o nome dela como texto na resposta.`
+Importante: acione a ferramenta, não escreva o nome dela como texto na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.`
     : hasAvisos
     ? `\n\nVocê tem a ferramenta enviar_resumo disponível. Use-a como chamada de ferramenta (não como texto) nos seguintes casos:
 - Quando não souber responder algo ou precisar escalar para o gestor: motivo descrevendo o assunto
 - Quando o lead pedir falar com humano ou com o responsável: motivo iniciando com ATENDIMENTO HUMANO
 - Quando o lead demonstrar intenção de compra e precisar de atendimento personalizado: motivo com resumo do interesse
-Importante: acione a ferramenta imediatamente, sem escrever o nome dela na resposta.`
+Importante: acione a ferramenta imediatamente, sem escrever o nome dela na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.`
     : "";
 
   if (customPrompt?.trim()) {
@@ -692,9 +692,26 @@ export async function runGeminiAgent(
     }
   }
 
+  // Extrai o mesmo vazamento, mas em forma NARRADA em português (ex: "*Motivo:
+  // ATENDIMENTO HUMANO - ...*" seguido de "(Chamada da ferramenta enviar_resumo)")
+  // em vez da sintaxe de função. Sem isso o aviso ao gestor não dispara mesmo
+  // aparecendo (errado) na resposta visível ao cliente.
+  const NARRATED_MOTIVO = /^\*?Motivo:\s*([^\n*]+?)\*?\s*$/im;
+  const narratedMatch = finalText.match(NARRATED_MOTIVO);
+  if (narratedMatch) {
+    const motivo = narratedMatch[1].trim();
+    if (motivo && !actions.some((a) => a.type === "resumo_solicitado" && a.motivo === motivo)) {
+      console.warn(`[gemini-agent] enviar_resumo vazou como narração — extraindo motivo="${motivo}"`);
+      actions.push({ type: "resumo_solicitado", motivo, phone });
+    }
+  }
+
   // Remove qualquer vazamento de chamada de ferramenta escrita como texto/código
-  // (linha "tool_code", "print(enviar_resumo(...))", ou a chamada nua) do corpo visível.
+  // (linha "tool_code", "print(enviar_resumo(...))", ou a chamada nua) do corpo visível,
+  // e também a variante narrada em português ("*Motivo: ...*" / "(Chamada da ferramenta ...)").
   const KNOWN_TOOL_CALL = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
+  const NARRATED_MOTIVO_LINE = /^\*?Motivo:\s*.+$/i;
+  const TOOL_CALL_NARRATION = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
   finalText = finalText
     .split("\n")
     .filter((line) => {
@@ -702,6 +719,8 @@ export async function runGeminiAgent(
       if (!t) return true;
       if (t === "tool_code" || t === "```tool_code" || t === "```") return false;
       if (KNOWN_TOOL_CALL.test(t)) return false;
+      if (NARRATED_MOTIVO_LINE.test(t)) return false;
+      if (TOOL_CALL_NARRATION.test(t)) return false;
       return true;
     })
     .join("\n")
