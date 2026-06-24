@@ -406,7 +406,26 @@ export function splitMessage(text: string, maxLen = 300): string[] {
             lineBuf = joined;
           } else {
             if (lineBuf) chunks.push(lineBuf);
-            lineBuf = line.length <= maxLen ? line : line.slice(0, maxLen);
+            if (line.length <= maxLen) {
+              lineBuf = line;
+            } else {
+              // Linha sozinha maior que maxLen: quebra por palavras — NUNCA descarta
+              // o restante do texto (antes usava .slice() e perdia o final da frase).
+              const words = line.split(" ");
+              let wordBuf = "";
+              for (const word of words) {
+                const wjoined = wordBuf ? wordBuf + " " + word : word;
+                if (wjoined.length <= maxLen) {
+                  wordBuf = wjoined;
+                } else {
+                  if (wordBuf) chunks.push(wordBuf);
+                  // Só corta uma palavra isolada se ela sozinha já for maior que maxLen
+                  // (ex.: URL muito longa) — caso raro e inevitável.
+                  wordBuf = word.length <= maxLen ? word : word.slice(0, maxLen);
+                }
+              }
+              lineBuf = wordBuf;
+            }
           }
         }
         current = lineBuf;
