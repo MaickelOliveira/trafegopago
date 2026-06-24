@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { AgentConfig } from "@/lib/clients";
-import type { Lead } from "@/lib/leads";
-import { AttentionBoard } from "@/components/shared/AttentionBoard";
+import { ConnectionDashboard } from "@/components/shared/ConnectionDashboard";
 
 type Connection = {
   id: string;
@@ -17,7 +16,6 @@ type Connection = {
 type Props = {
   agentConfigs: AgentConfig[];
   clientName: string;
-  leads: Lead[];
 };
 
 function statusLabel(conn: Connection) {
@@ -41,7 +39,7 @@ function displayConnection(phone: string, type: string): string {
   return type === "wppconnect" ? "Linha WhatsApp" : phone;
 }
 
-export function ClientAgenteIa({ agentConfigs, clientName, leads }: Props) {
+export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
   const defaultIdx = agentConfigs.findIndex((c) => c.enabled) === -1 ? 0 : agentConfigs.findIndex((c) => c.enabled);
   const [selectedIdx, setSelectedIdx] = useState(defaultIdx);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -118,7 +116,7 @@ export function ClientAgenteIa({ agentConfigs, clientName, leads }: Props) {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
 
       {/* ── PAINEL DE ATENDIMENTO QUE PRECISA DE ATENÇÃO ── */}
-      <AttentionBoard initialLeads={leads} />
+      <ConnectionDashboard fetchUrl="/api/cliente/connection-metrics" />
 
       {/* ── SELETOR DE AGENTES (quando há mais de um) ── */}
       {agentConfigs.length > 1 && (

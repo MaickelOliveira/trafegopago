@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getClientById, getAllAgentConfigs } from "@/lib/clients";
-import { getLeads } from "@/lib/leads";
 import { ClientAgenteIa } from "@/components/cliente/ClientAgenteIa";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +20,6 @@ export default async function ClienteAgenteIaPage() {
   if (!client) redirect("/login");
 
   const agentConfigs = getAllAgentConfigs(client);
-  const leads = getLeads(clientId);
 
   return (
     <div>
@@ -29,7 +27,7 @@ export default async function ClienteAgenteIaPage() {
         <h1 className="text-xl font-semibold text-slate-800">🤖 Agente de IA</h1>
         <p className="text-sm text-slate-500 mt-0.5">Gerencie a conexão WhatsApp e veja como sua IA está configurada.</p>
       </div>
-      <ClientAgenteIa agentConfigs={agentConfigs} clientName={client.name} leads={leads} />
+      <ClientAgenteIa agentConfigs={agentConfigs} clientName={client.name} />
     </div>
   );
 }

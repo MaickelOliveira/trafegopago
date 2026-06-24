@@ -1,12 +1,10 @@
 import { getClients } from "@/lib/clients";
-import { getLeads } from "@/lib/leads";
-import { AttentionBoard } from "@/components/shared/AttentionBoard";
+import { ConnectionDashboard } from "@/components/shared/ConnectionDashboard";
 import Link from "next/link";
 import Image from "next/image";
 
 export default async function GestorHome() {
   const clients = getClients().map(({ passwordHash: _, ...c }) => c);
-  const leads = getLeads();
 
   return (
     <div className="p-8">
@@ -18,7 +16,7 @@ export default async function GestorHome() {
       </div>
 
       <div className="mb-8">
-        <AttentionBoard initialLeads={leads} clients={clients.map((c) => ({ id: c.id, name: c.name }))} />
+        <ConnectionDashboard fetchUrl="/api/gestor/connection-metrics" mode="all-clients" />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
