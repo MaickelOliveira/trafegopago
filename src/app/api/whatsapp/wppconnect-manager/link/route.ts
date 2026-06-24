@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getClients, upsertClient, migrateOrphanedAgentConfig } from "@/lib/clients";
+import { getClients, upsertClient, migrateOrphanedAgentConfig, migrateAgentConfigByOldConnectionId } from "@/lib/clients";
 import { getFunnels, createFunnel, updateFunnel } from "@/lib/funnels";
 import { getWppSessionById, getWppSessions, updateWppSession } from "@/lib/wppconnect-sessions";
 
@@ -15,9 +15,10 @@ export async function POST(req: NextRequest) {
     funnelId: string | null;
     clientId: string | null;
     linkAgent: boolean;
+    reuseConnectionId?: string; // escolha manual de qual config órfã reaproveitar
   };
 
-  const { sessionId, clientId, linkAgent } = body;
+  const { sessionId, clientId, linkAgent, reuseConnectionId } = body;
   let { funnelId } = body;
 
   const wppSession = getWppSessionById(sessionId);
@@ -59,12 +60,20 @@ export async function POST(req: NextRequest) {
       // Antes de criar uma config em branco para a conexão nova, tenta reaproveitar
       // uma config órfã (de uma instância antiga excluída/substituída) do mesmo
       // cliente — preserva prompt, follow-ups, base de conhecimento etc. sem precisar
-      // reconfigurar do zero. Só migra quando não há ambiguidade (ver migrateOrphanedAgentConfig).
+      // reconfigurar do zero.
       if (linkAgent) {
-        const liveConnectionIds = new Set<string>();
-        for (const f of getFunnels()) for (const c of f.connections ?? []) liveConnectionIds.add(c.id);
-        for (const s of getWppSessions()) liveConnectionIds.add(s.id);
-        migratedConfig = migrateOrphanedAgentConfig(clientId, sessionId, liveConnectionIds);
+        if (reuseConnectionId) {
+          // Usuário escolheu manualmente qual config antiga reaproveitar (tela de
+          // Vincular) — não depende de ambiguidade, sempre aplica a escolha.
+          migratedConfig = migrateAgentConfigByOldConnectionId(clientId, reuseConnectionId, sessionId);
+        } else {
+          // Sem escolha manual: migra automaticamente só quando não há ambiguidade
+          // (ver migrateOrphanedAgentConfig).
+          const liveConnectionIds = new Set<string>();
+          for (const f of getFunnels()) for (const c of f.connections ?? []) liveConnectionIds.add(c.id);
+          for (const s of getWppSessions()) liveConnectionIds.add(s.id);
+          migratedConfig = migrateOrphanedAgentConfig(clientId, sessionId, liveConnectionIds);
+        }
       }
 
       // Reler o cliente: migrateOrphanedAgentConfig pode já ter persistido um novo

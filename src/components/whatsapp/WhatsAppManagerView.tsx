@@ -4,7 +4,40 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { EnrichedInstance } from "@/app/api/whatsapp/manager/route";
 
 type FunnelOption = { id: string; name: string; clientId: string | null };
-type ClientOption = { id: string; name: string; color: string; agentEnabled: boolean; agentConnectionId: string | null; agents?: { name?: string }[] };
+type ClientOption = {
+  id: string; name: string; color: string; agentEnabled: boolean; agentConnectionId: string | null;
+  agents?: { name?: string; whatsappConnectionId?: string; isOrphaned?: boolean }[];
+};
+
+/** Select pra reaproveitar a config de um agente órfão (de uma instância antiga
+ *  excluída/substituída) numa conexão nova, em vez de criar uma config em branco. */
+function ReuseAgentSelect({ clients, clientId, value, onChange, accentColor = "green" }: {
+  clients: ClientOption[];
+  clientId: string;
+  value: string;
+  onChange: (v: string) => void;
+  accentColor?: "green" | "blue" | "violet";
+}) {
+  const orphaned = (clients.find(c => c.id === clientId)?.agents ?? []).filter(a => a.isOrphaned && a.whatsappConnectionId);
+  if (orphaned.length === 0) return null;
+  return (
+    <div className="mb-2">
+      <label className="block text-xs font-medium text-slate-500 mb-1">Reaproveitar configuração de um agente antigo?</label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={`w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-${accentColor}-400`}
+      >
+        <option value="">— Criar configuração nova —</option>
+        {orphaned.map(a => (
+          <option key={a.whatsappConnectionId} value={a.whatsappConnectionId}>
+            {a.name?.trim() || "Agente sem nome"}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 function ClientAgentSelect({ clients, value, onChange, accentColor = "green" }: {
   clients: ClientOption[];
@@ -1047,6 +1080,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
   const [linkFunnelId, setLinkFunnelId] = useState("");
   const [linkClientId, setLinkClientId] = useState("");
   const [linkAgent, setLinkAgent] = useState(false);
+  const [reuseConnectionId, setReuseConnectionId] = useState("");
   const [savingLink, setSavingLink] = useState(false);
 
   // Delete confirm
@@ -1193,9 +1227,12 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     setSavingLink(true);
     await fetch("/api/whatsapp/wppconnect-manager/link", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: wppModal.id, funnelId: linkFunnelId || null, clientId: linkClientId || null, linkAgent }),
+      body: JSON.stringify({
+        sessionId: wppModal.id, funnelId: linkFunnelId || null, clientId: linkClientId || null, linkAgent,
+        reuseConnectionId: reuseConnectionId || undefined,
+      }),
     });
-    setSavingLink(false); setWppModal({ type: "none" }); fetchSessions();
+    setSavingLink(false); setWppModal({ type: "none" }); setReuseConnectionId(""); fetchSessions();
   }
 
   async function handleDelete(id: string) {
@@ -1316,7 +1353,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
                         🔌 Conectar
                       </button>
                     )}
-                    <ActionBtn onClick={() => { setLinkFunnelId(s.linkedFunnelId ?? ""); setLinkClientId(s.linkedClientId ?? ""); setLinkAgent(s.hasAgentLinked); setWppModal({ type: "link", id: s.id, sessionName: s.sessionName }); }}
+                    <ActionBtn onClick={() => { setLinkFunnelId(s.linkedFunnelId ?? ""); setLinkClientId(s.linkedClientId ?? ""); setLinkAgent(s.hasAgentLinked); setReuseConnectionId(""); setWppModal({ type: "link", id: s.id, sessionName: s.sessionName }); }}
                       title="Vincular CRM/Agente" className="border-slate-200 text-slate-600 hover:text-violet-700 hover:bg-violet-50">🔀</ActionBtn>
                     {deletingId === s.id ? (
                       <div className="flex items-center gap-1">
@@ -1426,14 +1463,19 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
-              <ClientAgentSelect clients={clients} value={linkClientId} onChange={setLinkClientId} accentColor="green" />
+              <ClientAgentSelect clients={clients} value={linkClientId} onChange={(v) => { setLinkClientId(v); setReuseConnectionId(""); }} accentColor="green" />
               {linkClientId && (
-                <label className="flex items-center gap-2.5 cursor-pointer mt-2" onClick={() => setLinkAgent(v => !v)}>
-                  <div className={`relative w-10 rounded-full transition-colors ${linkAgent ? "bg-violet-500" : "bg-slate-300"}`} style={{ height: "22px" }}>
-                    <span className="absolute top-[2px] bg-white shadow rounded-full transition-transform" style={{ width: 18, height: 18, left: 2, transform: linkAgent ? "translateX(18px)" : "translateX(0)" }} />
-                  </div>
-                  <span className="text-sm text-slate-700">Ativar Agente IA nesta sessão</span>
-                </label>
+                <>
+                  <label className="flex items-center gap-2.5 cursor-pointer mt-2 mb-2" onClick={() => setLinkAgent(v => !v)}>
+                    <div className={`relative w-10 rounded-full transition-colors ${linkAgent ? "bg-violet-500" : "bg-slate-300"}`} style={{ height: "22px" }}>
+                      <span className="absolute top-[2px] bg-white shadow rounded-full transition-transform" style={{ width: 18, height: 18, left: 2, transform: linkAgent ? "translateX(18px)" : "translateX(0)" }} />
+                    </div>
+                    <span className="text-sm text-slate-700">Ativar Agente IA nesta sessão</span>
+                  </label>
+                  {linkAgent && (
+                    <ReuseAgentSelect clients={clients} clientId={linkClientId} value={reuseConnectionId} onChange={setReuseConnectionId} accentColor="violet" />
+                  )}
+                </>
               )}
             </div>
             <div className="flex gap-2">

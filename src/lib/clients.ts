@@ -229,6 +229,37 @@ export function migrateOrphanedAgentConfig(
   return false;
 }
 
+/**
+ * Igual a migrateOrphanedAgentConfig, mas sem ambiguidade: o usuário escolheu
+ * explicitamente (na tela de Vincular) qual config antiga (identificada pelo seu
+ * whatsappConnectionId antigo) reaproveitar na conexão nova. Usado quando há 2+
+ * configs órfãs e a escolha automática não seria segura.
+ */
+export function migrateAgentConfigByOldConnectionId(
+  clientId: string,
+  oldConnectionId: string,
+  newConnectionId: string
+): boolean {
+  const client = getClients().find((c) => c.id === clientId);
+  if (!client) return false;
+
+  const configs = client.agentConfigs ?? [];
+  const idx = configs.findIndex((c) => c.whatsappConnectionId === oldConnectionId);
+  if (idx >= 0) {
+    const newConfigs = [...configs];
+    newConfigs[idx] = { ...newConfigs[idx], whatsappConnectionId: newConnectionId };
+    upsertClient({ ...client, agentConfigs: newConfigs });
+    return true;
+  }
+
+  if (client.agentConfig?.whatsappConnectionId === oldConnectionId) {
+    upsertClient({ ...client, agentConfig: { ...client.agentConfig, whatsappConnectionId: newConnectionId } });
+    return true;
+  }
+
+  return false;
+}
+
 /** Retorna todos os agentConfigs do cliente, sem duplicatas.
  *  Se agentConfigs[] existe e tem entradas, usa somente ele (ignora o legado agentConfig).
  *  Caso contrário, cai no agentConfig único como fallback. */
