@@ -3,7 +3,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import path from "path";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 import { getFunnels } from "@/lib/funnels";
-import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead } from "@/lib/leads";
+import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead, markLeadNeedsAttention } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused, sanitizeContactName } from "@/lib/conversations";
@@ -185,6 +185,9 @@ async function processWppActions(
 ): Promise<void> {
   for (const action of actions) {
     if (action.type === "resumo_solicitado") {
+      // Marca o lead como precisando de atenção humana (painel de urgência no portal do cliente)
+      markLeadNeedsAttention(clientId, leadPhone, undefined, action.motivo);
+
       // Usa avisos[] com fallback para summaryPhone legado
       const recipients = agCfg.avisos?.length
         ? agCfg.avisos

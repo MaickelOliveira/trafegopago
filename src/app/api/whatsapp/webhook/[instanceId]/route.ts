@@ -17,7 +17,7 @@ import path from "path";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
 import { getHistory, addMessage, getAiPaused, setAiPaused, sanitizeContactName } from "@/lib/conversations";
-import { upsertLeadByPhone, getLeadByPhone, updateLead } from "@/lib/leads";
+import { upsertLeadByPhone, getLeadByPhone, updateLead, markLeadNeedsAttention } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
 import { consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
@@ -148,10 +148,14 @@ async function processGeminiActions(
   clientName: string,
   agCfg: AgentConfig,
   phone: string,
+  clientId: string,
+  funnelId?: string,
 ): Promise<void> {
   for (const action of actions) {
     if (action.type === "resumo_solicitado") {
       await sendConversationSummary(token, clientName, agCfg, phone, action.motivo);
+      // Marca o lead como precisando de atenção humana (painel de urgência no portal do cliente)
+      markLeadNeedsAttention(clientId, phone, funnelId, action.motivo);
     }
   }
 }
@@ -976,7 +980,7 @@ export async function POST(
             }
             if (agCfg && actions.length > 0) {
               try {
-                await processGeminiActions(actions, instanceUazToken, clientName, agCfg, phone);
+                await processGeminiActions(actions, instanceUazToken, clientName, agCfg, phone, cid, funnelId);
               } catch (e) {
                 console.error(`[webhook] processGeminiActions ERRO phone=${phone}:`, e instanceof Error ? e.message : e);
               }
@@ -1059,7 +1063,7 @@ export async function POST(
     if (agentCfg && geminiActions.length > 0) {
       const clientName = getClientById(cid)?.name ?? cid;
       try {
-        await processGeminiActions(geminiActions, instanceUazToken, clientName, agentCfg, phone);
+        await processGeminiActions(geminiActions, instanceUazToken, clientName, agentCfg, phone, cid, funnelId);
       } catch (e) {
         console.error(`[webhook] processGeminiActions ERRO phone=${phone}:`, e instanceof Error ? e.message : e);
       }

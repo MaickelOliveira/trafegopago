@@ -29,7 +29,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json();
 
   const previous = getLeadById(id);
-  const lead = updateLead(id, body);
+
+  // Limpa o sinal de "precisa de atenção" quando um humano assume a conversa
+  // (aiPaused=true) ou o lead é fechado (coluna final) — ambos já indicam que
+  // alguém agiu, então some do painel de urgência do cliente.
+  const patch = { ...body };
+  if (body.aiPaused === true || (body.status && TERMINAL_COLUMN_IDS.includes(body.status))) {
+    patch.needsAttention = false;
+  }
+
+  const lead = updateLead(id, patch);
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Sincroniza conversations.json quando aiPaused muda via UI

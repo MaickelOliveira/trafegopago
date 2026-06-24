@@ -54,6 +54,9 @@ export type Lead = {
   realPhone?: string; // Número real resolvido do contato LID (para exibição)
   customFields?: Record<string, string>; // Campos extras do formulário de origem
   reminders?: LeadReminder[]; // Lembretes agendados para este lead
+  needsAttention?: boolean;        // IA pediu ajuda humana (resumo_solicitado) e ainda não foi resolvido
+  needsAttentionReason?: string;   // motivo informado pela IA
+  needsAttentionAt?: string;       // ISO timestamp de quando foi marcado
   createdAt: string;
   updatedAt: string;
 };
@@ -115,6 +118,13 @@ export function getLeads(clientId?: string): Lead[] {
 
 export function getLeadById(id: string): Lead | undefined {
   return load().find((l) => l.id === id);
+}
+
+/** Marca um lead como precisando de atenção humana — chamado quando a IA dispara resumo_solicitado */
+export function markLeadNeedsAttention(clientId: string, phone: string, funnelId: string | undefined, motivo: string): void {
+  const lead = getLeadByPhone(clientId, phone, funnelId);
+  if (!lead) return;
+  updateLead(lead.id, { needsAttention: true, needsAttentionReason: motivo, needsAttentionAt: new Date().toISOString() });
 }
 
 export function getLeadByPhone(clientId: string, phone: string, funnelId?: string): Lead | undefined {

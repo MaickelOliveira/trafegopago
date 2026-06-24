@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
 import { getClients } from "@/lib/clients";
-import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
+import { upsertLeadByPhone, getLeadByPhone, markLeadNeedsAttention } from "@/lib/leads";
 import { addMessage, getHistory } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection } from "@/lib/clients";
@@ -206,6 +206,9 @@ export async function POST(req: NextRequest) {
           const resumoAction = actions.find((a) => a.type === "resumo_solicitado");
           console.log(`[meta-aviso] resumo_solicitado=${!!resumoAction} motivo="${resumoAction?.motivo ?? "-"}"`);
           if (!resumoAction) return;
+
+          // Marca o lead como precisando de atenção humana (painel de urgência no portal do cliente)
+          markLeadNeedsAttention(cid, phone, effectiveFunnelId, resumoAction.motivo);
 
           // Sheet extractor
           if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
