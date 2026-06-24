@@ -9,7 +9,7 @@ import {
   Megaphone, Users, LayoutDashboard, Palette, Zap, Bot,
   FileText, MessageSquare, Send, Link2, Code2, Phone,
   RefreshCw, Settings, LogOut, LayoutGrid, Share2,
-  Smartphone, DollarSign, ChevronLeft, Activity,
+  Smartphone, DollarSign, ChevronLeft, Activity, CheckSquare,
 } from "lucide-react";
 
 type AdAccount = { id: string; name: string; platform: string };
@@ -39,6 +39,7 @@ function getActiveKey(pathname: string, clientId: string): string {
   if (pathname.startsWith(`/gestor/${clientId}/agente`))         return "agente";
   if (pathname.startsWith(`/gestor/${clientId}/monitoramento`))  return "monitoramento";
   if (pathname.startsWith(`/gestor/${clientId}/briefings`))      return "briefings";
+  if (pathname.startsWith(`/gestor/${clientId}/checklist`))      return "checklist";
   if (pathname.startsWith(`/gestor/${clientId}/inbox`))          return "inbox";
   if (pathname.startsWith(`/gestor/${clientId}/waba`))           return "waba";
   if (pathname.startsWith(`/gestor/${clientId}/webhooks`))       return "webhooks";
@@ -167,6 +168,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               {navItem("agente",         `/gestor/${activeClient.id}/agente`,              Bot,          "Agente IA")}
               {navItem("monitoramento",  `/gestor/${activeClient.id}/monitoramento`,       Activity,     "Monitoramento")}
               {navItem("briefings",      `/gestor/${activeClient.id}/briefings`,           FileText,     "Briefings")}
+              {navItem("checklist",      `/gestor/${activeClient.id}/checklist`,           CheckSquare,  "Checklist")}
               {navItem("inbox",          `/gestor/${activeClient.id}/inbox`,               MessageSquare,"Mensagens")}
               {navItem("waba",           `/gestor/${activeClient.id}/waba`,                Send,         "Disparos WA")}
               {navItem("webhooks",       `/gestor/${activeClient.id}/webhooks`,            Link2,        "Webhooks")}
@@ -220,6 +222,14 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               >
                 <DollarSign className={clsx("h-[18px] w-[18px] shrink-0", pathname.startsWith("/gestor/financeiro") ? "text-[#8aad00]" : "text-slate-400")} strokeWidth={1.75} />
                 Financeiro
+              </Link>
+              <Link
+                href="/gestor/checklist"
+                className={clsx("flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+                  pathname.startsWith("/gestor/checklist") ? NAV_ACTIVE : NAV_INACTIVE)}
+              >
+                <CheckSquare className={clsx("h-[18px] w-[18px] shrink-0", pathname.startsWith("/gestor/checklist") ? "text-[#8aad00]" : "text-slate-400")} strokeWidth={1.75} />
+                Checklist
               </Link>
               {pathname.startsWith("/gestor/financeiro") && (
                 <div className="ml-4 border-l border-slate-200 pl-3 space-y-0.5">

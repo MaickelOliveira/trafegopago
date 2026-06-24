@@ -103,6 +103,19 @@ export function ClientPortalHeader({
             📋 CRM
           </Link>
 
+          {/* Checklist — sempre visível */}
+          <Link
+            href="/cliente/checklist"
+            className={clsx(
+              "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
+              pathname.startsWith("/cliente/checklist")
+                ? "bg-blue-50 text-blue-700 font-medium"
+                : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            ✅ Checklist
+          </Link>
+
           {/* Criativos — visível se canViewCreatives */}
           {canViewCreatives && (
             <Link
