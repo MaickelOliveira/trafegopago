@@ -6,9 +6,12 @@ import type { Lead } from "@/lib/leads";
 
 const TERMINAL_STATUSES = ["ganho", "perdido"];
 
+type ClientOption = { id: string; name: string };
+
 type Props = {
-  leads: Lead[];
-  onUpdated: (lead: Lead) => void;
+  initialLeads: Lead[];
+  /** Quando informado, mostra o nome do cliente em cada card (visão global, multi-cliente) */
+  clients?: ClientOption[];
 };
 
 function timeAgo(iso: string): string {
@@ -23,6 +26,7 @@ function timeAgo(iso: string): string {
 
 function AttentionCard({
   lead,
+  clientName,
   tone,
   reason,
   detail,
@@ -30,6 +34,7 @@ function AttentionCard({
   onAction,
 }: {
   lead: Lead;
+  clientName?: string;
   tone: "red" | "amber";
   reason: string;
   detail?: string;
@@ -48,6 +53,7 @@ function AttentionCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
+          {clientName && <p className="text-[10px] font-semibold text-slate-400 uppercase truncate">{clientName}</p>}
           <p className="text-sm font-semibold text-slate-800 truncate">{lead.name}</p>
           <a href={waLink} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">
             {lead.phone}
@@ -75,7 +81,9 @@ function AttentionCard({
   );
 }
 
-export function AttentionBoard({ leads, onUpdated }: Props) {
+export function AttentionBoard({ initialLeads, clients }: Props) {
+  const [leads, setLeads] = useState(initialLeads);
+
   async function patchLead(id: string, patch: Record<string, unknown>) {
     const res = await fetch(`/api/crm/leads/${id}`, {
       method: "PUT",
@@ -83,7 +91,7 @@ export function AttentionBoard({ leads, onUpdated }: Props) {
       body: JSON.stringify(patch),
     });
     const updated = await res.json();
-    if (res.ok) onUpdated(updated);
+    if (res.ok) setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
   }
 
   const escalated = leads.filter((l) => l.needsAttention && !TERMINAL_STATUSES.includes(l.status));
@@ -109,6 +117,7 @@ export function AttentionBoard({ leads, onUpdated }: Props) {
           <AttentionCard
             key={lead.id}
             lead={lead}
+            clientName={clients?.find((c) => c.id === lead.clientId)?.name}
             tone="red"
             reason={lead.needsAttentionReason ?? "A IA pediu ajuda nesta conversa."}
             detail={lead.needsAttentionAt ? timeAgo(lead.needsAttentionAt) : undefined}
@@ -120,6 +129,7 @@ export function AttentionBoard({ leads, onUpdated }: Props) {
           <AttentionCard
             key={lead.id}
             lead={lead}
+            clientName={clients?.find((c) => c.id === lead.clientId)?.name}
             tone="amber"
             reason={`Alta intenção (score ${lead.ai?.score}/10) sem fechamento ainda.`}
             actionLabel="Assumir conversa"

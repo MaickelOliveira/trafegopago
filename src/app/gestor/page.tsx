@@ -1,9 +1,12 @@
 import { getClients } from "@/lib/clients";
+import { getLeads } from "@/lib/leads";
+import { AttentionBoard } from "@/components/shared/AttentionBoard";
 import Link from "next/link";
 import Image from "next/image";
 
 export default async function GestorHome() {
   const clients = getClients().map(({ passwordHash: _, ...c }) => c);
+  const leads = getLeads();
 
   return (
     <div className="p-8">
@@ -12,6 +15,10 @@ export default async function GestorHome() {
         <p className="mt-1 text-sm text-slate-500">
           {clients.length} {clients.length === 1 ? "cliente" : "clientes"} cadastrados
         </p>
+      </div>
+
+      <div className="mb-8">
+        <AttentionBoard initialLeads={leads} clients={clients.map((c) => ({ id: c.id, name: c.name }))} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

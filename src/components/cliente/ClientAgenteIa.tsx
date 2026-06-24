@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { AgentConfig } from "@/lib/clients";
 import type { Lead } from "@/lib/leads";
-import { AttentionBoard } from "./AttentionBoard";
+import { AttentionBoard } from "@/components/shared/AttentionBoard";
 
 type Connection = {
   id: string;
@@ -41,12 +41,7 @@ function displayConnection(phone: string, type: string): string {
   return type === "wppconnect" ? "Linha WhatsApp" : phone;
 }
 
-export function ClientAgenteIa({ agentConfigs, clientName, leads: initialLeads }: Props) {
-  const [leads, setLeads] = useState(initialLeads);
-  function handleLeadUpdated(updated: Lead) {
-    setLeads((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-  }
-
+export function ClientAgenteIa({ agentConfigs, clientName, leads }: Props) {
   const defaultIdx = agentConfigs.findIndex((c) => c.enabled) === -1 ? 0 : agentConfigs.findIndex((c) => c.enabled);
   const [selectedIdx, setSelectedIdx] = useState(defaultIdx);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -123,7 +118,7 @@ export function ClientAgenteIa({ agentConfigs, clientName, leads: initialLeads }
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
 
       {/* ── PAINEL DE ATENDIMENTO QUE PRECISA DE ATENÇÃO ── */}
-      <AttentionBoard leads={leads} onUpdated={handleLeadUpdated} />
+      <AttentionBoard initialLeads={leads} />
 
       {/* ── SELETOR DE AGENTES (quando há mais de um) ── */}
       {agentConfigs.length > 1 && (
