@@ -59,6 +59,12 @@ export async function startSession(
   // do webhook vai repopular com o QR da nova sessão.
   clearCachedQr(sessionName);
   if (!base()) return;
+  // Fecha qualquer sessão/navegador anterior antes de reiniciar — sem isso, uma
+  // sessão que já esteve autenticada e desconectou (ex: logout no celular) fica
+  // "zumbi" no servidor: o start-session não gera QR novo porque o WPPConnect
+  // tenta restaurar a sessão antiga em vez de abrir uma tela de QR limpa.
+  // Em sessão nunca conectada (instância nova) isso é só um no-op inofensivo.
+  await closeSession(sessionName, token);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {
@@ -151,12 +157,19 @@ export async function checkConnectionStatus(
 // Fecha a sessão (desconecta sem apagar)
 export async function closeSession(sessionName: string, token: string): Promise<void> {
   if (!base()) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     await fetch(`${base()}/api/${sessionName}/close-session`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` },
+      signal: controller.signal,
     });
-  } catch { }
+  } catch (e) {
+    console.error(`[wppconnect-api] closeSession FALHOU/TIMEOUT session=${sessionName}`, e);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Logout completo (apaga a sessão)
