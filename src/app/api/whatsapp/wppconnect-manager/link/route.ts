@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getClients, upsertClient } from "@/lib/clients";
+import { getClients, upsertClient, migrateOrphanedAgentConfig } from "@/lib/clients";
 import { getFunnels, createFunnel, updateFunnel } from "@/lib/funnels";
-import { getWppSessionById, updateWppSession } from "@/lib/wppconnect-sessions";
+import { getWppSessionById, getWppSessions, updateWppSession } from "@/lib/wppconnect-sessions";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -52,18 +52,33 @@ export async function POST(req: NextRequest) {
   }
 
   // Vincula ao cliente alvo
+  let migratedConfig = false;
   if (clientId) {
     const client = clients.find(c => c.id === clientId);
     if (client) {
+      // Antes de criar uma config em branco para a conexão nova, tenta reaproveitar
+      // uma config órfã (de uma instância antiga excluída/substituída) do mesmo
+      // cliente — preserva prompt, follow-ups, base de conhecimento etc. sem precisar
+      // reconfigurar do zero. Só migra quando não há ambiguidade (ver migrateOrphanedAgentConfig).
+      if (linkAgent) {
+        const liveConnectionIds = new Set<string>();
+        for (const f of getFunnels()) for (const c of f.connections ?? []) liveConnectionIds.add(c.id);
+        for (const s of getWppSessions()) liveConnectionIds.add(s.id);
+        migratedConfig = migrateOrphanedAgentConfig(clientId, sessionId, liveConnectionIds);
+      }
+
+      // Reler o cliente: migrateOrphanedAgentConfig pode já ter persistido um novo
+      // agentConfigs[] — usar a referência antiga aqui sobrescreveria essa mudança.
+      const freshClient = getClients().find(c => c.id === clientId) ?? client;
       upsertClient({
-        ...client,
+        ...freshClient,
         agentConfig: {
-          ...(client.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] }),
+          ...(freshClient.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] }),
           whatsappConnectionId: linkAgent ? sessionId : undefined,
         },
       });
     }
   }
 
-  return NextResponse.json({ ok: true, funnelId });
+  return NextResponse.json({ ok: true, funnelId, migratedConfig });
 }

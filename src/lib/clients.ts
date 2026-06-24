@@ -185,6 +185,50 @@ export function upsertAgentConfigForConnection(
   }
 }
 
+/**
+ * Repointa o whatsappConnectionId de um AgentConfig órfão (cuja conexão antiga foi
+ * excluída/substituída) para uma conexão nova — preserva todo o resto da config
+ * (prompt, follow-ups, base de conhecimento, etc.), sem perda de dados.
+ *
+ * Usado quando uma instância WPPConnect morta é substituída por uma nova: a config
+ * antiga nunca é apagada (só fica inacessível, presa ao id da conexão antiga) — aqui
+ * só atualizamos esse id pra apontar pra conexão nova.
+ *
+ * Só migra automaticamente quando há EXATAMENTE 1 config órfã pra esse cliente —
+ * com 0 ou 2+ candidatos a escolha é ambígua e não arriscamos migrar a errada.
+ * `liveConnectionIds` deve conter todos os ids de conexão atualmente existentes
+ * (funis + sessões WPPConnect), calculado pelo chamador.
+ */
+export function migrateOrphanedAgentConfig(
+  clientId: string,
+  newConnectionId: string,
+  liveConnectionIds: Set<string>
+): boolean {
+  const client = getClients().find((c) => c.id === clientId);
+  if (!client) return false;
+
+  const isOrphaned = (connId: string | undefined) => !!connId && !liveConnectionIds.has(connId);
+
+  const configs = client.agentConfigs ?? [];
+  const orphaned = configs.filter((c) => isOrphaned(c.whatsappConnectionId));
+  if (orphaned.length === 1) {
+    const newConfigs = configs.map((c) =>
+      c === orphaned[0] ? { ...c, whatsappConnectionId: newConnectionId } : c
+    );
+    upsertClient({ ...client, agentConfigs: newConfigs });
+    return true;
+  }
+  if (orphaned.length > 1) return false; // ambíguo — não migra
+
+  // Sem agentConfigs[] (cliente no modelo legado de config única)
+  if (configs.length === 0 && isOrphaned(client.agentConfig?.whatsappConnectionId)) {
+    upsertClient({ ...client, agentConfig: { ...client.agentConfig!, whatsappConnectionId: newConnectionId } });
+    return true;
+  }
+
+  return false;
+}
+
 /** Retorna todos os agentConfigs do cliente, sem duplicatas.
  *  Se agentConfigs[] existe e tem entradas, usa somente ele (ignora o legado agentConfig).
  *  Caso contrário, cai no agentConfig único como fallback. */
