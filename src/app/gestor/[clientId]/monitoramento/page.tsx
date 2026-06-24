@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getClientById } from "@/lib/clients";
-import { AgentView } from "@/components/agent/AgentView";
-import { Suspense } from "react";
+import { MonitoringCenter } from "@/components/shared/MonitoringCenter";
 
-export default async function AgentePage({ params }: { params: Promise<{ clientId: string }> }) {
+export default async function GestorMonitoramentoPage({ params }: { params: Promise<{ clientId: string }> }) {
   const session = await getSession();
   if (!session || session.role !== "manager") redirect("/login");
 
@@ -13,8 +12,9 @@ export default async function AgentePage({ params }: { params: Promise<{ clientI
   if (!client) redirect("/gestor");
 
   return (
-    <Suspense>
-      <AgentView clientId={clientId} clientName={client.name} />
-    </Suspense>
+    <MonitoringCenter
+      fetchUrl={`/api/gestor/monitoring?clientId=${clientId}`}
+      connectionsFetchUrl={`/api/gestor/connection-metrics?clientId=${clientId}`}
+    />
   );
 }

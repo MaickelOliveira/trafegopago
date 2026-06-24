@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { AgentConfig } from "@/lib/clients";
-import { ConnectionDashboard } from "@/components/shared/ConnectionDashboard";
 
 type Connection = {
   id: string;
@@ -114,9 +113,6 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-
-      {/* ── PAINEL DE ATENDIMENTO QUE PRECISA DE ATENÇÃO ── */}
-      <ConnectionDashboard fetchUrl="/api/cliente/connection-metrics" />
 
       {/* ── SELETOR DE AGENTES (quando há mais de um) ── */}
       {agentConfigs.length > 1 && (

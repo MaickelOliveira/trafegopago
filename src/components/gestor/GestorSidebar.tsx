@@ -9,7 +9,7 @@ import {
   Megaphone, Users, LayoutDashboard, Palette, Zap, Bot,
   FileText, MessageSquare, Send, Link2, Code2, Phone,
   RefreshCw, Settings, LogOut, LayoutGrid, Share2,
-  Smartphone, DollarSign, ChevronLeft,
+  Smartphone, DollarSign, ChevronLeft, Activity,
 } from "lucide-react";
 
 type AdAccount = { id: string; name: string; platform: string };
@@ -37,6 +37,7 @@ function getActiveKey(pathname: string, clientId: string): string {
   if (pathname.startsWith(`/gestor/${clientId}/criativos`))      return "criativos";
   if (pathname.startsWith(`/gestor/${clientId}/automacoes`))     return "automacoes";
   if (pathname.startsWith(`/gestor/${clientId}/agente`))         return "agente";
+  if (pathname.startsWith(`/gestor/${clientId}/monitoramento`))  return "monitoramento";
   if (pathname.startsWith(`/gestor/${clientId}/briefings`))      return "briefings";
   if (pathname.startsWith(`/gestor/${clientId}/inbox`))          return "inbox";
   if (pathname.startsWith(`/gestor/${clientId}/waba`))           return "waba";
@@ -164,6 +165,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               {navItem("criativos",      `/gestor/${activeClient.id}/criativos`,           Palette,      "Criativos", pendingCount)}
               {navItem("automacoes",     `/gestor/${activeClient.id}/automacoes`,          Zap,          "Automações")}
               {navItem("agente",         `/gestor/${activeClient.id}/agente`,              Bot,          "Agente IA")}
+              {navItem("monitoramento",  `/gestor/${activeClient.id}/monitoramento`,       Activity,     "Monitoramento")}
               {navItem("briefings",      `/gestor/${activeClient.id}/briefings`,           FileText,     "Briefings")}
               {navItem("inbox",          `/gestor/${activeClient.id}/inbox`,               MessageSquare,"Mensagens")}
               {navItem("waba",           `/gestor/${activeClient.id}/waba`,                Send,         "Disparos WA")}
