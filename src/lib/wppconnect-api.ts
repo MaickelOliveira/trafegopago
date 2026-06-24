@@ -59,6 +59,8 @@ export async function startSession(
   // do webhook vai repopular com o QR da nova sessão.
   clearCachedQr(sessionName);
   if (!base()) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
   try {
     await fetch(`${base()}/api/${sessionName}/start-session`, {
       method: "POST",
@@ -72,8 +74,13 @@ export async function startSession(
         whatsappVersion: "",
         autoReadMessages: false,
       }),
+      signal: controller.signal,
     });
-  } catch { }
+  } catch (e) {
+    console.error(`[wppconnect-api] startSession FALHOU/TIMEOUT session=${sessionName}`, e);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Retorna o QR Code como base64 (data:image/png;base64,...)
@@ -83,10 +90,12 @@ export async function getQrCode(sessionName: string, token: string): Promise<str
   // do urlcode, com margem correta) só dispara uma vez por start-session,
   // então fica como fallback para quando qrcode-session não retorna nada.
   if (!base()) return getCachedQr(sessionName);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     const res = await fetch(
       `${base()}/api/${sessionName}/qrcode-session`,
-      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store" },
+      { headers: { "Authorization": `Bearer ${token}` }, cache: "no-store", signal: controller.signal },
     );
     if (!res.ok) return getCachedQr(sessionName);
     // WPPConnect pode retornar PNG binário direto ou JSON com base64
@@ -101,8 +110,11 @@ export async function getQrCode(sessionName: string, token: string): Promise<str
     const qr = (data.qrcode as string) || (data.base64 as string) || null;
     if (!qr) return getCachedQr(sessionName);
     return qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`;
-  } catch {
+  } catch (e) {
+    console.error(`[wppconnect-api] getQrCode FALHOU/TIMEOUT session=${sessionName}`, e);
     return getCachedQr(sessionName);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
