@@ -103,6 +103,40 @@ export async function sendMessageDirect(
   }
 }
 
+/**
+ * Baixa um arquivo de mídia (áudio/imagem/documento/vídeo) recebido via Meta
+ * Cloud API. Diferente do WPPConnect/UazAPI, a Graph API já entrega o arquivo
+ * descriptografado — só precisa do media id (2 chamadas: pega a URL temporária,
+ * depois baixa o conteúdo, ambas autenticadas com o token da conexão).
+ */
+export async function downloadMetaMedia(mediaId: string, accessToken: string): Promise<Buffer | null> {
+  try {
+    const metaRes = await fetch(`https://graph.facebook.com/v19.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!metaRes.ok) {
+      console.error(`[downloadMetaMedia] HTTP ${metaRes.status} ao buscar metadata do media id=${mediaId}`);
+      return null;
+    }
+    const { url } = await metaRes.json() as { url?: string };
+    if (!url) return null;
+
+    const fileRes = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!fileRes.ok) {
+      console.error(`[downloadMetaMedia] HTTP ${fileRes.status} ao baixar arquivo do media id=${mediaId}`);
+      return null;
+    }
+    return Buffer.from(await fileRes.arrayBuffer());
+  } catch (e) {
+    console.error(`[downloadMetaMedia] EXCEÇÃO media id=${mediaId}:`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 export function getGeminiApiKey(clientGeminiKey?: string): string | null {
   const config = getConfig();
   return (

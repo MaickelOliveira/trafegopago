@@ -7,11 +7,12 @@ import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
 import { startFollowUpSequence, cancelFollowUpsForPhone, getFollowUpByWamid, markFailed } from "@/lib/followups";
-import { sendMessageDirect, getGeminiApiKey } from "@/lib/whatsapp-send";
+import { sendMessageDirect, getGeminiApiKey, downloadMetaMedia } from "@/lib/whatsapp-send";
 import { splitMessage } from "@/lib/uazapi";
 import { sendTemplate } from "@/lib/waba-templates";
 import { generateSummaryText } from "@/lib/summary-generator";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
+import { transcribeMedia, type MediaKind } from "@/lib/media-transcribe";
 import type { GeminiAction } from "@/lib/gemini-agent";
 
 // GET — verificação do webhook Meta
@@ -89,8 +90,40 @@ export async function POST(req: NextRequest) {
 
       for (const msg of (value?.messages ?? [])) {
         const phone = msg.from?.replace(/\D/g, "");
-        const text = msg.text?.body || msg.button?.text || "";
-        if (!phone || !text.trim()) continue;
+        if (!phone) continue;
+        let text = msg.text?.body || msg.button?.text || "";
+
+        // ── Mídia (áudio/imagem/documento/vídeo): transcreve antes de seguir ──
+        // A Graph API manda só o media id — sem isso a mensagem chegava sem
+        // texto e era descartada no continue abaixo, então a IA nunca via
+        // nem respondia a áudios/fotos/documentos enviados via API oficial.
+        const mediaTypeMap: Record<string, MediaKind> = { audio: "audio", image: "image", document: "document", video: "video" };
+        const mediaKind = mediaTypeMap[msg.type as string];
+        if (!text.trim() && mediaKind && metaToken) {
+          const mediaObj = msg[msg.type as string] as { id?: string; mime_type?: string; caption?: string } | undefined;
+          if (mediaObj?.id) {
+            const cidForKey = clientId ?? "sem-cliente";
+            const clientForKey = cidForKey !== "sem-cliente" ? getClientById(cidForKey) : null;
+            const agentCfgForKey = clientForKey && connId ? getAgentConfigForConnection(clientForKey, connId) : undefined;
+            const apiKey = getGeminiApiKey(agentCfgForKey?.geminiApiKey ?? undefined);
+            if (apiKey) {
+              const buffer = await downloadMetaMedia(mediaObj.id, metaToken);
+              if (buffer) {
+                const transcription = await transcribeMedia(buffer, mediaObj.mime_type ?? "application/octet-stream", apiKey, mediaKind);
+                if (transcription) {
+                  text = mediaObj.caption ? `${mediaObj.caption}\n${transcription}` : transcription;
+                  console.log(`[meta] Transcrição OK (${mediaKind}): "${transcription.slice(0, 120)}"`);
+                }
+              } else {
+                console.error(`[meta] Falha ao baixar mídia (${mediaKind}) id=${mediaObj.id}`);
+              }
+            } else {
+              console.error(`[meta] Sem apiKey do Gemini configurada — não foi possível transcrever mídia (${mediaKind})`);
+            }
+          }
+        }
+
+        if (!text.trim()) continue;
 
         const pushName = value?.contacts?.find((c: { wa_id: string }) => c.wa_id === msg.from)?.profile?.name ?? phone;
         const cid = clientId ?? "sem-cliente";
