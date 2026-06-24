@@ -961,10 +961,11 @@ export async function POST(
               const chunks = agCfg?.splitMessages
                 ? splitMessage(textToSend, agCfg.maxMessageLength ?? 300)
                 : [textToSend];
+              const chunkDelayMs = Math.round((agCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
               for (let i = 0; i < chunks.length; i++) {
                 const sent = await sendText(instanceUazToken, phone, chunks[i]);
                 console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent} token=${instanceUazToken.slice(0, 8)}... phone=${phone}`);
-                if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, 700));
+                if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
               }
               if (names.length > 0 && agCfg?.mediaLibrary?.length) {
                 await sendMarkedMedia(instanceUazToken, phone, names, agCfg.mediaLibrary);
@@ -1043,10 +1044,11 @@ export async function POST(
       const chunks = agentCfg?.splitMessages
         ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
         : [textToSend];
+      const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
       for (let i = 0; i < chunks.length; i++) {
         const sent = await sendText(instanceUazToken, phone, chunks[i]);
         console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent}`);
-        if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, 700));
+        if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
       }
       if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
         await sendMarkedMedia(instanceUazToken, phone, names, agentCfg.mediaLibrary);

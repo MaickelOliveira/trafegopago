@@ -59,6 +59,7 @@ type AgentCfg = {
   mediaLibrary?: AgentMedia[];
   splitMessages?: boolean;
   maxMessageLength?: number;
+  splitMessageDelaySeconds?: number;
   aiResumeKeyword?: string;
   testPhone?: string;
   spreadsheetId?: string;
@@ -1488,8 +1489,24 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             <span className="text-sm text-slate-600">caracteres</span>
           </div>
         )}
+        {cfg.splitMessages && (
+          <div className="flex items-center gap-3 pt-1">
+            <span className="text-sm text-slate-600 shrink-0">Pausa entre mensagens</span>
+            <input
+              type="number"
+              min={0}
+              max={10}
+              step={0.5}
+              value={cfg.splitMessageDelaySeconds ?? 1.5}
+              onChange={(e) => setCfg((c) => ({ ...c, splitMessageDelaySeconds: Number(e.target.value) }))}
+              className="w-24 rounded-lg border border-purple-200 px-3 py-2 text-sm outline-none focus:border-purple-400 text-center font-semibold"
+            />
+            <span className="text-sm text-slate-600">segundos</span>
+          </div>
+        )}
         <p className="text-xs text-slate-400">
           Divide parágrafos, depois frases — nunca corta palavras ao meio. Recomendado: 250–400 caracteres.
+          A pausa entre mensagens evita que cheguem todas de uma vez, simulando alguém digitando.
         </p>
       </div>
 

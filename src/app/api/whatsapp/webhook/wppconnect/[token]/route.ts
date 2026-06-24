@@ -856,9 +856,11 @@ export async function POST(
     for (const chunk of chunks) markSent(phone, chunk);
     // Salva texto limpo (sem marcadores) no histórico
     addMessage(phone, { role: "assistant", content: textToSend, ts: Date.now() }, clientId, { connId });
-    // Envia cada chunk separadamente
-    for (const chunk of chunks) {
-      await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, chunk, isLidPhone);
+    // Envia cada chunk separadamente, com pausa entre eles pra não parecer um "flood"
+    const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
+    for (let i = 0; i < chunks.length; i++) {
+      await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, chunks[i], isLidPhone);
+      if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
     }
     // Envia mídias referenciadas (se houver)
     if (names.length > 0 && agentCfg?.mediaLibrary?.length) {

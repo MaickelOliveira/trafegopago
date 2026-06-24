@@ -186,13 +186,15 @@ export async function POST(req: NextRequest) {
           const chunks = agentCfg?.splitMessages
             ? splitMessage(replyText, agentCfg.maxMessageLength ?? 300)
             : [replyText];
-          for (const chunk of chunks) {
-            const ok = await sendMessageDirect(phone, chunk, phoneNumberId, metaToken);
+          const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
+          for (let i = 0; i < chunks.length; i++) {
+            const ok = await sendMessageDirect(phone, chunks[i], phoneNumberId, metaToken);
             if (ok) {
-              addMessage(phone, { role: "assistant", content: chunk, ts: Date.now() }, clientId, { connId: connId ?? undefined });
+              addMessage(phone, { role: "assistant", content: chunks[i], ts: Date.now() }, clientId, { connId: connId ?? undefined });
             } else {
               console.error(`[meta] sendMetaReply FALHOU — mensagem NÃO entregue ao WhatsApp. phone=${phone} phoneNumberId=${phoneNumberId}`);
             }
+            if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
           }
         }
 

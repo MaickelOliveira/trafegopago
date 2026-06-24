@@ -64,6 +64,7 @@ export type AgentConfig = {
   mediaLibrary?: AgentMedia[];   // Fotos, vídeos e documentos que o agente pode disparar
   splitMessages?: boolean;       // Divide respostas longas em múltiplas mensagens
   maxMessageLength?: number;     // Máx. de caracteres por mensagem (padrão: 300)
+  splitMessageDelaySeconds?: number; // Intervalo entre cada mensagem dividida (padrão: 1.5s)
   aiResumeKeyword?: string;      // Palavra-chave enviada pelo gestor para reativar a IA (ex: "atendimento finalizado")
   testPhone?: string;            // Número de teste: quando preenchido, a IA responde APENAS este número
   knowledgeBase?: KnowledgeBaseDoc[]; // Documentos PDF/TXT que a IA pode consultar
