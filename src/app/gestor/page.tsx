@@ -1,5 +1,4 @@
 import { getClients } from "@/lib/clients";
-import { ConnectionDashboard } from "@/components/shared/ConnectionDashboard";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -13,10 +12,6 @@ export default async function GestorHome() {
         <p className="mt-1 text-sm text-slate-500">
           {clients.length} {clients.length === 1 ? "cliente" : "clientes"} cadastrados
         </p>
-      </div>
-
-      <div className="mb-8">
-        <ConnectionDashboard fetchUrl="/api/gestor/connection-metrics" mode="all-clients" />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
