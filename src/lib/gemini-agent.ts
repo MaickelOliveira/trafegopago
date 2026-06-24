@@ -240,7 +240,14 @@ function sanitizeForWhatsApp(text: string): string {
     // 9. Garante \n\n antes de itens numerados: *1. *2. ou 1. 2. no meio do texto
     .replace(/([^\n]) (\d+\. [A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ])/g, "$1\n\n$2")  // "texto N. TÍTULO" → \n\n
     .replace(/\n(\*?\d+[\.\)]\s)/g, "\n\n$1")           // 1 newline → 2
-    .replace(/([^\n])(\*?\d+[\.\)]\s)/g, "$1\n\n$2")   // 0 newlines → 2
+    // Protege centavos (",NN" — sempre 2 dígitos em R$) de serem engolidos pelo
+    // número do próximo item colado direto na frente (ex: "R$ 19,152. Item" lia
+    // "152" como o número do item, cortando o preço em "19," + "152.")
+    .replace(/(,\d{2})(\d+[\.\)]\s)/g, "$1\n\n$2")
+    // 0 newlines → 2 — exclui "*" do grupo 1: sem isso, o próprio "*" de abertura
+    // de "*N. Título*" era tratado como "texto antes do número" e ficava isolado
+    // (depois apagado pela regra 10), sobrando só o "*" de fechamento
+    .replace(/([^\n*])(\*?\d+[\.\)]\s)/g, "$1\n\n$2")
     // 10. Remove asteriscos solitários em parágrafos próprios (resíduo de ** multi-linha)
     //     ex: "\n\n*\n\n" → "\n\n" e "* solt\n\nN." → "N."
     .replace(/\n\n\*\n\n(\d+[\.\)]\s)/g, "\n\n$1")  // *\n\nN. → N.
