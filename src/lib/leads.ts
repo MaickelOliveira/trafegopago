@@ -124,9 +124,11 @@ const HOURS_STALLED = 6;
 const MIN_MESSAGES_FOR_REAL_ENGAGEMENT = 3;
 
 function computeHeat(messageCount: number, lastActivity: number): Lead["heat"] {
+  // Poucas mensagens = ainda não teve troca real, não importa a hora —
+  // nunca é "fluindo" só por ter chegado uma mensagem agora há pouco.
+  if (messageCount < MIN_MESSAGES_FOR_REAL_ENGAGEMENT) return "cold";
   const hoursSince = (Date.now() - lastActivity) / 3_600_000;
-  if (hoursSince < HOURS_STALLED) return "hot";
-  return messageCount < MIN_MESSAGES_FOR_REAL_ENGAGEMENT ? "cold" : "stalled";
+  return hoursSince < HOURS_STALLED ? "hot" : "stalled";
 }
 
 /**
