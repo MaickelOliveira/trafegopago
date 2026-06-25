@@ -11,7 +11,7 @@ import { runGeminiAgent, generateFollowUpAI } from "./gemini-agent";
 import { addMessage, getHistory, setAiPaused, type ChatMessage } from "./conversations";
 import { runScheduledDailyAutomations } from "./crm-automations";
 import { getLeadByPhone, updateLead } from "./leads";
-import { getFunnels } from "./funnels";
+import { getFunnels, getFunnelById } from "./funnels";
 import { getTemplateById, sendTemplate } from "./waba-templates";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -153,6 +153,17 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       if (lead && TERMINAL_STATUSES.includes(lead.status)) {
         cancelFollowUpsForPhone(followUp.clientId, followUp.phone);
         console.log(`[cron-tasks] FU ${followUp.id} cancelado: lead em coluna final (${lead.status})`);
+        skipped++;
+        continue;
+      }
+
+      // ── 0.1. Lead em coluna marcada como "bloqueia follow-up" (ex: atendente
+      // já está cuidando do caso manualmente) → cancela todos e pula ──────────
+      const followUpFunnel = lead ? getFunnelById(lead.funnelId) : undefined;
+      const followUpColumn = followUpFunnel?.columns.find((c) => c.id === lead?.status);
+      if (followUpColumn?.blockFollowUps) {
+        cancelFollowUpsForPhone(followUp.clientId, followUp.phone);
+        console.log(`[cron-tasks] FU ${followUp.id} cancelado: lead em coluna com follow-up bloqueado (${followUpColumn.label})`);
         skipped++;
         continue;
       }

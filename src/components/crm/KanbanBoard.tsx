@@ -420,6 +420,15 @@ function FunnelManager({ funnels, onUpdated, clientId, metaAccountId, pixelId }:
                       />
                       <span className="text-xs text-slate-600">💰 Pedir valor+data</span>
                     </label>
+                    <label className="flex items-center gap-1 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={!!col.blockFollowUps}
+                        onChange={(e) => setEditCols((prev) => prev.map((c, i) => i === idx ? { ...c, blockFollowUps: e.target.checked || undefined } : c))}
+                        className="rounded accent-orange-600"
+                      />
+                      <span className="text-xs text-slate-600">⏸️ Bloqueia follow-up</span>
+                    </label>
                   </div>
 
                   {/* Frases de gatilho — logo abaixo dos flags para visibilidade */}

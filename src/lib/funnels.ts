@@ -13,6 +13,7 @@ export type FunnelColumn = {
   color: string;
   metaEvent?: string;           // evento CAPI disparado quando lead entra nesta coluna
   blockAutoMove?: boolean;      // bloqueia movimentação automática pelo agente IA
+  blockFollowUps?: boolean;     // cancela follow-ups pendentes se o lead estiver aqui quando vencer
   askValueOnMove?: boolean;     // abre modal pedindo valor + data quando lead entra aqui
   triggerPhrases?: TriggerPhrase[];  // frases que movem o lead para esta coluna
   aiDescription?: string;       // contexto para o agente IA: quando mover o lead para esta coluna
