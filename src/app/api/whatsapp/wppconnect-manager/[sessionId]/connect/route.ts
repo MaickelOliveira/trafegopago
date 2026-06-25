@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { checkConnectionStatus, getQrCode, logoutSession, shouldRestartWppSession, startSession } from "@/lib/wppconnect-api";
+import { checkConnectionStatus, getQrCode, getRestartCooldownRemainingMs, logoutSession, shouldRestartWppSession, startSession } from "@/lib/wppconnect-api";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 
 export async function POST(
@@ -40,7 +40,12 @@ export async function POST(
   // (closeSession) antes de reabrir — só faz sentido reiniciar quando a sessão
   // está parada/zumbi ou em troca explícita, nunca enquanto já está conectando
   // (PAIRING/OPENING) ou conectada.
-  const restarted = !!body.webhookUrl && (body.force || isIdle) && shouldRestartWppSession(sessionName, body.force);
+  const wantsRestart = body.force || isIdle;
+  const restarted = !!body.webhookUrl && wantsRestart && shouldRestartWppSession(sessionName, body.force);
+  // Só é "throttle" (ciclo interno do WPPConnect ainda rodando, ~60s) quando a
+  // gente QUERIA reiniciar e não conseguiu por causa do cooldown — informa pro
+  // front mostrar contagem em vez de parecer travado sem motivo.
+  const cooldownMs = !restarted && wantsRestart ? getRestartCooldownRemainingMs(sessionName) : 0;
 
   if (restarted) {
     await startSession(sessionName, sessionToken, body.webhookUrl as string).catch(() => {});
@@ -48,7 +53,7 @@ export async function POST(
 
   if (!restarted) {
     const qr = await getQrCode(sessionName, sessionToken);
-    return NextResponse.json({ status: "connecting", qr: qr && qr !== body.previousQr ? qr : null });
+    return NextResponse.json({ status: "connecting", qr: qr && qr !== body.previousQr ? qr : null, cooldownMs });
   }
 
   // Acabou de reiniciar: o catchQR roda assíncrono após o start-session, então
@@ -62,5 +67,5 @@ export async function POST(
     await new Promise(r => setTimeout(r, 2000));
   }
 
-  return NextResponse.json({ status: "connecting", qr });
+  return NextResponse.json({ status: "connecting", qr, cooldownMs: 0 });
 }

@@ -49,6 +49,15 @@ export function shouldRestartWppSession(sessionName: string, force = false): boo
   return true;
 }
 
+// Quanto falta (em ms) até o ciclo interno do WPPConnect liberar um novo
+// start-session pra essa sessão — usado só pra avisar o usuário na tela
+// ("aguarde Xs") em vez de deixar parecer que travou sem motivo.
+export function getRestartCooldownRemainingMs(sessionName: string): number {
+  const last = lastStartAttempt.get(sessionName) ?? 0;
+  const remaining = RESTART_INTERVAL_MS - (Date.now() - last);
+  return remaining > 0 ? remaining : 0;
+}
+
 // Inicia (ou reinicia) uma sessão com webhook configurado
 export async function startSession(
   sessionName: string,

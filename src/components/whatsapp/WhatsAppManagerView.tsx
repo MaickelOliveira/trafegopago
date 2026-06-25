@@ -1074,6 +1074,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
   // QR
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [qrStage, setQrStage] = useState<"generating" | "scanning" | "done">("generating");
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const qrShownRef = useRef(false);
 
   // Link
@@ -1135,8 +1136,10 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     qrShownRef.current = false;
     setQrImage(null);
     setQrStage("generating");
+    setCooldownSeconds(0);
 
     let poll: ReturnType<typeof setInterval>;
+    let cooldownTick: ReturnType<typeof setInterval> | undefined;
     let alive = true;
     let connecting = false;
     // O WhatsApp Web renova o "ref" do QR sozinho a cada ~15-20s, e o WPPConnect
@@ -1157,10 +1160,31 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ force, webhookUrl, previousQr: lastQr }),
         });
-        const d = await res.json() as { qr?: string | null };
-        if (alive && d.qr && d.qr !== lastQr) {
+        const d = await res.json() as { qr?: string | null; cooldownMs?: number };
+        if (!alive) return;
+        if (d.qr && d.qr !== lastQr) {
           setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
           lastQr = d.qr; qrSetAt = Date.now();
+          clearInterval(cooldownTick);
+          setCooldownSeconds(0);
+        } else if (d.cooldownMs && d.cooldownMs > 0) {
+          // Ciclo interno do WPPConnect (~60s) ainda rodando da tentativa
+          // anterior — mostra contagem regressiva em vez de parecer travado,
+          // e tenta de novo automaticamente quando o tempo acabar.
+          const until = Date.now() + d.cooldownMs;
+          setCooldownSeconds(Math.ceil(d.cooldownMs / 1000));
+          clearInterval(cooldownTick);
+          cooldownTick = setInterval(() => {
+            if (!alive) { clearInterval(cooldownTick); return; }
+            const left = until - Date.now();
+            if (left <= 0) {
+              clearInterval(cooldownTick);
+              setCooldownSeconds(0);
+              connectAndFetchQr(false);
+            } else {
+              setCooldownSeconds(Math.ceil(left / 1000));
+            }
+          }, 1000);
         }
       } catch { /**/ } finally {
         connecting = false;
@@ -1197,7 +1221,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
 
     connectAndFetchQr(forceLogout).then(() => { if (alive) startPolling(); });
 
-    return () => { alive = false; clearInterval(poll); };
+    return () => { alive = false; clearInterval(poll); clearInterval(cooldownTick); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wppModal.type === "qr" ? `${(wppModal as { id: string }).id}-${(wppModal as { forceLogout: boolean }).forceLogout}` : null]);
 
@@ -1436,6 +1460,13 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
                 <p className="text-sm font-medium text-slate-700 mb-1">Abra o WhatsApp → <strong>Aparelhos Conectados</strong> → <strong>Vincular</strong></p>
                 <p className="text-xs text-slate-400">Atualiza automaticamente</p>
               </>
+            ) : cooldownSeconds > 0 ? (
+              <div className="w-64 h-64 mx-auto rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50 flex flex-col items-center justify-center mb-3 gap-2">
+                <div className="text-3xl font-bold text-amber-600">{cooldownSeconds}s</div>
+                <p className="text-xs text-amber-700 px-6 text-center">
+                  O servidor está liberando a sessão anterior. Isso é normal — tentando de novo em {cooldownSeconds}s...
+                </p>
+              </div>
             ) : (
               <div className="w-64 h-64 mx-auto rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center mb-3 gap-3">
                 <div className="animate-spin h-8 w-8 border-2 border-slate-200 border-t-violet-500 rounded-full" />
@@ -1444,8 +1475,10 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
             )}
             {qrStage !== "done" && (
               <div className="flex items-center justify-center gap-2 mt-3">
-                <span className={`h-2 w-2 rounded-full ${qrImage ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
-                <span className="text-xs text-slate-500">{qrImage ? "Aguardando scan..." : "Gerando QR..."}</span>
+                <span className={`h-2 w-2 rounded-full ${qrImage ? "bg-yellow-400 animate-pulse" : cooldownSeconds > 0 ? "bg-amber-400 animate-pulse" : "bg-slate-300"}`} />
+                <span className="text-xs text-slate-500">
+                  {qrImage ? "Aguardando scan..." : cooldownSeconds > 0 ? `Aguarde ${cooldownSeconds}s...` : "Gerando QR..."}
+                </span>
               </div>
             )}
           </div>
