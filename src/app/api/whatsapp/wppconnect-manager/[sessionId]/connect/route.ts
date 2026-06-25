@@ -19,12 +19,14 @@ export async function POST(
   const body = await req.json() as { force?: boolean; webhookUrl?: string; previousQr?: string | null };
   const { sessionName, sessionToken } = wppSession;
 
-  // "Trocar número" (force=true): a sessão está autenticada com outro número —
-  // logout-session só tem efeito em sessões autenticadas, então só faz sentido aqui.
-  // Em sessões ainda na tela de QR ele só gera erro no servidor sem efeito nenhum.
-  if (body.force) {
-    await logoutSession(sessionName, sessionToken).catch(() => {});
-  }
+  // Sempre limpa a sessão (logout-session + close-session) antes de reconectar —
+  // tanto "Trocar número" (force=true) quanto reconectar uma sessão desconectada
+  // precisam disso: sem o logout-session, uma sessão que já esteve autenticada e
+  // desconectou (ex: logout no celular) fica "zumbi" — o WPPConnect tenta
+  // restaurar os tokens salvos em vez de abrir uma tela de QR limpa, e trava num
+  // loop sem nunca gerar QR (só fica emitindo eventos de presença). Em sessão
+  // nunca autenticada o logout-session é um no-op inofensivo.
+  await logoutSession(sessionName, sessionToken).catch(() => {});
 
   const restarted = !!body.webhookUrl && shouldRestartWppSession(sessionName, body.force);
 

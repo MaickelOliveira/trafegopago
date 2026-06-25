@@ -5,6 +5,7 @@ import { getFunnels } from "@/lib/funnels";
 import {
   generateToken,
   startSession,
+  logoutSession,
   checkConnectionStatus,
   isWppConnectConfigured,
 } from "@/lib/wppconnect-api";
@@ -133,6 +134,13 @@ export async function POST(req: NextRequest) {
 
   // 2. Cria registro local
   const wppSession = createWppSession(sessionName, token);
+
+  // 2.1 Limpa qualquer sessão antiga com esse MESMO nome que ainda exista no
+  // servidor WPPConnect — reusar um nome já usado antes (de uma instância
+  // excluída aqui no painel) reaproveita o perfil/tokens salvos no servidor e
+  // trava sem nunca gerar QR, exatamente como reconectar uma sessão "zumbi".
+  // Em nome nunca usado isso é um no-op inofensivo.
+  await logoutSession(sessionName, token).catch(() => {});
 
   // 3. Inicia a sessão com webhook configurado
   const webhookUrl = `${baseUrl}/api/whatsapp/webhook/wppconnect/${wppSession.id}`;
