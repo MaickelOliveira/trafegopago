@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, renameSync, mkdirSync, statSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { getAllConversationsByClientId } from "./conversations";
 
 export type LeadStatus = "novo" | "contato" | "proposta" | "ganho" | "perdido";
 export type LeadSource = "whatsapp" | "form" | "manual";
@@ -59,6 +60,7 @@ export type Lead = {
   needsAttentionAt?: string;       // ISO timestamp de quando foi marcado
   createdAt: string;
   updatedAt: string;
+  heat?: "cold" | "stalled" | "hot"; // calculado em tempo de leitura a partir da conversa — não é salvo em disco
 };
 
 const DIR  = path.join(process.cwd(), "data");
@@ -114,6 +116,42 @@ function save(leads: Lead[]) {
 export function getLeads(clientId?: string): Lead[] {
   const all = load();
   return clientId ? all.filter((l) => l.clientId === clientId) : all;
+}
+
+// Silêncio >= 6h conta como "parada" — abaixo disso a conversa está "fluindo".
+const HOURS_STALLED = 6;
+// Até 2 mensagens é só um "oi" inicial (ou resposta automática) — não é troca real.
+const MIN_MESSAGES_FOR_REAL_ENGAGEMENT = 3;
+
+function computeHeat(messageCount: number, lastActivity: number): Lead["heat"] {
+  const hoursSince = (Date.now() - lastActivity) / 3_600_000;
+  if (hoursSince < HOURS_STALLED) return "hot";
+  return messageCount < MIN_MESSAGES_FOR_REAL_ENGAGEMENT ? "cold" : "stalled";
+}
+
+/**
+ * Calcula o campo `heat` (calor da conversa, no card do CRM) a partir do
+ * histórico real de mensagens e devolve cópias novas dos leads — nunca muta
+ * os objetos originais, que vêm do cache em memória de getLeads() e poderiam
+ * acabar persistidos em disco caso outro código salve o array depois.
+ */
+export function attachLeadsHeat(leads: Lead[]): Lead[] {
+  const heatByLeadId = new Map<string, Lead["heat"]>();
+  const leadsByClient = new Map<string, Lead[]>();
+  for (const lead of leads) {
+    const group = leadsByClient.get(lead.clientId) ?? [];
+    group.push(lead);
+    leadsByClient.set(lead.clientId, group);
+  }
+  for (const [clientId, clientLeads] of leadsByClient) {
+    const conversations = getAllConversationsByClientId(clientId);
+    const byPhone = new Map(conversations.map((c) => [normalizePhone(c.phone), c]));
+    for (const lead of clientLeads) {
+      const conv = byPhone.get(normalizePhone(lead.realPhone || lead.phone));
+      if (conv) heatByLeadId.set(lead.id, computeHeat(conv.messageCount, conv.lastActivity));
+    }
+  }
+  return leads.map((lead) => heatByLeadId.has(lead.id) ? { ...lead, heat: heatByLeadId.get(lead.id) } : lead);
 }
 
 export function getLeadById(id: string): Lead | undefined {
@@ -183,7 +221,7 @@ export function deleteLead(id: string): boolean {
  * 3. Migração do 9º dígito: número com 10 dígitos onde o 3º dígito é 6-9
  *    (celular em formato antigo) recebe o 9 após o DDD → 11 dígitos
  */
-function normalizePhone(raw: string): string {
+export function normalizePhone(raw: string): string {
   let d = raw.replace(/\D/g, "");
   // Remove código do país Brasil
   if (d.startsWith("55") && d.length >= 12) d = d.slice(2);

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getLeads } from "@/lib/leads";
+import { getLeads, attachLeadsHeat } from "@/lib/leads";
 import { getFunnels, createFunnel, updateFunnel } from "@/lib/funnels";
 import { getClientById } from "@/lib/clients";
 import { getEmployeeById, employeeCanAccessFunnel } from "@/lib/employees";
@@ -33,7 +33,7 @@ export default async function ClienteCrmPage() {
   }
 
   const funnelIds = new Set(allFunnels.map((f) => f.id));
-  const allLeads = getLeads(clientId).filter((l) => funnelIds.has(l.funnelId));
+  const allLeads = attachLeadsHeat(getLeads(clientId).filter((l) => funnelIds.has(l.funnelId)));
 
   // Employees can't delete leads
   const canDeleteLeads =

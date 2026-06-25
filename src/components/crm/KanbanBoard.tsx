@@ -14,6 +14,19 @@ const SCORE_COLOR = (s: number) =>
   s >= 5 ? "text-yellow-700 bg-yellow-100" :
            "text-red-700 bg-red-100";
 
+/** Calor da conversa: frio (sem continuidade), parada (engajou e silenciou) ou fluindo (ativa agora). */
+const HEAT_STYLE: Record<NonNullable<Lead["heat"]>, { color: string; label: string }> = {
+  cold: { color: "bg-slate-400", label: "🔵 Frio — conversa iniciada, sem continuidade" },
+  stalled: { color: "bg-amber-500", label: "🟡 Parada — teve troca de mensagens, mas está em silêncio. Hora de agir!" },
+  hot: { color: "bg-emerald-500", label: "🟢 Fluindo — conversa ativa agora" },
+};
+
+function HeatDot({ heat }: { heat?: Lead["heat"] }) {
+  if (!heat) return null;
+  const s = HEAT_STYLE[heat];
+  return <span className={clsx("h-2 w-2 rounded-full shrink-0", s.color)} title={s.label} />;
+}
+
 /** Ícone de plataforma/origem — Meta, Google, TikTok, LinkedIn, WhatsApp, Formulário, Manual */
 function PlatformIcon({ lead }: { lead: Lead }) {
   // Prioridade: adPlatform/utmSource (via getLeadPlatform) → source
@@ -1422,7 +1435,10 @@ export function KanbanBoard({
                       </div>
 
                       <div className="flex items-start justify-between gap-1 mb-1">
-                        <p className="font-semibold text-slate-800 text-sm leading-tight line-clamp-1">{lead.name}</p>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="font-semibold text-slate-800 text-sm leading-tight line-clamp-1">{lead.name}</p>
+                          <HeatDot heat={lead.heat} />
+                        </div>
                         <div className="flex items-center gap-1 shrink-0">
                           {lead.aiPaused && (
                             <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 flex items-center gap-0.5" title="IA pausada — especialista ativo">

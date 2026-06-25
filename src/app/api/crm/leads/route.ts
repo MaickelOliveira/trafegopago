@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getLeads, upsertLeadByPhone, type LeadSource } from "@/lib/leads";
+import { getLeads, attachLeadsHeat, upsertLeadByPhone, type LeadSource } from "@/lib/leads";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
 
 export async function GET(req: NextRequest) {
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     ? session.clientId
     : (req.nextUrl.searchParams.get("clientId") ?? undefined);
   const leads = getLeads(clientId);
-  return NextResponse.json(leads);
+  return NextResponse.json(attachLeadsHeat(leads));
 }
 
 export async function POST(req: NextRequest) {

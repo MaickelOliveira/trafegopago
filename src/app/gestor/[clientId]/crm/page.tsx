@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getClients, getClientById } from "@/lib/clients";
-import { getLeads } from "@/lib/leads";
+import { getLeads, attachLeadsHeat } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
 import { CrmClient } from "@/app/gestor/crm/CrmClient";
 
@@ -23,7 +23,7 @@ export default async function ClientCrmPage({ params }: { params: Promise<{ clie
     kanbanAgentEnabled: client.kanbanAgentEnabled !== false,
   }];
 
-  const leads = getLeads(clientId);
+  const leads = attachLeadsHeat(getLeads(clientId));
   const funnels = getFunnels().filter((f) => f.clientId === clientId);
 
   return (

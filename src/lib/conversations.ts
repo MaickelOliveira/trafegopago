@@ -114,6 +114,7 @@ export function getAllConversationsByClientId(clientId: string): Array<{
   lastActivity: number;
   unread: boolean;
   aiPaused: boolean;
+  messageCount: number;
 }> {
   const all = load();
   const result = [];
@@ -147,6 +148,7 @@ export function getAllConversationsByClientId(clientId: string): Array<{
       lastActivity: conv.lastActivity,
       unread: conv.unread ?? false,
       aiPaused: conv.aiPaused ?? false,
+      messageCount: conv.messages.length,
       _isolated: isIsolated,
     });
   }

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getClients } from "@/lib/clients";
-import { getLeads } from "@/lib/leads";
+import { getLeads, attachLeadsHeat } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
 import { CrmClient } from "./CrmClient";
 
@@ -17,7 +17,7 @@ export default async function CrmPage() {
     pixelId: c.pixelId,
     kanbanAgentEnabled: c.kanbanAgentEnabled !== false, // default true
   }));
-  const leads   = getLeads();
+  const leads   = attachLeadsHeat(getLeads());
   const funnels = getFunnels();
 
   return (
