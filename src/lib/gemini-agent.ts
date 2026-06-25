@@ -413,7 +413,7 @@ export async function runGeminiAgent(
 
   // Mescla mensagens consecutivas do mesmo papel (pode ocorrer com batching)
   const mergedHistory: { role: "user" | "model"; parts: { text: string }[] }[] = [];
-  for (const m of historyWithoutCurrent.slice(-12)) {
+  for (const m of historyWithoutCurrent.slice(-40)) {
     const role = m.role === "user" ? "user" : "model";
     if (mergedHistory.length > 0 && mergedHistory[mergedHistory.length - 1].role === role) {
       mergedHistory[mergedHistory.length - 1].parts[0].text += "\n" + m.content;
@@ -427,7 +427,7 @@ export async function runGeminiAgent(
     mergedHistory.pop();
   }
 
-  const rawHistory = mergedHistory.slice(-6);
+  const rawHistory = mergedHistory.slice(-24);
   const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
   // Garante que o histórico começa com 'user' — Gemini rejeita se começar com 'model'
   // firstUserIdx === -1: nenhum user encontrado → histórico vazio
