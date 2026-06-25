@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getQrCode, logoutSession, shouldRestartWppSession, startSession } from "@/lib/wppconnect-api";
+import { checkConnectionStatus, getQrCode, logoutSession, shouldRestartWppSession, startSession } from "@/lib/wppconnect-api";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 
 export async function POST(
@@ -19,16 +19,28 @@ export async function POST(
   const body = await req.json() as { force?: boolean; webhookUrl?: string; previousQr?: string | null };
   const { sessionName, sessionToken } = wppSession;
 
-  // Sempre limpa a sessão (logout-session + close-session) antes de reconectar —
-  // tanto "Trocar número" (force=true) quanto reconectar uma sessão desconectada
-  // precisam disso: sem o logout-session, uma sessão que já esteve autenticada e
-  // desconectou (ex: logout no celular) fica "zumbi" — o WPPConnect tenta
-  // restaurar os tokens salvos em vez de abrir uma tela de QR limpa, e trava num
-  // loop sem nunca gerar QR (só fica emitindo eventos de presença). Em sessão
-  // nunca autenticada o logout-session é um no-op inofensivo.
-  await logoutSession(sessionName, sessionToken).catch(() => {});
+  // Limpa a sessão (logout-session + close-session) antes de reconectar — mas só
+  // quando ela está parada/zumbi (DISCONNECTED) ou em "Trocar número" explícito.
+  // Sem isso, uma sessão que já esteve autenticada e desconectou (ex: logout no
+  // celular) fica "zumbi": o WPPConnect tenta restaurar os tokens salvos em vez
+  // de abrir uma tela de QR limpa, e trava só emitindo eventos de presença.
+  //
+  // IMPORTANTE: esta rota também é chamada de novo pelo polling do front quando o
+  // QR demora a aparecer (retry após 65s) — se a sessão já tiver conectado (ou
+  // estiver no meio do pareamento) bem nessa hora, um logout aqui DERRUBARIA uma
+  // conexão que tinha acabado de dar certo. Por isso só limpa quando o status
+  // atual é DISCONNECTED/UNKNOWN (parada de verdade) ou quando force=true.
+  const currentStatus = await checkConnectionStatus(sessionName, sessionToken);
+  const isIdle = currentStatus === "DISCONNECTED" || currentStatus === "UNKNOWN";
+  if (body.force || isIdle) {
+    await logoutSession(sessionName, sessionToken).catch(() => {});
+  }
 
-  const restarted = !!body.webhookUrl && shouldRestartWppSession(sessionName, body.force);
+  // Mesmo cuidado pro restart em si: startSession() fecha o navegador por dentro
+  // (closeSession) antes de reabrir — só faz sentido reiniciar quando a sessão
+  // está parada/zumbi ou em troca explícita, nunca enquanto já está conectando
+  // (PAIRING/OPENING) ou conectada.
+  const restarted = !!body.webhookUrl && (body.force || isIdle) && shouldRestartWppSession(sessionName, body.force);
 
   if (restarted) {
     await startSession(sessionName, sessionToken, body.webhookUrl as string).catch(() => {});
