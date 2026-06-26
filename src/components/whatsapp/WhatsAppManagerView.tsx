@@ -1105,11 +1105,14 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     return () => clearInterval(t);
   }, [fetchSessions]);
 
-  // Auto-registra webhooks no WPPConnect ao montar — garante que o webhook
-  // não se perca após restart do servidor WPPConnect (que armazena em memória)
-  useEffect(() => {
-    fetch("/api/whatsapp/wppconnect-manager/refresh-webhooks", { method: "POST" }).catch(() => {});
-  }, []);
+  // ⚠️ Removido o auto-registro de webhooks ao montar este componente. Ele
+  // chamava refresh-webhooks, que por baixo dos panos roda startSession()
+  // (fecha + reabre o navegador) em TODAS as sessões já conectadas — toda
+  // vez que esta tela era aberta/re-renderizada. Como o close-session do
+  // servidor é instável (não fecha de forma limpa), isso desconectava
+  // sessões saudáveis sem ninguém ter tocado nelas. Use o botão manual
+  // "Atualizar Webhooks" só quando o servidor WPPConnect tiver reiniciado
+  // de verdade e perdido os webhooks em memória.
 
   async function handleRefreshWebhooks() {
     setRefreshingWebhooks(true);
