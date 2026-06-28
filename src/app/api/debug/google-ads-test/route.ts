@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getGoogleAdsCreds } from "@/lib/google-ads-creds";
-import { getCampaigns, getAdGroups, getAds, getAccountInsightsRange, getDailyInsights } from "@/lib/google-ads-api";
+import { getCampaigns, getAdGroups, getAds, getAccountInsightsRange, getDailyInsights, formatGoogleAdsError } from "@/lib/google-ads-api";
 import { datePresetToRange } from "@/lib/date-presets";
 
 // Rota TEMPORÁRIA pra validar as queries GAQL contra uma conta real antes de
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({ error: "what inválido (campaigns|adgroups|ads|insights|daily)" }, { status: 400 });
   } catch (e) {
-    console.error("[debug/google-ads-test] Error:", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    console.error("[debug/google-ads-test] Error:", JSON.stringify(e, Object.getOwnPropertyNames(e as object)));
+    return NextResponse.json({ error: formatGoogleAdsError(e) }, { status: 500 });
   }
 }

@@ -12,6 +12,28 @@ function digits(s: string): string {
   return s.replace(/\D/g, "");
 }
 
+type RawGoogleAdsError = { message?: string; error_code?: unknown };
+type RawGoogleAdsFailure = { errors?: RawGoogleAdsError[] };
+
+/** Extrai uma mensagem legível de erros da lib google-ads-api. Falhas
+ *  específicas da API (token/permissão/conta) vêm como GoogleAdsFailure
+ *  (objeto com `errors[].message`), não como Error comum — String(e) nesses
+ *  casos só devolve "[object Object]", por isso esse helper é necessário. */
+export function formatGoogleAdsError(e: unknown): string {
+  const failure = e as RawGoogleAdsFailure;
+  if (failure?.errors?.length) {
+    return failure.errors
+      .map((err) => err.message || JSON.stringify(err.error_code))
+      .join("; ");
+  }
+  if (e instanceof Error && e.message) return e.message;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
 function buildCustomer(creds: GoogleAdsCreds, customerId: string) {
   const client = new GoogleAdsApi({
     client_id: creds.clientId,

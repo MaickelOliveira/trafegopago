@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getGoogleAdsCreds } from "@/lib/google-ads-creds";
-import { updateCampaignBudget } from "@/lib/google-ads-api";
+import { updateCampaignBudget, formatGoogleAdsError } from "@/lib/google-ads-api";
 
 type Params = { params: Promise<{ objectId: string }> };
 
@@ -31,6 +31,6 @@ export async function POST(req: NextRequest, { params }: Params) {
     await updateCampaignBudget(creds, accountId, objectId, budget);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 400 });
+    return NextResponse.json({ error: formatGoogleAdsError(e) }, { status: 400 });
   }
 }

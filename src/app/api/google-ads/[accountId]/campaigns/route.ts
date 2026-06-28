@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClientById } from "@/lib/clients";
 import { getGoogleAdsCreds } from "@/lib/google-ads-creds";
-import { getCampaigns } from "@/lib/google-ads-api";
+import { getCampaigns, formatGoogleAdsError } from "@/lib/google-ads-api";
 import { datePresetToRange } from "@/lib/date-presets";
 
 type Params = { params: Promise<{ accountId: string }> };
@@ -30,6 +30,6 @@ export async function GET(req: NextRequest, { params }: Params) {
     const campaigns = await getCampaigns(creds, accountId, since, until);
     return NextResponse.json(campaigns);
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: formatGoogleAdsError(e) }, { status: 500 });
   }
 }
