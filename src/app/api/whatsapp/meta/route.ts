@@ -13,6 +13,7 @@ import { sendTemplate } from "@/lib/waba-templates";
 import { generateSummaryText } from "@/lib/summary-generator";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 import { transcribeMedia, type MediaKind } from "@/lib/media-transcribe";
+import { getAdInfoById } from "@/lib/meta-api";
 import type { GeminiAction } from "@/lib/gemini-agent";
 
 // GET — verificação do webhook Meta
@@ -134,12 +135,48 @@ export async function POST(req: NextRequest) {
         const existingLead = getLeadByPhone(cid, phone, effectiveFunnelId);
         const isNew = !existingLead;
 
+        // ── CTWa (Click-to-WhatsApp): a API oficial manda o referral do
+        // anúncio direto em msg.referral, num formato documentado e estável —
+        // sem precisar dos truques de regex/redirect que os outros canais
+        // (WPPConnect/UazAPI) usam pra extrair isso de campos não-oficiais.
+        const referral = msg.referral as Record<string, unknown> | undefined;
+        const ctwaAdId = (referral?.ad_id as string | undefined) || undefined;
+        const ctwaHeadline = (referral?.headline as string | undefined) || undefined;
+        const ctwaSourceUrl = (referral?.source_url as string | undefined) || undefined;
+
+        let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
+        const shouldLookupAd = !!ctwaAdId && !!metaToken && (!existingLead?.adId || existingLead.adId !== ctwaAdId);
+        if (shouldLookupAd) {
+          adInfo = await getAdInfoById(ctwaAdId!, metaToken!).catch(() => null);
+        }
+
+        const adFields = adInfo
+          ? {
+              adPlatform: "meta" as const,
+              adId: adInfo.adId,
+              adName: adInfo.adName,
+              adSetId: adInfo.adSetId,
+              adSetName: adInfo.adSetName,
+              campaignId: adInfo.campaignId,
+              campaignName: adInfo.campaignName,
+              adSourceUrl: ctwaSourceUrl ?? null,
+            }
+          : ctwaAdId || ctwaHeadline || ctwaSourceUrl
+          ? {
+              adPlatform: "meta" as const,
+              adId: ctwaAdId ?? null,
+              campaignName: ctwaHeadline ?? null,
+              adSourceUrl: ctwaSourceUrl ?? null,
+            }
+          : {};
+
         upsertLeadByPhone(cid, phone, {
           clientId: cid,
           funnelId: effectiveFunnelId,
           source: "whatsapp",
           ...(isNew || existingLead?.name === phone ? { name: pushName } : {}),
           ...(isNew ? { status: entradaColumnId } : {}),
+          ...adFields,
         });
 
         // ── Histórico ────────────────────────────────────────────────────
