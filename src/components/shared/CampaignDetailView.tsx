@@ -8,8 +8,90 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics";
 import { getPrimaryResult, getFunnelSteps, type FunnelType } from "@/lib/result";
 import { StatusToggle } from "@/components/shared/StatusToggle";
 import type { MetaAdSet, MetaAd } from "@/lib/meta-api";
+import type { GoogleAdGroup, GoogleAd } from "@/lib/google-ads-api";
 
 type Client = { id: string; name: string; color: string; cplTarget: number; funnelType?: FunnelType };
+
+// Conjunto de anúncios exibido — campos da Meta (ad groups do Google mapeados pro mesmo formato).
+type DisplayAdSet = MetaAdSet;
+// Anúncio exibido — campos da Meta. Anúncios do Google (texto/Search) só preenchem
+// title/body/finalUrl no creative; sem imagem/vídeo (fora de escopo na v1).
+type DisplayAd = MetaAd;
+
+function mapGoogleAdSet(g: GoogleAdGroup): DisplayAdSet {
+  return {
+    id: g.id,
+    name: g.name,
+    status: g.status,
+    optimizationGoal: g.type,
+    dailyBudget: null,
+    insights: g.insights ? {
+      spend: g.insights.spend,
+      impressions: g.insights.impressions,
+      clicks: g.insights.clicks,
+      ctr: g.insights.ctr,
+      cpc: g.insights.cpc,
+      cpm: g.insights.cpm,
+      reach: 0,
+      frequency: 0,
+      conversations: 0,
+      costPerConversation: null,
+      leads: 0,
+      costPerLead: null,
+      purchases: 0,
+      costPerPurchase: null,
+      revenue: 0,
+      roas: null,
+      addToCart: 0,
+      checkouts: 0,
+      linkClicks: 0,
+      landingPageViews: 0,
+      videoViews: 0,
+    } : null,
+  };
+}
+
+function mapGoogleAd(g: GoogleAd): DisplayAd {
+  return {
+    id: g.id,
+    name: g.name ?? g.id,
+    status: g.status,
+    creative: g.creative ? {
+      id: g.id,
+      name: g.name ?? g.id,
+      title: g.creative.headlines[0] ?? null,
+      body: g.creative.descriptions[0] ?? null,
+      callToAction: null,
+      thumbnailUrl: null,
+      imageUrl: null,
+      videoId: null,
+      igMediaId: null,
+    } : null,
+    insights: g.insights ? {
+      spend: g.insights.spend,
+      impressions: g.insights.impressions,
+      clicks: g.insights.clicks,
+      ctr: g.insights.ctr,
+      cpc: g.insights.cpc,
+      cpm: g.insights.cpm,
+      reach: 0,
+      frequency: 0,
+      conversations: 0,
+      costPerConversation: null,
+      leads: 0,
+      costPerLead: null,
+      purchases: 0,
+      costPerPurchase: null,
+      revenue: 0,
+      roas: null,
+      addToCart: 0,
+      checkouts: 0,
+      linkClicks: 0,
+      landingPageViews: 0,
+      videoViews: 0,
+    } : null,
+  };
+}
 
 const DATE_PRESETS = [
   { label: "Hoje",        value: "today" },
@@ -32,29 +114,34 @@ export function CampaignDetailView({
   accountId,
   campaignId,
   role,
+  platform = "meta",
 }: {
   client: Client;
   accountId: string;
   campaignId: string;
   role: "manager" | "client";
+  platform?: "meta" | "google";
 }) {
   const backPath = role === "manager" ? `/gestor/${client.id}` : `/cliente`;
+  const isGoogle = platform === "google";
+  const apiBase = isGoogle ? "/api/google-ads" : "/api/meta";
   const [datePreset, setDatePreset] = useState("last_7d");
-  const [adsets, setAdsets] = useState<MetaAdSet[]>([]);
+  const [adsets, setAdsets] = useState<DisplayAdSet[]>([]);
   const [expandedAdset, setExpandedAdset] = useState<string | null>(null);
-  const [adsMap, setAdsMap] = useState<Record<string, MetaAd[]>>({});
+  const [adsMap, setAdsMap] = useState<Record<string, DisplayAd[]>>({});
   const [loading, setLoading] = useState(false);
   const [loadingAds, setLoadingAds] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<MetaAd | null>(null);
+  const [lightbox, setLightbox] = useState<DisplayAd | null>(null);
   const [budgetModal, setBudgetModal] = useState<{ id: string; name: string; current: number | null; type: "daily" | "lifetime" } | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/meta/${accountId}/campaigns/${campaignId}/adsets?datePreset=${datePreset}`)
+    fetch(`${apiBase}/${accountId}/campaigns/${campaignId}/adsets?datePreset=${datePreset}`)
       .then((r) => r.json())
       .then((data) => {
-        const list: MetaAdSet[] = Array.isArray(data) ? data : [];
-        const score = (a: MetaAdSet) => {
+        const raw = Array.isArray(data) ? data : [];
+        const list: DisplayAdSet[] = isGoogle ? (raw as GoogleAdGroup[]).map(mapGoogleAdSet) : raw;
+        const score = (a: DisplayAdSet) => {
           if (!a.insights || a.insights.spend === 0) return Infinity;
           if (a.insights.conversations > 0 && a.insights.costPerConversation !== null)
             return a.insights.costPerConversation;
@@ -69,10 +156,10 @@ export function CampaignDetailView({
         }));
       })
       .finally(() => setLoading(false));
-  }, [accountId, campaignId, datePreset]);
+  }, [accountId, campaignId, datePreset, apiBase, isGoogle]);
 
-  function sortAds(list: MetaAd[]) {
-    const score = (ad: MetaAd) => {
+  function sortAds(list: DisplayAd[]) {
+    const score = (ad: DisplayAd) => {
       if (!ad.insights || ad.insights.spend === 0) return Infinity;
       if (ad.insights.conversations > 0 && ad.insights.costPerConversation !== null)
         return ad.insights.costPerConversation;
@@ -96,12 +183,14 @@ export function CampaignDetailView({
     if (!adsMap[adsetId]) {
       setLoadingAds(adsetId);
       const res = await fetch(
-        `/api/meta/${accountId}/campaigns/${campaignId}/adsets/${adsetId}/ads?datePreset=${datePreset}`
+        `${apiBase}/${accountId}/campaigns/${campaignId}/adsets/${adsetId}/ads?datePreset=${datePreset}`
       );
       const data = await res.json();
+      const raw = Array.isArray(data) ? data : [];
+      const list: DisplayAd[] = isGoogle ? (raw as GoogleAd[]).map(mapGoogleAd) : raw;
       setAdsMap((prev) => ({
         ...prev,
-        [adsetId]: sortAds(Array.isArray(data) ? data : []),
+        [adsetId]: sortAds(list),
       }));
       setLoadingAds(null);
     }
@@ -159,6 +248,8 @@ export function CampaignDetailView({
                       <StatusToggle
                         id={adset.id}
                         status={adset.status}
+                        endpoint={isGoogle ? "/api/google-ads/status" : "/api/meta/status"}
+                        extraBody={isGoogle ? { accountId, entityType: "ad_group" } : undefined}
                         onToggled={(s) => setAdsets((prev) =>
                           prev.map((a) => a.id === adset.id ? { ...a, status: s } : a)
                         )}
@@ -207,7 +298,7 @@ export function CampaignDetailView({
                       );
                     })()}
                   </button>
-                  {role === "manager" && (
+                  {role === "manager" && !isGoogle && (
                     <button
                       onClick={() => setBudgetModal({ id: adset.id, name: adset.name, current: adset.dailyBudget, type: "daily" })}
                       title="Editar orçamento"
@@ -233,6 +324,8 @@ export function CampaignDetailView({
                             funnelType={client.funnelType ?? "leads"}
                             onOpen={setLightbox}
                             role={role}
+                            statusEndpoint={isGoogle ? "/api/google-ads/status" : "/api/meta/status"}
+                            statusExtraBody={isGoogle ? { accountId, entityType: "ad", adGroupId: adset.id } : undefined}
                             onStatusChange={(id, s) => setAdsMap((prev) => ({
                               ...prev,
                               [adset.id]: (prev[adset.id] || []).map((a) => a.id === id ? { ...a, status: s } : a),
@@ -283,10 +376,12 @@ export function CampaignDetailView({
   );
 }
 
-function AdCard({ ad, cplTarget, funnelType = "leads", onOpen, role, onStatusChange }: {
-  ad: MetaAd; cplTarget: number; funnelType?: FunnelType; onOpen: (ad: MetaAd) => void;
+function AdCard({ ad, cplTarget, funnelType = "leads", onOpen, role, onStatusChange, statusEndpoint, statusExtraBody }: {
+  ad: DisplayAd; cplTarget: number; funnelType?: FunnelType; onOpen: (ad: DisplayAd) => void;
   role: "manager" | "client";
   onStatusChange: (id: string, status: "ACTIVE" | "PAUSED") => void;
+  statusEndpoint?: string;
+  statusExtraBody?: Record<string, string>;
 }) {
   const result = getPrimaryResult(ad.insights ?? null, funnelType);
   const steps = getFunnelSteps(ad.insights ?? null, funnelType, cplTarget);
@@ -320,6 +415,8 @@ function AdCard({ ad, cplTarget, funnelType = "leads", onOpen, role, onStatusCha
           <StatusToggle
             id={ad.id}
             status={ad.status}
+            endpoint={statusEndpoint}
+            extraBody={statusExtraBody}
             onToggled={(s) => onStatusChange(ad.id, s)}
           />
         )}
@@ -441,7 +538,7 @@ function Metric({
   );
 }
 
-function AdLightbox({ ad, cplTarget, onClose }: { ad: MetaAd; cplTarget: number; onClose: () => void }) {
+function AdLightbox({ ad, cplTarget, onClose }: { ad: DisplayAd; cplTarget: number; onClose: () => void }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loadingVideo, setLoadingVideo] = useState(false);
   const isVideo = !!ad.creative?.videoId;

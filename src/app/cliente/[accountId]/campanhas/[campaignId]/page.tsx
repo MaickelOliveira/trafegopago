@@ -13,8 +13,8 @@ export default async function ClienteCampaignPage({ params }: Props) {
   const client = getClientById(session.clientId!);
   if (!client) redirect("/login");
 
-  const owns = client.adAccounts.some((a) => a.id === accountId);
-  if (!owns) notFound();
+  const account = client.adAccounts.find((a) => a.id === accountId);
+  if (!account) notFound();
 
   const { passwordHash: _, ...safe } = client;
 
@@ -24,6 +24,7 @@ export default async function ClienteCampaignPage({ params }: Props) {
       accountId={accountId}
       campaignId={campaignId}
       role="client"
+      platform={account.platform}
     />
   );
 }

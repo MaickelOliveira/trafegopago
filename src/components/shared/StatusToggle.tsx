@@ -8,9 +8,13 @@ interface StatusToggleProps {
   status: string;
   onToggled?: (newStatus: "ACTIVE" | "PAUSED") => void;
   disabled?: boolean;
+  /** Base do endpoint de status (sem o /id). Default: Meta. */
+  endpoint?: string;
+  /** Campos extras enviados no body do POST (ex: accountId, exigido pelo Google Ads). */
+  extraBody?: Record<string, string>;
 }
 
-export function StatusToggle({ id, status, onToggled, disabled }: StatusToggleProps) {
+export function StatusToggle({ id, status, onToggled, disabled, endpoint = "/api/meta/status", extraBody }: StatusToggleProps) {
   const isActive = status === "ACTIVE";
   const [loading, setLoading] = useState(false);
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
@@ -26,10 +30,10 @@ export function StatusToggle({ id, status, onToggled, disabled }: StatusTogglePr
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/meta/status/${id}`, {
+      const res = await fetch(`${endpoint}/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next }),
+        body: JSON.stringify({ status: next, ...extraBody }),
       });
       const data = await res.json();
       if (!res.ok) {

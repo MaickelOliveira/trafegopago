@@ -41,6 +41,9 @@ type AppConfig = {
   uazapiWebhookForward: string;
   googleClientId: string;
   googleClientSecret: string;
+  googleAdsDeveloperToken: string;
+  googleAdsLoginCustomerId: string;
+  googleAdsConnected: boolean;
   masterPhone: string;
   masterConnectionId: string;
   // Usados apenas quando conexão master é Meta (API Oficial)
@@ -54,6 +57,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
   const router = useRouter();
   const searchParams = useSearchParams();
   const [metaOAuthMsg, setMetaOAuthMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [googleAdsOAuthMsg, setGoogleAdsOAuthMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [clients, setClients] = useState(initial);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
@@ -79,6 +83,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
     anthropicApiKey: "", uazapiServer: "",
     uazapiToken: "", uazapiAdminToken: "", appBaseUrl: "", uazapiWebhookForward: "",
     googleClientId: "", googleClientSecret: "",
+    googleAdsDeveloperToken: "", googleAdsLoginCustomerId: "", googleAdsConnected: false,
     masterPhone: "", masterConnectionId: "",
     masterMetaTemplateBriefing: "", masterMetaLanguage: "pt_BR",
   });
@@ -100,6 +105,18 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
       setMetaOAuthMsg({ type: "error", text: "❌ " + (msgs[err] ?? "Erro ao conectar conta Meta.") });
       router.replace("/gestor/configuracoes");
     }
+
+    const googleAds = searchParams.get("googleAds");
+    if (googleAds === "connected") {
+      setGoogleAdsOAuthMsg({ type: "success", text: "✅ Google Ads conectado com sucesso!" });
+      openGlobalConfig();
+      router.replace("/gestor/configuracoes");
+    } else if (googleAds === "error") {
+      setGoogleAdsOAuthMsg({ type: "error", text: "❌ Erro ao conectar Google Ads. Confira o Client ID/Secret." });
+      openGlobalConfig();
+      router.replace("/gestor/configuracoes");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, router]);
   const [wabaTemplates, setWabaTemplates] = useState<{ name: string; status: string }[]>([]);
   const [loadingWabaTemplates, setLoadingWabaTemplates] = useState(false);
@@ -309,6 +326,15 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
         )}>
           <span className="flex-1">{metaOAuthMsg.text}</span>
           <button onClick={() => setMetaOAuthMsg(null)} className="text-slate-400 hover:text-slate-600 shrink-0">✕</button>
+        </div>
+      )}
+      {googleAdsOAuthMsg && (
+        <div className={clsx(
+          "mb-4 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm",
+          googleAdsOAuthMsg.type === "success" ? "border-green-200 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-800"
+        )}>
+          <span className="flex-1">{googleAdsOAuthMsg.text}</span>
+          <button onClick={() => setGoogleAdsOAuthMsg(null)} className="text-slate-400 hover:text-slate-600 shrink-0">✕</button>
         </div>
       )}
 
@@ -668,6 +694,58 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                     ✓ Credenciais salvas. Adicione como URI de redirecionamento autorizado no Console Google:<br />
                     <span className="font-mono break-all">{globalConfig.appBaseUrl || "https://sua-url"}/api/agent/google-auth/callback</span>
                   </p>
+                )}
+              </div>
+
+              {/* Google Ads (OAuth) */}
+              <div className="rounded-xl border border-red-100 bg-red-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">🔴 Google Ads (OAuth)</p>
+                <p className="text-xs text-slate-500">
+                  Usa o mesmo Client ID/Secret do Google Calendar acima — só adicione o escopo do Google Ads
+                  ao consentimento OAuth do mesmo projeto no Cloud Console. Gere o Developer Token no{" "}
+                  <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noreferrer" className="underline text-red-600">Centro de API do Google Ads</a>.
+                  Esta é uma conexão única, usada para todos os clientes com conta Google Ads.
+                </p>
+                <Field
+                  label="Developer Token"
+                  value={globalConfig.googleAdsDeveloperToken}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, googleAdsDeveloperToken: v }))}
+                  placeholder="AbCdEfGhIjKlMnOp..."
+                />
+                <Field
+                  label="MCC / Login Customer ID (opcional)"
+                  value={globalConfig.googleAdsLoginCustomerId}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, googleAdsLoginCustomerId: v.replace(/\D/g, "") }))}
+                  placeholder="1234567890"
+                />
+                {globalConfig.googleClientId && globalConfig.googleClientSecret && (
+                  <p className="text-xs text-slate-500">
+                    URI de redirecionamento (adicione também no Console Google, além da do Calendar):<br />
+                    <span className="font-mono break-all">{globalConfig.appBaseUrl || "https://sua-url"}/api/agent/google-ads-auth/callback</span>
+                  </p>
+                )}
+                {globalConfig.googleAdsConnected ? (
+                  <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    ✓ Conta Google Ads conectada.
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Conecte abaixo para liberar os dados de campanhas Google Ads.
+                  </p>
+                )}
+                {globalConfig.googleClientId && globalConfig.googleClientSecret && globalConfig.googleAdsDeveloperToken ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await saveGlobalConfig();
+                      window.location.href = "/api/agent/google-ads-auth";
+                    }}
+                    className="block w-full rounded-lg bg-red-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-red-700 transition"
+                  >
+                    🔗 {globalConfig.googleAdsConnected ? "Reconectar" : "Conectar"} Google Ads
+                  </button>
+                ) : (
+                  <p className="text-xs text-red-500">Preencha Client ID/Secret (acima) e Developer Token para habilitar.</p>
                 )}
               </div>
 

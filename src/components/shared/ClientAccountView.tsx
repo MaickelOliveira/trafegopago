@@ -9,9 +9,53 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics";
 import { getPrimaryResult, getFunnelSteps, type FunnelType } from "@/lib/result";
 import { StatusToggle } from "@/components/shared/StatusToggle";
 import type { MetaCampaign } from "@/lib/meta-api";
+import type { GoogleCampaign } from "@/lib/google-ads-api";
 
 type AdAccount = { id: string; name: string; platform: string };
 type Client = { id: string; name: string; color: string; logoUrl?: string; cplTarget: number; funnelType?: FunnelType; adAccounts: AdAccount[] };
+
+// Campanha exibida na tabela — campos da Meta + budgetResourceId (só Google,
+// onde orçamento é um recurso separado da campanha).
+type DisplayCampaign = MetaCampaign & { budgetResourceId?: string | null };
+
+// Mapeia GoogleCampaign pro mesmo formato que a tabela já consome. Os campos
+// de funil específicos da Meta (leads/purchases/conversations/revenue) ficam
+// zerados de propósito — v1 não tenta forçar dados do Google nesse funil
+// (ver result.ts), então a coluna de Funil mostra "—" pra campanhas Google.
+function mapGoogleCampaign(g: GoogleCampaign): DisplayCampaign {
+  return {
+    id: g.id,
+    name: g.name,
+    status: g.status,
+    objective: g.channelType,
+    dailyBudget: g.dailyBudget,
+    lifetimeBudget: null,
+    budgetResourceId: g.budgetResourceId,
+    insights: g.insights ? {
+      spend: g.insights.spend,
+      impressions: g.insights.impressions,
+      clicks: g.insights.clicks,
+      ctr: g.insights.ctr,
+      cpc: g.insights.cpc,
+      cpm: g.insights.cpm,
+      reach: 0,
+      frequency: 0,
+      conversations: 0,
+      costPerConversation: null,
+      leads: 0,
+      costPerLead: null,
+      purchases: 0,
+      costPerPurchase: null,
+      revenue: 0,
+      roas: null,
+      addToCart: 0,
+      checkouts: 0,
+      linkClicks: 0,
+      landingPageViews: 0,
+      videoViews: 0,
+    } : null,
+  };
+}
 
 const DATE_PRESETS = [
   { label: "Hoje",        value: "today" },
@@ -44,11 +88,11 @@ export function ClientAccountView({
 }) {
   const [selectedAccount, setSelectedAccount] = useState(client.adAccounts[0]);
   const [datePreset, setDatePreset] = useState("last_7d");
-  const [campaigns, setCampaigns] = useState<MetaCampaign[]>([]);
+  const [campaigns, setCampaigns] = useState<DisplayCampaign[]>([]);
   const [dailyData, setDailyData] = useState<{ date: string; spend: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "PAUSED">("ALL");
-  const [budgetModal, setBudgetModal] = useState<{ id: string; name: string; current: number | null } | null>(null);
+  const [budgetModal, setBudgetModal] = useState<{ id: string; name: string; current: number | null; platform: string; accountId: string } | null>(null);
 
   const basePath =
     role === "manager"
@@ -59,19 +103,22 @@ export function ClientAccountView({
     if (!selectedAccount) return;
     setLoading(true);
     const qs = new URLSearchParams({ datePreset });
+    const isGoogle = selectedAccount.platform === "google";
+    const base = isGoogle ? "/api/google-ads" : "/api/meta";
 
     Promise.all([
-      fetch(`/api/meta/${selectedAccount.id}/campaigns?${qs}`).then((r) => r.json()),
-      fetchDailyData(selectedAccount.id, datePreset),
+      fetch(`${base}/${selectedAccount.id}/campaigns?${qs}`).then((r) => r.json()),
+      fetchDailyData(selectedAccount.id, datePreset, isGoogle),
     ])
       .then(([camps, daily]) => {
-        setCampaigns(Array.isArray(camps) ? camps : []);
+        const list = Array.isArray(camps) ? camps : [];
+        setCampaigns(isGoogle ? (list as GoogleCampaign[]).map(mapGoogleCampaign) : list);
         setDailyData(daily);
       })
       .finally(() => setLoading(false));
   }, [selectedAccount, datePreset]);
 
-  async function fetchDailyData(accountId: string, preset: string) {
+  async function fetchDailyData(accountId: string, preset: string, isGoogle: boolean) {
     const today = new Date();
     const fmt = (d: Date) => d.toISOString().split("T")[0];
     let since = "";
@@ -82,11 +129,12 @@ export function ClientAccountView({
     else if (preset === "last_60d") { const d = new Date(today); d.setDate(d.getDate() - 60); since = fmt(d); }
     else return [];
 
-    const res = await fetch(`/api/meta/${accountId}/insights?since=${since}&until=${until}&daily=1`);
+    const base = isGoogle ? "/api/google-ads" : "/api/meta";
+    const res = await fetch(`${base}/${accountId}/insights?since=${since}&until=${until}&daily=1`);
     return res.ok ? res.json() : [];
   }
 
-  function sortCampaigns(list: MetaCampaign[]) {
+  function sortCampaigns(list: DisplayCampaign[]) {
     const score = (c: MetaCampaign) => {
       if (!c.insights || c.insights.spend === 0) return Infinity;
       const r = getPrimaryResult(c.insights);
@@ -283,6 +331,8 @@ export function ClientAccountView({
                           <StatusToggle
                             id={c.id}
                             status={c.status}
+                            endpoint={selectedAccount?.platform === "google" ? "/api/google-ads/status" : "/api/meta/status"}
+                            extraBody={selectedAccount?.platform === "google" ? { accountId: selectedAccount.id } : undefined}
                             onToggled={(s) => setCampaigns((prev) =>
                               prev.map((x) => x.id === c.id ? { ...x, status: s } : x)
                             )}
@@ -343,7 +393,13 @@ export function ClientAccountView({
                       {role === "manager" && (
                         <td className="px-3 py-3.5">
                           <button
-                            onClick={() => setBudgetModal({ id: c.id, name: c.name, current: c.dailyBudget })}
+                            onClick={() => setBudgetModal({
+                              id: selectedAccount?.platform === "google" ? (c.budgetResourceId || c.id) : c.id,
+                              name: c.name,
+                              current: c.dailyBudget,
+                              platform: selectedAccount?.platform ?? "meta",
+                              accountId: selectedAccount?.id ?? "",
+                            })}
                             title="Editar orçamento"
                             className="rounded-lg p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
                           >
@@ -365,6 +421,8 @@ export function ClientAccountView({
           id={budgetModal.id}
           name={budgetModal.name}
           current={budgetModal.current}
+          platform={budgetModal.platform}
+          accountId={budgetModal.accountId}
           onClose={() => setBudgetModal(null)}
           onSaved={(newBudget) => {
             setCampaigns((prev) =>
@@ -379,8 +437,8 @@ export function ClientAccountView({
   );
 }
 
-function BudgetModal({ id, name, current, onClose, onSaved }: {
-  id: string; name: string; current: number | null;
+function BudgetModal({ id, name, current, platform, accountId, onClose, onSaved }: {
+  id: string; name: string; current: number | null; platform: string; accountId: string;
   onClose: () => void; onSaved: (v: number) => void;
 }) {
   const [value, setValue] = useState(current ? String(current) : "");
@@ -398,9 +456,12 @@ function BudgetModal({ id, name, current, onClose, onSaved }: {
     if (!budget || budget <= 0) { setError("Digite um valor válido"); return; }
     setSaving(true); setError("");
     try {
-      const res = await fetch(`/api/meta/budget/${id}`, {
+      const isGoogle = platform === "google";
+      const url = isGoogle ? `/api/google-ads/budget/${id}` : `/api/meta/budget/${id}`;
+      const body = isGoogle ? { budget, accountId } : { budget, type: "daily" };
+      const res = await fetch(url, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ budget, type: "daily" }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Erro ao salvar"); return; }

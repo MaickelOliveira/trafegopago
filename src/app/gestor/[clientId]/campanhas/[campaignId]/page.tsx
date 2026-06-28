@@ -11,6 +11,7 @@ export default async function GestorCampaignPage({ params }: Props) {
 
   const accountId = client.adAccounts[0]?.id;
   if (!accountId) notFound();
+  const platform = client.adAccounts.find((a) => a.id === accountId)?.platform ?? "meta";
 
   const { passwordHash: _, ...safe } = client;
 
@@ -20,6 +21,7 @@ export default async function GestorCampaignPage({ params }: Props) {
       accountId={accountId}
       campaignId={campaignId}
       role="manager"
+      platform={platform}
     />
   );
 }
