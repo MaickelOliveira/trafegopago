@@ -283,12 +283,34 @@ export async function extractAndWriteToSheet(opts: {
         }
       }
 
-      // Não sobrescreve o telefone se o modelo extraiu um da conversa
+      // Antes de inserir, checa se já existe uma linha desse telefone nesta aba —
+      // evita duplicar quando o agente chama o resumo de "dados confirmados" mais
+      // de uma vez pra mesma reserva (ex: uma regra do prompt pro fluxo específico
+      // do produto + a regra genérica de "dados recebidos" disparando as duas).
       try {
-        await appendRow(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, row.dados);
-        console.log(`[sheet-extractor] appendRow OK aba="${tab.tabName}" responsável="${row.dados["Responsável"] ?? "?"}"`);
+        const lookupPhone = (phoneHeader ? row.dados[phoneHeader] : phone) || phone;
+        const existingRowIndex = await findLastRowByPhone(googleRefreshToken, spreadsheetId, tab.tabName, lookupPhone);
+        if (existingRowIndex) {
+          // Não reverte pagamento já registrado: se a linha já está Pago/Parcial,
+          // não sobrescreve Status/Valor Pago/Falta Pagar com os defaults de
+          // "Pendente" do modo INSERT — só atualiza os campos descritivos.
+          const current = await getRowValues(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, existingRowIndex);
+          const currentStatus = hStatus ? current[hStatus] : undefined;
+          const alreadyPaid = !!currentStatus && /^(pago|parcial)$/i.test(currentStatus.trim());
+          const updateData = { ...row.dados };
+          if (alreadyPaid) {
+            if (hStatus) delete updateData[hStatus];
+            if (hValorPago) delete updateData[hValorPago];
+            if (hFaltaPagar) delete updateData[hFaltaPagar];
+          }
+          await updateRowFields(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, existingRowIndex, updateData);
+          console.log(`[sheet-extractor] updateRow (já existia, evitou duplicar) OK aba="${tab.tabName}" row=${existingRowIndex} responsável="${row.dados["Responsável"] ?? "?"}"`);
+        } else {
+          await appendRow(googleRefreshToken, spreadsheetId, tab.tabName, tab.headers, row.dados);
+          console.log(`[sheet-extractor] appendRow OK aba="${tab.tabName}" responsável="${row.dados["Responsável"] ?? "?"}"`);
+        }
       } catch (e) {
-        console.error(`[sheet-extractor] appendRow ERRO aba="${tab.tabName}":`, e instanceof Error ? e.message : e);
+        console.error(`[sheet-extractor] insert/update ERRO aba="${tab.tabName}":`, e instanceof Error ? e.message : e);
       }
     }
   }
