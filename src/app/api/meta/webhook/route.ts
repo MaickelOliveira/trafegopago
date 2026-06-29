@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getConfig, getClients } from "@/lib/clients";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
+import { getAdInfoById } from "@/lib/meta-api";
 
 const VERIFY_TOKEN = "trafegopago-meta-webhook";
 
@@ -136,6 +137,10 @@ export async function POST(req: NextRequest) {
           const text     = msg.text?.body ?? "";
           const pushName = value?.contacts?.find((c: { wa_id: string }) => c.wa_id === msg.from)?.profile?.name ?? phone;
           const referral = msg.referral;
+          // O campo do ad_id no referral oficial da Cloud API é `source_id`
+          // (não `ad_id` — esse campo não existe nesse payload, por isso o
+          // lookup da campanha nunca rodava antes desse fix).
+          const ctwaAdId: string | undefined = referral?.source_id ?? undefined;
 
           if (!phone || !text.trim()) continue;
 
@@ -144,25 +149,44 @@ export async function POST(req: NextRequest) {
           const { clientId, funnelId } = resolved;
           const isNew = !getLeadByPhone(clientId, phone);
 
+          // Resolve o nome real da campanha via Graph API (mesmo padrão já
+          // usado nos webhooks WPPConnect/UazAPI) — headline do referral é
+          // só o título do anúncio, não o nome da campanha.
+          let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
+          if (ctwaAdId && metaToken) {
+            adInfo = await getAdInfoById(ctwaAdId, metaToken).catch(() => null);
+          }
+
           upsertLeadByPhone(clientId, phone, {
             clientId, funnelId,
             name: pushName,
             phone,
             source: "whatsapp",
-            adPlatform: referral ? "meta" : null,
-            campaignName: referral?.headline ?? null,
-            adId: referral?.ad_id ?? null,
+            ...(adInfo ? {
+              adPlatform: "meta",
+              adId: adInfo.adId,
+              adName: adInfo.adName,
+              adSetId: adInfo.adSetId,
+              adSetName: adInfo.adSetName,
+              campaignId: adInfo.campaignId,
+              campaignName: adInfo.campaignName,
+            } : referral ? {
+              adPlatform: "meta",
+              adId: ctwaAdId ?? null,
+              campaignName: referral.headline ?? null,
+            } : { adPlatform: null, campaignName: null }),
             fbclid: null,
             status: isNew ? "novo" : undefined,
             notes: referral ? [
-              referral.headline    && `Anúncio: ${referral.headline}`,
-              referral.ad_id       && `Ad ID: ${referral.ad_id}`,
-              referral.source_url  && `URL: ${referral.source_url}`,
-              referral.source_type && `Tipo: ${referral.source_type}`,
+              adInfo?.campaignName  && `Campanha: ${adInfo.campaignName}`,
+              referral.headline     && `Anúncio: ${referral.headline}`,
+              ctwaAdId              && `Ad ID: ${ctwaAdId}`,
+              referral.source_url   && `URL: ${referral.source_url}`,
+              referral.source_type  && `Tipo: ${referral.source_type}`,
             ].filter(Boolean).join("\n") : undefined,
           });
 
-          console.log(`[Meta/CTWA] ${pushName} (${phone}) — cliente: ${clientId}${referral ? ` — anúncio: ${referral.headline}` : ""}`);
+          console.log(`[Meta/CTWA] ${pushName} (${phone}) — cliente: ${clientId}${adInfo ? ` — campanha: ${adInfo.campaignName}` : referral ? ` — anúncio: ${referral.headline}` : ""}`);
         }
       }
     }
