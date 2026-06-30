@@ -4,7 +4,7 @@ import { getClients } from "@/lib/clients";
 import { upsertLeadByPhone, getLeadByPhone, markLeadNeedsAttention, toDialablePhone } from "@/lib/leads";
 import { addMessage, getHistory } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
-import { getClientById, getAgentConfigForConnection } from "@/lib/clients";
+import { getClientById, getAgentConfigForConnection, getConfig } from "@/lib/clients";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
 import { startFollowUpSequence, cancelFollowUpsForPhone, getFollowUpByWamid, markFailed } from "@/lib/followups";
 import { sendMessageDirect, getGeminiApiKey, downloadMetaMedia } from "@/lib/whatsapp-send";
@@ -147,10 +147,17 @@ export async function POST(req: NextRequest) {
         const ctwaHeadline = (referral?.headline as string | undefined) || undefined;
         const ctwaSourceUrl = (referral?.source_url as string | undefined) || undefined;
 
+        // Para buscar dados da campanha na Graph API é necessário o token global
+        // de Meta Ads (com permissão ads_read) — NÃO o token da conexão WhatsApp
+        // (conn.metaToken), que só tem permissão de mensagens. Por isso a busca
+        // usava o token errado, falhava silenciosamente e caía no headline como
+        // nome de campanha. Mesmo padrão já usado no WPPConnect (cfg.metaToken).
+        const metaAdsToken = getConfig().metaToken;
         let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-        const shouldLookupAd = !!ctwaAdId && !!metaToken && (!existingLead?.adId || existingLead.adId !== ctwaAdId);
+        const shouldLookupAd = !!ctwaAdId && !!metaAdsToken && (!existingLead?.adId || existingLead.adId !== ctwaAdId);
         if (shouldLookupAd) {
-          adInfo = await getAdInfoById(ctwaAdId!, metaToken!).catch(() => null);
+          adInfo = await getAdInfoById(ctwaAdId!, metaAdsToken).catch(() => null);
+          console.log(`[meta/CTWa] adId=${ctwaAdId} lookup=${adInfo ? `campanha="${adInfo.campaignName}"` : "null (falhou ou sem token)"}`);
         }
 
         const adFields = adInfo
