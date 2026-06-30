@@ -696,7 +696,9 @@ export async function runGeminiAgent(
   // ATENDIMENTO HUMANO - ...*" seguido de "(Chamada da ferramenta enviar_resumo)")
   // em vez da sintaxe de função. Sem isso o aviso ao gestor não dispara mesmo
   // aparecendo (errado) na resposta visível ao cliente.
-  const NARRATED_MOTIVO = /^\*?Motivo:\s*([^\n*]+?)\*?\s*$/im;
+  // Cobre tanto "*Motivo: ...*" quanto "• Motivo: ..." (formato bullet que o modelo
+  // às vezes gera quando estrutura o aviso como lista numerada/bulleted).
+  const NARRATED_MOTIVO = /^[•\-–]?\s*\*?Motivo:\s*([^\n*]+?)\*?\s*$/im;
   const narratedMatch = finalText.match(NARRATED_MOTIVO);
   if (narratedMatch) {
     const motivo = narratedMatch[1].trim();
@@ -711,7 +713,11 @@ export async function runGeminiAgent(
   // e também a variante narrada em português ("*Motivo: ...*" / "(Chamada da ferramenta ...)").
   const KNOWN_TOOL_CALL = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
   const NARRATED_MOTIVO_LINE = /^\*?Motivo:\s*.+$/i;
+  // Bullet/numbered "Motivo:" — ex: "• Motivo: ..." ou "- Motivo: ..."
+  const BULLET_MOTIVO_LINE = /^[•\-–]\s*\*?Motivo:\s*.+$/i;
   const TOOL_CALL_NARRATION = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
+  // Cabeçalhos de seção interna do modelo — ex: "1. RESUMO PARA O GESTOR:" ou "RESUMO:"
+  const INTERNAL_SECTION = /resumo\s+para\s+o\s+gestor|para\s+o\s+gestor|resumo\s+da\s+conversa\s*:/i;
   finalText = finalText
     .split("\n")
     .filter((line) => {
@@ -720,6 +726,8 @@ export async function runGeminiAgent(
       if (t === "tool_code" || t === "```tool_code" || t === "```") return false;
       if (KNOWN_TOOL_CALL.test(t)) return false;
       if (NARRATED_MOTIVO_LINE.test(t)) return false;
+      if (BULLET_MOTIVO_LINE.test(t)) return false;
+      if (INTERNAL_SECTION.test(t)) return false;
       if (TOOL_CALL_NARRATION.test(t)) return false;
       return true;
     })
