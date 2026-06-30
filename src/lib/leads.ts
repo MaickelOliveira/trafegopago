@@ -234,6 +234,16 @@ export function normalizePhone(raw: string): string {
   return d;
 }
 
+/**
+ * Mesma correção de normalizePhone(), mas mantendo o DDI 55 — usar quando o
+ * número precisa ficar no formato discável/wa.me (ex: links de notificação).
+ * A API oficial da Meta às vezes manda o wa_id do webhook sem o 9º dígito
+ * (ex: 554498168355 em vez de 5544998168355), o que quebra o link wa.me/.
+ */
+export function toDialablePhone(raw: string): string {
+  return "55" + normalizePhone(raw);
+}
+
 export function upsertLeadByPhone(clientId: string, phone: string, patch: Partial<Lead>): Lead {
   const leads = load();
   const normalized = normalizePhone(phone);

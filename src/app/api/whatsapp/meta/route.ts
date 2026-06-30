@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
 import { getClients } from "@/lib/clients";
-import { upsertLeadByPhone, getLeadByPhone, markLeadNeedsAttention } from "@/lib/leads";
+import { upsertLeadByPhone, getLeadByPhone, markLeadNeedsAttention, toDialablePhone } from "@/lib/leads";
 import { addMessage, getHistory } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection } from "@/lib/clients";
@@ -314,7 +314,9 @@ export async function POST(req: NextRequest) {
 
           // Variáveis do template:
           // {{1}} = número do lead, {{2}} = nome do lead, {{3}} = motivo + resumo
-          const var1 = phone.replace(/\D/g, "");
+          // A API oficial da Meta às vezes manda o wa_id sem o 9º dígito BR
+          // (ex: 554498168355 em vez de 5544998168355), quebrando o link wa.me/.
+          const var1 = toDialablePhone(phone);
           const var2 = pushName !== phone ? pushName : phone;
           // Meta não aceita \n, \t ou mais de 4 espaços consecutivos em parâmetros de template
           const cleanSummary = summaryText.replace(/[\n\r\t]/g, " ").replace(/ {5,}/g, "    ").trim();
