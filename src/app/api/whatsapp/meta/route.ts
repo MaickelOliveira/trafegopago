@@ -140,7 +140,10 @@ export async function POST(req: NextRequest) {
         // sem precisar dos truques de regex/redirect que os outros canais
         // (WPPConnect/UazAPI) usam pra extrair isso de campos não-oficiais.
         const referral = msg.referral as Record<string, unknown> | undefined;
-        const ctwaAdId = (referral?.ad_id as string | undefined) || undefined;
+        // O campo do ad_id no referral oficial da Cloud API é `source_id`
+        // (`ad_id` não existe nesse payload — por isso o lookup da campanha
+        // nunca rodava e o sistema caía no headline como nome de campanha).
+        const ctwaAdId = (referral?.source_id as string | undefined) || undefined;
         const ctwaHeadline = (referral?.headline as string | undefined) || undefined;
         const ctwaSourceUrl = (referral?.source_url as string | undefined) || undefined;
 
