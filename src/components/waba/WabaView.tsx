@@ -55,6 +55,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
   const [sendTarget, setSendTarget] = useState<"all" | "phone">("phone");
   const [sendPhone, setSendPhone] = useState("");
   const [sendFunnelId, setSendFunnelId] = useState(funnels[0]?.id ?? "");
+  const [sendColumnId, setSendColumnId] = useState("");
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ sent: number; total: number; results?: { phone: string; success: boolean; error?: string }[] } | null>(null);
   const [varValues, setVarValues] = useState<Record<string, string[]>>({});
@@ -327,6 +328,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
         phones: sendTarget === "phone" ? [sendPhone] : "all",
         clientId,
         funnelId: sendTarget === "all" ? sendFunnelId : undefined,
+        columnId: sendTarget === "all" && sendColumnId ? sendColumnId : undefined,
         components,
       }),
     });
@@ -871,13 +873,29 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400"
                 />
               ) : (
-                <select
-                  value={sendFunnelId}
-                  onChange={(e) => setSendFunnelId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400"
-                >
-                  {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                </select>
+                <div className="space-y-2">
+                  <select
+                    value={sendFunnelId}
+                    onChange={(e) => { setSendFunnelId(e.target.value); setSendColumnId(""); }}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400"
+                  >
+                    {funnels.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                  {(() => {
+                    const cols = funnels.find((f) => f.id === sendFunnelId)?.columns ?? [];
+                    if (!cols.length) return null;
+                    return (
+                      <select
+                        value={sendColumnId}
+                        onChange={(e) => setSendColumnId(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400"
+                      >
+                        <option value="">Todas as etapas</option>
+                        {cols.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                      </select>
+                    );
+                  })()}
+                </div>
               )}
             </div>
 

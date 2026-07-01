@@ -7,11 +7,12 @@ export const dynamic = "force-dynamic";
 
 /**
  * Envia um template aprovado para um ou múltiplos números.
- * Body: { templateId, phones: string[] | "all", clientId?, funnelId? }
+ * Body: { templateId, phones: string[] | "all", clientId?, funnelId?, columnId? }
+ * columnId: filtra leads por etapa/coluna do kanban (lead.status === columnId).
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { templateId, phones, clientId, funnelId, components } = body;
+  const { templateId, phones, clientId, funnelId, columnId, components } = body;
 
   if (!templateId) return NextResponse.json({ error: "templateId é obrigatório" }, { status: 400 });
 
@@ -33,9 +34,10 @@ export async function POST(req: NextRequest) {
   let targetPhones: string[] = [];
 
   if (phones === "all" && clientId) {
-    // Todos os leads do cliente (e funil se especificado)
+    // Todos os leads do cliente (filtrando por funil e/ou etapa kanban se especificados)
     const leads = getLeads(clientId).filter((l) => {
       if (funnelId && l.funnelId !== funnelId) return false;
+      if (columnId && l.status !== columnId) return false;
       return !!l.phone;
     });
     targetPhones = leads.map((l) => withCountryCode(l.phone));
