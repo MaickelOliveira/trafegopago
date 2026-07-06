@@ -39,13 +39,18 @@ const SCORE_COLOR = (s: number) =>
 function fmtTime(ts: number) {
   return new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
+const TZ_SP = "America/Sao_Paulo";
+function dateSPStr(ts: number) {
+  return new Date(ts).toLocaleDateString("sv-SE", { timeZone: TZ_SP });
+}
 function fmtDate(ts: number) {
-  const d = new Date(ts);
-  const today = new Date();
-  if (d.toDateString() === today.toDateString()) return "Hoje";
-  const yest = new Date(today); yest.setDate(today.getDate() - 1);
-  if (d.toDateString() === yest.toDateString()) return "Ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const dStr = dateSPStr(ts);
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: TZ_SP });
+  if (dStr === today) return "Hoje";
+  const yest = new Date(today + "T12:00:00-03:00");
+  yest.setDate(yest.getDate() - 1);
+  if (dStr === yest.toLocaleDateString("sv-SE", { timeZone: TZ_SP })) return "Ontem";
+  return new Date(ts).toLocaleDateString("pt-BR", { timeZone: TZ_SP, day: "2-digit", month: "2-digit" });
 }
 
 type PendingFU = { id: string; scheduledAt: string; message: string; stepIndex?: number };

@@ -50,8 +50,23 @@ function PlatformIcon({ lead }: { lead: Lead }) {
   return <span className="text-xs">✏️</span>;
 }
 
+const TZ = "America/Sao_Paulo";
+
+/** Retorna a data de um ISO string no formato YYYY-MM-DD em SP */
+function dateSP(iso: string) {
+  return new Date(iso).toLocaleDateString("sv-SE", { timeZone: TZ });
+}
+
+/** Hoje em SP no formato YYYY-MM-DD */
+function todaySP() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: TZ });
+}
+
+/** Dias de diferença entre duas datas YYYY-MM-DD (calendário SP, não ms/86400) */
 function daysSince(iso: string) {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  const a = new Date(todaySP() + "T12:00:00").getTime();
+  const b = new Date(dateSP(iso) + "T12:00:00").getTime();
+  return Math.floor((a - b) / 86400000);
 }
 
 function fmt(v: number) {
@@ -64,38 +79,49 @@ function hexToLight(hex: string): string {
 
 type DatePreset = "all" | "today" | "yesterday" | "last_7d" | "last_30d" | "this_month" | "last_month" | "custom";
 
-/** Calcula o intervalo de timestamps (ms) correspondente a um preset de data ou a um range personalizado. */
+/** Calcula o intervalo de timestamps (ms) correspondente a um preset de data ou a um range personalizado.
+ *  Todos os limites são calculados em horário de São Paulo (UTC-3) para evitar erros de meia-noite. */
 function getDateRange(preset: DatePreset, customStart: string, customEnd: string): { start: number | null; end: number | null } {
-  const now = new Date();
-  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
-  const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  // Início e fim do dia em SP — usa offset fixo -03:00 para não depender do timezone do browser
+  const startOfDaySP = (ymd: string) => new Date(`${ymd}T00:00:00-03:00`).getTime();
+  const endOfDaySP   = (ymd: string) => new Date(`${ymd}T23:59:59.999-03:00`).getTime();
+
+  const today = todaySP(); // YYYY-MM-DD em SP
+
+  const shiftDay = (ymd: string, delta: number) => {
+    const d = new Date(ymd + "T12:00:00-03:00");
+    d.setDate(d.getDate() + delta);
+    return d.toLocaleDateString("sv-SE", { timeZone: TZ });
+  };
 
   switch (preset) {
     case "today":
-      return { start: startOfDay(now), end: endOfDay(now) };
+      return { start: startOfDaySP(today), end: endOfDaySP(today) };
     case "yesterday": {
-      const y = new Date(now); y.setDate(y.getDate() - 1);
-      return { start: startOfDay(y), end: endOfDay(y) };
+      const y = shiftDay(today, -1);
+      return { start: startOfDaySP(y), end: endOfDaySP(y) };
     }
-    case "last_7d": {
-      const s = new Date(now); s.setDate(s.getDate() - 6);
-      return { start: startOfDay(s), end: endOfDay(now) };
+    case "last_7d":
+      return { start: startOfDaySP(shiftDay(today, -6)), end: endOfDaySP(today) };
+    case "last_30d":
+      return { start: startOfDaySP(shiftDay(today, -29)), end: endOfDaySP(today) };
+    case "this_month": {
+      const firstOfMonth = today.slice(0, 8) + "01";
+      return { start: startOfDaySP(firstOfMonth), end: endOfDaySP(today) };
     }
-    case "last_30d": {
-      const s = new Date(now); s.setDate(s.getDate() - 29);
-      return { start: startOfDay(s), end: endOfDay(now) };
-    }
-    case "this_month":
-      return { start: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), end: endOfDay(now) };
     case "last_month": {
-      const s = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const e = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { start: startOfDay(s), end: endOfDay(e) };
+      const [y, m] = today.split("-").map(Number);
+      const pm = m === 1 ? 12 : m - 1;
+      const py = m === 1 ? y - 1 : y;
+      const lastDay = new Date(y, m - 1, 0).getDate();
+      const s = `${py}-${String(pm).padStart(2, "0")}-01`;
+      const e = `${py}-${String(pm).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      return { start: startOfDaySP(s), end: endOfDaySP(e) };
     }
     case "custom":
       return {
-        start: customStart ? startOfDay(new Date(`${customStart}T00:00:00`)) : null,
-        end: customEnd ? endOfDay(new Date(`${customEnd}T00:00:00`)) : null,
+        start: customStart ? startOfDaySP(customStart) : null,
+        end: customEnd ? endOfDaySP(customEnd) : null,
       };
     default:
       return { start: null, end: null };
