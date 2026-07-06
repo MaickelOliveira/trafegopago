@@ -833,9 +833,11 @@ export function KanbanBoard({
     if (l.funnelId !== funnel?.id) return false;
     if (filterClient !== "all" && l.clientId !== filterClient) return false;
     if (dateStart != null || dateEnd != null) {
-      const created = new Date(l.createdAt).getTime();
-      if (dateStart != null && created < dateStart) return false;
-      if (dateEnd != null && created > dateEnd) return false;
+      // Usa updatedAt para o filtro — assim "Hoje" = leads com atividade hoje,
+      // "Ontem" = leads com atividade ontem (consistente com o label do card)
+      const activity = new Date(l.updatedAt ?? l.createdAt).getTime();
+      if (dateStart != null && activity < dateStart) return false;
+      if (dateEnd != null && activity > dateEnd) return false;
     }
     if (platformFilter.size > 0) {
       const p = getLeadPlatform(l);
@@ -1426,7 +1428,7 @@ export function KanbanBoard({
               >
                 {colLeads.map((lead) => {
                   const client = clients.find((c) => c.id === lead.clientId);
-                  const days = daysSince(lead.createdAt);
+                  const days = daysSince(lead.updatedAt ?? lead.createdAt);
                   return (
                     <div
                       key={lead.id}
