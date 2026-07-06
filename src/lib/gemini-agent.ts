@@ -717,20 +717,44 @@ export async function runGeminiAgent(
     }
   }
 
-  // Remove qualquer vazamento de chamada de ferramenta escrita como texto/código
-  // (linha "tool_code", "print(enviar_resumo(...))", ou a chamada nua) do corpo visível,
-  // e também a variante narrada em português ("*Motivo: ...*" / "(Chamada da ferramenta ...)").
-  const KNOWN_TOOL_CALL = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
+  // ── Filtros de conteúdo interno ──────────────────────────────────────────
+  const KNOWN_TOOL_CALL   = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
   const NARRATED_MOTIVO_LINE = /^\*?Motivo:\s*.+$/i;
-  // Bullet/numbered "Motivo:" — ex: "• Motivo: ..." ou "- Motivo: ..."
-  const BULLET_MOTIVO_LINE = /^[•\-–]\s*\*?Motivo:\s*.+$/i;
-  const TOOL_CALL_NARRATION = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
-  // Cabeçalhos de seção interna do modelo — ex: "1. RESUMO PARA O GESTOR:" ou "RESUMO:"
-  const INTERNAL_SECTION = /resumo\s+para\s+o\s+gestor|para\s+o\s+gestor|resumo\s+da\s+conversa\s*:/i;
-  // Conteúdo interno que NUNCA deve ir para o cliente
-  const INTERNAL_CONTENT = /^(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]/i;
+  const BULLET_MOTIVO_LINE   = /^[•\-–]\s*\*?Motivo:\s*.+$/i;
+  const TOOL_CALL_NARRATION  = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
+  const INTERNAL_SECTION     = /resumo\s+para\s+o\s+gestor|para\s+o\s+gestor|resumo\s+da\s+conversa\s*:/i;
+  // Marcadores internos que NUNCA devem ir ao cliente (linha ou parágrafo inteiro)
+  const INTERNAL_CONTENT  = /^(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]/i;
   // Análise de perfil do lead/cliente escrita para o gestor
   const LEAD_PROFILE_LINE = /^O\s+(lead|cliente)\s+é\s+/i;
+
+  // Detecta se um parágrafo é conteúdo de resumo interno:
+  // basta que qualquer linha dele dispare um dos marcadores acima.
+  function isInternalParagraph(para: string): boolean {
+    return para.split("\n").some((line) => {
+      const t = line.trim();
+      if (!t) return false;
+      return (
+        INTERNAL_CONTENT.test(t) ||
+        LEAD_PROFILE_LINE.test(t) ||
+        INTERNAL_SECTION.test(t) ||
+        NARRATED_MOTIVO_LINE.test(t) ||
+        BULLET_MOTIVO_LINE.test(t) ||
+        KNOWN_TOOL_CALL.test(t) ||
+        TOOL_CALL_NARRATION.test(t) ||
+        t === "tool_code" || t === "```tool_code" || t === "```"
+      );
+    });
+  }
+
+  // 1ª passagem: remove parágrafos inteiros que contenham conteúdo interno
+  finalText = finalText
+    .split(/\n\s*\n/)
+    .filter((para) => !isInternalParagraph(para))
+    .join("\n\n")
+    .trim();
+
+  // 2ª passagem: remove linhas individuais que ainda escaparam
   finalText = finalText
     .split("\n")
     .filter((line) => {
