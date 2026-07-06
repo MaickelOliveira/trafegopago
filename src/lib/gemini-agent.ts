@@ -340,19 +340,28 @@ REGRAS OBRIGATÓRIAS DE FORMATAÇÃO PARA WHATSAPP:
       : `\n\nPlanilha de reservas conectada — colunas: ${sheetHeaders.join(", ")}.\nSempre que o cliente fornecer dados de reserva (nome, telefone, data, pagamento), use IMEDIATAMENTE a função adicionar_linha_planilha para cada pessoa. Preencha apenas as colunas informadas.`
     : "";
 
+  const resumoRule = `
+REGRA CRÍTICA — enviar_resumo:
+Quando chamar enviar_resumo, o conteúdo do resumo/motivo vai SOMENTE para o gestor via ferramenta — JAMAIS inclua no texto visível ao cliente:
+• NUNCA escreva "DADOS RECEBIDOS", "PAGAMENTO PIX", "O lead é...", "O cliente é..." ou qualquer análise interna no texto enviado ao cliente.
+• NUNCA narre para o cliente que você encaminhou/escalou: não diga "já encaminhei para...", "vou passar para...", "escalei para...".
+• Após chamar a ferramenta, responda ao cliente de forma natural e breve, sem repetir o conteúdo interno.`;
+
   const resumoPart = hasSheet
     ? `\n\nRegistro automático de reservas (planilha conectada):
 Você tem a ferramenta enviar_resumo disponível. Acione-a como chamada de ferramenta nos seguintes momentos:
 - Dados de reserva recebidos: use motivo iniciando com as palavras exatas DADOS RECEBIDOS seguido de um resumo curto
 - Comprovante ou confirmação de Pix recebidos: use motivo iniciando com as palavras exatas PAGAMENTO PIX seguido do valor
 - Quando não souber responder, precisar escalar para o gestor, ou o lead pedir atendimento humano: use motivo descrevendo o assunto
-Importante: acione a ferramenta, não escreva o nome dela como texto na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.`
+Importante: acione a ferramenta, não escreva o nome dela como texto na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.
+${resumoRule}`
     : hasAvisos
     ? `\n\nVocê tem a ferramenta enviar_resumo disponível. Use-a como chamada de ferramenta (não como texto) nos seguintes casos:
 - Quando não souber responder algo ou precisar escalar para o gestor: motivo descrevendo o assunto
 - Quando o lead pedir falar com humano ou com o responsável: motivo iniciando com ATENDIMENTO HUMANO
 - Quando o lead demonstrar intenção de compra e precisar de atendimento personalizado: motivo com resumo do interesse
-Importante: acione a ferramenta imediatamente, sem escrever o nome dela na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.`
+Importante: acione a ferramenta imediatamente, sem escrever o nome dela na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.
+${resumoRule}`
     : "";
 
   if (customPrompt?.trim()) {
@@ -718,6 +727,12 @@ export async function runGeminiAgent(
   const TOOL_CALL_NARRATION = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
   // Cabeçalhos de seção interna do modelo — ex: "1. RESUMO PARA O GESTOR:" ou "RESUMO:"
   const INTERNAL_SECTION = /resumo\s+para\s+o\s+gestor|para\s+o\s+gestor|resumo\s+da\s+conversa\s*:/i;
+  // Conteúdo interno que NUNCA deve ir para o cliente
+  const INTERNAL_CONTENT = /^(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]/i;
+  // Análise de perfil do lead/cliente escrita para o gestor
+  const LEAD_PROFILE_LINE = /^O\s+(lead|cliente)\s+é\s+/i;
+  // Narração de escalonamento interno ("já encaminhei para X", "vou passar para X")
+  const ESCALATION_NARRATION = /\b(já\s+encaminhei|encaminhei\s+para|vou\s+passar\s+para|passei\s+para|escalei\s+para)\b/i;
   finalText = finalText
     .split("\n")
     .filter((line) => {
@@ -729,6 +744,9 @@ export async function runGeminiAgent(
       if (BULLET_MOTIVO_LINE.test(t)) return false;
       if (INTERNAL_SECTION.test(t)) return false;
       if (TOOL_CALL_NARRATION.test(t)) return false;
+      if (INTERNAL_CONTENT.test(t)) return false;
+      if (LEAD_PROFILE_LINE.test(t)) return false;
+      if (ESCALATION_NARRATION.test(t)) return false;
       return true;
     })
     .join("\n")
