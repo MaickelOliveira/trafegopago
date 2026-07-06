@@ -731,8 +731,6 @@ export async function runGeminiAgent(
   const INTERNAL_CONTENT = /^(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]/i;
   // Análise de perfil do lead/cliente escrita para o gestor
   const LEAD_PROFILE_LINE = /^O\s+(lead|cliente)\s+é\s+/i;
-  // Narração de escalonamento interno ("já encaminhei para X", "vou passar para X")
-  const ESCALATION_NARRATION = /\b(já\s+encaminhei|encaminhei\s+para|vou\s+passar\s+para|passei\s+para|escalei\s+para)\b/i;
   finalText = finalText
     .split("\n")
     .filter((line) => {
@@ -746,7 +744,6 @@ export async function runGeminiAgent(
       if (TOOL_CALL_NARRATION.test(t)) return false;
       if (INTERNAL_CONTENT.test(t)) return false;
       if (LEAD_PROFILE_LINE.test(t)) return false;
-      if (ESCALATION_NARRATION.test(t)) return false;
       return true;
     })
     .join("\n")
