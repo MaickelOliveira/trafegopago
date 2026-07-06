@@ -1426,7 +1426,7 @@ export function KanbanBoard({
               >
                 {colLeads.map((lead) => {
                   const client = clients.find((c) => c.id === lead.clientId);
-                  const days = daysSince(lead.updatedAt ?? lead.createdAt);
+                  const days = daysSince(lead.createdAt);
                   return (
                     <div
                       key={lead.id}
