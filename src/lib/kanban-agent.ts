@@ -105,8 +105,8 @@ async function runKanbanAgent(
   // ── CAMADA 5: Mínimo de mensagens ────────────────────────────────────────
   // Evita decisões prematuras com apenas 1 mensagem
   const totalMsgs = history.length + 1; // +1 pela lastMessage
-  if (totalMsgs < 2) {
-    console.log(`[kanban-agent/layer5] bloqueado — menos de 2 mensagens (total=${totalMsgs})`);
+  if (totalMsgs < 5) {
+    console.log(`[kanban-agent/layer5] bloqueado — menos de 5 mensagens (total=${totalMsgs})`);
     return [];
   }
 
