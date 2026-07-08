@@ -3,7 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 
 export type FollowUpType = "followup" | "reminder" | "appointment_reminder";
-export type FollowUpStatus = "pending" | "sent" | "cancelled" | "failed";
+export type FollowUpStatus = "pending" | "processing" | "sent" | "cancelled" | "failed";
 
 export type FollowUp = {
   id: string;
@@ -63,6 +63,23 @@ export function getDueFollowUps(): FollowUp[] {
   return load().filter(
     (f) => f.status === "pending" && new Date(f.scheduledAt) <= now
   );
+}
+
+/** Reivindica follow-ups vencidos atomicamente: lê + marca como "processing"
+ *  em um único writeFileSync, evitando que dois crons concorrentes processem
+ *  o mesmo item. Retorna apenas os itens que esta chamada reivindicou. */
+export function claimDueFollowUps(): FollowUp[] {
+  const now = new Date();
+  const items = load();
+  const claimed: FollowUp[] = [];
+  for (const f of items) {
+    if (f.status === "pending" && new Date(f.scheduledAt) <= now) {
+      f.status = "processing";
+      claimed.push({ ...f });
+    }
+  }
+  if (claimed.length > 0) save(items);
+  return claimed;
 }
 
 export function getPendingFollowUps(clientId?: string): FollowUp[] {
@@ -137,7 +154,7 @@ export function cancelFollowUpsForPhone(clientId: string, phone: string): void {
   const items = load();
   let changed = false;
   for (const item of items) {
-    if (item.clientId === clientId && item.phone === phone && item.status === "pending") {
+    if (item.clientId === clientId && item.phone === phone && (item.status === "pending" || item.status === "processing")) {
       item.status = "cancelled";
       changed = true;
     }

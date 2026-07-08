@@ -3,7 +3,7 @@
 // pela rota HTTP /api/agent/cron (acionável externamente, ex: EasyPanel).
 // Antes existiam DUAS implementações divergentes que competiam pelos mesmos
 // follow-ups — unificadas aqui para evitar comportamento inconsistente.
-import { getDueFollowUps, markSent, markFailed, cancelFollowUp, scheduleFollowUp, cancelFollowUpsForPhone, type FollowUp } from "./followups";
+import { claimDueFollowUps, markSent, markFailed, cancelFollowUp, scheduleFollowUp, cancelFollowUpsForPhone, type FollowUp } from "./followups";
 import { getDuePending, markProcessing, markDone } from "./pending-responses";
 import { getClientById, getAllAgentConfigs, type AgentConfig } from "./clients";
 import { sendMessage, getGeminiApiKey } from "./whatsapp-send";
@@ -134,7 +134,7 @@ function resolveAgentConfig(allCfgs: AgentConfig[], stepId: string | undefined):
 export async function processDueFollowUpsAndBatches(): Promise<{
   processed: number; skipped: number; total: number; batchesProcessed: number;
 }> {
-  const due = getDueFollowUps();
+  const due = claimDueFollowUps();
   let processed = 0;
   let skipped = 0;
 
