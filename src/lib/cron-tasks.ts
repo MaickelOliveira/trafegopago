@@ -276,6 +276,7 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       }
     } catch (e) {
       console.error(`[cron-tasks] Erro ao enviar ${followUp.id}:`, e);
+      markFailed(followUp.id, e instanceof Error ? e.message : String(e));
     }
   }
 
