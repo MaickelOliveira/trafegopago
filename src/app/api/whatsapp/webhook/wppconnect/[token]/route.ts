@@ -230,9 +230,9 @@ export async function POST(
   // Identifica a sessão pelo UUID
   const wppSession = getWppSessionById(token);
   console.log(`[WPP-DIAG] token=${token} session=${wppSession?.id ?? "NOT_FOUND"} funnelId=${wppSession?.funnelId ?? "null"} clientId=${wppSession?.clientId ?? "null"}`);
-  if (!wppSession || !wppSession.funnelId) {
-    console.log(`[WPPConnect Webhook] token=${token} ignorado (sessão sem funil ou inexistente)`);
-    return NextResponse.json({ ok: true }); // ignora sessões sem funil
+  if (!wppSession) {
+    console.log(`[WPPConnect Webhook] token=${token} ignorado (sessão inexistente)`);
+    return NextResponse.json({ ok: true });
   }
 
   let body: Record<string, unknown>;
@@ -240,6 +240,25 @@ export async function POST(
     body = await req.json() as Record<string, unknown>;
   } catch {
     return NextResponse.json({ ok: true });
+  }
+
+  // ── Evento "qrcode": precisa ser cacheado mesmo ANTES da sessão ser vinculada
+  // a um funil — é exatamente durante a criação/conexão (funnelId ainda null,
+  // vínculo só acontece depois de escanear) que esse cache é mais necessário
+  // como fallback do qrcode-session (que às vezes trava num QR antigo).
+  // Processado aqui, antes do corte por "sessão sem funil" abaixo.
+  if ((body.event as string ?? "").toLowerCase() === "qrcode") {
+    const urlcode = body.urlcode as string | undefined;
+    if (urlcode) {
+      const qrDataUri = await QRCode.toDataURL(urlcode, { margin: 1, width: 280 }).catch(() => null);
+      if (qrDataUri) setCachedQr(wppSession.sessionName, qrDataUri, urlcode);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (!wppSession.funnelId) {
+    console.log(`[WPPConnect Webhook] token=${token} ignorado (sessão sem funil)`);
+    return NextResponse.json({ ok: true }); // ignora sessões sem funil
   }
 
   // Log completo para ajudar a diagnosticar history sync em caso de reincidência
@@ -289,21 +308,8 @@ export async function POST(
   }
 
   // WPPConnect envia event = "onmessage" (incoming) ou "onselfmessage" (fromMe) ou outros
+  // (evento "qrcode" já foi tratado e retornou mais acima, antes do corte por funil)
   const event = (body.event as string ?? "").toLowerCase();
-
-  // ── Evento "qrcode": dispara em tempo real a cada regeneração do QR pelo
-  // WhatsApp (~15-20s). Cacheia em memória para a plataforma servir sempre
-  // o QR mais recente, sem depender do qrcode-session (que às vezes trava).
-  if (event === "qrcode") {
-    const urlcode = body.urlcode as string | undefined;
-    if (urlcode) {
-      // Gera o QR a partir do urlcode (dado real) em vez de usar o PNG bruto
-      // do wppconnect — garante margem/tamanho consistentes (280px, margin 1).
-      const qrDataUri = await QRCode.toDataURL(urlcode, { margin: 1, width: 280 }).catch(() => null);
-      if (qrDataUri) setCachedQr(wppSession.sessionName, qrDataUri, urlcode);
-    }
-    return NextResponse.json({ ok: true });
-  }
 
   if (event !== "onmessage" && event !== "onanymessage" && event !== "message" && event !== "onselfmessage") {
     // Log de eventos filtrados para diagnóstico (inclui fromMe e outros)
