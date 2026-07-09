@@ -252,6 +252,8 @@ export async function sendText(
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.error(`[wppconnect-api] sendText FAILED status=${res.status} session=${sessionName} phone=${phoneFormatted} isLid=${isLid} body=${body}`);
+    } else {
+      await markUnseen(sessionName, token, phone, isLid, isGroup);
     }
     return res.ok;
   } catch (e) {
@@ -332,6 +334,7 @@ export async function sendMedia(
         }),
       });
       if (!res.ok) console.error(`[wppconnect-api] send-voice FAILED status=${res.status} body=${await res.text().catch(() => "")}`);
+      else await markUnseen(sessionName, token, phone, isLid);
       return res.ok;
     }
 
@@ -351,6 +354,8 @@ export async function sendMedia(
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         console.error(`[wppconnect-api] send-image FAILED status=${res.status} body=${body}`);
+      } else {
+        await markUnseen(sessionName, token, phone, isLid);
       }
       return res.ok;
     }
@@ -370,6 +375,8 @@ export async function sendMedia(
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.error(`[wppconnect-api] send-file-base64 FAILED status=${res.status} body=${body}`);
+    } else {
+      await markUnseen(sessionName, token, phone, isLid);
     }
     return res.ok;
   } catch (e) {
@@ -410,6 +417,7 @@ export async function sendMediaFromBase64(
         body: JSON.stringify({ phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted, base64: base64DataUri, ...(isLid ? { isLid: true } : {}) }),
       });
       if (!res.ok) console.error(`[wppconnect-api] sendMediaFromBase64 send-voice FAILED status=${res.status}`);
+      else await markUnseen(sessionName, token, phone, isLid);
       return res.ok;
     }
     if (type === "image") {
@@ -419,6 +427,7 @@ export async function sendMediaFromBase64(
         body: JSON.stringify({ phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted, base64: base64DataUri, filename, caption: caption ?? "", ...(isLid ? { isLid: true } : {}) }),
       });
       if (!res.ok) console.error(`[wppconnect-api] sendMediaFromBase64 send-image FAILED status=${res.status}`);
+      else await markUnseen(sessionName, token, phone, isLid);
       return res.ok;
     }
     const res = await fetch(`${base()}/api/${sessionName}/send-file-base64`, {
@@ -427,6 +436,7 @@ export async function sendMediaFromBase64(
       body: JSON.stringify({ phone: isLid ? `${phoneFormatted}@lid` : phoneFormatted, base64: base64DataUri, filename, caption: caption ?? "", ...(isLid ? { isLid: true } : {}) }),
     });
     if (!res.ok) console.error(`[wppconnect-api] sendMediaFromBase64 send-file-base64 FAILED status=${res.status}`);
+    else await markUnseen(sessionName, token, phone, isLid);
     return res.ok;
   } catch (e) {
     console.error(`[wppconnect-api] sendMediaFromBase64 EXCEPTION session=${sessionName}`, e);
@@ -481,20 +491,23 @@ export async function stopTyping(
 // conectado marca a conversa como lida no WhatsApp automaticamente (efeito
 // colateral do próprio app) — os clientes preferem que ela continue aparecendo
 // como não lida no celular deles para conseguirem acompanhar as conversas
-// pelo próprio WhatsApp, mesmo com a IA respondendo automaticamente.
+// pelo próprio WhatsApp, não importa se foi a IA, uma automação ou o operador
+// pela plataforma que mandou a mensagem. Chamada internamente por sendText/
+// sendMedia/sendMediaFromBase64 — não precisa ser chamada nos call sites.
 export async function markUnseen(
   sessionName: string,
   token: string,
   phone: string,
   isLid = false,
+  isGroup = false,
 ): Promise<void> {
   if (!base()) return;
   try {
-    const phoneFormatted = isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
+    const phoneFormatted = isGroup ? phone : isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
     await fetch(`${base()}/api/${sessionName}/mark-unseen`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ phone: phoneFormatted, isGroup: false }),
+      body: JSON.stringify({ phone: phoneFormatted, isGroup }),
     });
   } catch { /* ignora — não-crítico */ }
 }

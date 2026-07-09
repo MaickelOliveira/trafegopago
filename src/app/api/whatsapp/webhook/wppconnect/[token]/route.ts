@@ -11,7 +11,7 @@ import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/w
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
-import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName, startTyping, stopTyping, markUnseen } from "@/lib/wppconnect-api";
+import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName, startTyping, stopTyping } from "@/lib/wppconnect-api";
 import { setCachedQr } from "@/lib/wppconnect-qr";
 import QRCode from "qrcode";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -881,9 +881,6 @@ export async function POST(
       markSent(phone, followup);
       await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, followup, isLidPhone);
     }
-    // Devolve a conversa para "não lida" — enviar a resposta acima já marcou
-    // como lida automaticamente no WhatsApp conectado.
-    await markUnseen(wppSession!.sessionName, wppSession!.sessionToken, phone, isLidPhone);
   }
 
   // ── Batching: acumula mensagens antes de responder ──
