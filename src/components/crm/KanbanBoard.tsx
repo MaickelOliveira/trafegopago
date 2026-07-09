@@ -69,6 +69,11 @@ function daysSince(iso: string) {
   return Math.floor((a - b) / 86400000);
 }
 
+/** Data curta (DD/MM) em SP — usado para exibir a data de entrada no card */
+function fmtShortDate(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit" });
+}
+
 function fmt(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -78,6 +83,10 @@ function hexToLight(hex: string): string {
 }
 
 type DatePreset = "all" | "today" | "yesterday" | "last_7d" | "last_30d" | "this_month" | "last_month" | "custom";
+
+/** Campo de data usado pelo filtro: "activity" (última atividade, padrão atual)
+ *  ou "created" (data em que o lead entrou no funil, nunca muda depois). */
+type DateFilterField = "activity" | "created";
 
 /** Calcula o intervalo de timestamps (ms) correspondente a um preset de data ou a um range personalizado.
  *  Todos os limites são calculados em horário de São Paulo (UTC-3) para evitar erros de meia-noite. */
@@ -634,6 +643,7 @@ export function KanbanBoard({
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [dateFilterField, setDateFilterField] = useState<DateFilterField>("activity");
   const [platformFilter, setPlatformFilter] = useState<Set<PlatformFilterId>>(new Set());
   const [selected, setSelected]     = useState<Lead | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -833,11 +843,16 @@ export function KanbanBoard({
     if (l.funnelId !== funnel?.id) return false;
     if (filterClient !== "all" && l.clientId !== filterClient) return false;
     if (dateStart != null || dateEnd != null) {
-      // Usa updatedAt para o filtro — assim "Hoje" = leads com atividade hoje,
-      // "Ontem" = leads com atividade ontem (consistente com o label do card)
-      const activity = new Date(l.updatedAt ?? l.createdAt).getTime();
-      if (dateStart != null && activity < dateStart) return false;
-      if (dateEnd != null && activity > dateEnd) return false;
+      // Padrão ("Atividade"): usa updatedAt — "Hoje" = leads com atividade hoje,
+      // "Ontem" = leads com atividade ontem (consistente com o label do card, que
+      // atualiza sempre que o lead ou a IA troca mensagem).
+      // "Entrada": usa createdAt, que nunca muda — mostra só quem entrou no funil
+      // naquela data escolhida, independente de atividade posterior.
+      const dateValue = dateFilterField === "created"
+        ? new Date(l.createdAt).getTime()
+        : new Date(l.updatedAt ?? l.createdAt).getTime();
+      if (dateStart != null && dateValue < dateStart) return false;
+      if (dateEnd != null && dateValue > dateEnd) return false;
     }
     if (platformFilter.size > 0) {
       const p = getLeadPlatform(l);
@@ -1133,6 +1148,27 @@ export function KanbanBoard({
                 className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 outline-none focus:border-blue-400"
               />
             </>
+          )}
+          {datePreset !== "all" && (
+            <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 shrink-0" title="Escolha se a data filtra pela última atividade ou por quando o lead entrou">
+              {([
+                { id: "activity" as DateFilterField, label: "Atividade" },
+                { id: "created" as DateFilterField, label: "Entrada" },
+              ]).map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => setDateFilterField(opt.id)}
+                  className={clsx(
+                    "rounded px-2 py-1 text-[11px] font-semibold transition",
+                    dateFilterField === opt.id
+                      ? "bg-blue-100 text-blue-700"
+                      : "text-slate-400 hover:text-slate-600"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
@@ -1506,8 +1542,10 @@ export function KanbanBoard({
                         <p className="text-xs text-slate-400 italic line-clamp-1">→ {lead.ai.nextStep}</p>
                       )}
 
-                      <p className="mt-1.5 text-xs text-slate-300">
-                        {days === 0 ? "Hoje" : `${days}d atrás`}
+                      <p className="mt-1.5 text-xs text-slate-300 flex items-center gap-1.5">
+                        <span title="Última atividade">{days === 0 ? "Hoje" : `${days}d atrás`}</span>
+                        <span className="text-slate-200">·</span>
+                        <span title="Data em que o lead entrou no funil">Entrou {fmtShortDate(lead.createdAt)}</span>
                       </p>
                     </div>
                   );
