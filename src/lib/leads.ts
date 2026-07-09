@@ -202,7 +202,13 @@ export function updateLead(id: string, patch: Partial<Omit<Lead, "id" | "created
   const leads = load();
   const idx = leads.findIndex((l) => l.id === id);
   if (idx < 0) return null;
-  leads[idx] = { ...leads[idx], ...patch, updatedAt: new Date().toISOString() };
+  // Normaliza phone/realPhone quando presentes no patch (ex: edição manual no CRM)
+  // — sem isso, um telefone salvo sem o 9º dígito nunca mais bate com
+  // normalizePhone(l.phone) nas buscas de outras funções, criando duplicatas.
+  const normalizedPatch = { ...patch };
+  if (normalizedPatch.phone) normalizedPatch.phone = normalizePhone(normalizedPatch.phone);
+  if (normalizedPatch.realPhone) normalizedPatch.realPhone = normalizePhone(normalizedPatch.realPhone);
+  leads[idx] = { ...leads[idx], ...normalizedPatch, updatedAt: new Date().toISOString() };
   save(leads);
   return leads[idx];
 }

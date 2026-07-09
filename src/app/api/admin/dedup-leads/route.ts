@@ -51,17 +51,15 @@ export async function GET(req: Request) {
 
   // ── Passo 2: agrupa por clientId + normalizedPhone e mescla duplicatas ─────
   // Usa Map para agrupar: chave = clientId:normalizedPhone
+  // Agrupa por clientId + funnelId + telefone normalizado — mesmo telefone em
+  // funis diferentes é um lead separado por design (cada agente/canal tem o
+  // seu), então funnelId precisa entrar na chave pra não mesclar leads que na
+  // verdade são distintos.
   const groups = new Map<string, Lead[]>();
 
   for (const lead of leads) {
-    if (filterClient && lead.clientId !== filterClient) {
-      // Mantém leads de outros clientes sem tocar
-      const key = `${lead.clientId}:${normalizePhone(lead.phone)}`;
-      groups.set(key, [...(groups.get(key) ?? []), lead]);
-    } else {
-      const key = `${lead.clientId}:${normalizePhone(lead.phone)}`;
-      groups.set(key, [...(groups.get(key) ?? []), lead]);
-    }
+    const key = `${lead.clientId}:${lead.funnelId}:${normalizePhone(lead.phone)}`;
+    groups.set(key, [...(groups.get(key) ?? []), lead]);
   }
 
   const result: Lead[] = [];

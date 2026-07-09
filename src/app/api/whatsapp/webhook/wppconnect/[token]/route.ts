@@ -3,7 +3,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import path from "path";
 import { getWppSessionById } from "@/lib/wppconnect-sessions";
 import { getFunnels } from "@/lib/funnels";
-import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead, markLeadNeedsAttention } from "@/lib/leads";
+import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead, markLeadNeedsAttention, normalizePhone } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused, sanitizeContactName } from "@/lib/conversations";
@@ -654,10 +654,12 @@ export async function POST(
 
           // ── Remove duplicatas que possam ter sido criadas durante a resolução ──
           // Race condition: outro evento com o número real pode ter criado um lead
-          // separado antes de realPhone ser gravado
+          // separado antes de realPhone ser gravado. Compara com normalizePhone (não
+          // só dígitos brutos) — um dos leads pode ter ficado sem o 9º dígito.
           const allLeads = getLeads(clientId);
+          const normalizedRealPhone = normalizePhone(realPhone);
           for (const dup of allLeads) {
-            if (dup.id !== savedLead.id && dup.phone.replace(/\D/g, "") === realPhone.replace(/\D/g, "")) {
+            if (dup.id !== savedLead.id && normalizePhone(dup.phone) === normalizedRealPhone) {
               console.log(`[WPPConnect Webhook] Removendo duplicata com phone=${dup.phone} (LID já resolvido)`);
               deleteLead(dup.id);
             }
