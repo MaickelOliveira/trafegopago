@@ -291,6 +291,9 @@ async function tryDirectPhraseMatch(
             email: lead.email ?? undefined,
             name: lead.name,
             fbclid: lead.fbclid ?? undefined,
+            fbp: lead.fbp ?? undefined,
+            clientIp: lead.clientIp ?? undefined,
+            clientUserAgent: lead.clientUserAgent ?? undefined,
             externalId: lead.id,
             value: lead.value ?? undefined,
           }).catch(() => {});
@@ -340,6 +343,9 @@ export async function classifyLeadByHistory(
           email: lead.email ?? undefined,
           name: lead.name,
           fbclid: lead.fbclid ?? undefined,
+          fbp: lead.fbp ?? undefined,
+          clientIp: lead.clientIp ?? undefined,
+          clientUserAgent: lead.clientUserAgent ?? undefined,
           externalId: lead.id,
           value: lead.value ?? undefined,
         }).catch(() => {});
@@ -429,6 +435,9 @@ export async function processKanbanActions(
           email: lead.email ?? undefined,
           name: lead.name,
           fbclid: lead.fbclid ?? undefined,
+          fbp: lead.fbp ?? undefined,
+          clientIp: lead.clientIp ?? undefined,
+          clientUserAgent: lead.clientUserAgent ?? undefined,
           externalId: lead.id,
           value: lead.value ?? undefined,
         }).catch(() => {});

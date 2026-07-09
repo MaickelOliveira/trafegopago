@@ -256,6 +256,9 @@ export async function POST(req: NextRequest) {
           phone,
           name: newLead.name,
           fbclid: newLead.fbclid ?? undefined,
+          fbp: newLead.fbp ?? undefined,
+          clientIp: newLead.clientIp ?? undefined,
+          clientUserAgent: newLead.clientUserAgent ?? undefined,
           externalId: newLead.id,
         }).catch((e) => console.error("[CAPI WA]", e));
       }

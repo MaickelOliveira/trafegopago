@@ -46,6 +46,9 @@ export type Lead = {
   utmTerm: string | null;
   fbclid: string | null;
   gclid: string | null;
+  fbp?: string | null;              // Cookie _fbp do navegador (Meta CAPI — sobe a qualidade de correspondência)
+  clientIp?: string | null;         // IP real do navegador no momento da captura do lead (Meta CAPI)
+  clientUserAgent?: string | null;  // User-Agent real do navegador no momento da captura do lead (Meta CAPI)
   value: number | null;
   status: string; // coluna do funil (dinâmica)
   notes: string;
@@ -307,6 +310,9 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     utmTerm: patch.utmTerm ?? null,
     fbclid: patch.fbclid ?? null,
     gclid: patch.gclid ?? null,
+    fbp: patch.fbp ?? null,
+    clientIp: patch.clientIp ?? null,
+    clientUserAgent: patch.clientUserAgent ?? null,
     value: patch.value ?? null,
     status: patch.status ?? "novo",
     notes: patch.notes ?? "",

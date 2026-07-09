@@ -14,6 +14,9 @@ export async function sendCapiEvent(opts: {
   email?: string;
   name?: string;      // Nome do lead — vira fn/ln (primeiro nome / sobrenome), ambos hasheados
   fbclid?: string;     // ID de clique do Meta Ads salvo no lead — vira o parâmetro fbc
+  fbp?: string;             // Cookie _fbp capturado no site — NÃO é hasheado
+  clientIp?: string;        // IP real capturado na criação do lead — NÃO é hasheado
+  clientUserAgent?: string; // User-Agent real capturado na criação do lead — NÃO é hasheado
   externalId?: string;
   value?: number;
   currency?: string;
@@ -46,6 +49,9 @@ export async function sendCapiEvent(opts: {
     // hasheados (diferente de email/telefone/nome, que são PII).
     userData.fbc = `fb.1.${Date.now()}.${opts.fbclid}`;
   }
+  if (opts.fbp) userData.fbp = opts.fbp;
+  if (opts.clientIp) userData.client_ip_address = opts.clientIp;
+  if (opts.clientUserAgent) userData.client_user_agent = opts.clientUserAgent;
 
   const eventData: Record<string, unknown> = {
     event_name: opts.eventName,

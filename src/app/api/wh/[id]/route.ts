@@ -51,13 +51,21 @@ export async function POST(
     return NextResponse.json({ error: "Telefone não encontrado no payload" }, { status: 422 });
   }
 
+  // IP e User-Agent reais do navegador que chamou o webhook — a requisição
+  // vem direto do site (fetch client-side), então é o momento mais próximo
+  // possível da conversão real pra esses dois dados (usados pelo Meta CAPI).
+  const clientIp = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim())
+    || req.headers.get("x-real-ip")
+    || null;
+  const clientUserAgent = req.headers.get("user-agent") || null;
+
   // Captura todos os campos extras (excluindo os campos já mapeados e UTMs)
   const SKIP_KEYS = new Set([
     nameField, phoneField, emailField ?? "",
     "nome", "name", "telefone", "phone", "celular", "email",
     "your-name", "your-phone", "your-email",
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
-    "fbclid", "gclid", "campanha",
+    "fbclid", "gclid", "campanha", "fbp",
   ]);
   const customFields: Record<string, string> = {};
   for (const [k, v] of Object.entries(payload)) {
@@ -97,6 +105,9 @@ export async function POST(
     utmTerm: payload.utm_term || null,
     fbclid: payload.fbclid || null,
     gclid: payload.gclid || null,
+    fbp: payload.fbp || null,
+    clientIp,
+    clientUserAgent,
     value: null,
     ai: null,
   });

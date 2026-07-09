@@ -69,6 +69,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           email: lead.email ?? undefined,
           name: lead.name,
           fbclid: lead.fbclid ?? undefined,
+          fbp: lead.fbp ?? undefined,
+          clientIp: lead.clientIp ?? undefined,
+          clientUserAgent: lead.clientUserAgent ?? undefined,
           externalId: lead.id,
           value: lead.value ?? undefined,
         }).catch((e) => console.error("[Meta CAPI]", e));
