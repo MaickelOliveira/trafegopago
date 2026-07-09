@@ -477,6 +477,28 @@ export async function stopTyping(
   } catch { /* ignora — não-crítico */ }
 }
 
+// Marca a conversa como NÃO lida. Enviar uma mensagem a partir do número
+// conectado marca a conversa como lida no WhatsApp automaticamente (efeito
+// colateral do próprio app) — os clientes preferem que ela continue aparecendo
+// como não lida no celular deles para conseguirem acompanhar as conversas
+// pelo próprio WhatsApp, mesmo com a IA respondendo automaticamente.
+export async function markUnseen(
+  sessionName: string,
+  token: string,
+  phone: string,
+  isLid = false,
+): Promise<void> {
+  if (!base()) return;
+  try {
+    const phoneFormatted = isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
+    await fetch(`${base()}/api/${sessionName}/mark-unseen`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ phone: phoneFormatted, isGroup: false }),
+    });
+  } catch { /* ignora — não-crítico */ }
+}
+
 // Lista todos os grupos do WhatsApp conectado nesta sessão
 export async function listGroups(
   sessionName: string,
