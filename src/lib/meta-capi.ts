@@ -8,6 +8,7 @@ function sha256(value: string): string {
 export async function sendCapiEvent(opts: {
   pixelId: string;
   capiToken?: string; // Token de Conversão da API (por cliente) — prioritário sobre o token global
+  testEventCode?: string; // Código da aba "Testar eventos" do Gerenciador de Eventos — só usar durante testes
   eventName: string;
   phone?: string;
   email?: string;
@@ -34,10 +35,11 @@ export async function sendCapiEvent(opts: {
     eventData.custom_data = { currency: opts.currency ?? "BRL", value: opts.value };
   }
 
-  const payload = {
+  const payload: { data: unknown[]; access_token: string; test_event_code?: string } = {
     data: [eventData],
     access_token: token,
   };
+  if (opts.testEventCode) payload.test_event_code = opts.testEventCode;
 
   const res = await fetch(
     `https://graph.facebook.com/v19.0/${opts.pixelId}/events`,

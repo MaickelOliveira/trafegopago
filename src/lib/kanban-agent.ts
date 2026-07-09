@@ -259,7 +259,7 @@ async function tryDirectPhraseMatch(
   lastMessage: string,
   lead: Lead,
   funnel: Funnel,
-  client: { pixelId?: string; capiToken?: string } | null
+  client: { pixelId?: string; capiToken?: string; capiTestEventCode?: string } | null
 ): Promise<boolean> {
   const msg = lastMessage.toLowerCase().trim();
   if (!msg) return false;
@@ -285,6 +285,7 @@ async function tryDirectPhraseMatch(
           sendCapiEvent({
             pixelId: client.pixelId,
             capiToken: client.capiToken,
+            testEventCode: client.capiTestEventCode || undefined,
             eventName: col.metaEvent,
             phone: lead.phone,
             email: lead.email ?? undefined,
@@ -309,7 +310,7 @@ export async function classifyLeadByHistory(
   lead: Lead,
   funnel: Funnel,
   geminiApiKey: string,
-  client: { pixelId?: string; capiToken?: string } | null
+  client: { pixelId?: string; capiToken?: string; capiTestEventCode?: string } | null
 ): Promise<boolean> {
   if (history.length === 0) return false;
 
@@ -331,6 +332,7 @@ export async function classifyLeadByHistory(
         sendCapiEvent({
           pixelId: client.pixelId,
           capiToken: client.capiToken,
+          testEventCode: client.capiTestEventCode || undefined,
           eventName: col.metaEvent,
           phone: lead.phone,
           email: lead.email ?? undefined,
@@ -417,6 +419,7 @@ export async function processKanbanActions(
         sendCapiEvent({
           pixelId: client.pixelId,
           capiToken: client.capiToken,
+          testEventCode: client.capiTestEventCode || undefined,
           eventName: col.metaEvent,
           phone: lead.phone,
           email: lead.email ?? undefined,

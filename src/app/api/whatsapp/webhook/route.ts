@@ -251,6 +251,7 @@ export async function POST(req: NextRequest) {
         sendCapiEvent({
           pixelId:   clientObj.pixelId,
           capiToken: clientObj.capiToken,
+          testEventCode: clientObj.capiTestEventCode || undefined,
           eventName: "Lead",
           phone,
           externalId: newLead.id,

@@ -95,6 +95,7 @@ export type Client = {
   automations?: AutomationsConfig;
   pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
   capiToken?: string;           // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
+  capiTestEventCode?: string;   // Código temporário da aba "Testar eventos" do Gerenciador de Eventos — só preencher durante testes, remover depois
   googleAdsId?: string;         // ID de conta Google Ads  (ex: AW-123456789)
   googleConvLabel?: string;     // Label de conversão Google Ads (ex: AbCdEfGhI)
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)

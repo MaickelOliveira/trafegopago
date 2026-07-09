@@ -16,6 +16,7 @@ type Client = {
   adAccounts: AdAccount[];
   pixelId?: string;
   capiToken?: string;
+  capiTestEventCode?: string;
   metaPageId?: string;
   googleAdsId?: string;
   googleConvLabel?: string;
@@ -212,7 +213,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
 
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
-    pixelId: "", capiToken: "", metaPageId: "", googleAdsId: "", googleConvLabel: "",
+    pixelId: "", capiToken: "", capiTestEventCode: "", metaPageId: "", googleAdsId: "", googleConvLabel: "",
   });
   const [form, setForm] = useState(empty());
 
@@ -1017,6 +1018,18 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                 <p className="text-[10px] text-blue-400">
                   Gerado em Gerenciador de Eventos → Fontes de Dados → seu Pixel → Configurações → Gerar token de acesso.
                   Se não preenchido, usa o token global de APIs &amp; Tokens.
+                </p>
+
+                <Field
+                  label="Código de teste do CAPI (temporário)"
+                  value={form.capiTestEventCode ?? ""}
+                  onChange={(v) => setForm((f) => ({ ...f, capiTestEventCode: v }))}
+                  placeholder="TEST12345"
+                />
+                <p className="text-[10px] text-blue-400">
+                  Cole aqui o código da aba &quot;Testar eventos&quot; do Gerenciador de Eventos pra ver os eventos
+                  aparecendo em tempo real. Deixe vazio (apague) quando terminar o teste — com o código preenchido os
+                  eventos ficam marcados como teste e não contam como conversão real.
                 </p>
 
                 <Field
