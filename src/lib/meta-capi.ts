@@ -53,10 +53,21 @@ export async function sendCapiEvent(opts: {
   });
   if (!res) return;
 
+  // Sempre lê o corpo — a Meta pode responder 200 com events_received:0 e
+  // mensagens de aviso quando o evento é rejeitado por validação (ex:
+  // test_event_code inválido/expirado, user_data insuficiente), o que antes
+  // passava batido como "sucesso" só por checar res.ok.
+  const body = await res.json().catch(() => null);
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    console.error(`[Meta CAPI] resposta com erro (status ${res.status}) para evento "${opts.eventName}" pixel=${opts.pixelId}:`, err);
+    console.error(`[Meta CAPI] resposta com erro (status ${res.status}) para evento "${opts.eventName}" pixel=${opts.pixelId}:`, body);
+    return;
+  }
+
+  const eventsReceived = (body as { events_received?: number } | null)?.events_received;
+  if (eventsReceived === 0) {
+    console.warn(`[Meta CAPI] evento "${opts.eventName}" respondeu 200 mas events_received=0 (rejeitado na validação) — pixel=${opts.pixelId}${opts.testEventCode ? ` test_event_code=${opts.testEventCode}` : ""}:`, body);
   } else {
-    console.log(`[Meta CAPI] evento "${opts.eventName}" enviado com sucesso — pixel=${opts.pixelId}${opts.testEventCode ? ` test_event_code=${opts.testEventCode}` : ""}`);
+    console.log(`[Meta CAPI] evento "${opts.eventName}" enviado com sucesso — pixel=${opts.pixelId}${opts.testEventCode ? ` test_event_code=${opts.testEventCode}` : ""}:`, body);
   }
 }
