@@ -289,6 +289,8 @@ async function tryDirectPhraseMatch(
             eventName: col.metaEvent,
             phone: lead.phone,
             email: lead.email ?? undefined,
+            name: lead.name,
+            fbclid: lead.fbclid ?? undefined,
             externalId: lead.id,
             value: lead.value ?? undefined,
           }).catch(() => {});
@@ -336,6 +338,8 @@ export async function classifyLeadByHistory(
           eventName: col.metaEvent,
           phone: lead.phone,
           email: lead.email ?? undefined,
+          name: lead.name,
+          fbclid: lead.fbclid ?? undefined,
           externalId: lead.id,
           value: lead.value ?? undefined,
         }).catch(() => {});
@@ -423,6 +427,8 @@ export async function processKanbanActions(
           eventName: col.metaEvent,
           phone: lead.phone,
           email: lead.email ?? undefined,
+          name: lead.name,
+          fbclid: lead.fbclid ?? undefined,
           externalId: lead.id,
           value: lead.value ?? undefined,
         }).catch(() => {});

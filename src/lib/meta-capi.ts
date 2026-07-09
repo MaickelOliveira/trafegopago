@@ -12,6 +12,8 @@ export async function sendCapiEvent(opts: {
   eventName: string;
   phone?: string;
   email?: string;
+  name?: string;      // Nome do lead — vira fn/ln (primeiro nome / sobrenome), ambos hasheados
+  fbclid?: string;     // ID de clique do Meta Ads salvo no lead — vira o parâmetro fbc
   externalId?: string;
   value?: number;
   currency?: string;
@@ -24,9 +26,26 @@ export async function sendCapiEvent(opts: {
   }
 
   const userData: Record<string, string> = {};
-  if (opts.phone) userData.ph = sha256(opts.phone.replace(/\D/g, ""));
+  if (opts.phone) {
+    // A Meta exige o telefone COM código do país (sem "+") pra hashear — o
+    // telefone salvo no lead vem normalizado SEM o "55" (formato usado nas
+    // buscas internas de conversa), então precisa recolocar aqui antes do hash.
+    const digits = opts.phone.replace(/\D/g, "");
+    const withCountryCode = digits.startsWith("55") ? digits : `55${digits}`;
+    userData.ph = sha256(withCountryCode);
+  }
   if (opts.email) userData.em = sha256(opts.email);
   if (opts.externalId) userData.external_id = sha256(opts.externalId);
+  if (opts.name) {
+    const parts = opts.name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length > 0) userData.fn = sha256(parts[0]);
+    if (parts.length > 1) userData.ln = sha256(parts.slice(1).join(" "));
+  }
+  if (opts.fbclid) {
+    // Formato oficial do fbc: fb.1.<timestamp em ms>.<fbclid> — fbc/fbp NÃO são
+    // hasheados (diferente de email/telefone/nome, que são PII).
+    userData.fbc = `fb.1.${Date.now()}.${opts.fbclid}`;
+  }
 
   const eventData: Record<string, unknown> = {
     event_name: opts.eventName,
@@ -42,7 +61,11 @@ export async function sendCapiEvent(opts: {
     data: [eventData],
     access_token: token,
   };
-  if (opts.testEventCode) payload.test_event_code = opts.testEventCode;
+  // .trim() — espaço/quebra de linha invisível colado do Gerenciador de Eventos faz
+  // a Meta não reconhecer o código como válido: o evento é aceito normalmente
+  // (events_received:1) só que nunca aparece na aba "Testar eventos".
+  const testEventCode = opts.testEventCode?.trim();
+  if (testEventCode) payload.test_event_code = testEventCode;
 
   const res = await fetch(
     `https://graph.facebook.com/v19.0/${opts.pixelId}/events`,
@@ -66,8 +89,8 @@ export async function sendCapiEvent(opts: {
 
   const eventsReceived = (body as { events_received?: number } | null)?.events_received;
   if (eventsReceived === 0) {
-    console.warn(`[Meta CAPI] evento "${opts.eventName}" respondeu 200 mas events_received=0 (rejeitado na validação) — pixel=${opts.pixelId}${opts.testEventCode ? ` test_event_code=${opts.testEventCode}` : ""}:`, body);
+    console.warn(`[Meta CAPI] evento "${opts.eventName}" respondeu 200 mas events_received=0 (rejeitado na validação) — pixel=${opts.pixelId}${testEventCode ? ` test_event_code="${testEventCode}"` : ""}:`, body);
   } else {
-    console.log(`[Meta CAPI] evento "${opts.eventName}" enviado com sucesso — pixel=${opts.pixelId}${opts.testEventCode ? ` test_event_code=${opts.testEventCode}` : ""}:`, body);
+    console.log(`[Meta CAPI] evento "${opts.eventName}" enviado com sucesso — pixel=${opts.pixelId}${testEventCode ? ` test_event_code="${testEventCode}"` : ""}:`, body);
   }
 }

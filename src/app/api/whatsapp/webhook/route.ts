@@ -254,6 +254,8 @@ export async function POST(req: NextRequest) {
           testEventCode: clientObj.capiTestEventCode || undefined,
           eventName: "Lead",
           phone,
+          name: newLead.name,
+          fbclid: newLead.fbclid ?? undefined,
           externalId: newLead.id,
         }).catch((e) => console.error("[CAPI WA]", e));
       }
