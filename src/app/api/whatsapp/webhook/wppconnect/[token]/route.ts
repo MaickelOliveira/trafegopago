@@ -11,7 +11,7 @@ import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/w
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
-import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName, startTyping, stopTyping } from "@/lib/wppconnect-api";
+import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName, startTyping, stopTyping, markUnseen } from "@/lib/wppconnect-api";
 import { setCachedQr } from "@/lib/wppconnect-qr";
 import QRCode from "qrcode";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -614,6 +614,16 @@ export async function POST(
   if (isNew && msgTimestamp === 0) {
     console.log(`[WPP-DIAG] BLOQUEADO: sem timestamp + lead novo phone=${phone}`);
     return NextResponse.json({ ok: true });
+  }
+
+  // ── Mensagem recebida do lead: garante que a conversa apareça como não lida ──
+  // O processamento interno do WPPConnect (o navegador headless "abre" a conversa
+  // pra capturar o evento) já marca como vista mesmo sem a IA/plataforma ter
+  // respondido nada — a flag autoReadMessages enviada no start-session não é um
+  // parâmetro reconhecido por essa API, então não tem efeito nenhum. Reverte aqui,
+  // assim que a mensagem chega, sem esperar a resposta da IA (que pode nem vir).
+  if (!fromMe) {
+    markUnseen(wppSession.sessionName, wppSession.sessionToken, phone, isLidContact).catch(() => {});
   }
 
   // ── 1. Grava o lead IMEDIATAMENTE (sem esperar resolução do LID) ──

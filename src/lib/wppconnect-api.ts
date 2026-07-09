@@ -86,6 +86,11 @@ export async function startSession(
       body: JSON.stringify({
         webhook: webhookUrl,
         waitQrCode: false,
+        // whatsappVersion/autoReadMessages não são parâmetros documentados no
+        // schema oficial do start-session (só webhook/waitQrCode/proxy) — mantidos
+        // por segurança caso essa versão do servidor os reconheça mesmo assim, mas
+        // não têm efeito comprovado. Quem realmente evita marcar como lida é o
+        // markUnseen() chamado após cada envio e ao receber cada mensagem.
         whatsappVersion: "",
         autoReadMessages: false,
       }),
