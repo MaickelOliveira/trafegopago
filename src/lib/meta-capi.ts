@@ -18,7 +18,10 @@ export async function sendCapiEvent(opts: {
 }): Promise<void> {
   // Usa token de conversão do cliente se disponível, senão o token global
   const token = opts.capiToken || getConfig().metaToken;
-  if (!token || !opts.pixelId) return;
+  if (!token || !opts.pixelId) {
+    console.warn(`[Meta CAPI] evento "${opts.eventName}" NÃO enviado — faltando ${!token ? "token (capiToken do cliente e metaToken global vazios)" : "pixelId"}`);
+    return;
+  }
 
   const userData: Record<string, string> = {};
   if (opts.phone) userData.ph = sha256(opts.phone.replace(/\D/g, ""));
@@ -44,10 +47,16 @@ export async function sendCapiEvent(opts: {
   const res = await fetch(
     `https://graph.facebook.com/v19.0/${opts.pixelId}/events`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
-  ).catch(() => null);
+  ).catch((e) => {
+    console.error(`[Meta CAPI] fetch falhou (erro de rede) para evento "${opts.eventName}" pixel=${opts.pixelId}:`, e);
+    return null;
+  });
+  if (!res) return;
 
-  if (res && !res.ok) {
+  if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    console.error("[Meta CAPI]", err);
+    console.error(`[Meta CAPI] resposta com erro (status ${res.status}) para evento "${opts.eventName}" pixel=${opts.pixelId}:`, err);
+  } else {
+    console.log(`[Meta CAPI] evento "${opts.eventName}" enviado com sucesso — pixel=${opts.pixelId}${opts.testEventCode ? ` test_event_code=${opts.testEventCode}` : ""}`);
   }
 }
