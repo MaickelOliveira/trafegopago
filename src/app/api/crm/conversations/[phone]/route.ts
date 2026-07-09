@@ -23,6 +23,14 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const normalized = phone.replace(/\D/g, "");
   const clientId = req.nextUrl.searchParams.get("clientId") ?? undefined;
   const funnelId = req.nextUrl.searchParams.get("funnelId") ?? undefined;
+  const explicitConnId = req.nextUrl.searchParams.get("connId") ?? undefined;
+
+  // Número escolhido explicitamente pelo operador no seletor — busca só o
+  // histórico dessa conexão, sem cair no fallback de "conversa mais recente".
+  if (explicitConnId) {
+    const msgs = getHistory(normalized, clientId, explicitConnId);
+    return NextResponse.json({ messages: msgs, connId: explicitConnId });
+  }
 
   // Resolve connId do funil do lead (tentativa primária)
   let connId: string | undefined;
@@ -40,7 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   // Tenta com o connId do funil do lead
   if (connId) {
     const msgs = getHistory(normalized, clientId, connId);
-    if (msgs.length > 0) return NextResponse.json({ messages: msgs });
+    if (msgs.length > 0) return NextResponse.json({ messages: msgs, connId });
   }
 
   // Fallback: busca a conversa mais recente para este telefone em QUALQUER conexão.
@@ -57,13 +65,13 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
 
     for (const conv of matched) {
       const msgs = getHistory(conv.phone, clientId, conv.connId ?? undefined);
-      if (msgs.length > 0) return NextResponse.json({ messages: msgs });
+      if (msgs.length > 0) return NextResponse.json({ messages: msgs, connId: conv.connId ?? null });
     }
   }
 
   // Último recurso: chave legada sem connId
   const messages = getHistory(normalized, clientId);
-  return NextResponse.json({ messages });
+  return NextResponse.json({ messages, connId: null });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Params }) {
@@ -73,11 +81,12 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   const { phone } = await params;
   const normalized = phone.replace(/\D/g, "");
 
-  const { message, imageUrl, clientId: bodyClientId, funnelId: bodyFunnelId } = await req.json() as {
+  const { message, imageUrl, clientId: bodyClientId, funnelId: bodyFunnelId, connId: explicitConnId } = await req.json() as {
     message?: string;
     imageUrl?: string;
     clientId?: string;
     funnelId?: string;
+    connId?: string;
   };
   if (!message?.trim() && !imageUrl?.trim()) return NextResponse.json({ error: "message ou imageUrl obrigatório" }, { status: 400 });
 
@@ -98,34 +107,57 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   if (clientId) {
     const lead = getLeadByPhone(clientId, normalized);
     funnelId = bodyFunnelId ?? lead?.funnelId;
+    const allFunnels = getFunnels().filter((f) => f.clientId === clientId);
+
+    // Número escolhido explicitamente pelo operador no seletor — usa exatamente
+    // essa conexão, sem cair nas heurísticas de "conversa mais recente"/funil abaixo.
+    if (explicitConnId) {
+      const wpp = getWppSessions().find((s) => s.id === explicitConnId);
+      if (wpp) {
+        wppSession = wpp; connId = wpp.id;
+      } else {
+        const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === explicitConnId);
+        if (conn) {
+          connId = conn.id;
+          connType = conn.type ?? "uazapi";
+          if (conn.type === "meta") {
+            metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
+            metaToken = conn.metaToken ?? null;
+          } else {
+            token = conn.uazapiToken ?? null;
+          }
+        }
+      }
+    }
 
     // 1ª tentativa: usa a MESMA conexão da conversa mais recente deste telefone —
     // é a conexão que de fato já trocou mensagens com o lead (histórico e token
     // corretos), evitando enviar/salvar por uma conexão duplicada/desativada.
-    const tail9 = normalized.slice(-9);
-    const matched = getAllConversationsByClientId(clientId)
-      .filter((c) => {
-        const d = c.phone.replace(/\D/g, "");
-        return d === normalized || d.endsWith(tail9) || normalized.endsWith(d.slice(-9));
-      })
-      .sort((a, b) => b.lastActivity - a.lastActivity);
+    if (!wppSession && !connId) {
+      const tail9 = normalized.slice(-9);
+      const matched = getAllConversationsByClientId(clientId)
+        .filter((c) => {
+          const d = c.phone.replace(/\D/g, "");
+          return d === normalized || d.endsWith(tail9) || normalized.endsWith(d.slice(-9));
+        })
+        .sort((a, b) => b.lastActivity - a.lastActivity);
 
-    const allFunnels = getFunnels().filter((f) => f.clientId === clientId);
-    for (const conv of matched) {
-      if (!conv.connId) continue;
-      const wpp = getWppSessions().find((s) => s.id === conv.connId);
-      if (wpp) { wppSession = wpp; connId = wpp.id; break; }
-      const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === conv.connId);
-      if (conn && ((conn.type === "meta" && conn.metaPhoneNumberId && conn.metaToken) || (conn.type === "uazapi" && conn.uazapiToken))) {
-        connId = conn.id;
-        connType = conn.type ?? "uazapi";
-        if (conn.type === "meta") {
-          metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
-          metaToken = conn.metaToken ?? null;
-        } else {
-          token = conn.uazapiToken ?? null;
+      for (const conv of matched) {
+        if (!conv.connId) continue;
+        const wpp = getWppSessions().find((s) => s.id === conv.connId);
+        if (wpp) { wppSession = wpp; connId = wpp.id; break; }
+        const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === conv.connId);
+        if (conn && ((conn.type === "meta" && conn.metaPhoneNumberId && conn.metaToken) || (conn.type === "uazapi" && conn.uazapiToken))) {
+          connId = conn.id;
+          connType = conn.type ?? "uazapi";
+          if (conn.type === "meta") {
+            metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
+            metaToken = conn.metaToken ?? null;
+          } else {
+            token = conn.uazapiToken ?? null;
+          }
+          break;
         }
-        break;
       }
     }
 

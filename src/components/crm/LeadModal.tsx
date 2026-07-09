@@ -127,6 +127,22 @@ function FollowUpSection({ leadId }: { leadId: string }) {
   );
 }
 
+type LiveConnection = {
+  id: string;
+  phone: string;
+  type: "meta" | "uazapi" | "wppconnect";
+  status: string;
+  connected: boolean;
+  funnelId: string;
+  funnelName: string;
+};
+
+const CONN_TYPE_LABEL: Record<LiveConnection["type"], string> = {
+  meta: "📱 API Oficial (Meta)",
+  wppconnect: "💬 WPPConnect",
+  uazapi: "📟 UazAPI",
+};
+
 function fmtReminderDate(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
@@ -304,6 +320,8 @@ export function LeadModal({
   // Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
+  const [connections, setConnections] = useState<LiveConnection[]>([]);
+  const [selectedConnId, setSelectedConnId] = useState<string>("");
   const [msgInput, setMsgInput] = useState("");
   const [sending, setSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -335,6 +353,29 @@ export function LeadModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.clientId, funnel.id]);
 
+  // Carrega todos os números conectados do cliente (Meta oficial, WPPConnect, UazAPI)
+  // para o seletor "responder pelo número" na aba de conversa.
+  useEffect(() => {
+    const cId = lead.clientId;
+    if (!cId) return;
+    fetch(`/api/crm/connections?clientId=${encodeURIComponent(cId)}`)
+      .then((r) => r.ok ? r.json() : { connections: [] })
+      .then((data: { connections: LiveConnection[] }) => setConnections(data.connections ?? []))
+      .catch(() => setConnections([]));
+  }, [lead.clientId]);
+
+  // Seleciona um número padrão quando ainda não há seleção (ex: lead novo, sem
+  // histórico de mensagens que permita o backend resolver automaticamente) —
+  // prioriza um número conectado do mesmo funil do lead.
+  useEffect(() => {
+    if (selectedConnId || connections.length === 0) return;
+    const sameFunnel = connections.find((c) => c.funnelId === lead.funnelId && c.connected);
+    const anyConnected = connections.find((c) => c.connected);
+    const fallback = sameFunnel ?? anyConnected ?? connections[0];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (fallback) setSelectedConnId(fallback.id);
+  }, [connections, lead.funnelId, selectedConnId]);
+
   async function moveFunnel() {
     if (!moveFunnelId || !moveColumnId) return;
     setMoving(true);
@@ -349,7 +390,7 @@ export function LeadModal({
   }
 
   async function fetchMessages(silent = false) {
-    const cacheKey = `${lead.clientId ?? ""}:${lead.funnelId ?? ""}:${lead.phone}`;
+    const cacheKey = `${lead.clientId ?? ""}:${lead.funnelId ?? ""}:${lead.phone}:${selectedConnId}`;
     // Se não é polling silencioso, verifica cache primeiro (hit = sem loading)
     if (!silent) {
       const cached = _convCache.get(cacheKey);
@@ -360,14 +401,19 @@ export function LeadModal({
       setLoadingChat(true);
     }
     try {
-      const funnelParam = lead.funnelId ? `&funnelId=${encodeURIComponent(lead.funnelId)}` : "";
-      const qs = lead.clientId ? `?clientId=${encodeURIComponent(lead.clientId)}${funnelParam}` : "";
-      const res = await fetch(`/api/crm/conversations/${lead.phone}${qs}`);
+      const qsParams = new URLSearchParams();
+      if (lead.clientId) qsParams.set("clientId", lead.clientId);
+      if (lead.funnelId) qsParams.set("funnelId", lead.funnelId);
+      if (selectedConnId) qsParams.set("connId", selectedConnId);
+      const qs = qsParams.toString();
+      const res = await fetch(`/api/crm/conversations/${lead.phone}${qs ? `?${qs}` : ""}`);
       if (res.ok) {
         const data = await res.json();
         const msgs = data.messages ?? [];
         _convCache.set(cacheKey, { messages: msgs, fetchedAt: Date.now() });
         setMessages(msgs);
+        // Sem seleção manual ainda: alinha o seletor com o número que o backend resolveu
+        if (!selectedConnId && data.connId) setSelectedConnId(data.connId);
       }
     } finally {
       if (!silent) setLoadingChat(false);
@@ -383,7 +429,7 @@ export function LeadModal({
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, lead.phone]);
+  }, [tab, lead.phone, selectedConnId]);
 
   useEffect(() => {
     if (tab !== "chat") return;
@@ -418,6 +464,7 @@ export function LeadModal({
           imageUrl: img || undefined,
           clientId: lead.clientId,
           funnelId: lead.funnelId,
+          connId: selectedConnId || undefined,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -862,6 +909,31 @@ export function LeadModal({
         {/* Chat Tab */}
         {tab === "chat" && (
           <div className="flex flex-col flex-1 min-h-0">
+            {/* Seletor de número conectado — separa API Oficial (Meta) de WPPConnect/UazAPI */}
+            {connections.length > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100 bg-white shrink-0">
+                <span className="text-xs text-slate-400 font-medium shrink-0">Responder pelo número:</span>
+                <select
+                  value={selectedConnId}
+                  onChange={(e) => setSelectedConnId(e.target.value)}
+                  className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-green-400"
+                >
+                  {(["meta", "wppconnect", "uazapi"] as const).map((type) => {
+                    const group = connections.filter((c) => c.type === type);
+                    if (group.length === 0) return null;
+                    return (
+                      <optgroup key={type} label={CONN_TYPE_LABEL[type]}>
+                        {group.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {(c.phone || c.id) + (c.connected ? "" : " — desconectado")}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
             <div
               ref={chatContainerRef}
               onScroll={() => {
