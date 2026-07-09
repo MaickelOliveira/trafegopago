@@ -25,9 +25,27 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   const funnelId = req.nextUrl.searchParams.get("funnelId") ?? undefined;
   const explicitConnId = req.nextUrl.searchParams.get("connId") ?? undefined;
 
-  // Número escolhido explicitamente pelo operador no seletor — busca só o
-  // histórico dessa conexão, sem cair no fallback de "conversa mais recente".
+  // Número escolhido explicitamente pelo operador no seletor — busca o
+  // histórico isolado dessa conexão. Usa o mesmo casamento fuzzy de telefone
+  // do fallback abaixo (não só a chave exata clientId:connId:phone) porque o
+  // connId "ao vivo" (da lista de conexões atual) pode não bater 1:1 com o
+  // connId gravado na conversa quando a conexão foi reconfigurada/duplicada.
   if (explicitConnId) {
+    if (clientId) {
+      const tail9 = normalized.slice(-9);
+      const matched = getAllConversationsByClientId(clientId)
+        .filter((c) => c.connId === explicitConnId)
+        .filter((c) => {
+          const d = c.phone.replace(/\D/g, "");
+          return d === normalized || d.endsWith(tail9) || normalized.endsWith(d.slice(-9));
+        })
+        .sort((a, b) => b.lastActivity - a.lastActivity);
+      for (const conv of matched) {
+        const msgs = getHistory(conv.phone, clientId, explicitConnId);
+        if (msgs.length > 0) return NextResponse.json({ messages: msgs, connId: explicitConnId });
+      }
+    }
+    // Sem correspondência fuzzy: tenta a chave direta mesmo assim (rede de segurança)
     const msgs = getHistory(normalized, clientId, explicitConnId);
     return NextResponse.json({ messages: msgs, connId: explicitConnId });
   }
