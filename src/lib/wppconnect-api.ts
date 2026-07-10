@@ -512,10 +512,13 @@ export async function markUnseen(
   }
   try {
     const phoneFormatted = isGroup ? phone : isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
+    // Contato LID: precisa do isLid:true no corpo (mesmo padrão de sendText/
+    // sendMedia) — sem isso o WPPConnect tenta validar o ID como telefone
+    // normal e rejeita com "número não existe".
     const res = await fetch(`${base()}/api/${sessionName}/mark-unseen`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ phone: phoneFormatted, isGroup }),
+      body: JSON.stringify({ phone: phoneFormatted, isGroup, ...(isLid ? { isLid: true } : {}) }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
