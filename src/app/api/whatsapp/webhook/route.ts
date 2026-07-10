@@ -244,8 +244,14 @@ export async function POST(req: NextRequest) {
       } : {}),
     });
 
-    // Envia Lead para Meta CAPI quando lead novo veio de anúncio Meta
-    if (isNew && adPlatform === "meta") {
+    // Envia Lead para Meta CAPI quando lead novo veio de anúncio Meta.
+    // Só dispara esse fallback se a coluna "entrada" não tiver um metaEvent
+    // configurado — nesse caso o upsertLeadByPhone já disparou o evento da
+    // coluna (fireEntryColumnMetaEvent em leads.ts), evitando duplicar.
+    const entryColHasMetaEvent = !!funnels
+      .find((f) => f.id === effectiveFunnelId)
+      ?.columns.find((c) => c.id === "entrada")?.metaEvent;
+    if (isNew && adPlatform === "meta" && !entryColHasMetaEvent) {
       const clientObj = getClientById(cid);
       if (clientObj?.pixelId) {
         sendCapiEvent({

@@ -123,7 +123,11 @@ export async function POST(
   // e-mail, nome, fbclid, fbp, IP e User-Agent reais no momento exato da
   // conversão, então tende a ter qualidade de correspondência melhor que
   // eventos disparados depois (ex: mudança de coluna no Kanban).
-  if (isNewLead) {
+  // Só dispara esse fallback se a coluna de entrada NÃO tiver um metaEvent
+  // configurado — nesse caso o próprio upsertLeadByPhone já disparou o evento
+  // da coluna (fireEntryColumnMetaEvent em leads.ts), e disparar os dois seria duplicado.
+  const entryColHasMetaEvent = !!funnel?.columns.find((c) => c.id === columnId)?.metaEvent;
+  if (isNewLead && !entryColHasMetaEvent) {
     const client = getClientById(wh.clientId);
     if (client?.pixelId) {
       sendCapiEvent({

@@ -2,6 +2,9 @@ import { readFileSync, writeFileSync, existsSync, renameSync, mkdirSync, statSyn
 import path from "path";
 import { randomUUID } from "crypto";
 import { getAllConversationsByClientId } from "./conversations";
+import { getFunnelById } from "./funnels";
+import { getClientById } from "./clients";
+import { sendCapiEvent } from "./meta-capi";
 
 export type LeadStatus = "novo" | "contato" | "proposta" | "ganho" | "perdido";
 export type LeadSource = "whatsapp" | "form" | "manual";
@@ -181,6 +184,34 @@ export function getLeadByPhone(clientId: string, phone: string, funnelId?: strin
   );
 }
 
+/**
+ * Dispara o evento CAPI configurado na coluna em que o lead entrou — cobre o
+ * caso de o lead já nascer direto na coluna (webhook, WhatsApp, etc.), sem
+ * passar por uma mudança de status via PUT (único lugar que disparava isso
+ * antes, então lead novo criado já na coluna "Novo" nunca gerava o evento).
+ */
+function fireEntryColumnMetaEvent(lead: Lead): void {
+  const funnel = getFunnelById(lead.funnelId);
+  const col = funnel?.columns.find((c) => c.id === lead.status);
+  if (!col?.metaEvent) return;
+  const client = getClientById(lead.clientId);
+  if (!client?.pixelId) return;
+  sendCapiEvent({
+    pixelId: client.pixelId,
+    capiToken: client.capiToken,
+    testEventCode: client.capiTestEventCode || undefined,
+    eventName: col.metaEvent,
+    phone: lead.phone,
+    email: lead.email ?? undefined,
+    name: lead.name,
+    fbclid: lead.fbclid ?? undefined,
+    fbp: lead.fbp ?? undefined,
+    clientIp: lead.clientIp ?? undefined,
+    clientUserAgent: lead.clientUserAgent ?? undefined,
+    externalId: lead.id,
+  }).catch((e) => console.error("[Meta CAPI] evento da coluna de entrada", e));
+}
+
 export function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedAt">): Lead {
   const leads = load();
   // Evita duplicata por telefone + cliente + funil (checa também realPhone)
@@ -198,6 +229,7 @@ export function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedAt">): 
   const lead: Lead = { ...data, id: randomUUID(), createdAt: now, updatedAt: now };
   leads.push(lead);
   save(leads);
+  fireEntryColumnMetaEvent(lead);
   return lead;
 }
 
@@ -322,6 +354,7 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
   };
   leads.push(lead);
   save(leads);
+  fireEntryColumnMetaEvent(lead);
   return lead;
 }
 
