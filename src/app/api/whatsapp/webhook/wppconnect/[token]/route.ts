@@ -541,6 +541,7 @@ export async function POST(
   const funnel = funnels.find(f => f.id === wppSession.funnelId);
   const defaultFunnelId = funnel?.id ?? wppSession.funnelId!;
   const clientId = wppSession.clientId ?? funnel?.clientId ?? "sem-cliente";
+  const connId = wppSession.id;
 
   // Se o lead já existe em OUTRO funil do mesmo cliente (ex: uma automação
   // "mover para outra etapa" com coluna de destino em outro funil mudou o
@@ -548,11 +549,17 @@ export async function POST(
   // isso, toda mensagem seguinte recriava um lead novo no funil padrão da
   // conexão, porque a busca só olhava esse funil e o lead "sumia" de lá assim
   // que a automação o movia para outro.
-  const existingLeadAnyFunnel = getLeadByPhone(clientId, phone);
+  // Só reaproveita um lead de outro funil se ESTA conexão já tem histórico de
+  // conversa com esse telefone — sem essa checagem, um número que por
+  // coincidência já é lead em outro funil/conexão do mesmo cliente "rouba" a
+  // mensagem de um contato realmente novo, que deveria cair no funil padrão.
+  const leadInDefaultFunnel = getLeadByPhone(clientId, phone, defaultFunnelId);
+  const leadElsewhere = leadInDefaultFunnel ? null : getLeadByPhone(clientId, phone);
+  const hasHistoryOnThisConn = !!leadElsewhere && getHistory(phone, clientId, connId).length > 0;
+  const existingLeadAnyFunnel = leadInDefaultFunnel ?? (hasHistoryOnThisConn ? leadElsewhere : null);
   const funnelId = existingLeadAnyFunnel?.funnelId ?? defaultFunnelId;
   const funnelForEntrada = funnelId === defaultFunnelId ? funnel : funnels.find(f => f.id === funnelId);
   const entradaColumnId = funnelForEntrada?.columns?.[0]?.id ?? "entrada";
-  const connId = wppSession.id;
 
   const existingLead = existingLeadAnyFunnel;
   const isNew = !existingLead;
