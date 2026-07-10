@@ -506,15 +506,24 @@ export async function markUnseen(
   isLid = false,
   isGroup = false,
 ): Promise<void> {
-  if (!base()) return;
+  if (!base()) {
+    console.warn(`[wppconnect-api] markUnseen NÃO enviado — WPPCONNECT_SERVER não configurado (session=${sessionName})`);
+    return;
+  }
   try {
     const phoneFormatted = isGroup ? phone : isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
-    await fetch(`${base()}/api/${sessionName}/mark-unseen`, {
+    const res = await fetch(`${base()}/api/${sessionName}/mark-unseen`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ phone: phoneFormatted, isGroup }),
     });
-  } catch { /* ignora — não-crítico */ }
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[wppconnect-api] markUnseen FALHOU status=${res.status} session=${sessionName} phone=${phoneFormatted} body=${body.slice(0, 300)}`);
+    }
+  } catch (e) {
+    console.error(`[wppconnect-api] markUnseen EXCEPTION session=${sessionName} phone=${phone}:`, e);
+  }
 }
 
 // Lista todos os grupos do WhatsApp conectado nesta sessão

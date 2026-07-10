@@ -623,7 +623,10 @@ export async function POST(
   // parâmetro reconhecido por essa API, então não tem efeito nenhum. Reverte aqui,
   // assim que a mensagem chega, sem esperar a resposta da IA (que pode nem vir).
   if (!fromMe) {
-    markUnseen(wppSession.sessionName, wppSession.sessionToken, phone, isLidContact).catch(() => {});
+    console.log(`[WPPConnect markUnseen] chamando pra session=${wppSession.sessionName} phone=${phone} isLid=${isLidContact}`);
+    markUnseen(wppSession.sessionName, wppSession.sessionToken, phone, isLidContact).catch((e) => {
+      console.error(`[WPPConnect markUnseen] erro inesperado session=${wppSession.sessionName} phone=${phone}:`, e);
+    });
   }
 
   // ── 1. Grava o lead IMEDIATAMENTE (sem esperar resolução do LID) ──
