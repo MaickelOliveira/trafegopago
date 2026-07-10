@@ -539,12 +539,22 @@ export async function POST(
   // Encontra o funil vinculado
   const funnels = getFunnels();
   const funnel = funnels.find(f => f.id === wppSession.funnelId);
-  const funnelId = funnel?.id ?? wppSession.funnelId!;
+  const defaultFunnelId = funnel?.id ?? wppSession.funnelId!;
   const clientId = wppSession.clientId ?? funnel?.clientId ?? "sem-cliente";
-  const entradaColumnId = funnel?.columns?.[0]?.id ?? "entrada";
+
+  // Se o lead já existe em OUTRO funil do mesmo cliente (ex: uma automação
+  // "mover para outra etapa" com coluna de destino em outro funil mudou o
+  // funnelId dele), continua reconhecendo e atualizando esse lead ali — sem
+  // isso, toda mensagem seguinte recriava um lead novo no funil padrão da
+  // conexão, porque a busca só olhava esse funil e o lead "sumia" de lá assim
+  // que a automação o movia para outro.
+  const existingLeadAnyFunnel = getLeadByPhone(clientId, phone);
+  const funnelId = existingLeadAnyFunnel?.funnelId ?? defaultFunnelId;
+  const funnelForEntrada = funnelId === defaultFunnelId ? funnel : funnels.find(f => f.id === funnelId);
+  const entradaColumnId = funnelForEntrada?.columns?.[0]?.id ?? "entrada";
   const connId = wppSession.id;
 
-  const existingLead = getLeadByPhone(clientId, phone, funnelId);
+  const existingLead = existingLeadAnyFunnel;
   const isNew = !existingLead;
   // Só atualiza o nome a partir de mensagens RECEBIDAS do lead (fromMe=false).
   // Quando fromMe=true, o pushName é o do operador — não do lead.
