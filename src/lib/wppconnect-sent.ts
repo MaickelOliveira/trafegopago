@@ -5,30 +5,37 @@
 const sentRegistry = new Map<string, string[]>(); // phone → conteúdos recentes
 
 /**
- * Registry de envios recentes da plataforma (janela de 30s).
+ * Registry de envios recentes da plataforma (janela curta, uso limitado).
  * Impede que ecos onselfmessage/onanymessage de qualquer tipo (texto ou mídia) pausem a IA.
  * O WPPConnect pode disparar 2 eventos para a mesma mensagem (onanymessage + onselfmessage),
  * e o consumeSent remove a entrada no primeiro — o segundo ficaria sem correspondência.
- * A janela de tempo cobre ambos os eventos sem depender de match exato.
+ * A janela cobre esses 2 ecos, mas expira rápido (8s) e tem no máximo 2 usos —
+ * assim uma mensagem real do operador logo depois de um envio nosso não é engolida
+ * como se fosse eco (era o bug: janela de 30s sem limite de uso escondia o operador
+ * assumindo a conversa quando isso acontecia perto de um envio da IA/plataforma).
  */
-const phoneSendingRegistry = new Map<string, number>(); // phone → timestamp de expiração
+const phoneSendingRegistry = new Map<string, { expiry: number; usesLeft: number }>();
 
 export function markPhoneSending(phone: string) {
-  const expiry = Date.now() + 30_000;
-  phoneSendingRegistry.set(phone, expiry);
-  console.log(`[wppconnect-sent] markPhoneSending phone=${phone} expiry_in=30s`);
+  const expiry = Date.now() + 8_000;
+  phoneSendingRegistry.set(phone, { expiry, usesLeft: 2 });
+  console.log(`[wppconnect-sent] markPhoneSending phone=${phone} expiry_in=8s usesLeft=2`);
   setTimeout(() => {
     const stored = phoneSendingRegistry.get(phone);
-    if (stored && stored <= Date.now()) phoneSendingRegistry.delete(phone);
-  }, 30_000);
+    if (stored && stored.expiry <= Date.now()) phoneSendingRegistry.delete(phone);
+  }, 8_000);
 }
 
 export function isPhoneSending(phone: string): boolean {
-  const expiry = phoneSendingRegistry.get(phone);
-  if (!expiry) return false;
-  if (Date.now() < expiry) return true;
-  phoneSendingRegistry.delete(phone);
-  return false;
+  const entry = phoneSendingRegistry.get(phone);
+  if (!entry) return false;
+  if (Date.now() >= entry.expiry) {
+    phoneSendingRegistry.delete(phone);
+    return false;
+  }
+  entry.usesLeft -= 1;
+  if (entry.usesLeft <= 0) phoneSendingRegistry.delete(phone);
+  return true;
 }
 
 /** @deprecated use markPhoneSending */

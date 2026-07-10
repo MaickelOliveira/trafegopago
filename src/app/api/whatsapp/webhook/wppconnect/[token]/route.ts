@@ -713,26 +713,32 @@ export async function POST(
     const isOperatorOnlyMedia = msgType === "ptt" || msgType === "audio";
 
     if (!isOperatorOnlyMedia) {
-      // Janela de envio ativa: eco da plataforma (onanymessage ou onselfmessage)
-      if (isPhoneSending(phone)) {
-        console.log(`[WPPConnect fromMe] phone=${phone} janela de envio ativa — não pausa IA`);
-        return NextResponse.json({ ok: true });
-      }
-
       if (text.trim()) {
-        // Fora da janela: tenta match exato no registry (mensagens de texto da IA/plataforma)
+        // Match exato primeiro (mensagens de texto da IA/plataforma) — é o sinal mais
+        // confiável, então tem prioridade sobre a janela genérica abaixo.
         const consumed = consumeSent(phone, text.trim());
         console.log(`[WPPConnect fromMe] phone=${phone} consumed=${consumed} text="${text.trim().slice(0, 80)}"`);
         if (consumed) {
           return NextResponse.json({ ok: true });
         }
-        // Verifica se é uma saudação automática do WA Business (ex: anúncios CTWa).
+      }
+
+      // Janela de envio ativa (fallback p/ mídia sem texto ou 2º evento duplicado do
+      // WPPConnect p/ a mesma mensagem) — uso limitado, ver wppconnect-sent.ts.
+      if (isPhoneSending(phone)) {
+        console.log(`[WPPConnect fromMe] phone=${phone} janela de envio ativa — não pausa IA`);
+        return NextResponse.json({ ok: true });
+      }
+
+      // Saudação automática do WA Business só é reconhecida quando confirmada via
+      // CTWa (adId rastreado) — não basta "conversa ainda sem mensagem do lead",
+      // pois isso também é verdade quando o operador manda a primeira mensagem
+      // pelo próprio celular, e nesse caso a IA deve pausar igual.
+      if (text.trim()) {
         const isCTWaGreeting = ctwaLeadSet.has(phone);
-        const historyFM = getHistory(phone, clientId, connId);
-        const hasUserMessages = historyFM.some((m) => m.role === "user");
-        if (!hasUserMessages || isCTWaGreeting) {
-          if (isCTWaGreeting) ctwaLeadSet.delete(phone);
-          console.log(`[WPPConnect fromMe] phone=${phone} — saudação automática (${isCTWaGreeting ? "CTWa identificado via adId" : "conversa nova"}), não pausa IA`);
+        if (isCTWaGreeting) {
+          ctwaLeadSet.delete(phone);
+          console.log(`[WPPConnect fromMe] phone=${phone} — saudação automática (CTWa identificado via adId), não pausa IA`);
           addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
           return NextResponse.json({ ok: true });
         }
