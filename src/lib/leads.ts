@@ -289,6 +289,14 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
   const leads = load();
   const normalized = normalizePhone(phone);
   const funnelId = patch.funnelId ?? "default";
+  // DIAGNÓSTICO TEMPORÁRIO — investigando duplicação de leads (mesmo phone/clientId/
+  // funnelId gerando registros novos em vez de atualizar o existente). Remover depois.
+  const nearMatches = leads.filter((l) => normalizePhone(l.phone) === normalized);
+  if (nearMatches.length > 0) {
+    console.log(
+      `[leads DIAG] upsertLeadByPhone busca clientId=${JSON.stringify(clientId)} funnelId=${JSON.stringify(funnelId)} phoneNorm=${JSON.stringify(normalized)} | candidatos por telefone: ${JSON.stringify(nearMatches.map((l) => ({ id: l.id, clientId: l.clientId, funnelId: l.funnelId, phone: l.phone })))}`,
+    );
+  }
   // Busca por clientId + funnelId + telefone normalizado.
   // Mesmo número em funnels diferentes = leads separados (cada agente/canal tem seu próprio lead).
   // Mesmo número no mesmo funil = um único lead (sem duplicata).
