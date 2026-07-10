@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWebhookById, incrementWebhookCount } from "@/lib/webhooks";
 import { getFunnelById } from "@/lib/funnels";
-import { upsertLeadByPhone } from "@/lib/leads";
+import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
+import { getClientById } from "@/lib/clients";
+import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +88,10 @@ export async function POST(
     : payload.gclid || utmSourceRaw === "google"         ? "google"
     : null;
 
+  // Checa ANTES do upsert se o lead já existia — só dispara o evento CAPI
+  // "Lead" pra quem é realmente novo, não a cada reenvio do mesmo telefone.
+  const isNewLead = !getLeadByPhone(wh.clientId, phone, wh.funnelId);
+
   // Upsert: se lead já existe no mesmo funil (mesmo se veio por WhatsApp), atualiza status
   // para a coluna configurada no webhook (ex: "Novo"). Se não existe, cria.
   const lead = upsertLeadByPhone(wh.clientId, phone, {
@@ -112,6 +118,31 @@ export async function POST(
     ai: null,
   });
   incrementWebhookCount(id);
+
+  // Dispara evento CAPI "Lead" pra lead novo — esse webhook já captura telefone,
+  // e-mail, nome, fbclid, fbp, IP e User-Agent reais no momento exato da
+  // conversão, então tende a ter qualidade de correspondência melhor que
+  // eventos disparados depois (ex: mudança de coluna no Kanban).
+  if (isNewLead) {
+    const client = getClientById(wh.clientId);
+    if (client?.pixelId) {
+      sendCapiEvent({
+        pixelId: client.pixelId,
+        capiToken: client.capiToken,
+        testEventCode: client.capiTestEventCode || undefined,
+        eventName: "Lead",
+        phone: lead.phone,
+        email: lead.email ?? undefined,
+        name: lead.name,
+        fbclid: lead.fbclid ?? undefined,
+        fbp: lead.fbp ?? undefined,
+        clientIp: lead.clientIp ?? undefined,
+        clientUserAgent: lead.clientUserAgent ?? undefined,
+        externalId: lead.id,
+      }).catch((e) => console.error("[Meta CAPI]", e));
+    }
+  }
+
   // Dispara automações CRM
   runAutomationsForEvent("lead_created", lead, { webhookId: id });
   runAutomationsForEvent("column_entered", lead, { toColumnId: columnId });
