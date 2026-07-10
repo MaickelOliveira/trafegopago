@@ -51,6 +51,12 @@ export async function register() {
       } catch (e) {
         console.error("[cron] Erro geral:", e);
       }
+      try {
+        const { reconnectDroppedWppSessions } = await import("./lib/wppconnect-health");
+        await reconnectDroppedWppSessions();
+      } catch (e) {
+        console.error("[cron] Erro ao verificar sessões WPPConnect:", e);
+      }
     };
 
     // Aguarda 5s após iniciar (servidor estabilizar) e depois roda a cada 60s
