@@ -167,6 +167,14 @@ export function getAgentConfigForConnection(
       (c) => c.whatsappConnectionId === connectionId
     );
     if (specific) return specific;
+    // Cliente já usa config por conexão (agentConfigs[] não vazio) — uma conexão
+    // NOVA sem config própria não deve herdar o agentConfig legado de OUTRA
+    // conexão do mesmo cliente. Sem essa checagem, um número recém-adicionado
+    // "puxava" a config antiga/genérica do cliente (podendo vir com enabled:true
+    // mesmo nunca tendo sido configurada pra esse número específico).
+    if (client.agentConfigs && client.agentConfigs.length > 0) {
+      return undefined;
+    }
   }
   return client.agentConfig;
 }
