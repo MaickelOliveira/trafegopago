@@ -27,6 +27,13 @@ export async function POST(
   const { sessionName, sessionToken } = wppSession;
 
   const currentStatus = await checkConnectionStatus(sessionName, sessionToken);
+  // Trava de segurança: nunca reinicia (nem com force=true) uma sessão que já
+  // está CONECTADA de verdade — evita derrubar uma conexão ativa caso o botão
+  // "tentar de novo" seja clicado bem no instante em que acabou de conectar,
+  // antes da tela perceber que já deu certo.
+  if (currentStatus === "CONNECTED") {
+    return NextResponse.json({ status: "connected", qr: null, cooldownMs: 0 });
+  }
   const isIdle = currentStatus === "DISCONNECTED" || currentStatus === "UNKNOWN";
   if (body.force || isIdle) {
     await logoutSession(sessionName, sessionToken).catch(() => {});
