@@ -180,6 +180,16 @@ const NICHE_QUESTIONS: Record<string, Array<{ id: string; label: string; type: s
     { id: "tom_cobranca", label: "Tom da cobrança", type: "select", options: ["Firme e direto", "Educado, mas objetivo", "Flexível e compreensivo"] },
     { id: "dados_pagamento", label: "Dados de pagamento que a IA pode enviar (chave PIX, link de boleto, etc.)", type: "textarea", placeholder: "Ex: Chave PIX CNPJ, link do boleto gerado pelo sistema X..." },
   ],
+  "Financeiro Interno (uso da equipe)": [
+    { id: "quem_usa", label: "Quem vai usar esse assistente?", type: "textarea", placeholder: "Ex: Gerente financeiro, analistas de contas a pagar/receber, diretoria...", required: true },
+    { id: "tarefas_internas", label: "Quais tarefas o assistente deve ajudar a resolver?", type: "textarea", placeholder: "Ex: Consultar contas a pagar/receber, status de pagamentos, resumo de saldo em caixa, lembrete de vencimentos internos...", required: true },
+    { id: "sistema_financeiro", label: "Qual sistema/ERP financeiro a empresa usa hoje?", type: "text", placeholder: "Ex: Conta Azul, Omie, Bling, Sienge, planilha própria..." },
+    { id: "tipo_acesso", label: "O assistente só consulta informações, ou também pode registrar lançamentos?", type: "select", options: ["Só consulta (leitura)", "Consulta e registra lançamentos", "Ainda não sei definir"] },
+    { id: "niveis_permissao", label: "Precisa de níveis de permissão diferentes por pessoa?", type: "textarea", placeholder: "Ex: Só a diretoria vê valores totais, analistas veem só o próprio setor..." },
+    { id: "resumos_automaticos", label: "Quer resumos/relatórios automáticos enviados em algum horário?", type: "text", placeholder: "Ex: Resumo do caixa todo dia às 8h" },
+    { id: "info_sensivel", label: "Alguma informação que NUNCA deve ser compartilhada por esse canal?", type: "textarea", placeholder: "Ex: Dados de folha de pagamento, senhas de acesso, contratos confidenciais..." },
+    { id: "outras_ferramentas", label: "Precisa integrar com outra ferramenta (planilha, banco de dados, etc.)?", type: "textarea", placeholder: "Ex: Google Sheets com o fluxo de caixa, banco de dados interno..." },
+  ],
 };
 
 const NICHES = Object.keys(NICHE_QUESTIONS);
@@ -206,6 +216,7 @@ const NICHE_ICONS: Record<string, string> = {
   "Loja de Roupa / Boutique": "👗",
   "Automecânica / Oficina": "🔧",
   "Setor Financeiro / Cobrança": "💰",
+  "Financeiro Interno (uso da equipe)": "🏢",
 };
 
 export default function BriefingPage() {
