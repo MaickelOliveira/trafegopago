@@ -86,6 +86,7 @@ export default function ConectarPage() {
         };
 
         const startPolling = () => {
+          if (qrSetAt === 0) qrSetAt = Date.now();
           poll = setInterval(async () => {
             if (!alive) return;
             try {
@@ -105,6 +106,11 @@ export default function ConectarPage() {
                   setQrImage(null); setStage("generating");
                   connectAndFetchQr(false);
                 }
+              } else if (!d.connected && Date.now() - qrSetAt > 65000) {
+                // Nenhum QR chegou (nem novo, nem cooldown) por tempo demais —
+                // sem isso a tela ficava presa em "Gerando QR Code..." pra sempre.
+                qrSetAt = Date.now();
+                connectAndFetchQr(true);
               }
               if (d.connected && qrShownRef.current) {
                 setStage("done"); clearInterval(poll); alive = false;
@@ -163,14 +169,12 @@ export default function ConectarPage() {
               </div>
             )}
 
-            {qrImage && (
-              <button
-                onClick={() => forceRegenerateRef.current?.()}
-                className="text-xs text-violet-600 hover:text-violet-700 font-medium underline mb-4"
-              >
-                QR expirou? Gerar um novo
-              </button>
-            )}
+            <button
+              onClick={() => forceRegenerateRef.current?.()}
+              className="text-xs text-violet-600 hover:text-violet-700 font-medium underline mb-4"
+            >
+              {qrImage ? "QR expirou? Gerar um novo" : "Demorando? Toque para tentar de novo"}
+            </button>
 
             <div className="text-left bg-white border border-slate-200 rounded-2xl p-4 space-y-2">
               <p className="text-sm font-semibold text-slate-700 mb-2">Como conectar:</p>
