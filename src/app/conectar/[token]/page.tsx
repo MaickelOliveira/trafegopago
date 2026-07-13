@@ -13,6 +13,7 @@ export default function ConectarPage() {
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const qrShownRef = useRef(false);
+  const forceRegenerateRef = useRef<(() => void) | null>(null);
 
   // Valida o token e, se válido, inicia o fluxo de conexão/polling
   useEffect(() => {
@@ -78,6 +79,12 @@ export default function ConectarPage() {
           finally { connecting = false; }
         };
 
+        forceRegenerateRef.current = () => {
+          setQrImage(null);
+          setStage("generating");
+          connectAndFetchQr(true);
+        };
+
         const startPolling = () => {
           poll = setInterval(async () => {
             if (!alive) return;
@@ -110,7 +117,7 @@ export default function ConectarPage() {
       })
       .catch(() => { setError("Erro ao carregar o link."); setStage("invalid"); });
 
-    return () => { alive = false; clearInterval(poll); clearInterval(cooldownTick); };
+    return () => { alive = false; clearInterval(poll); clearInterval(cooldownTick); forceRegenerateRef.current = null; };
   }, [token]);
 
   return (
@@ -154,6 +161,15 @@ export default function ConectarPage() {
                 <div className="animate-spin h-8 w-8 border-2 border-slate-200 border-t-violet-500 rounded-full" />
                 <p className="text-xs text-slate-400 px-4">Gerando QR Code...</p>
               </div>
+            )}
+
+            {qrImage && (
+              <button
+                onClick={() => forceRegenerateRef.current?.()}
+                className="text-xs text-violet-600 hover:text-violet-700 font-medium underline mb-4"
+              >
+                QR expirou? Gerar um novo
+              </button>
             )}
 
             <div className="text-left bg-white border border-slate-200 rounded-2xl p-4 space-y-2">
