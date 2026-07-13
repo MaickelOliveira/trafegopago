@@ -266,19 +266,19 @@ export default function BriefingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-slate-400 text-sm animate-pulse">Carregando...</div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-slate-500 text-sm animate-pulse">Carregando...</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="text-center max-w-sm">
           <div className="text-4xl mb-4">❌</div>
-          <p className="text-white font-semibold text-lg mb-2">Formulário indisponível</p>
-          <p className="text-slate-400 text-sm">{error}</p>
+          <p className="text-slate-900 font-semibold text-lg mb-2">Formulário indisponível</p>
+          <p className="text-slate-500 text-sm">{error}</p>
         </div>
       </div>
     );
@@ -286,37 +286,37 @@ export default function BriefingPage() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="text-center max-w-sm">
           <div className="text-6xl mb-6">✅</div>
-          <h1 className="text-white font-bold text-2xl mb-3">Briefing enviado!</h1>
-          <p className="text-slate-400 text-sm leading-relaxed">
+          <h1 className="text-slate-900 font-bold text-2xl mb-3">Briefing enviado!</h1>
+          <p className="text-slate-500 text-sm leading-relaxed">
             Recebemos todas as suas informações. Nossa equipe já foi notificada e entrará em contato em breve para configurar o seu assistente de IA no WhatsApp.
           </p>
-          <p className="text-slate-600 text-xs mt-6">Você pode fechar esta janela.</p>
+          <p className="text-slate-400 text-xs mt-6">Você pode fechar esta janela.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 py-10 px-4">
+    <div className="min-h-screen bg-slate-50 py-10 px-4">
       <div className="max-w-2xl mx-auto space-y-8">
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2 bg-violet-600/20 border border-violet-500/30 rounded-full px-4 py-1.5">
-            <span className="text-violet-400 text-xs font-semibold uppercase tracking-wider">Configuração do Assistente de IA</span>
+          <div className="inline-flex items-center gap-2 bg-violet-100 border border-violet-200 rounded-full px-4 py-1.5">
+            <span className="text-violet-700 text-xs font-semibold uppercase tracking-wider">Configuração do Assistente de IA</span>
           </div>
-          <h1 className="text-white text-2xl font-bold">
-            Briefing — <span className="text-violet-400">{clientName}</span>
+          <h1 className="text-slate-900 text-2xl font-bold">
+            Briefing — <span className="text-violet-600">{clientName}</span>
           </h1>
           {selectedNiche && (
-            <div className="inline-flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-full px-4 py-1.5">
+            <div className="inline-flex items-center gap-2 bg-slate-100 border border-slate-200 rounded-full px-4 py-1.5">
               <span className="text-base">{NICHE_ICONS[selectedNiche] ?? "📋"}</span>
-              <span className="text-slate-300 text-xs font-medium">{selectedNiche}</span>
+              <span className="text-slate-600 text-xs font-medium">{selectedNiche}</span>
             </div>
           )}
-          <p className="text-slate-400 text-sm max-w-md mx-auto">
+          <p className="text-slate-500 text-sm max-w-md mx-auto">
             Preencha as informações abaixo para configurarmos o seu assistente de WhatsApp com Inteligência Artificial.
           </p>
         </div>
@@ -336,11 +336,11 @@ export default function BriefingPage() {
           {nicheQuestions.length > 0 && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-violet-800/40" />
-                <span className="text-violet-400 text-xs font-semibold uppercase tracking-wider">
+                <div className="h-px flex-1 bg-violet-200" />
+                <span className="text-violet-700 text-xs font-semibold uppercase tracking-wider">
                   {NICHE_ICONS[selectedNiche!] ?? "📋"} Sobre o seu negócio
                 </span>
-                <div className="h-px flex-1 bg-violet-800/40" />
+                <div className="h-px flex-1 bg-violet-200" />
               </div>
               {nicheQuestions.map((q) => (
                 <QuestionField
@@ -362,7 +362,7 @@ export default function BriefingPage() {
           </button>
         </form>
 
-        <p className="text-center text-slate-600 text-xs pb-6">
+        <p className="text-center text-slate-400 text-xs pb-6">
           Suas informações são confidenciais e usadas exclusivamente para configurar seu assistente de IA.
         </p>
       </div>
@@ -377,17 +377,17 @@ function QuestionField({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const inputClass = "w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition placeholder:text-slate-600";
+  const inputClass = "w-full bg-white border border-slate-300 text-slate-900 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition placeholder:text-slate-400";
 
   return (
     <div className="space-y-2">
-      <label className="block text-sm font-medium text-slate-300">
+      <label className="block text-sm font-medium text-slate-700">
         {question.label}
-        {question.required && <span className="text-violet-400 ml-1">*</span>}
+        {question.required && <span className="text-violet-600 ml-1">*</span>}
       </label>
 
       {question.type === "select" ? (
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={inputClass + " bg-slate-900"}>
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={inputClass + " bg-white"}>
           <option value="">Selecione...</option>
           {question.options?.map((o) => (
             <option key={o} value={o}>{o}</option>
