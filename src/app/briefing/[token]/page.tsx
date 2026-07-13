@@ -169,6 +169,17 @@ const NICHE_QUESTIONS: Record<string, Array<{ id: string; label: string; type: s
     { id: "servico_guincho", label: "Tem serviço de guincho / reboque?", type: "select", options: ["Sim, próprio", "Sim, parceiro", "Não"] },
     { id: "garantia_servico", label: "Oferece garantia nos serviços?", type: "text", placeholder: "Ex: 6 meses em peças e mão de obra" },
   ],
+  "Setor Financeiro / Cobrança": [
+    { id: "situacoes_financeiras", label: "Quais situações a IA deve atender?", type: "textarea", placeholder: "Ex: Aviso de fatura em aberto, negociação de dívida, 2ª via de boleto, parcelamento..." },
+    { id: "formas_pagamento", label: "Quais formas de pagamento são aceitas?", type: "textarea", placeholder: "Ex: PIX, boleto, cartão de crédito em até 3x..." },
+    { id: "pode_negociar", label: "A IA pode negociar desconto ou parcelamento sozinha?", type: "select", options: ["Sim, dentro de um limite que vou informar", "Não, só encaminha pro financeiro humano", "Só parcelamento, sem desconto"] },
+    { id: "limite_negociacao", label: "Se pode negociar, até qual limite (desconto máximo / nº de parcelas)?", type: "text", placeholder: "Ex: Até 10% de desconto à vista, ou em até 4x sem juros" },
+    { id: "multa_juros", label: "Tem multa/juros por atraso? Qual valor?", type: "text", placeholder: "Ex: Multa de 2% + 1% de juros ao mês" },
+    { id: "escalar_humano", label: "Em quais situações a IA deve chamar um atendente humano?", type: "textarea", placeholder: "Ex: Valores acima de R$ 5.000, cliente contesta a cobrança, ameaça de ação judicial..." },
+    { id: "horario_cobranca", label: "Horário permitido para cobrança", type: "text", placeholder: "Ex: Dias úteis, das 8h às 20h (regra geral de cobrança no Brasil)", required: true },
+    { id: "tom_cobranca", label: "Tom da cobrança", type: "select", options: ["Firme e direto", "Educado, mas objetivo", "Flexível e compreensivo"] },
+    { id: "dados_pagamento", label: "Dados de pagamento que a IA pode enviar (chave PIX, link de boleto, etc.)", type: "textarea", placeholder: "Ex: Chave PIX CNPJ, link do boleto gerado pelo sistema X..." },
+  ],
 };
 
 const NICHES = Object.keys(NICHE_QUESTIONS);
@@ -194,6 +205,7 @@ const NICHE_ICONS: Record<string, string> = {
   "Fotógrafo / Videomaker": "📷",
   "Loja de Roupa / Boutique": "👗",
   "Automecânica / Oficina": "🔧",
+  "Setor Financeiro / Cobrança": "💰",
 };
 
 export default function BriefingPage() {

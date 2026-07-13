@@ -24,6 +24,7 @@ const NICHES = [
   "Fotógrafo / Videomaker",
   "Loja de Roupa / Boutique",
   "Automecânica / Oficina",
+  "Setor Financeiro / Cobrança",
 ];
 
 const NICHE_ICONS: Record<string, string> = {
@@ -47,6 +48,7 @@ const NICHE_ICONS: Record<string, string> = {
   "Fotógrafo / Videomaker": "📷",
   "Loja de Roupa / Boutique": "👗",
   "Automecânica / Oficina": "🔧",
+  "Setor Financeiro / Cobrança": "💰",
 };
 
 // ─── Labels das perguntas ─────────────────────────────────────────────────────
