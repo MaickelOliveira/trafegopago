@@ -59,8 +59,10 @@ export async function POST(
   // Acabou de reiniciar: o catchQR roda assíncrono após o start-session, então
   // espera o novo QR aparecer. Se não vier um QR diferente do anterior dentro do
   // tempo, devolve null — o frontend tenta de novo no próximo ciclo de polling.
+  // Até 40s (20x2s) — o WPPConnect precisa abrir um navegador de verdade por
+  // trás, e 20s muitas vezes não bastava, exigindo várias tentativas manuais.
   let qr: string | null = null;
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 20; i++) {
     qr = await getQrCode(sessionName, sessionToken);
     if (qr && qr !== body.previousQr) break;
     qr = null;

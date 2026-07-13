@@ -106,11 +106,15 @@ export default function ConectarPage() {
                   setQrImage(null); setStage("generating");
                   connectAndFetchQr(false);
                 }
-              } else if (!d.connected && Date.now() - qrSetAt > 65000) {
+              } else if (!d.connected && Date.now() - qrSetAt > 90000) {
                 // Nenhum QR chegou (nem novo, nem cooldown) por tempo demais —
                 // sem isso a tela ficava presa em "Gerando QR Code..." pra sempre.
+                // Não força (force=false): o WPPConnect pode só estar demorando
+                // pra abrir o navegador — forçar aqui interromperia bem na hora
+                // em que estava quase terminando, criando um loop que nunca
+                // conclui. Deixa o cooldown natural decidir se já pode reiniciar.
                 qrSetAt = Date.now();
-                connectAndFetchQr(true);
+                connectAndFetchQr(false);
               }
               if (d.connected && qrShownRef.current) {
                 setStage("done"); clearInterval(poll); alive = false;

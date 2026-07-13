@@ -45,8 +45,11 @@ export async function POST(
     return NextResponse.json({ status: "connecting", qr: qr && qr !== body.previousQr ? qr : null, cooldownMs });
   }
 
+  // Espera mais tempo (até 40s) pelo QR após reiniciar — o WPPConnect precisa
+  // abrir um navegador de verdade por trás, e 20s (10x2s) muitas vezes não é
+  // suficiente, obrigando a tentar de novo várias vezes até "pegar no tempo".
   let qr: string | null = null;
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 20; i++) {
     qr = await getQrCode(sessionName, sessionToken);
     if (qr && qr !== body.previousQr) break;
     qr = null;
