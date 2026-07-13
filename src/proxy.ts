@@ -10,12 +10,23 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("tp_session")?.value;
 
-  const isPublic = pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/briefing");
+  // Páginas estáticas públicas (ex: política de privacidade pra revisão do
+  // Google/Meta) — acessíveis sempre, sem redirecionar mesmo se já logado.
+  if (pathname.startsWith("/privacidade")) {
+    return NextResponse.next();
+  }
+
+  // Briefing é um formulário voltado pro cliente final — precisa abrir sempre,
+  // mesmo que quem clique no link esteja logado no CRM no mesmo navegador
+  // (ex: o próprio gestor testando o link antes de enviar). Diferente de /login,
+  // não deve redirecionar pra dashboard só por já existir uma sessão ativa.
+  const isBriefing = pathname.startsWith("/briefing");
+  const isPublic = pathname === "/" || pathname.startsWith("/login") || isBriefing;
   const isGestor = pathname.startsWith("/gestor");
   const isCliente = pathname.startsWith("/cliente");
 
   if (isPublic) {
-    if (token) {
+    if (token && !isBriefing) {
       try {
         const { payload } = await jwtVerify(token, SECRET);
         const role = (payload as { role: string }).role;
