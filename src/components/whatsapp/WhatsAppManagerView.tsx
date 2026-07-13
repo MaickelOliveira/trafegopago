@@ -1077,6 +1077,11 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const qrShownRef = useRef(false);
 
+  // Link compartilhável de QR (pra enviar a quem tem o celular físico)
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+
   // Link
   const [linkFunnelId, setLinkFunnelId] = useState("");
   const [linkClientId, setLinkClientId] = useState("");
@@ -1140,6 +1145,8 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     setQrImage(null);
     setQrStage("generating");
     setCooldownSeconds(0);
+    setShareUrl(null);
+    setShareCopied(false);
 
     let poll: ReturnType<typeof setInterval>;
     let cooldownTick: ReturnType<typeof setInterval> | undefined;
@@ -1266,6 +1273,30 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
     setDeletingId(null);
     await fetch(`/api/whatsapp/wppconnect-manager/${id}`, { method: "DELETE" });
     fetchSessions();
+  }
+
+  async function handleGenerateShareLink(force = false) {
+    if (wppModal.type !== "qr") return;
+    setShareLoading(true);
+    setShareCopied(false);
+    try {
+      const res = await fetch(`/api/whatsapp/wppconnect-manager/${wppModal.id}/share-link`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json() as { token?: string };
+      if (data.token) setShareUrl(`${appBaseUrl}/conectar/${data.token}`);
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  function handleCopyShareUrl() {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    });
   }
 
   const connectedCount = sessions.filter(s => s.status === "connected").length;
@@ -1482,6 +1513,41 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
                 <span className="text-xs text-slate-500">
                   {qrImage ? "Aguardando scan..." : cooldownSeconds > 0 ? `Aguarde ${cooldownSeconds}s...` : "Gerando QR..."}
                 </span>
+              </div>
+            )}
+
+            {qrStage !== "done" && (
+              <div className="mt-5 pt-4 border-t border-slate-100 text-left">
+                <p className="text-xs font-semibold text-slate-600 mb-2">📱 Não está com o celular? Envie o link abaixo pra quem estiver</p>
+                {shareUrl ? (
+                  <>
+                    <div className="flex items-center gap-2 bg-slate-900 rounded-lg px-3 py-2">
+                      <span className="text-xs text-slate-300 font-mono truncate flex-1">{shareUrl}</span>
+                      <button
+                        onClick={handleCopyShareUrl}
+                        className="shrink-0 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded px-2.5 py-1 transition"
+                      >
+                        {shareCopied ? "Copiado ✓" : "Copiar"}
+                      </button>
+                    </div>
+                    <p className="text-xs text-amber-600 mt-2">⚠️ Não envie print do QR Code, ele expira rápido — envie este link.</p>
+                    <button
+                      onClick={() => handleGenerateShareLink(true)}
+                      disabled={shareLoading}
+                      className="text-xs text-slate-400 hover:text-slate-600 mt-2 underline disabled:opacity-50"
+                    >
+                      Gerar um link novo
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => handleGenerateShareLink(false)}
+                    disabled={shareLoading}
+                    className="w-full rounded-lg border border-slate-200 hover:border-violet-300 hover:bg-violet-50 text-slate-700 hover:text-violet-700 text-sm font-medium py-2 transition disabled:opacity-50"
+                  >
+                    {shareLoading ? "Gerando link..." : "🔗 Gerar link para enviar"}
+                  </button>
+                )}
               </div>
             )}
           </div>

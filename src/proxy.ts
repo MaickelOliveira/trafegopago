@@ -21,12 +21,15 @@ export async function proxy(request: NextRequest) {
   // (ex: o próprio gestor testando o link antes de enviar). Diferente de /login,
   // não deve redirecionar pra dashboard só por já existir uma sessão ativa.
   const isBriefing = pathname.startsWith("/briefing");
-  const isPublic = pathname === "/" || pathname.startsWith("/login") || isBriefing;
+  // Mesmo caso do briefing: link de conexão WhatsApp por QR, pra enviar a quem
+  // tem o celular físico — precisa abrir mesmo com sessão ativa no navegador.
+  const isConectar = pathname.startsWith("/conectar");
+  const isPublic = pathname === "/" || pathname.startsWith("/login") || isBriefing || isConectar;
   const isGestor = pathname.startsWith("/gestor");
   const isCliente = pathname.startsWith("/cliente");
 
   if (isPublic) {
-    if (token && !isBriefing) {
+    if (token && !isBriefing && !isConectar) {
       try {
         const { payload } = await jwtVerify(token, SECRET);
         const role = (payload as { role: string }).role;
