@@ -7,6 +7,7 @@ import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { addMessage, setAiPaused } from "@/lib/conversations";
 import { markSent } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, updateLead } from "@/lib/leads";
+import { cancelPendingForPhone } from "@/lib/pending-responses";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,10 @@ export async function POST(req: NextRequest) {
     // Busca o lead real pelo telefone (sem depender de funnelId) e atualiza
     const existingLead = getLeadByPhone(clientId, cleanPhone);
     if (existingLead) updateLead(existingLead.id, { aiPaused: true });
+    // Cancela qualquer ciclo de resposta da IA já agendado para este telefone —
+    // sem isso, um batch em "pending" no momento do envio manual do gestor ainda
+    // dispararia e mandaria a resposta da IA por cima da mensagem dele.
+    cancelPendingForPhone(clientId, cleanPhone);
   }
 
   return NextResponse.json({ ok, error: ok ? undefined : errorMsg });

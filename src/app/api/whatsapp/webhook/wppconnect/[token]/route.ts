@@ -939,6 +939,14 @@ export async function POST(
         .then(async ({ text: geminiText, actions }) => {
           markDone(batch.id);
           console.log(`[WPPConnect IA batch] runGeminiAgent concluído — phone=${_phone} geminiTextLen=${geminiText?.length ?? 0} reply="${(geminiText ?? "").slice(0, 100)}"`);
+          // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
+          // enquanto o Gemini processava — não envia a resposta da IA por cima.
+          if (getLeadByPhone(_clientId, _phone, funnelId)?.aiPaused) {
+            console.log(`[WPPConnect IA batch] IA pausada durante processamento — descartando resposta para ${_phone}`);
+            clearInterval(typingInterval);
+            stopTyping(sessionSnap, tokenSnap, _phone).catch(() => {});
+            return;
+          }
           if (geminiText) await sendReply(geminiText);
           if (actions.length && activeClient && agentCfg) {
             await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, _phone, isLidPhone, _clientId, connId).catch(() => {});
@@ -980,6 +988,14 @@ export async function POST(
   try {
     const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId);
     console.log(`[WPPConnect IA] runGeminiAgent concluído — phone=${phone} geminiTextLen=${geminiText?.length ?? 0} actions=${actions.length} reply="${(geminiText ?? "").slice(0, 100)}"`);
+    // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
+    // enquanto o Gemini processava — não envia a resposta da IA por cima.
+    if (getLeadByPhone(clientId, phone, funnelId)?.aiPaused) {
+      console.log(`[WPPConnect IA] IA pausada durante processamento imediato — descartando resposta para ${phone}`);
+      clearInterval(typingInterval);
+      stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
+      return;
+    }
     if (geminiText) {
       await sendReply(geminiText);
     } else {

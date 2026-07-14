@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { getHistory, addMessage, getClientId, getAllConversationsByClientId } from "@/lib/conversations";
 import { markSent, markPhoneSending } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
+import { cancelPendingForPhone } from "@/lib/pending-responses";
 import { getFunnelById, getFunnels } from "@/lib/funnels";
 import { sendText, sendMedia as uazapiSendMedia } from "@/lib/uazapi";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "@/lib/wppconnect-api";
@@ -302,6 +303,10 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
       upsertLeadByPhone(clientId, normalized, { funnelId, aiPaused: false });
     } else {
       upsertLeadByPhone(clientId, normalized, { funnelId, aiPaused: true });
+      // Cancela qualquer ciclo de resposta da IA já agendado para este telefone —
+      // sem isso, um batch em "pending" no momento do envio manual do gestor ainda
+      // dispararia e mandaria a resposta da IA por cima da mensagem dele.
+      cancelPendingForPhone(clientId, normalized);
     }
   }
 

@@ -948,6 +948,13 @@ export async function POST(
           .then(async ({ text: geminiText, actions }) => {
             markDone(batch.id);
             console.log(`[webhook/${instanceId}] Gemini respondeu (${geminiText?.length ?? 0} chars) para ${phone}`);
+            // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
+            // enquanto o Gemini processava — não envia a resposta da IA por cima.
+            const freshLead = getLeadByPhone(cid, phone);
+            if (freshLead?.aiPaused || getAiPaused(phone)) {
+              console.log(`[webhook/${instanceId}] IA pausada durante processamento — descartando resposta para ${phone}`);
+              return;
+            }
             const agCfg = getAgentConfigForConnection(getClientById(cid)!, connId);
             const clientName = getClientById(cid)?.name ?? cid;
             if (geminiText) {
@@ -1030,6 +1037,13 @@ export async function POST(
     console.log(`[webhook/${instanceId}] Gemini imediato respondeu chars=${geminiText?.length ?? 0} actions=${geminiActions.length}`);
     if (!geminiText && geminiActions.length === 0) {
       console.log(`[webhook/${instanceId}] Gemini retornou vazio — sem resposta enviada`);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
+    // enquanto o Gemini processava — não envia a resposta da IA por cima.
+    if (getLeadByPhone(cid, phone)?.aiPaused || getAiPaused(phone)) {
+      console.log(`[webhook/${instanceId}] IA pausada durante processamento imediato — descartando resposta para ${phone}`);
       return NextResponse.json({ ok: true });
     }
 

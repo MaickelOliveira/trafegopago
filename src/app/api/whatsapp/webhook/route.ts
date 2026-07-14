@@ -357,6 +357,12 @@ export async function POST(req: NextRequest) {
           .then(async ({ text: geminiText }) => {
             markDone(batch.id);
             console.log(`[webhook] Gemini respondeu (${geminiText?.length ?? 0} chars): ${geminiText?.slice(0, 80)}`);
+            // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
+            // enquanto o Gemini processava — não envia a resposta da IA por cima.
+            if (getLeadByPhone(_cid, _phone)?.aiPaused) {
+              console.log(`[webhook] IA pausada durante processamento — descartando resposta para ${_phone}`);
+              return;
+            }
             if (geminiText) {
               addMessage(_phone, { role: "assistant", content: geminiText, ts: Date.now() }, _clientId, _incomingConnId ? { connId: _incomingConnId } : undefined);
               await sendMessageUnified(_phone, geminiText, _cid, _connectionId ?? undefined);
@@ -386,6 +392,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (!reply) return NextResponse.json({ ok: true });
+
+    // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
+    // enquanto o Gemini processava — não envia a resposta da IA por cima.
+    if (cid !== "sem-cliente" && getLeadByPhone(cid, phone)?.aiPaused) {
+      return NextResponse.json({ ok: true });
+    }
 
     addMessage(phone, { role: "assistant", content: reply, ts: Date.now() }, clientId, incomingConnectionId ? { connId: incomingConnectionId } : undefined);
 
