@@ -29,7 +29,10 @@ function parseMoney(val: string | undefined): number {
 }
 
 function buildInsertPrompt(tabsInfo: string, phone: string, conversation: string): string {
+  const today = new Date().toISOString().slice(0, 10);
   return `Você extrai dados de reservas de conversas de WhatsApp para preencher uma planilha de controle.
+
+Data de hoje: ${today}
 
 Abas disponíveis (use o valor de "aba" exatamente como mostrado):
 ${tabsInfo}
@@ -41,6 +44,7 @@ REGRAS OBRIGATÓRIAS:
 2. "Responsável" = nome completo de quem faz a reserva
 3. "Data" = data desejada para o evento no formato ISO AAAA-MM-DD (ex: 2026-06-27). O sistema converte automaticamente para DD/MM/AAAA
    Se houver coluna "Hora" ou "Horário", use formato HH:MM em 24h (ex: 14:30). NUNCA use AM/PM
+   Se o cliente mencionar a data sem o ano (ex: "07 de setembro", "dia 15", "próximo sábado"), use como referência a "Data de hoje" acima e escolha a PRÓXIMA ocorrência dessa data a partir de hoje — NUNCA um ano ou data que já passou.
 4. "Pessoas" = OBRIGATÓRIO listar TODOS os participantes com valor individual calculado pelo atendente:
    Formato: "Nome Sobrenome (XX anos) - R$XX,00, Nome2 (XX anos) - R$XX,00"
    - Use os valores que o atendente calculou para cada faixa etária (adulto, criança, gratuito)
@@ -59,12 +63,9 @@ REGRAS OBRIGATÓRIAS:
 13. "Observações" = restrições alimentares, pedidos especiais ou informações extras
 14. Se houver colunas de faixa etária (ex: "0 - 5 anos", "6 - 12 anos"), NÃO preencha — o sistema calcula automaticamente a partir do campo Pessoas
 15. Se houver coluna "N°"/"Nº"/"#", NÃO preencha — o sistema numera automaticamente
+16. Se houver coluna "CPF", preencha com o CPF de TODOS os participantes que informaram CPF, na mesma ordem dos nomes em "Pessoas", separados por vírgula (ex: "111.111.111-11, 222.222.222-22"). Nunca preencha com apenas um CPF se a conversa contém mais de um. Se nenhum CPF foi informado, deixe vazio — nunca invente.
 
-Determine a aba correta pelo tipo de reserva mencionado na conversa:
-- Almoço de fim de semana → aba de almoço
-- Day Use → aba de day use
-- Hospedagem → aba de hospedagem
-- Festa junina / Arraiá / ingressos → aba de festa/arraiá
+Determine a aba correta EXCLUSIVAMENTE pelo campo "tipo" de cada aba listada acima — combine o assunto da conversa com o "tipo" mais próximo semanticamente (ex: uma conversa sobre pernoite/hospedagem vai para a aba cujo tipo for "Pernoite", mesmo que a palavra usada na conversa seja "hospedagem"). Não existe uma aba fixa padrão por produto — use SOMENTE os tipos e abas realmente listados acima. Se nenhuma aba corresponder claramente ao assunto da conversa, retorne [].
 
 Retorne SOMENTE um array JSON — sem markdown, sem explicação:
 [{"aba": "valor exato do campo aba mostrado acima", "dados": {"NomeColuna": "valor"}}]
@@ -92,7 +93,7 @@ REGRAS:
 3. Se Status = "Parcial", inclua "Valor Pago" com o valor que o cliente informou ter pago (apenas o número, ex: "150,00").
 4. Se Status = "Pago" (pagamento total), NÃO inclua "Valor Pago" nem "Falta Pagar" — o sistema calcula automaticamente com base no Valor Total já registrado.
 
-Determine a aba correta pelo tipo de reserva mencionado na conversa.
+Determine a aba correta EXCLUSIVAMENTE pelo campo "tipo" de cada aba listada acima — combine o assunto da conversa com o "tipo" mais próximo semanticamente. Não existe uma aba fixa padrão por produto — use SOMENTE os tipos e abas realmente listados acima.
 
 Retorne SOMENTE um array JSON — sem markdown, sem explicação:
 [{"aba": "valor exato do campo aba mostrado acima", "dados": {"Telefone": "44999990000", "Status": "Pago"}}]
