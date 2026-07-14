@@ -722,14 +722,30 @@ export async function runGeminiAgent(
     }
   }
 
+  // Extrai o mesmo vazamento em formato "[DADOS RECEBIDOS: ...]" / "[PAGAMENTO PIX: ...]" /
+  // "[ATENDIMENTO HUMANO: ...]" — o modelo às vezes escreve o motivo entre colchetes em vez
+  // de chamar a ferramenta. Sem isso o aviso ao gestor e o registro na planilha não disparam,
+  // mesmo o texto (incorretamente) aparecendo pro cliente.
+  const BRACKETED_MOTIVO = /\[\s*(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]\s*([^\]]*)\]/gi;
+  let bracketedMatch: RegExpExecArray | null;
+  while ((bracketedMatch = BRACKETED_MOTIVO.exec(finalText)) !== null) {
+    const motivo = `${bracketedMatch[1].toUpperCase()}: ${bracketedMatch[2].trim()}`;
+    if (!actions.some((a) => a.type === "resumo_solicitado" && a.motivo === motivo)) {
+      console.warn(`[gemini-agent] enviar_resumo vazou entre colchetes — extraindo motivo="${motivo}"`);
+      actions.push({ type: "resumo_solicitado", motivo, phone });
+    }
+  }
+
   // ── Filtros de conteúdo interno ──────────────────────────────────────────
   const KNOWN_TOOL_CALL   = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
   const NARRATED_MOTIVO_LINE = /^\*?Motivo:\s*.+$/i;
   const BULLET_MOTIVO_LINE   = /^[•\-–]\s*\*?Motivo:\s*.+$/i;
   const TOOL_CALL_NARRATION  = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
   const INTERNAL_SECTION     = /resumo\s+para\s+o\s+gestor|para\s+o\s+gestor|resumo\s+da\s+conversa\s*:/i;
-  // Marcadores internos que NUNCA devem ir ao cliente (linha ou parágrafo inteiro)
-  const INTERNAL_CONTENT  = /^(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]/i;
+  // Marcadores internos que NUNCA devem ir ao cliente (linha ou parágrafo inteiro).
+  // Aceita colchete opcional na frente (ex: "[DADOS RECEBIDOS: ...]"), formato que o
+  // modelo às vezes usa em vez de chamar a ferramenta enviar_resumo de verdade.
+  const INTERNAL_CONTENT  = /^\[?\s*(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]/i;
   // Análise de perfil do lead/cliente escrita para o gestor
   const LEAD_PROFILE_LINE = /^O\s+(lead|cliente)\s+é\s+/i;
 
