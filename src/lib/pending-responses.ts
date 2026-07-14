@@ -33,6 +33,13 @@ function save(items: PendingResponse[]) {
   writeFileSync(FILE, JSON.stringify(items, null, 2));
 }
 
+// Se o setTimeout in-process de um batch se perder (ex: restart do servidor
+// antes de disparar), o registro fica "pending" para sempre no arquivo — sem
+// isso, uma mensagem NOVA e completamente sem relação, chegando horas ou dias
+// depois, seria silenciosamente concatenada com esse texto antigo e enviada
+// junto ao Gemini como se fosse tudo uma única mensagem atual.
+const STALE_PENDING_MS = 10 * 60 * 1000; // 10 minutos após o respondAfter original
+
 export function upsertPending(
   clientId: string,
   phone: string,
@@ -48,12 +55,18 @@ export function upsertPending(
   );
 
   if (idx >= 0) {
-    // Estende deadline e acumula mensagem
-    items[idx].messages.push(newMessage);
-    items[idx].respondAfter = respondAfter;
-    items[idx].updatedAt = now.toISOString();
-    save(items);
-    return items[idx];
+    const isStale = now.getTime() - new Date(items[idx].respondAfter).getTime() > STALE_PENDING_MS;
+    if (isStale) {
+      // Batch abandonado (timer perdido) — descarta em vez de misturar com a mensagem nova
+      items[idx].status = "done";
+    } else {
+      // Estende deadline e acumula mensagem
+      items[idx].messages.push(newMessage);
+      items[idx].respondAfter = respondAfter;
+      items[idx].updatedAt = now.toISOString();
+      save(items);
+      return items[idx];
+    }
   }
 
   const item: PendingResponse = {
