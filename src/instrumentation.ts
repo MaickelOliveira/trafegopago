@@ -45,8 +45,8 @@ export async function register() {
     const tick = async () => {
       try {
         const result = await processDueFollowUpsAndBatches();
-        if (result.total > 0 || result.batchesProcessed > 0) {
-          console.log(`[cron] follow-ups: processed=${result.processed} skipped=${result.skipped} total=${result.total} batches=${result.batchesProcessed}`);
+        if (result.total > 0 || result.batchesProcessed > 0 || result.crmJobsProcessed > 0 || result.crmJobsFailed > 0) {
+          console.log(`[cron] follow-ups: processed=${result.processed} skipped=${result.skipped} total=${result.total} batches=${result.batchesProcessed} crmJobs=${result.crmJobsProcessed} crmJobsFailed=${result.crmJobsFailed}`);
         }
       } catch (e) {
         console.error("[cron] Erro geral:", e);

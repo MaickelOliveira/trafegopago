@@ -2,7 +2,8 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import type { Lead } from "./leads";
-import { updateLead, getLeads } from "./leads";
+import { updateLead, getLeads, getLeadById } from "./leads";
+import { scheduleJob, claimDueJobs, markJobDone, markJobFailed, LEGACY_STEP_ID } from "./crm-automation-jobs";
 import { getFunnels } from "./funnels";
 import { sendText, sendList, sendMedia } from "./uazapi";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
@@ -394,21 +395,68 @@ function scheduleSteps(auto: CrmAutomation, lead: Lead) {
     for (const step of auto.steps) {
       if (step.type === "delay") {
         accMs += (step.delayMinutes ?? 1) * 60 * 1000;
+      } else if (accMs > 0) {
+        // Passo futuro: persiste como job (sobrevive a restart do servidor) em
+        // vez de um setTimeout puro em memória, que se perderia silenciosamente.
+        const scheduledAt = new Date(Date.now() + accMs).toISOString();
+        scheduleJob(auto.id, lead.id, step.id, scheduledAt);
       } else {
-        const delay = accMs;
-        const s = step;
-        const run = () => executeStep(s, lead, allFunnels, funnelName).catch(console.error);
-        if (delay > 0) setTimeout(run, delay);
-        else run();
+        executeStep(step, lead, allFunnels, funnelName).catch(console.error);
       }
     }
   } else {
     // Legacy single-action
-    const run = () => executeLegacy(auto, lead).catch(console.error);
     const delay = (auto.delayMinutes ?? 0) * 60 * 1000;
-    if (delay > 0) setTimeout(run, delay);
-    else run();
+    if (delay > 0) {
+      const scheduledAt = new Date(Date.now() + delay).toISOString();
+      scheduleJob(auto.id, lead.id, LEGACY_STEP_ID, scheduledAt);
+    } else {
+      executeLegacy(auto, lead).catch(console.error);
+    }
   }
+}
+
+/**
+ * Processa os jobs de automação (passos com delay) já vencidos — chamado pelo
+ * cron (mesmo agendador dos follow-ups/batches), para que passos agendados
+ * sobrevivam a restarts do servidor em vez de dependerem de um setTimeout vivo.
+ */
+export async function processDueCrmAutomationJobs(): Promise<{ processed: number; failed: number; total: number }> {
+  const due = claimDueJobs();
+  let processed = 0;
+  let failed = 0;
+  const allFunnels = getFunnels();
+
+  for (const job of due) {
+    try {
+      const lead = getLeadById(job.leadId);
+      const auto = getAutomationById(job.automationId);
+      if (!lead || !auto) {
+        markJobFailed(job.id, "lead ou automação não encontrados (removidos?)");
+        failed++;
+        continue;
+      }
+      const funnel = allFunnels.find((f) => f.id === lead.funnelId);
+      if (job.stepId === LEGACY_STEP_ID) {
+        await executeLegacy(auto, lead);
+      } else {
+        const step = auto.steps?.find((s) => s.id === job.stepId);
+        if (!step) {
+          markJobFailed(job.id, "step não encontrado na automação (editada após o agendamento?)");
+          failed++;
+          continue;
+        }
+        await executeStep(step, lead, allFunnels, funnel?.name);
+      }
+      markJobDone(job.id);
+      processed++;
+    } catch (e) {
+      console.error(`[crm-auto] Erro ao processar job ${job.id}:`, e);
+      markJobFailed(job.id, e instanceof Error ? e.message : String(e));
+      failed++;
+    }
+  }
+  return { processed, failed, total: due.length };
 }
 
 /**

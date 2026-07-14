@@ -9,7 +9,7 @@ import { getClientById, getAllAgentConfigs, type AgentConfig } from "./clients";
 import { sendMessage, getGeminiApiKey } from "./whatsapp-send";
 import { runGeminiAgent, generateFollowUpAI } from "./gemini-agent";
 import { addMessage, getHistory, setAiPaused, type ChatMessage } from "./conversations";
-import { runScheduledDailyAutomations } from "./crm-automations";
+import { runScheduledDailyAutomations, processDueCrmAutomationJobs } from "./crm-automations";
 import { getLeadByPhone, updateLead } from "./leads";
 import { getFunnels, getFunnelById } from "./funnels";
 import { getTemplateById, sendTemplate } from "./waba-templates";
@@ -133,6 +133,7 @@ function resolveAgentConfig(allCfgs: AgentConfig[], stepId: string | undefined):
 
 export async function processDueFollowUpsAndBatches(): Promise<{
   processed: number; skipped: number; total: number; batchesProcessed: number;
+  crmJobsProcessed: number; crmJobsFailed: number;
 }> {
   const due = claimDueFollowUps();
   let processed = 0;
@@ -311,5 +312,9 @@ export async function processDueFollowUpsAndBatches(): Promise<{
   // ── Automações CRM agendadas (scheduled_daily) ───────────────────────────
   runScheduledDailyAutomations();
 
-  return { processed, skipped, total: due.length, batchesProcessed };
+  // ── Passos de automação CRM com delay já vencidos (persistidos em arquivo —
+  // sobrevivem a restart do servidor, diferente do setTimeout puro de antes) ──
+  const { processed: crmJobsProcessed, failed: crmJobsFailed } = await processDueCrmAutomationJobs();
+
+  return { processed, skipped, total: due.length, batchesProcessed, crmJobsProcessed, crmJobsFailed };
 }
