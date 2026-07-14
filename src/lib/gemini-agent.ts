@@ -402,6 +402,8 @@ export async function runGeminiAgent(
 
   const hasSheet = !!(agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length);
   const hasAvisos = !!(agentCfg.avisos?.length || agentCfg.summaryPhone || agentCfg.metaSummaryTemplateName);
+  const kbDocsForLog = (agentCfg.knowledgeBase ?? []).filter((d) => d.content?.trim());
+  console.log(`[gemini-agent] Base de conhecimento — clientId=${clientId} connId=${connectionId ?? "none"} docsConfigurados=${agentCfg.knowledgeBase?.length ?? 0} docsComConteudo=${kbDocsForLog.length} totalChars=${kbDocsForLog.reduce((n, d) => n + d.content.length, 0)}`);
   const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, undefined, undefined, hasSheet, hasAvisos);
   const tools: Tool[] = [{ functionDeclarations: [...TOOL_DECLARATIONS] }];
 
@@ -476,10 +478,13 @@ export async function runGeminiAgent(
       if (toolCalls.length === 0) {
         finalText = (candidate.text() ?? "").trim();
 
-        // Modelo chamou tools mas não gerou texto — não envia mensagem ao usuário.
-        // As actions (enviar_resumo, planilha etc.) continuam sendo processadas normalmente.
+        // Modelo chamou tools (ex: enviar_resumo) mas não gerou texto de resposta —
+        // sem isso o cliente ficava sem NENHUMA mensagem, mesmo o aviso interno
+        // (grupo/planilha) tendo sido processado normalmente. Usa um fallback
+        // genérico para nunca deixar o cliente sem retorno.
         if (!finalText) {
-          console.log("[gemini-agent] Texto vazio após tools — nenhuma mensagem enviada ao usuário");
+          console.log("[gemini-agent] Texto vazio após tools — usando fallback para não deixar o cliente sem resposta");
+          finalText = "Só um instante, já te retorno! 😊";
         }
 
         break;
