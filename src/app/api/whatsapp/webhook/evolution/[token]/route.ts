@@ -229,7 +229,7 @@ async function processEvolutionActions(
 // Diferente do WPPConnect (campos soltos na raiz do body), a Evolution sempre
 // entrega { event, instance, data: { key, message, messageType, ... } }.
 type EvolutionMessageData = {
-  key?: { remoteJid?: string; fromMe?: boolean; id?: string };
+  key?: { remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean; id?: string };
   pushName?: string;
   message?: Record<string, unknown>;
   messageType?: string;
@@ -327,7 +327,16 @@ export async function POST(
   const data = evoData as EvolutionMessageData;
   const key = data.key ?? {};
   const fromMe = key.fromMe === true;
-  const remoteJid = key.remoteJid ?? "";
+  const rawRemoteJid = key.remoteJid ?? "";
+  // Baileys entrega o par LID/telefone real em remoteJid/remoteJidAlt quando
+  // disponível — o mesmo contato pode alternar entre os dois formatos em
+  // mensagens diferentes. Sempre que o telefone real estiver disponível,
+  // usa ele como identidade em vez do LID — sem isso, lead e conversa ficam
+  // fragmentados em dois registros separados pro mesmo contato.
+  const remoteJidAlt = key.remoteJidAlt ?? "";
+  const remoteJid = (rawRemoteJid.endsWith("@lid") && remoteJidAlt && !remoteJidAlt.endsWith("@lid"))
+    ? remoteJidAlt
+    : rawRemoteJid;
 
   // Ignora grupos
   if (remoteJid.endsWith("@g.us")) return NextResponse.json({ ok: true });
