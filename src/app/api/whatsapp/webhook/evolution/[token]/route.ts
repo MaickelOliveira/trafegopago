@@ -466,8 +466,13 @@ export async function POST(
     }
   }
 
+  // Schema confirmado via Baileys (proto.ContextInfo.IExternalAdReplyInfo) — a
+  // Evolution repassa o objeto de mensagem cru do Baileys, então os nomes de
+  // campo batem 1:1 com o protocolo: sourceId, sourceUrl, title, ctwaClid.
+  // ctwaClid fica ANINHADO dentro de externalAdReplyInfo, não solto em contextInfo.
   const externalAd = contextInfo?.externalAdReplyInfo as Record<string, unknown> | undefined;
-  let ctwaAdId = ((externalAd?.sourceId ?? externalAd?.source_id) as string | undefined) || (contextInfo?.ctwaClid as string | undefined) || undefined;
+  let ctwaAdId = ((externalAd?.sourceId ?? externalAd?.source_id) as string | undefined) || undefined;
+  const ctwaClid = (externalAd?.ctwaClid as string | undefined) || undefined;
   const ctwaSourceUrl = ((externalAd?.sourceUrl ?? externalAd?.source_url) as string | undefined) || undefined;
   const ctwaHeadline = (externalAd?.title as string | undefined) || undefined;
 
@@ -508,7 +513,7 @@ export async function POST(
   }
 
   if (externalAd) {
-    console.log(`[Evolution CTWa] referral detectado — source_id=${ctwaAdId} headline="${ctwaHeadline}" source_url=${ctwaSourceUrl}`);
+    console.log(`[Evolution CTWa] referral detectado — source_id=${ctwaAdId} headline="${ctwaHeadline}" source_url=${ctwaSourceUrl} ctwaClid=${ctwaClid}`);
   }
 
   // ── Encontra o funil vinculado (mesma lógica de reaproveitamento cross-funil do WPPConnect) ──
