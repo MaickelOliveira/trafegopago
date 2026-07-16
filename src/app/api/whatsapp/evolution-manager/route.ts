@@ -7,6 +7,7 @@ import {
   logoutInstance,
   checkConnectionStatus,
   isEvolutionConfigured,
+  getInstancePhone,
 } from "@/lib/evolution-api";
 import {
   getEvolutionSessions,
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest) {
       const rawStatus = await checkConnectionStatus(s.instanceName).catch(() => "DISCONNECTED");
       const connected = rawStatus === "CONNECTED";
       const connecting = rawStatus === "QRCODE";
+      const phone = connected ? await getInstancePhone(s.instanceName).catch(() => null) : null;
 
       const funnelObj = s.funnelId ? funnels.find(f => f.id === s.funnelId) : null;
       const clientInfo = connIdToClient.get(s.id);
@@ -81,7 +83,7 @@ export async function GET(req: NextRequest) {
         id: s.id,
         instanceName: s.instanceName,
         status: connected ? "connected" : connecting ? "connecting" : "disconnected",
-        phone: null,
+        phone,
         linkedFunnelId: s.funnelId,
         linkedFunnelName: funnelObj?.name ?? null,
         linkedClientId,

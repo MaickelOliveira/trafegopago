@@ -548,3 +548,26 @@ export async function listInstances(): Promise<Record<string, unknown>[]> {
     return [];
   }
 }
+
+// Número real conectado à instância (ex: "554491056048") — a Evolution expõe
+// isso em "ownerJid" na listagem de instâncias (confirmado ao vivo:
+// {"ownerJid":"554491056048@s.whatsapp.net", ...}). Usado só pra exibição na
+// UI (seletor "responder pelo número" etc.), nunca pra envio/lógica.
+export async function getInstancePhone(instanceName: string): Promise<string | null> {
+  if (!base()) return null;
+  try {
+    const res = await fetch(`${base()}/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`, {
+      headers: authHeader(),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as unknown;
+    const list = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+    const inst = list[0];
+    const ownerJid = (inst?.ownerJid as string | undefined) ?? "";
+    const digits = ownerJid.replace(/@.*/, "").replace(/\D/g, "");
+    return digits || null;
+  } catch {
+    return null;
+  }
+}

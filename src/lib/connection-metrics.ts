@@ -7,7 +7,7 @@ import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { getInstanceStatus } from "@/lib/uazapi";
 import { checkConnectionStatus } from "@/lib/wppconnect-api";
-import { checkConnectionStatus as checkEvolutionConnectionStatus } from "@/lib/evolution-api";
+import { checkConnectionStatus as checkEvolutionConnectionStatus, getInstancePhone } from "@/lib/evolution-api";
 import { getAllConversationsByClientId, getHistory, phoneVariants } from "@/lib/conversations";
 import { getLeads } from "@/lib/leads";
 
@@ -121,9 +121,9 @@ export async function getLiveConnectionsForClient(clientId: string): Promise<Liv
     const linkedFunnel = funnels.find((f) => f.id === s.funnelId);
     tasks.push(
       checkEvolutionConnectionStatus(s.instanceName)
-        .then((status) => ({
+        .then(async (status) => ({
           id: s.id,
-          phone: s.instanceName,
+          phone: (await getInstancePhone(s.instanceName).catch(() => null)) ?? s.instanceName,
           type: "evolution" as const,
           status,
           connected: status === "CONNECTED" || status === "UNKNOWN",
