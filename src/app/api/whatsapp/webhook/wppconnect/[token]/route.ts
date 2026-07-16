@@ -829,19 +829,18 @@ export async function POST(
 
   // testPhone: quando configurado, IA responde APENAS este número
   if (agentCfg?.testPhone) {
-    const testNorm = agentCfg.testPhone.replace(/\D/g, "");
-    // Comparação tolerante ao 9º dígito brasileiro e variações de prefixo:
-    // extrai os últimos 8 dígitos (núcleo do número local) para comparação flexível
-    const coreDigits = (n: string) => n.replace(/\D/g, "").slice(-8);
-    const phoneMatches =
-      phone === testNorm ||
-      phone.endsWith(testNorm.slice(-9)) ||
-      coreDigits(phone) === coreDigits(testNorm);
+    // Usa a MESMA normalização (DDI 55 + migração do 9º dígito BR) que o resto
+    // do sistema usa pra identidade de telefone (dedupe de lead etc.) — a
+    // comparação anterior (últimos 8/9 dígitos "crus") dava falso-negativo
+    // quando um dos dois lados vinha sem o 9º dígito ou com/sem o "55".
+    const phoneNorm = normalizePhone(phone);
+    const testNorm = normalizePhone(agentCfg.testPhone);
+    const phoneMatches = phoneNorm === testNorm;
     if (!phoneMatches) {
-      console.log(`[WPPConnect IA] phone=${phone} bloqueado — testPhone=${agentCfg.testPhone} core_phone=${coreDigits(phone)} core_test=${coreDigits(testNorm)} (modo teste ativo)`);
+      console.log(`[WPPConnect IA] phone=${phone} bloqueado — testPhone=${agentCfg.testPhone} norm_phone=${phoneNorm} norm_test=${testNorm} (modo teste ativo)`);
       return NextResponse.json({ ok: true });
     }
-    console.log(`[WPPConnect IA] testPhone match — phone=${phone} testNorm=${testNorm} ✓`);
+    console.log(`[WPPConnect IA] testPhone match — phone=${phone} norm_phone=${phoneNorm} norm_test=${testNorm} ✓`);
   }
 
   // ── Transcreve áudio/imagem ANTES do agente (evita conflito com function calling) ──
