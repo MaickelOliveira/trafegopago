@@ -2,16 +2,17 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { EnrichedInstance } from "@/app/api/whatsapp/manager/route";
+import { EvolutionView } from "./EvolutionView";
 
-type FunnelOption = { id: string; name: string; clientId: string | null };
-type ClientOption = {
+export type FunnelOption = { id: string; name: string; clientId: string | null };
+export type ClientOption = {
   id: string; name: string; color: string; agentEnabled: boolean; agentConnectionId: string | null;
   agents?: { name?: string; whatsappConnectionId?: string; isOrphaned?: boolean }[];
 };
 
 /** Select pra reaproveitar a config de um agente órfão (de uma instância antiga
  *  excluída/substituída) numa conexão nova, em vez de criar uma config em branco. */
-function ReuseAgentSelect({ clients, clientId, value, onChange, accentColor = "green" }: {
+export function ReuseAgentSelect({ clients, clientId, value, onChange, accentColor = "green" }: {
   clients: ClientOption[];
   clientId: string;
   value: string;
@@ -39,7 +40,7 @@ function ReuseAgentSelect({ clients, clientId, value, onChange, accentColor = "g
   );
 }
 
-function ClientAgentSelect({ clients, value, onChange, accentColor = "green" }: {
+export function ClientAgentSelect({ clients, value, onChange, accentColor = "green" }: {
   clients: ClientOption[];
   value: string;
   onChange: (v: string) => void;
@@ -59,7 +60,7 @@ function ClientAgentSelect({ clients, value, onChange, accentColor = "green" }: 
   );
 }
 
-function ClientFunnelSelect({ clients, funnels, value, onChange, accentColor = "green" }: {
+export function ClientFunnelSelect({ clients, funnels, value, onChange, accentColor = "green" }: {
   clients: ClientOption[];
   funnels: FunnelOption[];
   value: string;
@@ -159,7 +160,7 @@ export function WhatsAppManagerView({
   const [deletingToken, setDeletingToken] = useState<string | null>(null);
 
   // Main tab
-  const [mainTab, setMainTab] = useState<"uazapi" | "wppconnect" | "meta">("uazapi");
+  const [mainTab, setMainTab] = useState<"uazapi" | "wppconnect" | "evolution" | "meta">("uazapi");
 
   const fetchInstances = useCallback(async () => {
     try {
@@ -342,19 +343,20 @@ export function WhatsAppManagerView({
 
   return (
     <div>
-      {/* Tabs: UazAPI | WPPConnect | API Oficial Meta */}
+      {/* Tabs: UazAPI | WPPConnect | Evolution API | API Oficial Meta */}
       <div className="border-b border-slate-200 bg-white">
         <div className="flex max-w-6xl mx-auto px-6">
-          {(["uazapi", "wppconnect", "meta"] as const).map(tab => (
+          {(["uazapi", "wppconnect", "evolution", "meta"] as const).map(tab => (
             <button key={tab} onClick={() => setMainTab(tab)}
               className={`py-3 px-5 text-sm font-semibold border-b-2 transition -mb-px ${
                 mainTab === tab
                   ? tab === "uazapi" ? "border-green-500 text-green-700"
                   : tab === "wppconnect" ? "border-violet-500 text-violet-700"
+                  : tab === "evolution" ? "border-emerald-500 text-emerald-700"
                   : "border-blue-500 text-blue-700"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}>
-              {tab === "uazapi" ? "⚡ UazAPI" : tab === "wppconnect" ? "🔌 WPPConnect" : "🏢 API Oficial Meta"}
+              {tab === "uazapi" ? "⚡ UazAPI" : tab === "wppconnect" ? "🔌 WPPConnect" : tab === "evolution" ? "🧬 Evolution API" : "🏢 API Oficial Meta"}
             </button>
           ))}
         </div>
@@ -362,6 +364,7 @@ export function WhatsAppManagerView({
 
       {mainTab === "meta" && <MetaApiView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "wppconnect" && <WppConnectView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
+      {mainTab === "evolution" && <EvolutionView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "uazapi" && (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -1045,7 +1048,7 @@ function MetaApiView({ funnels, clients, appBaseUrl }: { funnels: FunnelOption[]
   );
 }
 
-function ActionBtn({ onClick, title, className, children }: { onClick: () => void; title: string; className: string; children: React.ReactNode }) {
+export function ActionBtn({ onClick, title, className, children }: { onClick: () => void; title: string; className: string; children: React.ReactNode }) {
   return (
     <button onClick={onClick} title={title} className={`h-9 w-9 flex items-center justify-center rounded-xl border text-base transition ${className}`}>
       {children}
@@ -1593,7 +1596,7 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
   );
 }
 
-function Modal({ title, onClose, wide, children }: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
+export function Modal({ title, onClose, wide, children }: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
   return (
     <div className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 ${wide ? "w-[520px]" : "w-[440px]"} max-w-[95vw] max-h-[90vh] overflow-y-auto`}>
       <div className="flex items-center justify-between mb-4">

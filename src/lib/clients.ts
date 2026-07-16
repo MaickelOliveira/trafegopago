@@ -131,6 +131,9 @@ export type AppConfig = {
   // WPPConnect Server
   wppconnectServer?: string;            // URL base do servidor WPPConnect (ex: https://wpp.meuservidor.com)
   wppconnectSecretKey?: string;         // Secret key do servidor WPPConnect
+  // Evolution API Server
+  evolutionServer?: string;             // URL base do servidor Evolution API (ex: https://evo.meuservidor.com)
+  evolutionAdminKey?: string;           // apikey global (admin) — cria/gerencia instâncias
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");

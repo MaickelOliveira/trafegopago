@@ -9,6 +9,8 @@ import { getConfig } from "./clients";
 import { sendText } from "./uazapi";
 import { getWppSessions } from "./wppconnect-sessions";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
+import { getEvolutionSessions } from "./evolution-sessions";
+import { sendText as evoSendText, sendMedia as evoSendMedia } from "./evolution-api";
 import { markPhoneSending, markSent as markWppSent } from "./wppconnect-sent";
 
 export async function sendMessage(
@@ -32,6 +34,18 @@ export async function sendMessage(
       markPhoneSending(rawPhone);
       markWppSent(rawPhone, message);
       const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message, isLid);
+      if (ok) return true;
+    }
+
+    // Evolution API: mesmo racional — não está em funnels[].connections
+    const evoSessions = getEvolutionSessions();
+    const evoSession = evoSessions.find(s => s.id === preferredConnectionId);
+    if (evoSession) {
+      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
+      const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+      markPhoneSending(rawPhone);
+      markWppSent(rawPhone, message);
+      const ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, phone, message, isLid);
       if (ok) return true;
     }
 
@@ -184,5 +198,28 @@ export async function sendMediaMessage(
     const ok = await wppSendMedia(s.sessionName, s.sessionToken, phone, mediaUrl, caption, isLid);
     if (ok) return;
   }
-  console.error(`[whatsapp-send] sendMediaMessage: no WPPConnect session for clientId=${clientId}`);
+
+  // Evolution API: mesmo fluxo (preferida primeiro, depois qualquer sessão do cliente)
+  const evoSessions = getEvolutionSessions().filter(s => s.clientId === clientId);
+  if (preferredConnectionId) {
+    const evoSession = evoSessions.find(
+      s => s.id === preferredConnectionId || s.instanceName === preferredConnectionId,
+    );
+    if (evoSession) {
+      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
+      const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+      markPhoneSending(rawPhone);
+      const ok = await evoSendMedia(evoSession.instanceName, evoSession.instanceApiKey, phone, mediaUrl, caption, isLid);
+      if (ok) return;
+    }
+  }
+  for (const s of evoSessions) {
+    const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
+    const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+    markPhoneSending(rawPhone);
+    const ok = await evoSendMedia(s.instanceName, s.instanceApiKey, phone, mediaUrl, caption, isLid);
+    if (ok) return;
+  }
+
+  console.error(`[whatsapp-send] sendMediaMessage: no WPPConnect/Evolution session for clientId=${clientId}`);
 }

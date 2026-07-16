@@ -8,6 +8,8 @@ import { getFunnels } from "./funnels";
 import { sendText, sendList, sendMedia } from "./uazapi";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
 import { getWppSessions } from "./wppconnect-sessions";
+import { sendText as evoSendText, sendMedia as evoSendMedia } from "./evolution-api";
+import { getEvolutionSessions } from "./evolution-sessions";
 import { markPhoneSending } from "./wppconnect-sent";
 import { addMessage } from "./conversations";
 import { getTemplates, sendTemplate } from "./waba-templates";
@@ -279,7 +281,40 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
             console.log(`[crm-auto] WPP send skipped: message is empty after interpolation`);
           }
         } else {
-          console.log(`[crm-auto] WPP send skipped: session NOT found for connId=${step.connectionId}`);
+          // Evolution API path — mesmo racional de busca por UUID ou instanceName
+          const allEvoSessions = getEvolutionSessions();
+          const evoSess = allEvoSessions.find((s) => s.id === step.connectionId)
+            ?? allEvoSessions.find((s) => s.instanceName === step.connectionId);
+          if (evoSess) {
+            const msg = step.message ? interpolate(step.message, lead, funnelName) : "";
+            const rawPhone = lead.phone.replace(/@.*$/, "").replace(/\D/g, "");
+            const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
+            markPhoneSending(rawPhone);
+            if (step.imageUrl) {
+              const ok = await evoSendMedia(evoSess.instanceName, evoSess.instanceApiKey, lead.phone, step.imageUrl, msg || undefined, isLid);
+              if (ok) {
+                addMessage(lead.phone, {
+                  role: "assistant",
+                  content: msg || "[image]",
+                  ts: Date.now(),
+                  type: "image",
+                  mediaUrl: step.imageUrl,
+                }, lead.clientId, { connId: evoSess.id });
+              }
+            } else if (msg) {
+              const ok = await evoSendText(evoSess.instanceName, evoSess.instanceApiKey, lead.phone, msg, isLid);
+              if (ok) {
+                addMessage(lead.phone, {
+                  role: "assistant",
+                  content: msg,
+                  ts: Date.now(),
+                  type: "text",
+                }, lead.clientId, { connId: evoSess.id });
+              }
+            }
+          } else {
+            console.log(`[crm-auto] send skipped: no UazAPI/WPPConnect/Evolution session found for connId=${step.connectionId}`);
+          }
         }
       }
       break;

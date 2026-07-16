@@ -3,8 +3,10 @@ import { getSession } from "@/lib/auth";
 import { getClientById } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { connectInstance, getQrCode as getUazapiQr } from "@/lib/uazapi";
 import { getQrCode as getWppQr, shouldRestartWppSession, startSession } from "@/lib/wppconnect-api";
+import { getQrCode as getEvoQr, shouldRestartEvolutionSession, createOrRestartInstance } from "@/lib/evolution-api";
 import QRCode from "qrcode";
 
 function detectBase(req: NextRequest): string {
@@ -80,6 +82,31 @@ export async function POST(req: NextRequest) {
     }
 
     const qr = await getWppQr(wppSession.sessionName, wppSession.sessionToken);
+    return NextResponse.json({ qr });
+  }
+
+  // ── Evolution API ─────────────────────────────────────────────────────────
+  const evoSessions = getEvolutionSessions().filter(
+    (s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId))
+  );
+  const evoSession = evoSessions.find((s) => s.id === connectionId);
+  if (evoSession) {
+    const baseUrl = detectBase(req);
+    const webhookUrl = `${baseUrl}/api/whatsapp/webhook/evolution/${evoSession.id}`;
+
+    if (shouldRestartEvolutionSession(evoSession.instanceName)) {
+      const result = await createOrRestartInstance(evoSession.instanceName, webhookUrl).catch(() => null);
+      if (result?.qrBase64) return NextResponse.json({ qr: result.qrBase64 });
+      let qr: string | null = null;
+      for (let i = 0; i < 10; i++) {
+        qr = await getEvoQr(evoSession.instanceName);
+        if (qr) break;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      return NextResponse.json({ qr });
+    }
+
+    const qr = await getEvoQr(evoSession.instanceName);
     return NextResponse.json({ qr });
   }
 

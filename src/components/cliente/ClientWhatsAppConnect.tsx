@@ -22,7 +22,7 @@ function displayConnection(phone: string, type: string): string {
     if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
     return phone;
   }
-  return type === "wppconnect" ? "Linha WhatsApp" : phone;
+  return type === "wppconnect" || type === "evolution" ? "Linha WhatsApp" : phone;
 }
 
 export function ClientWhatsAppConnect() {

@@ -30,7 +30,7 @@ type WaConnection = {
   phone?: string;
   name?: string;
   status: string; // "connected" | "connecting" | "disconnected"
-  type: "uazapi" | "meta" | "wppconnect";
+  type: "uazapi" | "meta" | "wppconnect" | "evolution";
   funnelId: string;
   funnelName: string;
 };
@@ -343,11 +343,12 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   async function loadWaConnections() {
     setLoadingWa(true);
     try {
-      // Busca funis do cliente + instâncias enriquecidas do WhatsApp Manager + sessões WPPConnect
-      const [funnelsRes, managerRes, wppRes] = await Promise.all([
+      // Busca funis do cliente + instâncias enriquecidas do WhatsApp Manager + sessões WPPConnect/Evolution
+      const [funnelsRes, managerRes, wppRes, evoRes] = await Promise.all([
         fetch(`/api/crm/funnels?clientId=${clientId}`),
         fetch("/api/whatsapp/manager"),
         fetch("/api/whatsapp/wppconnect-manager"),
+        fetch("/api/whatsapp/evolution-manager"),
       ]);
       const funnels: { id: string; name: string; connections?: { id: string; phone?: string; type: string; uazapiToken?: string; metaPhoneNumberId?: string }[] }[] =
         funnelsRes.ok ? await funnelsRes.json() : [];
@@ -357,6 +358,9 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       // WPPConnect sessions
       type WppSess = { id: string; sessionName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
       const wppSessions: WppSess[] = wppRes.ok ? await wppRes.json() : [];
+      // Evolution sessions
+      type EvoSess = { id: string; instanceName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
+      const evoSessions: EvoSess[] = evoRes.ok ? await evoRes.json() : [];
 
       // Lookup by token or name
       const byToken = new Map(enrichedList.map(e => [e.token, e]));
@@ -403,6 +407,21 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             type: "wppconnect",
             funnelId: wpp.linkedFunnelId,
             funnelName: wpp.linkedFunnelName ?? "",
+          });
+        }
+      }
+
+      // Adiciona instâncias Evolution vinculadas aos funis do cliente
+      for (const evo of evoSessions) {
+        if (evo.linkedFunnelId && clientFunnelIds.has(evo.linkedFunnelId)) {
+          conns.push({
+            id: evo.id,
+            phone: evo.phone ?? undefined,
+            name: evo.instanceName,
+            status: evo.status,
+            type: "evolution",
+            funnelId: evo.linkedFunnelId,
+            funnelName: evo.linkedFunnelName ?? "",
           });
         }
       }
@@ -512,7 +531,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               const agentName = summary?.name;
               const label = agentName ? `${agentName} (${phone})` : phone;
               const badge = summary?.enabled ? " ✓" : "";
-              const icon = conn.type === "meta" ? "📘" : conn.type === "wppconnect" ? "📱" : "⚡";
+              const icon = conn.type === "meta" ? "📘" : conn.type === "wppconnect" ? "📱" : conn.type === "evolution" ? "🧬" : "⚡";
               return (
                 <option key={conn.id} value={conn.id}>
                   {icon} {label}{badge}
@@ -607,7 +626,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                   : selectedConnId}
               </span>
               <span className="text-[10px] text-slate-400">
-                ({waConnections.find(c => c.id === selectedConnId)?.type === "meta" ? "Meta API" : waConnections.find(c => c.id === selectedConnId)?.type === "wppconnect" ? "WPPConnect" : "UazAPI"})
+                ({(() => {
+                  const t = waConnections.find(c => c.id === selectedConnId)?.type;
+                  return t === "meta" ? "Meta API" : t === "wppconnect" ? "WPPConnect" : t === "evolution" ? "Evolution API" : "UazAPI";
+                })()})
               </span>
             </>
           ) : (

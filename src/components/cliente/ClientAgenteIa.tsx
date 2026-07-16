@@ -35,7 +35,7 @@ function formatPhone(phone: string) {
 function displayConnection(phone: string, type: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length >= 8) return formatPhone(phone);
-  return type === "wppconnect" ? "Linha WhatsApp" : phone;
+  return type === "wppconnect" || type === "evolution" ? "Linha WhatsApp" : phone;
 }
 
 export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
@@ -526,7 +526,7 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
                       </div>
                       <div>
                         <p className="font-medium text-slate-800 text-sm">{displayConnection(conn.phone, conn.type)}</p>
-                        <p className="text-xs text-slate-400 capitalize">{conn.type === "wppconnect" ? "WhatsApp" : conn.type}</p>
+                        <p className="text-xs text-slate-400 capitalize">{conn.type === "wppconnect" || conn.type === "evolution" ? "WhatsApp" : conn.type}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">

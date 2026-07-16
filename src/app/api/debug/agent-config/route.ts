@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientById, getAllAgentConfigs, getAgentConfigForConnection } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,12 @@ export async function GET(req: NextRequest) {
   const wppSessions = getWppSessions().filter((s) => s.funnelId && clientFunnelIds.has(s.funnelId));
   for (const s of wppSessions) {
     connections.push({ id: s.id, type: "wppconnect", phone: s.sessionName });
+  }
+
+  // Instâncias Evolution vinculadas aos funis deste cliente
+  const evoSessions = getEvolutionSessions().filter((s) => s.funnelId && clientFunnelIds.has(s.funnelId));
+  for (const s of evoSessions) {
+    connections.push({ id: s.id, type: "evolution", phone: s.instanceName });
   }
 
   // Para cada conexão, mostra qual agentConfig é REALMENTE resolvido (incluindo fallback)

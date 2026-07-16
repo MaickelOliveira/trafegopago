@@ -3,6 +3,7 @@ import { getAllConversationsByClientId, setAiPaused } from "@/lib/conversations"
 import { getFunnels } from "@/lib/funnels";
 import { getLeadByPhone } from "@/lib/leads";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,15 @@ export async function GET(req: NextRequest) {
     if (!connIds.has(s.id)) {
       connIds.add(s.id);
       connections.push({ id: s.id, phone: s.sessionName, type: "wppconnect" });
+    }
+  }
+
+  // Adiciona instâncias Evolution vinculadas a funis deste cliente
+  const evoSessions = getEvolutionSessions().filter(s => s.funnelId && clientFunnelIds.has(s.funnelId));
+  for (const s of evoSessions) {
+    if (!connIds.has(s.id)) {
+      connIds.add(s.id);
+      connections.push({ id: s.id, phone: s.instanceName, type: "evolution" });
     }
   }
 

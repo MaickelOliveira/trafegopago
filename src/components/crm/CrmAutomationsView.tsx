@@ -10,7 +10,7 @@ import type { WebhookConfig } from "@/lib/webhooks";
 // ── Props ─────────────────────────────────────────────────────────────────────
 type ConnectionInfo = {
   id: string;
-  type: "uazapi" | "meta" | "wppconnect";
+  type: "uazapi" | "meta" | "wppconnect" | "evolution";
   phone: string;
   funnelId: string;
   funnelName: string;
@@ -274,7 +274,8 @@ function StepEditor({
   const uazapiConns    = connections.filter((c) => c.type === "uazapi");
   const metaConns      = connections.filter((c) => c.type === "meta");
   const wppConns       = connections.filter((c) => c.type === "wppconnect");
-  const allConns       = [...uazapiConns, ...wppConns, ...metaConns];
+  const evoConns       = connections.filter((c) => c.type === "evolution");
+  const allConns       = [...uazapiConns, ...wppConns, ...evoConns, ...metaConns];
 
   // ── Unified send message (UazapiGO text OR Meta template) ─────────────────
   if (step.type === "send_message" || step.type === "send_template") {
@@ -329,9 +330,10 @@ function StepEditor({
                     "rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0",
                     c.type === "uazapi" ? "bg-emerald-100 text-emerald-700"
                     : c.type === "wppconnect" ? "bg-blue-100 text-blue-700"
+                    : c.type === "evolution" ? "bg-teal-100 text-teal-700"
                     : "bg-green-100 text-green-700",
                   )}>
-                    {c.type === "uazapi" ? "UazapiGO" : c.type === "wppconnect" ? "WPPConnect" : "API Meta"}
+                    {c.type === "uazapi" ? "UazapiGO" : c.type === "wppconnect" ? "WPPConnect" : c.type === "evolution" ? "Evolution API" : "API Meta"}
                   </span>
                 </button>
               ))}
@@ -784,7 +786,7 @@ export function CrmAutomationsView({
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [showPicker, setShowPicker]     = useState(false);
 
-  const defaultConnId = (connections.find((c) => c.type === "uazapi") ?? connections.find((c) => c.type === "wppconnect") ?? connections[0])?.id ?? "";
+  const defaultConnId = (connections.find((c) => c.type === "uazapi") ?? connections.find((c) => c.type === "wppconnect") ?? connections.find((c) => c.type === "evolution") ?? connections[0])?.id ?? "";
   const uazapiConnId = defaultConnId;
   const firstTplId   = approvedTemplates[0]?.id ?? "";
 

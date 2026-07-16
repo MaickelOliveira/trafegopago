@@ -5,6 +5,7 @@ import { getAutomations } from "@/lib/crm-automations";
 import { getTemplates } from "@/lib/waba-templates";
 import { getWebhooks } from "@/lib/webhooks";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { CrmAutomationsView } from "@/components/crm/CrmAutomationsView";
 
 type Props = { params: Promise<{ clientId: string }> };
@@ -42,7 +43,17 @@ export default async function CrmAutomacoesPage({ params }: Props) {
       funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "WPPConnect",
     }));
 
-  const connections = [...funnelConnections, ...wppConnections];
+  const evolutionConnections = getEvolutionSessions()
+    .filter((s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId)))
+    .map((s) => ({
+      id: s.id,
+      type: "evolution" as const,
+      phone: s.instanceName,
+      funnelId: s.funnelId ?? "",
+      funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "Evolution API",
+    }));
+
+  const connections = [...funnelConnections, ...wppConnections, ...evolutionConnections];
 
   return (
     <CrmAutomationsView

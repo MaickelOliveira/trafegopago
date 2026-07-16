@@ -10,6 +10,8 @@ import { getFunnelById, getFunnels } from "@/lib/funnels";
 import { sendText, sendMedia as uazapiSendMedia } from "@/lib/uazapi";
 import { sendText as wppSendText, sendMedia as wppSendMedia } from "@/lib/wppconnect-api";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { sendText as evoSendText, sendMedia as evoSendMedia } from "@/lib/evolution-api";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { getConfig, getClientById } from "@/lib/clients";
 
 type Params = Promise<{ phone: string }>;
@@ -55,8 +57,11 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   let connId: string | undefined;
   if (funnelId) {
     const wppSession = getWppSessions().find((s) => s.funnelId === funnelId);
+    const evoSession = !wppSession ? getEvolutionSessions().find((s) => s.funnelId === funnelId) : undefined;
     if (wppSession) {
       connId = wppSession.id;
+    } else if (evoSession) {
+      connId = evoSession.id;
     } else {
       const funnel = getFunnelById(funnelId);
       connId = funnel?.connections?.find((c) => c.type === "uazapi")?.id
@@ -121,6 +126,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   let metaToken: string | null = null;
   let connType: string = "uazapi";
   let wppSession: ReturnType<typeof getWppSessions>[number] | undefined;
+  let evoSession: ReturnType<typeof getEvolutionSessions>[number] | undefined;
   let connId: string | undefined;
 
   if (clientId) {
@@ -132,8 +138,11 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     // essa conexão, sem cair nas heurísticas de "conversa mais recente"/funil abaixo.
     if (explicitConnId) {
       const wpp = getWppSessions().find((s) => s.id === explicitConnId);
+      const evo = !wpp ? getEvolutionSessions().find((s) => s.id === explicitConnId) : undefined;
       if (wpp) {
         wppSession = wpp; connId = wpp.id;
+      } else if (evo) {
+        evoSession = evo; connId = evo.id;
       } else {
         const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === explicitConnId);
         if (conn) {
@@ -152,7 +161,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     // 1ª tentativa: usa a MESMA conexão da conversa mais recente deste telefone —
     // é a conexão que de fato já trocou mensagens com o lead (histórico e token
     // corretos), evitando enviar/salvar por uma conexão duplicada/desativada.
-    if (!wppSession && !connId) {
+    if (!wppSession && !evoSession && !connId) {
       const tail9 = normalized.slice(-9);
       const matched = getAllConversationsByClientId(clientId)
         .filter((c) => {
@@ -165,6 +174,8 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
         if (!conv.connId) continue;
         const wpp = getWppSessions().find((s) => s.id === conv.connId);
         if (wpp) { wppSession = wpp; connId = wpp.id; break; }
+        const evo = getEvolutionSessions().find((s) => s.id === conv.connId);
+        if (evo) { evoSession = evo; connId = evo.id; break; }
         const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === conv.connId);
         if (conn && ((conn.type === "meta" && conn.metaPhoneNumberId && conn.metaToken) || (conn.type === "uazapi" && conn.uazapiToken))) {
           connId = conn.id;
@@ -181,30 +192,35 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     }
 
     // 2ª tentativa (fallback original): conexão do funil do lead
-    if (!wppSession && !connId && funnelId) {
-      // Verifica WPPConnect primeiro (sessões ficam em store separado)
+    if (!wppSession && !evoSession && !connId && funnelId) {
+      // Verifica WPPConnect e Evolution primeiro (sessões ficam em store separado)
       wppSession = getWppSessions().find(s => s.funnelId === funnelId);
       if (wppSession) {
         connId = wppSession.id;
       } else {
-        const funnel = getFunnelById(funnelId);
-        // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
-        const conn = funnel?.connections?.find((c) => c.type === "uazapi")
-          ?? funnel?.connections?.[0];
-        if (conn) {
-          connId = conn.id;
-          connType = conn.type ?? "uazapi";
-          if (conn.type === "meta") {
-            metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
-            metaToken = conn.metaToken ?? null;
-          } else {
-            token = conn.uazapiToken ?? null;
+        evoSession = getEvolutionSessions().find(s => s.funnelId === funnelId);
+        if (evoSession) {
+          connId = evoSession.id;
+        } else {
+          const funnel = getFunnelById(funnelId);
+          // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
+          const conn = funnel?.connections?.find((c) => c.type === "uazapi")
+            ?? funnel?.connections?.[0];
+          if (conn) {
+            connId = conn.id;
+            connType = conn.type ?? "uazapi";
+            if (conn.type === "meta") {
+              metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
+              metaToken = conn.metaToken ?? null;
+            } else {
+              token = conn.uazapiToken ?? null;
+            }
           }
         }
       }
     }
   }
-  if (!wppSession && connType !== "meta" && !token) {
+  if (!wppSession && !evoSession && connType !== "meta" && !token) {
     const config = getConfig();
     token = config.uazapiToken ?? null;
   }
@@ -239,6 +255,27 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
       console.log(`[conversations/send] WPPConnect ok=${ok} session=${wppSession.sessionName} phone=${normalized} isLid=${isLid}`);
     }
     if (!ok) errorMsg = "Falha ao enviar via WPPConnect (sessão desconectada — escaneie o QR Code novamente)";
+  } else if (evoSession) {
+    const lead = clientId ? getLeadByPhone(clientId, normalized) : undefined;
+    let isLid = lead?.isLid === true;
+
+    if (imgUrl) {
+      markPhoneSending(normalized);
+      ok = await evoSendMedia(evoSession.instanceName, evoSession.instanceApiKey, normalized, imgUrl, msgText || undefined, isLid);
+    } else if (msgText) {
+      markSent(normalized, msgText);
+      ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, normalized, msgText, isLid);
+      if (!ok && !isLid) {
+        console.log(`[conversations/send] Retrying with isLid=true phone=${normalized}`);
+        ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, normalized, msgText, true);
+        if (ok && clientId && funnelId) {
+          upsertLeadByPhone(clientId, normalized, { funnelId, isLid: true });
+          isLid = true;
+        }
+      }
+      console.log(`[conversations/send] Evolution ok=${ok} instance=${evoSession.instanceName} phone=${normalized} isLid=${isLid}`);
+    }
+    if (!ok) errorMsg = "Falha ao enviar via Evolution API (instância desconectada — escaneie o QR Code novamente)";
   } else if (connType === "meta" && metaPhoneNumberId && metaToken) {
     if (msgText) {
       const res = await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {

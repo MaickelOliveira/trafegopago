@@ -6,6 +6,7 @@ import { getAutomations } from "@/lib/crm-automations";
 import { getTemplates } from "@/lib/waba-templates";
 import { getWebhooks } from "@/lib/webhooks";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { CrmAutomationsView } from "@/components/crm/CrmAutomationsView";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export default async function ClienteAutomacoesPage() {
   const funnelConnections = funnels.flatMap((f) =>
     (f.connections ?? []).map((c) => ({
       id: c.id,
-      type: c.type as "uazapi" | "meta" | "wppconnect",
+      type: c.type as "uazapi" | "meta" | "wppconnect" | "evolution",
       phone: c.phone,
       funnelId: f.id,
       funnelName: f.name,
@@ -44,7 +45,17 @@ export default async function ClienteAutomacoesPage() {
       funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "WPPConnect",
     }));
 
-  const connections = [...funnelConnections, ...wppConnections];
+  const evolutionConnections = getEvolutionSessions()
+    .filter((s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId)))
+    .map((s) => ({
+      id: s.id,
+      type: "evolution" as const,
+      phone: s.instanceName,
+      funnelId: s.funnelId ?? "",
+      funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "Evolution API",
+    }));
+
+  const connections = [...funnelConnections, ...wppConnections, ...evolutionConnections];
 
   return (
     <CrmAutomationsView

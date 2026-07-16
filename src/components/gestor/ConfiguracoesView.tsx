@@ -38,6 +38,8 @@ type AppConfig = {
   uazapiServer: string;
   uazapiToken: string;
   uazapiAdminToken: string;
+  evolutionServer: string;
+  evolutionAdminKey: string;
   appBaseUrl: string;
   uazapiWebhookForward: string;
   googleClientId: string;
@@ -82,7 +84,9 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
   const [globalConfig, setGlobalConfig] = useState<AppConfig>({
     metaToken: "", metaAppId: "", metaAppSecret: "",
     anthropicApiKey: "", uazapiServer: "",
-    uazapiToken: "", uazapiAdminToken: "", appBaseUrl: "", uazapiWebhookForward: "",
+    uazapiToken: "", uazapiAdminToken: "",
+    evolutionServer: "", evolutionAdminKey: "",
+    appBaseUrl: "", uazapiWebhookForward: "",
     googleClientId: "", googleClientSecret: "",
     googleAdsDeveloperToken: "", googleAdsLoginCustomerId: "", googleAdsConnected: false,
     masterPhone: "", masterConnectionId: "",
@@ -547,6 +551,23 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                   value={globalConfig.uazapiWebhookForward}
                   onChange={(v) => setGlobalConfig((c) => ({ ...c, uazapiWebhookForward: v }))}
                   placeholder="https://... (n8n ou outro)"
+                />
+              </div>
+
+              {/* Evolution API / WhatsApp */}
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">🧬 WhatsApp (Evolution API)</p>
+                <Field
+                  label="Servidor"
+                  value={globalConfig.evolutionServer}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, evolutionServer: v }))}
+                  placeholder="https://evo.meuservidor.com"
+                />
+                <SecretField
+                  label="API Key (admin)"
+                  value={globalConfig.evolutionAdminKey}
+                  onChange={(v) => setGlobalConfig((c) => ({ ...c, evolutionAdminKey: v }))}
+                  placeholder="apikey global do servidor Evolution"
                 />
               </div>
 

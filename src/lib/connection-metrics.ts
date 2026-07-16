@@ -4,15 +4,17 @@
 import { getFunnels } from "@/lib/funnels";
 import { getClients } from "@/lib/clients";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { getInstanceStatus } from "@/lib/uazapi";
 import { checkConnectionStatus } from "@/lib/wppconnect-api";
+import { checkConnectionStatus as checkEvolutionConnectionStatus } from "@/lib/evolution-api";
 import { getAllConversationsByClientId, getHistory, phoneVariants } from "@/lib/conversations";
 import { getLeads } from "@/lib/leads";
 
 export type LiveConnection = {
   id: string;
   phone: string;
-  type: "meta" | "uazapi" | "wppconnect";
+  type: "meta" | "uazapi" | "wppconnect" | "evolution";
   status: string;
   connected: boolean;
   funnelId: string;
@@ -104,6 +106,34 @@ export async function getLiveConnectionsForClient(clientId: string): Promise<Liv
           id: s.id,
           phone: s.sessionName,
           type: "wppconnect" as const,
+          status: "UNKNOWN",
+          connected: true,
+          funnelId: linkedFunnel?.id ?? "",
+          funnelName: linkedFunnel?.name ?? "Sem funil",
+        }))
+    );
+  }
+
+  const evoSessions = getEvolutionSessions().filter(
+    (s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId))
+  );
+  for (const s of evoSessions) {
+    const linkedFunnel = funnels.find((f) => f.id === s.funnelId);
+    tasks.push(
+      checkEvolutionConnectionStatus(s.instanceName)
+        .then((status) => ({
+          id: s.id,
+          phone: s.instanceName,
+          type: "evolution" as const,
+          status,
+          connected: status === "CONNECTED" || status === "UNKNOWN",
+          funnelId: linkedFunnel?.id ?? "",
+          funnelName: linkedFunnel?.name ?? "Sem funil",
+        }))
+        .catch(() => ({
+          id: s.id,
+          phone: s.instanceName,
+          type: "evolution" as const,
           status: "UNKNOWN",
           connected: true,
           funnelId: linkedFunnel?.id ?? "",
