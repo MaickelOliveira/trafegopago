@@ -530,9 +530,14 @@ export async function POST(
   const isNew = !existingLead;
   const shouldUpdateName = !fromMe && (isNew || existingLead?.name === phone);
 
+  // Busca o nome via API sempre que for lead novo e a gente não tem um nome
+  // confiável em mãos: fromMe (pushName seria o NOSSO nome, não o do contato)
+  // ou quando o pushName do evento veio vazio/igual ao telefone (a Evolution
+  // nem sempre inclui pushName em todo evento).
   let contactNameFromApi: string | undefined;
-  if (fromMe && isNew) {
+  if (isNew && (fromMe || !pushName || pushName === phone)) {
     const fetched = await getContactName(evoSession.instanceName, evoSession.instanceApiKey, phone);
+    console.log(`[Evolution Webhook] getContactName phone=${phone} fromMe=${fromMe} pushName="${pushName}" resultado=${fetched ?? "(null)"}`);
     if (fetched) contactNameFromApi = fetched;
   }
   const nameToSave = contactNameFromApi ?? (shouldUpdateName ? pushName : undefined);
