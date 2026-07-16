@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { getClientById } from "@/lib/clients";
 import { getAllConversationsByClientId } from "@/lib/conversations";
 import { getFunnels } from "@/lib/funnels";
+import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import InboxView from "@/components/inbox/InboxView";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +26,22 @@ export default async function GestorInboxPage({ params }: Props) {
         seenIds.add(c.id);
         connections.push({ id: c.id, phone: c.phone || c.id, type: c.type });
       }
+    }
+  }
+
+  // Sessões WPPConnect e Evolution vinculadas aos funis deste cliente — não
+  // vivem em funnels[].connections, precisam ser mescladas separadamente.
+  const clientFunnelIds = new Set(funnels.map((f) => f.id));
+  for (const s of getWppSessions()) {
+    if (s.funnelId && clientFunnelIds.has(s.funnelId) && !seenIds.has(s.id)) {
+      seenIds.add(s.id);
+      connections.push({ id: s.id, phone: s.sessionName, type: "wppconnect" });
+    }
+  }
+  for (const s of getEvolutionSessions()) {
+    if (s.funnelId && clientFunnelIds.has(s.funnelId) && !seenIds.has(s.id)) {
+      seenIds.add(s.id);
+      connections.push({ id: s.id, phone: s.instanceName, type: "evolution" });
     }
   }
 
