@@ -16,6 +16,7 @@ type InstStatus = { status: string; phone: string | null; name: string | null; q
 type Instances = Record<string, InstStatus>;
 type FunnelInfo = { id: string; name: string; clientId?: string | null; connections?: FunnelConnection[] };
 type WppSession = { id: string; sessionName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
+type EvoSession = { id: string; instanceName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
 
 export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, readOnly = false }: {
   clients: { id: string; name: string }[];
@@ -28,6 +29,7 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, r
   const [showPanel, setShowPanel] = useState(false);
   const [funnels, setFunnels] = useState<FunnelInfo[]>(funnelsProp);
   const [wppSessions, setWppSessions] = useState<WppSession[]>([]);
+  const [evoSessions, setEvoSessions] = useState<EvoSession[]>([]);
   const [qrData, setQrData] = useState<{ connId: string; qr: string; funnelName: string } | null>(null);
   const [metaAppId, setMetaAppId] = useState<string>("");
   const [metaConfigId, setMetaConfigId] = useState<string>("");
@@ -50,14 +52,15 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, r
     fetchInstances();
     fetchFunnels();
     fetchWppSessions();
-    const t = setInterval(() => { fetchInstances(); fetchWppSessions(); }, 8000);
+    fetchEvoSessions();
+    const t = setInterval(() => { fetchInstances(); fetchWppSessions(); fetchEvoSessions(); }, 8000);
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
   // Refetch funis quando painel abre
   useEffect(() => {
-    if (showPanel) { fetchFunnels(); fetchWppSessions(); }
+    if (showPanel) { fetchFunnels(); fetchWppSessions(); fetchEvoSessions(); }
   }, [showPanel]);
 
   // Quando clientId muda, reseta para a prop e busca dados atualizados do servidor
@@ -197,6 +200,13 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, r
     } catch { /**/ }
   }
 
+  async function fetchEvoSessions() {
+    try {
+      const res = await fetch("/api/whatsapp/evolution-manager");
+      if (res.ok) setEvoSessions(await res.json());
+    } catch { /**/ }
+  }
+
   async function fetchFunnels() {
     try {
       const url = clientId ? `/api/crm/funnels?clientId=${encodeURIComponent(clientId)}` : "/api/crm/funnels";
@@ -274,9 +284,11 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, r
   const funnelConnIds = funnels.flatMap(f => f.connections ?? []).map(c => c.id);
   const clientFunnelIds = new Set(funnels.map(f => f.id));
   const visibleWppSessions = wppSessions.filter(s => s.linkedFunnelId && clientFunnelIds.has(s.linkedFunnelId));
+  const visibleEvoSessions = evoSessions.filter(s => s.linkedFunnelId && clientFunnelIds.has(s.linkedFunnelId));
   const totalConnected =
     funnelConnIds.filter(id => instances[id]?.status === "connected").length +
-    visibleWppSessions.filter(s => s.status === "connected").length;
+    visibleWppSessions.filter(s => s.status === "connected").length +
+    visibleEvoSessions.filter(s => s.status === "connected").length;
 
   return (
     <div className="relative" ref={panelRef}>
@@ -308,7 +320,9 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, r
                 </div>
 
                 {/* Conexões do funil */}
-                {(f.connections ?? []).length === 0 && visibleWppSessions.filter(s => s.linkedFunnelId === f.id).length === 0 && (
+                {(f.connections ?? []).length === 0
+                  && visibleWppSessions.filter(s => s.linkedFunnelId === f.id).length === 0
+                  && visibleEvoSessions.filter(s => s.linkedFunnelId === f.id).length === 0 && (
                   <p className="text-xs text-slate-400 px-4 py-2 italic">Sem número vinculado</p>
                 )}
                 {(f.connections ?? []).map(conn => {
@@ -343,6 +357,21 @@ export function WhatsAppStatus({ clients, funnels: funnelsProp = [], clientId, r
                       </p>
                       <p className="text-xs text-slate-400">
                         {wpp.status === "connected" ? (wpp.phone ? `+${wpp.phone}` : "Conectado") : wpp.status === "connecting" ? "Conectando..." : "Desconectado"}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Instâncias Evolution vinculadas a este funil */}
+                {visibleEvoSessions.filter(s => s.linkedFunnelId === f.id).map(evo => (
+                  <div key={evo.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <span className={`h-2 w-2 rounded-full flex-shrink-0 ${evo.status === "connected" ? "bg-green-500" : evo.status === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-slate-300"}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800">
+                        🧬 Evolution API · {evo.instanceName}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {evo.status === "connected" ? (evo.phone ? `+${evo.phone}` : "Conectado") : evo.status === "connecting" ? "Conectando..." : "Desconectado"}
                       </p>
                     </div>
                   </div>
