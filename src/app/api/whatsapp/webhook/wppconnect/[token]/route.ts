@@ -829,11 +829,32 @@ export async function POST(
 
   // testPhone: quando configurado, IA responde APENAS este número
   if (agentCfg?.testPhone) {
+    // Contato LID: "phone" é o identificador interno do WhatsApp (ex:
+    // 252291043082372), não o número de telefone real — nunca bate com
+    // testPhone por comparação direta, mesmo normalizado. Resolve o número
+    // real antes de comparar: usa o realPhone já salvo no lead (mensagens
+    // seguintes) ou resolve na hora (só neste modo de teste — aceita a
+    // latência extra porque não é tráfego real de produção).
+    let compareRaw = phone;
+    if (isLidContact) {
+      if (savedLead.realPhone) {
+        compareRaw = savedLead.realPhone;
+      } else {
+        const lidJid = String(body.chatId ?? "").endsWith("@lid")
+          ? String(body.chatId)
+          : String(body.from ?? "").endsWith("@lid")
+            ? String(body.from)
+            : `${phone}@lid`;
+        const resolved = await resolveContactPhone(wppSession.sessionName, wppSession.sessionToken, lidJid).catch(() => null);
+        if (resolved) compareRaw = resolved;
+        console.log(`[WPPConnect IA] testPhone: contato LID phone=${phone} resolvido=${resolved ?? "(falhou)"}`);
+      }
+    }
     // Usa a MESMA normalização (DDI 55 + migração do 9º dígito BR) que o resto
     // do sistema usa pra identidade de telefone (dedupe de lead etc.) — a
     // comparação anterior (últimos 8/9 dígitos "crus") dava falso-negativo
     // quando um dos dois lados vinha sem o 9º dígito ou com/sem o "55".
-    const phoneNorm = normalizePhone(phone);
+    const phoneNorm = normalizePhone(compareRaw);
     const testNorm = normalizePhone(agentCfg.testPhone);
     const phoneMatches = phoneNorm === testNorm;
     if (!phoneMatches) {
