@@ -277,9 +277,12 @@ function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibra
     timeZone: "America/Sao_Paulo",
   });
   const dateTimeInfo = `[Data e horário atual: ${today}, ${time} (horário de Brasília)]`;
+  const hourSP = Number(now.toLocaleString("pt-BR", { hour: "2-digit", hour12: false, timeZone: "America/Sao_Paulo" }));
+  const saudacaoAtual = hourSP < 12 ? "Bom dia" : hourSP < 18 ? "Boa tarde" : "Boa noite";
 
   const base = `Você é um assistente de WhatsApp para ${clientName}.
 Data e horário atual: ${today}, ${time} (horário de Brasília)
+Se for cumprimentar o lead (início de conversa, saudação), use exatamente "${saudacaoAtual}" — nunca "bom dia" fora do período da manhã nem outra saudação que não corresponda ao horário acima.
 
 Você pode:
 - Verificar horários disponíveis e agendar compromissos no Google Calendar
