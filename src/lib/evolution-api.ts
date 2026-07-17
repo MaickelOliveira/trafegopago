@@ -260,11 +260,17 @@ export async function sendText(
   phone: string,
   message: string,
   isLid = false,
+  // true quando `phone` já veio do remoteJid de uma mensagem recebida agora
+  // (o número exato que o WhatsApp usou pra nos entregar a mensagem) — nesse
+  // caso normalizeBrPhone pode inserir um 9º dígito indevido e mandar a
+  // resposta pra um número diferente do que originou a conversa, sem erro
+  // visível (a Evolution aceita o envio mesmo que o número não exista).
+  skipNormalize = false,
 ): Promise<boolean> {
   if (!base()) return false;
   try {
     const isGroup = phone.endsWith("@g.us");
-    const number = isGroup ? phone : isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
+    const number = isGroup ? phone : (isLid || skipNormalize) ? phone.replace(/@.*/, "").replace(/\D/g, "") : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
     markPhoneSending(phoneKey);
     markSent(phoneKey, message);
@@ -324,11 +330,12 @@ export async function sendMedia(
   mediaUrl: string,
   caption?: string,
   isLid = false,
+  skipNormalize = false,
 ): Promise<boolean> {
   if (!base()) return false;
   try {
     const isGroup = phone.endsWith("@g.us");
-    const number = isGroup ? phone : isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
+    const number = isGroup ? phone : (isLid || skipNormalize) ? phone.replace(/@.*/, "").replace(/\D/g, "") : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
     markPhoneSending(phoneKey);
     if (caption?.trim()) markSent(phoneKey, caption.trim());
@@ -386,11 +393,12 @@ export async function sendMediaFromBase64(
   mimeType: string,
   caption?: string,
   isLid = false,
+  skipNormalize = false,
 ): Promise<boolean> {
   if (!base()) return false;
   try {
     const isGroup = phone.endsWith("@g.us");
-    const number = isGroup ? phone : isLid ? phone.replace(/@.*/, "") : normalizeBrPhone(phone);
+    const number = isGroup ? phone : (isLid || skipNormalize) ? phone.replace(/@.*/, "").replace(/\D/g, "") : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
     markPhoneSending(phoneKey);
     if (caption?.trim()) markSent(phoneKey, caption.trim());

@@ -73,6 +73,7 @@ async function sendEvolutionMarkedMedia(
   names: string[],
   library: AgentMedia[],
   isLid: boolean,
+  skipNormalize: boolean,
 ): Promise<void> {
   const libraryNames = library.map((m) => m.name?.toLowerCase());
   for (const name of names) {
@@ -101,10 +102,10 @@ async function sendEvolutionMarkedMedia(
         };
         const mime = mimeMap[ext] ?? "application/octet-stream";
         const base64DataUri = `data:${mime};base64,${buffer.toString("base64")}`;
-        const result = await sendMediaFromBase64(instanceName, instanceApiKey, phone, base64DataUri, mime, media.caption, isLid);
+        const result = await sendMediaFromBase64(instanceName, instanceApiKey, phone, base64DataUri, mime, media.caption, isLid, skipNormalize);
         console.log(`[Evolution sendEvolutionMarkedMedia] "${name}" (base64 local) result=${result}`);
       } else {
-        const result = await evoSendMedia(instanceName, instanceApiKey, phone, media.url, media.caption, isLid);
+        const result = await evoSendMedia(instanceName, instanceApiKey, phone, media.url, media.caption, isLid, skipNormalize);
         console.log(`[Evolution sendEvolutionMarkedMedia] "${name}" (url externa) result=${result}`);
       }
     } catch (e) {
@@ -788,11 +789,11 @@ export async function POST(
     addMessage(phone, { role: "assistant", content: textToSend, ts: Date.now() }, clientId, { connId });
     const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
     for (let i = 0; i < chunks.length; i++) {
-      await evoSendText(instanceSnap, apiKeySnap, phone, chunks[i], isLidContact);
+      await evoSendText(instanceSnap, apiKeySnap, phone, chunks[i], isLidContact, true);
       if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
     }
     if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
-      await sendEvolutionMarkedMedia(instanceSnap, apiKeySnap, phone, names, agentCfg.mediaLibrary, isLidContact);
+      await sendEvolutionMarkedMedia(instanceSnap, apiKeySnap, phone, names, agentCfg.mediaLibrary, isLidContact, true);
       markMediaSent(clientId, connId, phone, names);
     } else if (names.length > 0) {
       console.warn(`[Evolution sendReply] Media markers encontrados mas library vazia! names=${JSON.stringify(names)}`);
@@ -800,7 +801,7 @@ export async function POST(
     if (followup) {
       await new Promise<void>((r) => setTimeout(r, 800));
       markSent(phone, followup);
-      await evoSendText(instanceSnap, apiKeySnap, phone, followup, isLidContact);
+      await evoSendText(instanceSnap, apiKeySnap, phone, followup, isLidContact, true);
     }
   }
 
