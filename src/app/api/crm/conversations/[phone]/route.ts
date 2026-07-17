@@ -261,13 +261,13 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
 
     if (imgUrl) {
       markPhoneSending(normalized);
-      ok = await evoSendMedia(evoSession.instanceName, evoSession.instanceApiKey, normalized, imgUrl, msgText || undefined, isLid);
+      ok = await evoSendMedia(evoSession.instanceName, evoSession.instanceApiKey, normalized, imgUrl, msgText || undefined, isLid, true);
     } else if (msgText) {
       markSent(normalized, msgText);
-      ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, normalized, msgText, isLid);
+      ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, normalized, msgText, isLid, true);
       if (!ok && !isLid) {
         console.log(`[conversations/send] Retrying with isLid=true phone=${normalized}`);
-        ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, normalized, msgText, true);
+        ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, normalized, msgText, true, true);
         if (ok && clientId && funnelId) {
           upsertLeadByPhone(clientId, normalized, { funnelId, isLid: true });
           isLid = true;

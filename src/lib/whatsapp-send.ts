@@ -45,7 +45,7 @@ export async function sendMessage(
       const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
       markPhoneSending(rawPhone);
       markWppSent(rawPhone, message);
-      const ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, phone, message, isLid);
+      const ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, phone, message, isLid, true);
       if (ok) return true;
     }
 
@@ -209,7 +209,7 @@ export async function sendMediaMessage(
       const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
       const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
       markPhoneSending(rawPhone);
-      const ok = await evoSendMedia(evoSession.instanceName, evoSession.instanceApiKey, phone, mediaUrl, caption, isLid);
+      const ok = await evoSendMedia(evoSession.instanceName, evoSession.instanceApiKey, phone, mediaUrl, caption, isLid, true);
       if (ok) return;
     }
   }
@@ -217,7 +217,7 @@ export async function sendMediaMessage(
     const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
     const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
     markPhoneSending(rawPhone);
-    const ok = await evoSendMedia(s.instanceName, s.instanceApiKey, phone, mediaUrl, caption, isLid);
+    const ok = await evoSendMedia(s.instanceName, s.instanceApiKey, phone, mediaUrl, caption, isLid, true);
     if (ok) return;
   }
 

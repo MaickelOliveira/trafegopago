@@ -291,7 +291,7 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
             const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
             markPhoneSending(rawPhone);
             if (step.imageUrl) {
-              const ok = await evoSendMedia(evoSess.instanceName, evoSess.instanceApiKey, lead.phone, step.imageUrl, msg || undefined, isLid);
+              const ok = await evoSendMedia(evoSess.instanceName, evoSess.instanceApiKey, lead.phone, step.imageUrl, msg || undefined, isLid, true);
               if (ok) {
                 addMessage(lead.phone, {
                   role: "assistant",
@@ -302,7 +302,7 @@ async function executeStep(step: CrmStep, lead: Lead, funnels: FunnelLike[], fun
                 }, lead.clientId, { connId: evoSess.id });
               }
             } else if (msg) {
-              const ok = await evoSendText(evoSess.instanceName, evoSess.instanceApiKey, lead.phone, msg, isLid);
+              const ok = await evoSendText(evoSess.instanceName, evoSess.instanceApiKey, lead.phone, msg, isLid, true);
               if (ok) {
                 addMessage(lead.phone, {
                   role: "assistant",
