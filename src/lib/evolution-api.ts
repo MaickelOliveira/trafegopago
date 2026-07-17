@@ -352,10 +352,12 @@ export async function sendMedia(
     const headers = { "Content-Type": "application/json", ...authHeader(instanceApiKey) };
 
     if (type === "audio") {
+      // Evolution/Baileys decodifica o campo com Buffer.from(media, "base64")
+      // sem tirar prefixo — mandar "data:mime;base64,..." corrompe o arquivo.
       const res = await fetch(`${base()}/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ number, audio: `data:${mime};base64,${base64Data}` }),
+        body: JSON.stringify({ number, audio: base64Data }),
       });
       if (!res.ok) console.error(`[evolution-api] sendWhatsAppAudio FAILED status=${res.status} body=${await res.text().catch(() => "")}`);
       return res.ok;
@@ -368,7 +370,7 @@ export async function sendMedia(
       body: JSON.stringify({
         number,
         mediatype,
-        media: `data:${mime};base64,${base64Data}`,
+        media: base64Data,
         caption: caption ?? "",
         fileName: `file.${ext}`,
       }),
@@ -410,12 +412,16 @@ export async function sendMediaFromBase64(
                : mimeType.startsWith("audio/") ? "audio"
                : "document";
     const headers = { "Content-Type": "application/json", ...authHeader(instanceApiKey) };
+    // Evolution/Baileys decodifica com Buffer.from(media, "base64") sem tirar
+    // prefixo — mandar a data-URI completa ("data:mime;base64,...") corrompe
+    // o arquivo. Aceita tanto data-URI quanto base64 puro como entrada aqui.
+    const rawBase64 = base64DataUri.replace(/^data:[^,]*,/, "");
 
     if (type === "audio") {
       const res = await fetch(`${base()}/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ number, audio: base64DataUri }),
+        body: JSON.stringify({ number, audio: rawBase64 }),
       });
       if (!res.ok) console.error(`[evolution-api] sendMediaFromBase64 sendWhatsAppAudio FAILED status=${res.status}`);
       return res.ok;
@@ -425,7 +431,7 @@ export async function sendMediaFromBase64(
     const res = await fetch(`${base()}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ number, mediatype, media: base64DataUri, caption: caption ?? "", fileName: `file.${ext}` }),
+      body: JSON.stringify({ number, mediatype, media: rawBase64, caption: caption ?? "", fileName: `file.${ext}` }),
     });
     if (!res.ok) console.error(`[evolution-api] sendMediaFromBase64 sendMedia FAILED status=${res.status}`);
     return res.ok;
