@@ -8,6 +8,7 @@ import {
   ReuseAgentSelect,
   ClientAgentSelect,
   ClientFunnelSelect,
+  getOrphanLinkDefaults,
   type FunnelOption,
   type ClientOption,
 } from "./WhatsAppManagerView";
@@ -345,7 +346,20 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
                         🔌 Conectar
                       </button>
                     )}
-                    <ActionBtn onClick={() => { setLinkFunnelId(s.linkedFunnelId ?? ""); setLinkClientId(s.linkedClientId ?? ""); setLinkAgent(s.hasAgentLinked); setReuseConnectionId(""); setEvoModal({ type: "link", id: s.id, instanceName: s.instanceName }); }}
+                    <ActionBtn onClick={() => {
+                      setLinkFunnelId(s.linkedFunnelId ?? "");
+                      const cid = s.linkedClientId ?? "";
+                      setLinkClientId(cid);
+                      if (s.hasAgentLinked) {
+                        setLinkAgent(true);
+                        setReuseConnectionId("");
+                      } else {
+                        const defaults = cid ? getOrphanLinkDefaults(clients, cid) : { linkAgent: false, reuseConnectionId: "" };
+                        setLinkAgent(defaults.linkAgent);
+                        setReuseConnectionId(defaults.reuseConnectionId);
+                      }
+                      setEvoModal({ type: "link", id: s.id, instanceName: s.instanceName });
+                    }}
                       title="Vincular CRM/Agente" className="border-slate-200 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50">🔀</ActionBtn>
                     {deletingId === s.id ? (
                       <div className="flex items-center gap-1">
@@ -499,7 +513,12 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
-              <ClientAgentSelect clients={clients} value={linkClientId} onChange={(v) => { setLinkClientId(v); setReuseConnectionId(""); }} accentColor="green" />
+              <ClientAgentSelect clients={clients} value={linkClientId} onChange={(v) => {
+                setLinkClientId(v);
+                const defaults = v ? getOrphanLinkDefaults(clients, v) : { linkAgent: false, reuseConnectionId: "" };
+                setLinkAgent(defaults.linkAgent);
+                setReuseConnectionId(defaults.reuseConnectionId);
+              }} accentColor="green" />
               {linkClientId && (
                 <>
                   <label className="flex items-center gap-2.5 cursor-pointer mt-2 mb-2" onClick={() => setLinkAgent(v => !v)}>

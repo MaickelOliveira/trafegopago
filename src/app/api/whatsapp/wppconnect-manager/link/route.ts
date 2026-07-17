@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getClients, upsertClient, migrateOrphanedAgentConfig, migrateAgentConfigByOldConnectionId } from "@/lib/clients";
-import { getFunnels, createFunnel, updateFunnel } from "@/lib/funnels";
-import { getWppSessionById, getWppSessions, updateWppSession } from "@/lib/wppconnect-sessions";
+import { getClients, upsertClient, migrateAgentConfigByOldConnectionId } from "@/lib/clients";
+import { createFunnel, updateFunnel } from "@/lib/funnels";
+import { getWppSessionById, updateWppSession } from "@/lib/wppconnect-sessions";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -57,27 +57,17 @@ export async function POST(req: NextRequest) {
   if (clientId) {
     const client = clients.find(c => c.id === clientId);
     if (client) {
-      // Antes de criar uma config em branco para a conexão nova, tenta reaproveitar
-      // uma config órfã (de uma instância antiga excluída/substituída) do mesmo
-      // cliente — preserva prompt, follow-ups, base de conhecimento etc. sem precisar
-      // reconfigurar do zero.
-      if (linkAgent) {
-        if (reuseConnectionId) {
-          // Usuário escolheu manualmente qual config antiga reaproveitar (tela de
-          // Vincular) — não depende de ambiguidade, sempre aplica a escolha.
-          migratedConfig = migrateAgentConfigByOldConnectionId(clientId, reuseConnectionId, sessionId);
-        } else {
-          // Sem escolha manual: migra automaticamente só quando não há ambiguidade
-          // (ver migrateOrphanedAgentConfig).
-          const liveConnectionIds = new Set<string>();
-          for (const f of getFunnels()) for (const c of f.connections ?? []) liveConnectionIds.add(c.id);
-          for (const s of getWppSessions()) liveConnectionIds.add(s.id);
-          migratedConfig = migrateOrphanedAgentConfig(clientId, sessionId, liveConnectionIds);
-        }
+      // Config de agente é uma entidade própria (identificada pelo seu
+      // whatsappConnectionId atual, vivo ou órfão) — não presa ao ciclo de vida
+      // da sessão. O front sempre manda explicitamente qual agente reaproveitar
+      // (reuseConnectionId); sem escolha explícita, cria um agente em branco —
+      // nada de adivinhar/auto-migrar por trás das costas do gestor.
+      if (linkAgent && reuseConnectionId) {
+        migratedConfig = migrateAgentConfigByOldConnectionId(clientId, reuseConnectionId, sessionId);
       }
 
-      // Reler o cliente: migrateOrphanedAgentConfig pode já ter persistido um novo
-      // agentConfigs[] — usar a referência antiga aqui sobrescreveria essa mudança.
+      // Reler o cliente: migrateAgentConfigByOldConnectionId pode já ter persistido
+      // um novo agentConfigs[] — usar a referência antiga aqui sobrescreveria essa mudança.
       const freshClient = getClients().find(c => c.id === clientId) ?? client;
       upsertClient({
         ...freshClient,

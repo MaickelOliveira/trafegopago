@@ -10,8 +10,11 @@ export type ClientOption = {
   agents?: { name?: string; whatsappConnectionId?: string; isOrphaned?: boolean }[];
 };
 
-/** Select pra reaproveitar a config de um agente órfão (de uma instância antiga
- *  excluída/substituída) numa conexão nova, em vez de criar uma config em branco. */
+/** Select pra escolher qual agente já configurado usar nesta conexão — a config
+ *  do agente não é presa à sessão (que pode ser excluída/recriada a qualquer
+ *  momento), é uma entidade própria que só aponta pra sessão atual. Lista TODOS
+ *  os agentes do cliente, não só os órfãos: escolher um que já está em uso em
+ *  outra conexão simplesmente move ele pra cá. */
 export function ReuseAgentSelect({ clients, clientId, value, onChange, accentColor = "green" }: {
   clients: ClientOption[];
   clientId: string;
@@ -19,25 +22,38 @@ export function ReuseAgentSelect({ clients, clientId, value, onChange, accentCol
   onChange: (v: string) => void;
   accentColor?: "green" | "blue" | "violet";
 }) {
-  const orphaned = (clients.find(c => c.id === clientId)?.agents ?? []).filter(a => a.isOrphaned && a.whatsappConnectionId);
-  if (orphaned.length === 0) return null;
+  const agents = (clients.find(c => c.id === clientId)?.agents ?? []).filter(a => a.whatsappConnectionId);
+  if (agents.length === 0) return null;
   return (
     <div className="mb-2">
-      <label className="block text-xs font-medium text-slate-500 mb-1">Reaproveitar configuração de um agente antigo?</label>
+      <label className="block text-xs font-medium text-slate-500 mb-1">Qual agente usar nesta conexão?</label>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
         className={`w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-${accentColor}-400`}
       >
-        <option value="">— Criar configuração nova —</option>
-        {orphaned.map(a => (
+        <option value="">— Criar agente novo —</option>
+        {agents.map(a => (
           <option key={a.whatsappConnectionId} value={a.whatsappConnectionId}>
-            {a.name?.trim() || "Agente sem nome"}
+            {a.name?.trim() || "Agente sem nome"}{a.isOrphaned ? "" : " (em uso em outra conexão — será movido pra cá)"}
           </option>
         ))}
       </select>
     </div>
   );
+}
+
+/** Calcula os defaults do modal "Vincular" pra um cliente: se ele tem alguma
+ *  config de agente órfã (presa a uma conexão excluída/substituída), liga o
+ *  toggle "Ativar Agente IA" automaticamente e, havendo só uma candidata,
+ *  já pré-seleciona ela pra reaproveitar. Sem isso, o toggle nasce desligado
+ *  pra toda conexão nova e o combo de reaproveitamento fica escondido atrás
+ *  dele — o usuário nunca vê que existe uma config antiga esperando e acaba
+ *  reconfigurando o agente do zero. */
+export function getOrphanLinkDefaults(clients: ClientOption[], clientId: string): { linkAgent: boolean; reuseConnectionId: string } {
+  const orphaned = (clients.find(c => c.id === clientId)?.agents ?? []).filter(a => a.isOrphaned && a.whatsappConnectionId);
+  if (orphaned.length === 0) return { linkAgent: false, reuseConnectionId: "" };
+  return { linkAgent: true, reuseConnectionId: orphaned.length === 1 ? (orphaned[0].whatsappConnectionId ?? "") : "" };
 }
 
 export function ClientAgentSelect({ clients, value, onChange, accentColor = "green" }: {
@@ -1414,7 +1430,20 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
                         🔌 Conectar
                       </button>
                     )}
-                    <ActionBtn onClick={() => { setLinkFunnelId(s.linkedFunnelId ?? ""); setLinkClientId(s.linkedClientId ?? ""); setLinkAgent(s.hasAgentLinked); setReuseConnectionId(""); setWppModal({ type: "link", id: s.id, sessionName: s.sessionName }); }}
+                    <ActionBtn onClick={() => {
+                      setLinkFunnelId(s.linkedFunnelId ?? "");
+                      const cid = s.linkedClientId ?? "";
+                      setLinkClientId(cid);
+                      if (s.hasAgentLinked) {
+                        setLinkAgent(true);
+                        setReuseConnectionId("");
+                      } else {
+                        const defaults = cid ? getOrphanLinkDefaults(clients, cid) : { linkAgent: false, reuseConnectionId: "" };
+                        setLinkAgent(defaults.linkAgent);
+                        setReuseConnectionId(defaults.reuseConnectionId);
+                      }
+                      setWppModal({ type: "link", id: s.id, sessionName: s.sessionName });
+                    }}
                       title="Vincular CRM/Agente" className="border-slate-200 text-slate-600 hover:text-violet-700 hover:bg-violet-50">🔀</ActionBtn>
                     {deletingId === s.id ? (
                       <div className="flex items-center gap-1">
@@ -1568,7 +1597,12 @@ function WppConnectView({ funnels, clients, appBaseUrl }: { funnels: FunnelOptio
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
-              <ClientAgentSelect clients={clients} value={linkClientId} onChange={(v) => { setLinkClientId(v); setReuseConnectionId(""); }} accentColor="green" />
+              <ClientAgentSelect clients={clients} value={linkClientId} onChange={(v) => {
+                setLinkClientId(v);
+                const defaults = v ? getOrphanLinkDefaults(clients, v) : { linkAgent: false, reuseConnectionId: "" };
+                setLinkAgent(defaults.linkAgent);
+                setReuseConnectionId(defaults.reuseConnectionId);
+              }} accentColor="green" />
               {linkClientId && (
                 <>
                   <label className="flex items-center gap-2.5 cursor-pointer mt-2 mb-2" onClick={() => setLinkAgent(v => !v)}>

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getClients, upsertClient, migrateOrphanedAgentConfig, migrateAgentConfigByOldConnectionId } from "@/lib/clients";
-import { getFunnels, createFunnel, updateFunnel } from "@/lib/funnels";
-import { getEvolutionSessionById, getEvolutionSessions, updateEvolutionSession } from "@/lib/evolution-sessions";
-import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getClients, upsertClient, migrateAgentConfigByOldConnectionId } from "@/lib/clients";
+import { createFunnel, updateFunnel } from "@/lib/funnels";
+import { getEvolutionSessionById, updateEvolutionSession } from "@/lib/evolution-sessions";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -49,24 +48,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Config de agente é uma entidade própria (identificada pelo seu
+  // whatsappConnectionId atual, vivo ou órfão) — não presa ao ciclo de vida da
+  // sessão. O front sempre manda explicitamente qual agente reaproveitar
+  // (reuseConnectionId); sem escolha explícita, cria um agente em branco —
+  // nada de adivinhar/auto-migrar por trás das costas do gestor.
   let migratedConfig = false;
   if (clientId) {
     const client = clients.find(c => c.id === clientId);
     if (client) {
-      if (linkAgent) {
-        if (reuseConnectionId) {
-          migratedConfig = migrateAgentConfigByOldConnectionId(clientId, reuseConnectionId, sessionId);
-        } else {
-          // Conjunto de conexões "vivas" inclui funnels[].connections, sessões
-          // WPPConnect E sessões Evolution — sem incluir estas últimas, uma
-          // config órfã de uma instância Evolution excluída poderia nunca ser
-          // detectada como ambígua/migrável corretamente.
-          const liveConnectionIds = new Set<string>();
-          for (const f of getFunnels()) for (const c of f.connections ?? []) liveConnectionIds.add(c.id);
-          for (const s of getWppSessions()) liveConnectionIds.add(s.id);
-          for (const s of getEvolutionSessions()) liveConnectionIds.add(s.id);
-          migratedConfig = migrateOrphanedAgentConfig(clientId, sessionId, liveConnectionIds);
-        }
+      if (linkAgent && reuseConnectionId) {
+        migratedConfig = migrateAgentConfigByOldConnectionId(clientId, reuseConnectionId, sessionId);
       }
 
       const freshClient = getClients().find(c => c.id === clientId) ?? client;

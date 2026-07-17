@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getClients } from "@/lib/clients";
+import { getClients, getAllAgentConfigs } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import {
   createOrRestartInstance,
@@ -55,14 +55,20 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // Considera TODAS as configs do cliente (agentConfig legado + agentConfigs[]
+  // por conexão) — olhar só o campo legado faz uma instância cujo agente foi
+  // salvo no array (fluxo normal da tela de edição) aparecer como "sem agente
+  // vinculado" mesmo com a config certinha salva.
   const connIdToClient = new Map<string, { clientId: string; clientName: string; agentEnabled: boolean }>();
   for (const client of clients) {
-    if (client.agentConfig?.whatsappConnectionId) {
-      connIdToClient.set(client.agentConfig.whatsappConnectionId, {
-        clientId: client.id,
-        clientName: client.name,
-        agentEnabled: client.agentConfig.enabled ?? false,
-      });
+    for (const cfg of getAllAgentConfigs(client)) {
+      if (cfg.whatsappConnectionId) {
+        connIdToClient.set(cfg.whatsappConnectionId, {
+          clientId: client.id,
+          clientName: client.name,
+          agentEnabled: cfg.enabled ?? false,
+        });
+      }
     }
   }
 

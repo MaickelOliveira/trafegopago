@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getClients, getConfig, getAllAgentConfigs } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { WhatsAppManagerView } from "@/components/whatsapp/WhatsAppManagerView";
 
 export const dynamic = "force-dynamic";
@@ -20,10 +21,13 @@ export default async function WhatsAppManagerPage() {
 
   // IDs de conexão atualmente existentes — usado pra marcar configs de agente
   // "órfãs" (presas a uma conexão excluída/substituída) que podem ser
-  // reaproveitadas ao vincular uma instância nova.
+  // reaproveitadas ao vincular uma instância nova. Precisa incluir TODOS os
+  // provedores (funis, WPPConnect e Evolution) — faltar um aqui faz uma config
+  // de um agente ainda ativo aparecer como "órfã" incorretamente.
   const liveConnectionIds = new Set<string>();
   for (const f of getFunnels()) for (const c of f.connections ?? []) liveConnectionIds.add(c.id);
   for (const s of getWppSessions()) liveConnectionIds.add(s.id);
+  for (const s of getEvolutionSessions()) liveConnectionIds.add(s.id);
 
   const clients = getClients().map(c => ({
     id: c.id,

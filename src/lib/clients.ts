@@ -202,54 +202,13 @@ export function upsertAgentConfigForConnection(
 }
 
 /**
- * Repointa o whatsappConnectionId de um AgentConfig órfão (cuja conexão antiga foi
- * excluída/substituída) para uma conexão nova — preserva todo o resto da config
- * (prompt, follow-ups, base de conhecimento, etc.), sem perda de dados.
- *
- * Usado quando uma instância WPPConnect morta é substituída por uma nova: a config
- * antiga nunca é apagada (só fica inacessível, presa ao id da conexão antiga) — aqui
- * só atualizamos esse id pra apontar pra conexão nova.
- *
- * Só migra automaticamente quando há EXATAMENTE 1 config órfã pra esse cliente —
- * com 0 ou 2+ candidatos a escolha é ambígua e não arriscamos migrar a errada.
- * `liveConnectionIds` deve conter todos os ids de conexão atualmente existentes
- * (funis + sessões WPPConnect), calculado pelo chamador.
- */
-export function migrateOrphanedAgentConfig(
-  clientId: string,
-  newConnectionId: string,
-  liveConnectionIds: Set<string>
-): boolean {
-  const client = getClients().find((c) => c.id === clientId);
-  if (!client) return false;
-
-  const isOrphaned = (connId: string | undefined) => !!connId && !liveConnectionIds.has(connId);
-
-  const configs = client.agentConfigs ?? [];
-  const orphaned = configs.filter((c) => isOrphaned(c.whatsappConnectionId));
-  if (orphaned.length === 1) {
-    const newConfigs = configs.map((c) =>
-      c === orphaned[0] ? { ...c, whatsappConnectionId: newConnectionId } : c
-    );
-    upsertClient({ ...client, agentConfigs: newConfigs });
-    return true;
-  }
-  if (orphaned.length > 1) return false; // ambíguo — não migra
-
-  // Sem agentConfigs[] (cliente no modelo legado de config única)
-  if (configs.length === 0 && isOrphaned(client.agentConfig?.whatsappConnectionId)) {
-    upsertClient({ ...client, agentConfig: { ...client.agentConfig!, whatsappConnectionId: newConnectionId } });
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Igual a migrateOrphanedAgentConfig, mas sem ambiguidade: o usuário escolheu
- * explicitamente (na tela de Vincular) qual config antiga (identificada pelo seu
- * whatsappConnectionId antigo) reaproveitar na conexão nova. Usado quando há 2+
- * configs órfãs e a escolha automática não seria segura.
+ * Repointa o whatsappConnectionId de um AgentConfig (órfão ou em uso em outra
+ * conexão) para uma conexão nova — preserva todo o resto da config (prompt,
+ * follow-ups, base de conhecimento etc.), sem perda de dados. O agente é uma
+ * entidade própria identificada pelo seu whatsappConnectionId atual; não fica
+ * preso ao ciclo de vida da sessão (que pode ser excluída/recriada a qualquer
+ * momento) — o gestor escolhe explicitamente (tela de Vincular) qual agente
+ * mover pra cá, identificado pelo seu whatsappConnectionId antigo.
  */
 export function migrateAgentConfigByOldConnectionId(
   clientId: string,
