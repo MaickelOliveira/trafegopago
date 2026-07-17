@@ -270,7 +270,12 @@ export async function sendText(
   if (!base()) return false;
   try {
     const isGroup = phone.endsWith("@g.us");
-    const number = isGroup ? phone : (isLid || skipNormalize) ? phone.replace(/@.*/, "").replace(/\D/g, "") : normalizeBrPhone(phone);
+    // isLid: contato identificado por LID (id interno do WhatsApp), não por
+    // telefone real — precisa do sufixo "@lid" explícito, senão a Evolution
+    // trata os dígitos como se fossem um número de telefone normal (e falha
+    // com "exists: false", já que aquele número não existe de verdade).
+    const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
+    const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
     markPhoneSending(phoneKey);
     markSent(phoneKey, message);
@@ -335,7 +340,12 @@ export async function sendMedia(
   if (!base()) return false;
   try {
     const isGroup = phone.endsWith("@g.us");
-    const number = isGroup ? phone : (isLid || skipNormalize) ? phone.replace(/@.*/, "").replace(/\D/g, "") : normalizeBrPhone(phone);
+    // isLid: contato identificado por LID (id interno do WhatsApp), não por
+    // telefone real — precisa do sufixo "@lid" explícito, senão a Evolution
+    // trata os dígitos como se fossem um número de telefone normal (e falha
+    // com "exists: false", já que aquele número não existe de verdade).
+    const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
+    const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
     markPhoneSending(phoneKey);
     if (caption?.trim()) markSent(phoneKey, caption.trim());
@@ -400,7 +410,12 @@ export async function sendMediaFromBase64(
   if (!base()) return false;
   try {
     const isGroup = phone.endsWith("@g.us");
-    const number = isGroup ? phone : (isLid || skipNormalize) ? phone.replace(/@.*/, "").replace(/\D/g, "") : normalizeBrPhone(phone);
+    // isLid: contato identificado por LID (id interno do WhatsApp), não por
+    // telefone real — precisa do sufixo "@lid" explícito, senão a Evolution
+    // trata os dígitos como se fossem um número de telefone normal (e falha
+    // com "exists: false", já que aquele número não existe de verdade).
+    const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
+    const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
     markPhoneSending(phoneKey);
     if (caption?.trim()) markSent(phoneKey, caption.trim());
