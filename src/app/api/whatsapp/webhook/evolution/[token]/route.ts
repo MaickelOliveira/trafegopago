@@ -235,12 +235,17 @@ type EvolutionMessageData = {
   message?: Record<string, unknown>;
   messageType?: string;
   messageTimestamp?: number | string;
+  // ⚠️ NÃO CONFIRMADO — só usado no debug abaixo pra checar se a Evolution
+  // expõe contextInfo aqui (irmão de "message") em vez de aninhado nela.
+  contextInfo?: Record<string, unknown>;
 };
 
 // Acha o objeto de mídia dentro de data.message (imageMessage/videoMessage/
 // audioMessage/documentMessage/stickerMessage) e seu contextInfo, se houver —
-// o contextInfo (onde a Evolution costuma expor dados de anúncio CTWa) fica
-// aninhado DENTRO do objeto do tipo específico, não solto em data.message.
+// o contextInfo (onde a Evolution costuma expor dados de anúncio CTWa) geralmente
+// fica aninhado DENTRO do objeto do tipo específico, mas pra mensagens tipo
+// "conversation" (texto puro, sem objeto próprio) findContextInfo também tenta
+// message.contextInfo direto como fallback — ver findContextInfo abaixo.
 function findMessageTypeObject(message: Record<string, unknown> | undefined): { type: string; obj: Record<string, unknown> } | null {
   if (!message) return null;
   const candidates = ["imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "extendedTextMessage"];
@@ -252,9 +257,17 @@ function findMessageTypeObject(message: Record<string, unknown> | undefined): { 
 }
 
 function findContextInfo(message: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!message) return undefined;
+  // 1ª tentativa: aninhado dentro do tipo específico (ex: extendedTextMessage.contextInfo)
   const found = findMessageTypeObject(message);
-  const ctx = found?.obj?.contextInfo;
-  return (ctx && typeof ctx === "object") ? ctx as Record<string, unknown> : undefined;
+  const nestedCtx = found?.obj?.contextInfo;
+  if (nestedCtx && typeof nestedCtx === "object") return nestedCtx as Record<string, unknown>;
+  // 2ª tentativa: direto no nível da mensagem — cobre o caso de mensagem tipo
+  // "conversation" (texto puro, o mais comum em clique de anúncio), onde
+  // contextInfo não tem como ficar aninhado dentro de "conversation" (é só
+  // uma string no protocolo), mas pode vir como irmão dela.
+  const directCtx = message.contextInfo;
+  return (directCtx && typeof directCtx === "object") ? directCtx as Record<string, unknown> : undefined;
 }
 
 export async function POST(
@@ -459,7 +472,11 @@ export async function POST(
       const existing: unknown[] = existsSync(debugFile)
         ? (JSON.parse(readFileSync(debugFile, "utf-8")) as unknown[])
         : [];
-      existing.unshift({ ts: new Date().toISOString(), phone, instance: evoSession.instanceName, messageType: msgType, contextInfo });
+      // Grava a mensagem bruta inteira (não só o contextInfo já filtrado) —
+      // findContextInfo pode estar olhando no lugar errado; sem o objeto cru
+      // não dá pra confirmar onde o contextInfo/externalAdReplyInfo realmente
+      // está quando a mensagem é do tipo "conversation" (texto puro).
+      existing.unshift({ ts: new Date().toISOString(), phone, instance: evoSession.instanceName, messageType: msgType, contextInfoEncontrado: contextInfo, messageObjBruto: messageObj, dataContextInfo: data.contextInfo });
       if (existing.length > 50) existing.length = 50;
       writeFileSync(debugFile, JSON.stringify(existing, null, 2));
     } catch (e) {
