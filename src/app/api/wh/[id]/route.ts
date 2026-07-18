@@ -8,6 +8,21 @@ import { runAutomationsForEvent } from "@/lib/crm-automations";
 
 export const dynamic = "force-dynamic";
 
+// Esse webhook é chamado direto do navegador do visitante, a partir do site
+// do cliente (domínio diferente do nosso) — sem CORS, o navegador bloqueia a
+// requisição antes mesmo dela sair (preflight OPTIONS sem resposta = envio
+// nunca acontece). O id na URL já funciona como autenticação, então liberar
+// qualquer origem aqui é seguro (não há cookies/sessão envolvidos).
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 /**
  * Receptor de leads via webhook.
  * Aceita POST com JSON ou application/x-www-form-urlencoded.
@@ -20,7 +35,7 @@ export async function POST(
   const { id } = await params;
   const wh = getWebhookById(id);
   if (!wh || !wh.active) {
-    return NextResponse.json({ error: "Webhook não encontrado ou inativo" }, { status: 404 });
+    return NextResponse.json({ error: "Webhook não encontrado ou inativo" }, { status: 404, headers: CORS_HEADERS });
   }
 
   // Parse do corpo — suporta JSON e form-urlencoded
@@ -38,7 +53,7 @@ export async function POST(
       try { payload = JSON.parse(text); } catch { payload = {}; }
     }
   } catch {
-    return NextResponse.json({ error: "Payload inválido" }, { status: 400 });
+    return NextResponse.json({ error: "Payload inválido" }, { status: 400, headers: CORS_HEADERS });
   }
 
   // Mapeamento de campos
@@ -50,7 +65,7 @@ export async function POST(
 
   const phone = rawPhone.replace(/\D/g, "");
   if (!phone) {
-    return NextResponse.json({ error: "Telefone não encontrado no payload" }, { status: 422 });
+    return NextResponse.json({ error: "Telefone não encontrado no payload" }, { status: 422, headers: CORS_HEADERS });
   }
 
   // IP e User-Agent reais do navegador que chamou o webhook — a requisição
@@ -151,7 +166,7 @@ export async function POST(
   runAutomationsForEvent("lead_created", lead, { webhookId: id });
   runAutomationsForEvent("column_entered", lead, { toColumnId: columnId });
 
-  return NextResponse.json({ ok: true, leadId: lead.id, name: lead.name, phone: lead.phone });
+  return NextResponse.json({ ok: true, leadId: lead.id, name: lead.name, phone: lead.phone }, { headers: CORS_HEADERS });
 }
 
 /** GET para verificação — retorna info do webhook sem dados sensíveis. */
@@ -161,6 +176,6 @@ export async function GET(
 ) {
   const { id } = await params;
   const wh = getWebhookById(id);
-  if (!wh) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ id: wh.id, name: wh.name, active: wh.active, leadCount: wh.leadCount });
+  if (!wh) return NextResponse.json({ error: "Not found" }, { status: 404, headers: CORS_HEADERS });
+  return NextResponse.json({ id: wh.id, name: wh.name, active: wh.active, leadCount: wh.leadCount }, { headers: CORS_HEADERS });
 }
