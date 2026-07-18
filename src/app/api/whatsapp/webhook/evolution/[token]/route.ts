@@ -256,18 +256,28 @@ function findMessageTypeObject(message: Record<string, unknown> | undefined): { 
   return null;
 }
 
-function findContextInfo(message: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!message) return undefined;
-  // 1ª tentativa: aninhado dentro do tipo específico (ex: extendedTextMessage.contextInfo)
-  const found = findMessageTypeObject(message);
-  const nestedCtx = found?.obj?.contextInfo;
-  if (nestedCtx && typeof nestedCtx === "object") return nestedCtx as Record<string, unknown>;
-  // 2ª tentativa: direto no nível da mensagem — cobre o caso de mensagem tipo
-  // "conversation" (texto puro, o mais comum em clique de anúncio), onde
-  // contextInfo não tem como ficar aninhado dentro de "conversation" (é só
-  // uma string no protocolo), mas pode vir como irmão dela.
-  const directCtx = message.contextInfo;
-  return (directCtx && typeof directCtx === "object") ? directCtx as Record<string, unknown> : undefined;
+// Confirmado ao vivo (payload real de clique em anúncio Facebook, ver
+// /api/debug/evolution-ctwa): pra mensagem tipo "conversation", o contextInfo
+// do CTWa NÃO fica aninhado em data.message nenhum nível — vem em
+// data.contextInfo, IRMÃO de data.message. Por isso findContextInfo recebe
+// também o "data" bruto do webhook como fallback final.
+function findContextInfo(
+  message: Record<string, unknown> | undefined,
+  data?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (message) {
+    // 1ª tentativa: aninhado dentro do tipo específico (ex: extendedTextMessage.contextInfo)
+    const found = findMessageTypeObject(message);
+    const nestedCtx = found?.obj?.contextInfo;
+    if (nestedCtx && typeof nestedCtx === "object") return nestedCtx as Record<string, unknown>;
+    // 2ª tentativa: direto no nível da mensagem (irmão de "conversation" etc.)
+    const directCtx = message.contextInfo;
+    if (directCtx && typeof directCtx === "object") return directCtx as Record<string, unknown>;
+  }
+  // 3ª tentativa: irmão de "message" no nível do "data" do webhook — é aqui
+  // que o CTWa de verdade aparece pra mensagem tipo "conversation".
+  const dataCtx = data?.contextInfo;
+  return (dataCtx && typeof dataCtx === "object") ? dataCtx as Record<string, unknown> : undefined;
 }
 
 export async function POST(
@@ -454,16 +464,16 @@ export async function POST(
   const pushName = data.pushName || phone;
 
   // ── CTWa: dados de anúncio (Click-to-WhatsApp) ──
-  // ⚠️ CAMPO NÃO CONFIRMADO AO VIVO — a Evolution/Baileys costuma expor isso em
-  // contextInfo.externalAdReplyInfo dentro do objeto de mensagem específico.
-  // Log completo do contextInfo abaixo (leads novos) para confirmar nomes de
-  // campo reais assim que chegar um clique de anúncio de verdade.
+  // Confirmado ao vivo via /api/debug/evolution-ctwa (clique real em anúncio
+  // Facebook, cliente Vitalli Garden): pra mensagem tipo "conversation" o
+  // contextInfo vem em data.contextInfo (irmão de data.message), e o campo
+  // é "externalAdReply" (SEM "Info" no final) — diferente do que se assumia.
   const isNewPhone = !getLeadByPhone(
     (getFunnels().find(f => f.id === evoSession.funnelId)?.clientId ?? evoSession.clientId ?? "sem-cliente"),
     phone,
     evoSession.funnelId ?? undefined,
   );
-  const contextInfo = findContextInfo(messageObj);
+  const contextInfo = findContextInfo(messageObj, data);
   if (isNewPhone && !fromMe) {
     console.log(`[Evolution CTWa DIAG] NOVO LEAD phone=${phone} messageType=${msgType} contextInfo=${JSON.stringify(contextInfo)}`);
     try {
@@ -484,11 +494,10 @@ export async function POST(
     }
   }
 
-  // Schema confirmado via Baileys (proto.ContextInfo.IExternalAdReplyInfo) — a
-  // Evolution repassa o objeto de mensagem cru do Baileys, então os nomes de
-  // campo batem 1:1 com o protocolo: sourceId, sourceUrl, title, ctwaClid.
-  // ctwaClid fica ANINHADO dentro de externalAdReplyInfo, não solto em contextInfo.
-  const externalAd = contextInfo?.externalAdReplyInfo as Record<string, unknown> | undefined;
+  // Confirmado ao vivo: o campo real é "externalAdReply" (sem "Info" no final).
+  // Mantém o fallback pra "externalAdReplyInfo" por segurança, caso alguma
+  // versão da Evolution use o outro nome.
+  const externalAd = (contextInfo?.externalAdReply ?? contextInfo?.externalAdReplyInfo) as Record<string, unknown> | undefined;
   let ctwaAdId = ((externalAd?.sourceId ?? externalAd?.source_id) as string | undefined) || undefined;
   const ctwaClid = (externalAd?.ctwaClid as string | undefined) || undefined;
   const ctwaSourceUrl = ((externalAd?.sourceUrl ?? externalAd?.source_url) as string | undefined) || undefined;
