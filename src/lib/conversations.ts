@@ -203,6 +203,17 @@ export function markAsRead(phone: string, clientId?: string | null, connId?: str
   }
 }
 
+/** Garante o código do país (55) na frente do número — usado só pra montar
+ *  links wa.me legíveis por humano (ex: aviso no grupo de avisos). Sem o 55,
+ *  o WhatsApp não reconhece o link como um contato válido. Diferente de
+ *  phoneVariants() (que gera várias variantes pra busca fuzzy), aqui queremos
+ *  UM número específico — mantém os dígitos exatamente como vieram (não mexe
+ *  no 9º dígito), só garante o prefixo do país. */
+export function ensureBrCountryCode(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.startsWith("55") ? digits : `55${digits}`;
+}
+
 /** Normaliza telefone removendo código de país 55 para busca fuzzy */
 export function phoneVariants(phone: string): string[] {
   const digits = phone.replace(/\D/g, "");

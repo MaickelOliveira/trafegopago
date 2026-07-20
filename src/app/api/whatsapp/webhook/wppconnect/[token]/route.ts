@@ -6,7 +6,7 @@ import { getFunnels } from "@/lib/funnels";
 import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead, markLeadNeedsAttention, normalizePhone } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
-import { getHistory, addMessage, setAiPaused, sanitizeContactName, updateLastMessage } from "@/lib/conversations";
+import { getHistory, addMessage, setAiPaused, sanitizeContactName, updateLastMessage, ensureBrCountryCode } from "@/lib/conversations";
 import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
@@ -202,7 +202,7 @@ async function processWppActions(
 
       const resumo = await generateWppSummaryText(clientName, agCfg, leadPhone, action.motivo, clientId, connId);
       const lead = getLeadByPhone(clientId, leadPhone);
-      const displayPhone = (lead?.realPhone ?? leadPhone).replace(/\D/g, "");
+      const displayPhone = ensureBrCountryCode(lead?.realPhone ?? leadPhone);
       const waLink = `https://wa.me/${displayPhone}`;
       const msg =
         `📋 *Resumo de conversa — ${clientName}*\n\n` +

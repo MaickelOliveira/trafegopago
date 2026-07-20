@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
-import { getHistory, addMessage, getAiPaused, setAiPaused, sanitizeContactName } from "@/lib/conversations";
+import { getHistory, addMessage, getAiPaused, setAiPaused, sanitizeContactName, ensureBrCountryCode } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone, updateLead, markLeadNeedsAttention } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
@@ -128,7 +128,7 @@ async function sendConversationSummary(
   if (recipients.length === 0) return;
 
   const resumo = await generateSummaryText(clientName, agCfg, phone, motivo);
-  const waLink = `https://wa.me/${phone.replace(/\D/g, "")}`;
+  const waLink = `https://wa.me/${ensureBrCountryCode(phone)}`;
 
   const msg =
     `📋 *Resumo de conversa — ${clientName}*\n\n` +
