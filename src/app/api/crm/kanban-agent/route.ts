@@ -27,10 +27,12 @@ export async function PATCH(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const enabled: boolean = typeof body.enabled === "boolean" ? body.enabled : !client.kanbanAgentEnabled;
+  const kanbanAgentPrompt: string | undefined =
+    typeof body.kanbanAgentPrompt === "string" ? body.kanbanAgentPrompt : client.kanbanAgentPrompt;
 
-  upsertClient({ ...client, kanbanAgentEnabled: enabled });
+  upsertClient({ ...client, kanbanAgentEnabled: enabled, kanbanAgentPrompt });
 
-  return NextResponse.json({ ok: true, kanbanAgentEnabled: enabled });
+  return NextResponse.json({ ok: true, kanbanAgentEnabled: enabled, kanbanAgentPrompt });
 }
 
 // POST /api/crm/kanban-agent?clientId=xxx — classifica todos os leads existentes

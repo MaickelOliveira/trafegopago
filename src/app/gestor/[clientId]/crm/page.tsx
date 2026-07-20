@@ -21,6 +21,7 @@ export default async function ClientCrmPage({ params }: { params: Promise<{ clie
     metaAccountId: client.adAccounts.find((a) => a.platform === "meta")?.id,
     pixelId: client.pixelId,
     kanbanAgentEnabled: client.kanbanAgentEnabled !== false,
+    kanbanAgentPrompt: client.kanbanAgentPrompt,
   }];
 
   const leads = attachLeadsHeat(getLeads(clientId));

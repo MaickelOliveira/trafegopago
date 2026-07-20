@@ -18,7 +18,7 @@ type KanbanAction =
   | { type: "mover_lead"; colunaId: string; motivo: string }
   | { type: "atualizar_lead"; nome?: string; notas?: string; valor?: number };
 
-function buildSystemPrompt(lead: Lead, funnel: Funnel, agentSystemPrompt?: string): string {
+function buildSystemPrompt(lead: Lead, funnel: Funnel, kanbanAgentPrompt?: string): string {
   const columns = funnel.columns ?? [];
   const colunaAtual = columns.find((c) => c.id === lead.status);
 
@@ -55,33 +55,23 @@ function buildSystemPrompt(lead: Lead, funnel: Funnel, agentSystemPrompt?: strin
     ? `\nColunas BLOQUEADAS para movimentação automática (preenchidas manualmente):\n${colunasBloqueadas.map((c) => `• ${c.label}`).join("\n")}`
     : "";
 
-  // Extrai as primeiras 400 chars do system prompt como contexto do negócio
-  const contextoNegocio = agentSystemPrompt
-    ? `\n\nContexto do negócio (use para filtrar conversas irrelevantes):\n${agentSystemPrompt.slice(0, 400).replace(/\n+/g, " ").trim()}`
-    : "";
-
   return `Você é um agente silencioso de CRM. Analise a conversa e decida se deve mover o lead no Kanban.
 
-Lead: ${lead.name} | Etapa atual: ${colunaAtual?.label ?? lead.status} | Funil: ${funnel.name}${contextoNegocio}
+Lead: ${lead.name} | Etapa atual: ${colunaAtual?.label ?? lead.status} | Funil: ${funnel.name}
 
 Colunas disponíveis para mover_lead (use o id exato):
 ${listaPermitidas}${listaBloqueadas}
 
+${kanbanAgentPrompt?.trim() ? `Instruções do gestor sobre quando mover ou pular um lead (siga isso como fonte principal de critério):\n${kanbanAgentPrompt.trim()}\n` : ""}
 Regras:
 - PRIORIDADE 1: Se a coluna tiver "Contexto", siga-o à risca — ele define exatamente quando mover
 - PRIORIDADE 2: Se tiver "Gatilhos", atente ao tipo de correspondência:
     • (correspondência EXATA) — a mensagem deve ser literalmente igual ao gatilho (ignorando maiúsculas)
     • (basta CONTER) — mova se qualquer parte da mensagem contiver o texto do gatilho
     Em qualquer caso, confidence >= 0.95 ao detectar gatilho direto.
-- PRIORIDADE 3: Na ausência de contexto/gatilhos, mova quando houver indicação clara do estágio atual. Exemplos que DEVEM gerar movimentação:
-    • Lead confirma data, horário ou aceita uma reunião/consulta → mover para coluna de reunião agendada
-    • Lead demonstra interesse explícito no produto/serviço → mover para coluna de interessados
-    • Lead solicita proposta, orçamento ou preço → mover para etapa de proposta
-    • Lead diz que não tem interesse, que vai pensar, ou some por muito tempo → mover para perdidos
-    • Lead confirma pagamento, envia comprovante ou diz que fechou → mover para coluna de clientes
-- IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou reunião há algumas mensagens e depois disse "ok" ou "até lá", o estado ainda é "reunião confirmada"
-- FILTRO DE NICHO (REGRA MAIS IMPORTANTE): Se a conversa for sobre assuntos pessoais ou de negócios/serviços COMPLETAMENTE DIFERENTES do contexto do negócio acima, NÃO tome nenhuma ação. Exemplo: se o negócio é de tráfego pago e o lead está falando sobre personal trainer, academia, alimentação ou outro serviço não relacionado → NÃO mova, NÃO atualize
-- Em caso de dúvida entre mover ou não: SE a conversa for claramente sobre o negócio E mostrar sinal claro do estágio, MOVA
+- PRIORIDADE 3: siga as "Instruções do gestor" acima, se houver.
+- Se não houver Contexto, Gatilhos nem Instruções do gestor aplicáveis à situação atual, NÃO mova o lead — não invente critério próprio.
+- IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou algo há algumas mensagens e depois só disse "ok" ou "até lá", o estado ainda reflete o que foi confirmado antes
 - NUNCA mova para colunas bloqueadas
 - Não mova se o lead já está na coluna correta
 - Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante
@@ -100,20 +90,12 @@ async function runKanbanAgent(
   lead: Lead,
   funnel: Funnel,
   geminiApiKey: string,
-  agentSystemPrompt?: string
+  kanbanAgentPrompt?: string
 ): Promise<KanbanAction[]> {
-  // ── CAMADA 5: Mínimo de mensagens ────────────────────────────────────────
-  // Evita decisões prematuras com apenas 1 mensagem
-  const totalMsgs = history.length + 1; // +1 pela lastMessage
-  if (totalMsgs < 5) {
-    console.log(`[kanban-agent/layer5] bloqueado — menos de 5 mensagens (total=${totalMsgs})`);
-    return [];
-  }
-
   const genAI = new GoogleGenerativeAI(geminiApiKey);
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
-    systemInstruction: buildSystemPrompt(lead, funnel, agentSystemPrompt),
+    systemInstruction: buildSystemPrompt(lead, funnel, kanbanAgentPrompt),
     tools: [
       {
         functionDeclarations: [
@@ -315,7 +297,7 @@ export async function classifyLeadByHistory(
   lead: Lead,
   funnel: Funnel,
   geminiApiKey: string,
-  client: { pixelId?: string; capiToken?: string; capiTestEventCode?: string } | null
+  client: { pixelId?: string; capiToken?: string; capiTestEventCode?: string; kanbanAgentPrompt?: string } | null
 ): Promise<boolean> {
   if (history.length === 0) return false;
 
@@ -323,7 +305,7 @@ export async function classifyLeadByHistory(
   const lastMessage = history[history.length - 1]?.content ?? "";
   const priorHistory = history.slice(0, -1);
 
-  const actions = await runKanbanAgent(lastMessage, priorHistory, lead, funnel, geminiApiKey);
+  const actions = await runKanbanAgent(lastMessage, priorHistory, lead, funnel, geminiApiKey, client?.kanbanAgentPrompt ?? undefined);
   if (actions.length === 0) return false;
 
   let moved = false;
@@ -397,7 +379,7 @@ export async function processKanbanActions(
     return;
   }
 
-  const agentSystemPrompt = client?.agentConfig?.systemPrompt ?? undefined;
+  const kanbanAgentPrompt = client?.kanbanAgentPrompt ?? undefined;
   console.log(`[kanban-agent] iniciando — lead=${lead.name} status=${lead.status} msg="${lastMessage.slice(0, 80)}"`)
 
   // ── CAMADA 0: correspondência direta de frases de gatilho (sem Gemini) ───────
@@ -407,7 +389,7 @@ export async function processKanbanActions(
     return;
   }
 
-  const actions = await runKanbanAgent(lastMessage, history, lead, funnel, geminiApiKey, agentSystemPrompt);
+  const actions = await runKanbanAgent(lastMessage, history, lead, funnel, geminiApiKey, kanbanAgentPrompt);
 
   console.log(`[kanban-agent] Gemini retornou ${actions.length} ação(ões):`, JSON.stringify(actions));
 

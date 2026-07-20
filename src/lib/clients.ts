@@ -99,6 +99,7 @@ export type Client = {
   googleAdsId?: string;         // ID de conta Google Ads  (ex: AW-123456789)
   googleConvLabel?: string;     // Label de conversão Google Ads (ex: AbCdEfGhI)
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
+  kanbanAgentPrompt?: string;   // Prompt configurável que guia quando mover/pular um lead no Kanban
   metaPageId?: string;          // ID da página do Facebook (para Lead Ads — vincula leads ao cliente certo)
   agentConfig?: AgentConfig;    // Configuração do agente principal (retrocompat)
   agentConfigs?: AgentConfig[]; // Lista de agentes — um por conexão WhatsApp

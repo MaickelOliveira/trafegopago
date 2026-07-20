@@ -7,7 +7,7 @@ import ImportModal from "./ImportModal";
 import type { Lead, LeadReminder } from "@/lib/leads";
 import type { Funnel, FunnelColumn, TriggerPhrase } from "@/lib/funnels";
 
-type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean };
+type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean; kanbanAgentPrompt?: string };
 
 const SCORE_COLOR = (s: number) =>
   s >= 8 ? "text-green-700 bg-green-100" :
@@ -761,6 +761,40 @@ export function KanbanBoard({
     setTogglingAgent(false);
   }
 
+  // Prompt do agente Kanban — guia quando mover/pular um lead
+  const [promptModalOpen, setPromptModalOpen] = useState(false);
+  const [promptDraft, setPromptDraft] = useState("");
+  const [savedPrompt, setSavedPrompt] = useState(
+    clients.find((c) => c.id === (selectedClient ?? clients[0]?.id))?.kanbanAgentPrompt ?? ""
+  );
+  const [savingPrompt, setSavingPrompt] = useState(false);
+
+  function openPromptModal() {
+    const cid = selectedClient ?? clients[0]?.id;
+    const current = clients.find((c) => c.id === cid)?.kanbanAgentPrompt ?? savedPrompt;
+    setPromptDraft(current);
+    setPromptModalOpen(true);
+  }
+
+  async function savePrompt() {
+    const cid = selectedClient ?? clients[0]?.id;
+    if (!cid) return;
+    setSavingPrompt(true);
+    const res = await fetch(`/api/crm/kanban-agent?clientId=${cid}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: agentEnabled, kanbanAgentPrompt: promptDraft }),
+    });
+    if (res.ok) {
+      setSavedPrompt(promptDraft);
+      setPromptModalOpen(false);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(`Erro ao salvar prompt: ${err.error ?? res.status}`);
+    }
+    setSavingPrompt(false);
+  }
+
   // Modal valor + data (para colunas com askValueOnMove)
   const [valueModal, setValueModal] = useState<{ leadId: string; colId: string } | null>(null);
   const [valueInput, setValueInput] = useState("");
@@ -1221,6 +1255,15 @@ export function KanbanBoard({
         >
           <span className={clsx("h-2 w-2 rounded-full", agentEnabled ? "bg-violet-500" : "bg-slate-300")} />
           {togglingAgent ? "..." : agentEnabled ? "IA ativa" : "IA desligada"}
+        </button>
+
+        {/* Prompt do agente Kanban */}
+        <button
+          onClick={openPromptModal}
+          title="Configurar o prompt que guia quando a IA move ou pula um lead no Kanban"
+          className="rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 transition shrink-0"
+        >
+          ⚙️ Prompt do agente
         </button>
 
         {/* Classificar todos os leads com IA */}
@@ -1730,6 +1773,40 @@ export function KanbanBoard({
                 className="flex-1 rounded-lg bg-green-600 py-2 text-sm font-semibold text-white hover:bg-green-700"
               >
                 Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {promptModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl p-6">
+            <h3 className="font-semibold text-slate-800 mb-1">Prompt do agente Kanban</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Escreva quando a IA deve mover um lead de coluna e quando deve pular (não fazer nada). Isso vale como critério principal, além das colunas com contexto/gatilhos configurados individualmente.
+            </p>
+            <textarea
+              value={promptDraft}
+              onChange={(e) => setPromptDraft(e.target.value)}
+              rows={10}
+              placeholder={'Ex: Mova para "Reunião agendada" quando o lead confirmar data e horário. Mova para "Perdido" se o lead disser que não tem mais interesse ou sumir por mais de 3 dias. Pule (não mova) se a conversa for sobre suporte técnico de um produto já comprado.'}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-500 resize-none font-mono"
+              autoFocus
+            />
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setPromptModalOpen(false)}
+                className="flex-1 rounded-lg border border-slate-200 py-2 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={savePrompt}
+                disabled={savingPrompt}
+                className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                {savingPrompt ? "Salvando..." : "Salvar"}
               </button>
             </div>
           </div>
