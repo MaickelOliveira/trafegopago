@@ -835,7 +835,19 @@ export async function generateFollowUpAI(
 ): Promise<string | null> {
   if (!geminiApiKey) return null;
 
-  const firstName = leadName ? leadName.split(" ")[0] : null;
+  // lead.name pode não ser um nome de verdade — quando o WhatsApp não manda
+  // pushName, o webhook usa o próprio telefone como fallback (já aconteceu de
+  // um follow-up chamar o lead pelo número). O pushName do WhatsApp também
+  // nem sempre é o nome real da pessoa (apelido, nome de outra pessoa, nome
+  // de empresa, etc.). Só confia no nome se ele realmente aparece em alguma
+  // mensagem do histórico — ou seja, foi a própria pessoa que se identificou
+  // na conversa, não um dado importado sem confirmação.
+  const candidateFirstName = leadName?.trim().split(/\s+/)[0];
+  const firstName =
+    candidateFirstName && candidateFirstName.length >= 2 &&
+    history.some((m) => m.content.toLowerCase().includes(candidateFirstName.toLowerCase()))
+      ? candidateFirstName
+      : null;
   const hasUserMessage = history.some((m) => m.role === "user");
 
   // Inclui o system prompt (contexto do negócio) para evitar alucinações
