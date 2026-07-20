@@ -53,6 +53,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
 
+  // Cancela follow-ups já agendados ao desativar follow-up para este lead
+  if (body.followUpDisabled === true && lead.phone) {
+    cancelFollowUpsForPhone(lead.clientId, lead.phone);
+  }
+
   // Dispara evento CAPI quando o status muda e a coluna tem metaEvent configurado
   if (body.status && previous && body.status !== previous.status) {
     const funnel = getFunnelById(lead.funnelId);

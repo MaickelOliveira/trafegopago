@@ -870,6 +870,44 @@ export function LeadModal({
                   </div>
                 </div>
 
+                {/* Follow-up toggle */}
+                <div className={clsx(
+                  "rounded-xl border p-4",
+                  lead.followUpDisabled ? "border-slate-200 bg-slate-50" : "border-emerald-200 bg-emerald-50"
+                )}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className={clsx("text-xs font-bold uppercase tracking-wide", lead.followUpDisabled ? "text-slate-500" : "text-emerald-700")}>
+                        {lead.followUpDisabled ? "🔕 Follow-up desativado" : "🔔 Follow-up ativo"}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        {lead.followUpDisabled
+                          ? "Este lead não recebe follow-ups automáticos."
+                          : "Segue a sequência configurada normalmente."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ followUpDisabled: !lead.followUpDisabled }),
+                        });
+                        const updated = await res.json();
+                        if (res.ok) { setLead(updated); onUpdated(updated); }
+                      }}
+                      className={clsx(
+                        "rounded-lg px-3 py-1.5 text-xs font-bold transition shrink-0 whitespace-nowrap",
+                        lead.followUpDisabled
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                          : "bg-slate-500 text-white hover:bg-slate-600"
+                      )}
+                    >
+                      {lead.followUpDisabled ? "Reativar" : "Desativar"}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Análise IA */}
                 <div className="rounded-xl border border-purple-200 bg-white p-4">
                   <div className="flex items-center justify-between mb-3">

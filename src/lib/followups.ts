@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { getLeadByPhone } from "./leads";
 
 export type FollowUpType = "followup" | "reminder" | "appointment_reminder";
 export type FollowUpStatus = "pending" | "processing" | "sent" | "cancelled" | "failed";
@@ -133,6 +134,13 @@ export function startFollowUpSequence(
   connId?: string
 ): void {
   if (steps.length === 0) return;
+  // Checagem central — vale pra todos os pontos de entrada (webhooks de todos
+  // os providers), sem precisar duplicar o check em cada um.
+  const lead = getLeadByPhone(clientId, phone);
+  if (lead?.followUpDisabled) {
+    console.log(`[followups] follow-up desativado pra esse lead — clientId=${clientId} phone=${phone}`);
+    return;
+  }
   const first = steps[0];
   const scheduledAt = new Date(Date.now() + first.delayHours * 3600000).toISOString();
   scheduleFollowUp({
