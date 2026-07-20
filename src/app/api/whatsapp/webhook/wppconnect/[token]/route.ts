@@ -6,7 +6,7 @@ import { getFunnels } from "@/lib/funnels";
 import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead, markLeadNeedsAttention, normalizePhone } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
-import { getHistory, addMessage, setAiPaused, sanitizeContactName } from "@/lib/conversations";
+import { getHistory, addMessage, setAiPaused, sanitizeContactName, updateLastMessage } from "@/lib/conversations";
 import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
 import { runGeminiAgent } from "@/lib/gemini-agent";
@@ -874,6 +874,11 @@ export async function POST(
         if (transcription) {
           text = transcription;
           console.log(`[WPPConnect Webhook] Transcrição OK: "${transcription.slice(0, 120)}"`);
+          // O histórico já foi salvo com o placeholder ("[Áudio]"/"[Imagem]") antes
+          // da transcrição ficar pronta — sem isso, follow-ups e qualquer releitura
+          // futura da conversa nunca veem o conteúdo real do áudio/imagem.
+          const emoji = mediaKind === "audio" ? "🎙️" : mediaKind === "image" ? "📷" : "📎";
+          updateLastMessage(phone, { content: `${emoji} ${transcription}` }, clientId, connId);
         } else {
           console.warn(`[WPPConnect Webhook] Transcrição retornou vazio — usando placeholder`);
         }

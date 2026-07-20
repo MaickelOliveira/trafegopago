@@ -349,12 +349,16 @@ export function sanitizeContactName(raw: string | null | undefined, phone?: stri
 }
 
 /** Atualiza a última mensagem de uma conversa (ex: substituir [audio] pela transcrição). */
-export function updateLastMessage(phone: string, patch: Partial<ChatMessage>, clientId?: string | null) {
+export function updateLastMessage(phone: string, patch: Partial<ChatMessage>, clientId?: string | null, connId?: string | null) {
   const all = load();
-  // Tenta chave prefixada primeiro para garantir isolamento por cliente
-  const keys = clientId
-    ? [...clientPhoneVariants(phone, clientId), ...phoneVariants(phone)]
-    : phoneVariants(phone);
+  // Mesma ordem de resolução de chave do addMessage: isolada por conexão
+  // primeiro (é onde a conversa realmente fica quando há connId), depois
+  // prefixada por cliente, depois a chave legada sem prefixo.
+  const keys = [
+    ...(clientId && connId ? phoneVariants(phone).map((v) => `${clientId}:${connId}:${v}`) : []),
+    ...(clientId ? clientPhoneVariants(phone, clientId) : []),
+    ...phoneVariants(phone),
+  ];
   for (const key of keys) {
     const conv = all[key];
     if (conv && conv.messages.length > 0) {
