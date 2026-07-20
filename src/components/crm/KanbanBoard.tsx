@@ -727,18 +727,28 @@ export function KanbanBoard({
   const [classifyResult, setClassifyResult] = useState<string | null>(null);
 
   async function classifyAll() {
+    // Mais de um cliente na lista = visão global do gestor (sem seletor fixo de
+    // cliente) — nesse caso classifica a PLATAFORMA INTEIRA, não só o filtro
+    // atual do dropdown. Na tela de um cliente específico (só 1 na lista),
+    // continua restrito a esse cliente.
+    const isPlatformWide = clients.length > 1;
     const cid = selectedClient ?? clients[0]?.id;
-    if (!cid) return;
+    if (!isPlatformWide && !cid) return;
     setClassifying(true);
     setClassifyResult(null);
-    const res = await fetch(`/api/crm/kanban-agent?clientId=${cid}`, { method: "POST" });
+    const url = isPlatformWide ? "/api/crm/kanban-agent" : `/api/crm/kanban-agent?clientId=${cid}`;
+    const res = await fetch(url, { method: "POST" });
     if (res.ok) {
       const data = await res.json() as { processed: number; moved: number; total: number };
       setClassifyResult(`${data.moved} de ${data.processed} leads movidos`);
       // Recarrega os leads
-      const leadsRes = await fetch(`/api/crm/leads?clientId=${cid}`);
+      const leadsUrl = isPlatformWide ? "/api/crm/leads" : `/api/crm/leads?clientId=${cid}`;
+      const leadsRes = await fetch(leadsUrl);
       if (leadsRes.ok) setLeads(await leadsRes.json());
       setTimeout(() => setClassifyResult(null), 5000);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(`Erro ao classificar leads: ${err.error ?? res.status}`);
     }
     setClassifying(false);
   }
