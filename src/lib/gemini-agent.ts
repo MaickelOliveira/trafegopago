@@ -725,16 +725,34 @@ export async function runGeminiAgent(
     }
   }
 
-  // Extrai o mesmo vazamento em formato "[DADOS RECEBIDOS: ...]" / "[PAGAMENTO PIX: ...]" /
-  // "[ATENDIMENTO HUMANO: ...]" — o modelo às vezes escreve o motivo entre colchetes em vez
-  // de chamar a ferramenta. Sem isso o aviso ao gestor e o registro na planilha não disparam,
-  // mesmo o texto (incorretamente) aparecendo pro cliente.
-  const BRACKETED_MOTIVO = /\[\s*(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]\s*([^\]]*)\]/gi;
-  let bracketedMatch: RegExpExecArray | null;
-  while ((bracketedMatch = BRACKETED_MOTIVO.exec(finalText)) !== null) {
-    const motivo = `${bracketedMatch[1].toUpperCase()}: ${bracketedMatch[2].trim()}`;
+  // Extrai o mesmo vazamento em formato "RÓTULO EM CAIXA ALTA: resto do texto" —
+  // com ou sem colchetes/negrito ao redor (ex: "[DADOS RECEBIDOS: ...]",
+  // "*ATENDIMENTO HUMANO: ...*", "TÍTULO EM ABERTO: ..."). Cada prompt de cliente
+  // define seus próprios motivos (JDF usa "URGENTE — AMEAÇA", "TÍTULO EM ABERTO";
+  // Vitalli usa "DADOS RECEBIDOS", "CONFLITO DE DISPONIBILIDADE" etc.) — em vez de
+  // manter uma lista fixa de palavras-chave que sempre fica desatualizada quando um
+  // prompt novo inventa um motivo diferente, detecta o PADRÃO genérico: um rótulo de
+  // 2+ palavras, TODO em maiúsculas (permite números/hífen/travessão/barra), seguido
+  // de dois-pontos. Rótulos de 1 palavra só (ex: "PIX:", "CNPJ:") são ignorados de
+  // propósito — podem ser texto legítimo pro cliente.
+  function extractLeadingUpperLabel(line: string): { label: string; rest: string } | null {
+    const stripped = line.trim().replace(/^\*{1,2}/, "").replace(/^\[/, "");
+    const m = stripped.match(/^([^:\n]{4,80}?):\s*(.*)$/);
+    if (!m) return null;
+    const label = m[1].trim();
+    if (!/\s/.test(label)) return null; // exige pelo menos 2 palavras
+    const letters = label.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ]/g, "");
+    if (!letters || letters !== letters.toUpperCase()) return null;
+    const rest = m[2].replace(/[\]*]+$/, "").trim();
+    return { label, rest };
+  }
+
+  for (const rawLine of finalText.split("\n")) {
+    const found = extractLeadingUpperLabel(rawLine);
+    if (!found) continue;
+    const motivo = found.rest ? `${found.label}: ${found.rest}` : found.label;
     if (!actions.some((a) => a.type === "resumo_solicitado" && a.motivo === motivo)) {
-      console.warn(`[gemini-agent] enviar_resumo vazou entre colchetes — extraindo motivo="${motivo}"`);
+      console.warn(`[gemini-agent] enviar_resumo vazou como rótulo em maiúsculas — extraindo motivo="${motivo}"`);
       actions.push({ type: "resumo_solicitado", motivo, phone });
     }
   }
@@ -745,10 +763,6 @@ export async function runGeminiAgent(
   const BULLET_MOTIVO_LINE   = /^[•\-–]\s*\*?Motivo:\s*.+$/i;
   const TOOL_CALL_NARRATION  = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
   const INTERNAL_SECTION     = /resumo\s+para\s+o\s+gestor|para\s+o\s+gestor|resumo\s+da\s+conversa\s*:/i;
-  // Marcadores internos que NUNCA devem ir ao cliente (linha ou parágrafo inteiro).
-  // Aceita colchete opcional na frente (ex: "[DADOS RECEBIDOS: ...]"), formato que o
-  // modelo às vezes usa em vez de chamar a ferramenta enviar_resumo de verdade.
-  const INTERNAL_CONTENT  = /^\[?\s*(DADOS RECEBIDOS|PAGAMENTO PIX|ATENDIMENTO HUMANO)\s*[:\-]/i;
   // Análise de perfil do lead/cliente escrita para o gestor
   const LEAD_PROFILE_LINE = /^O\s+(lead|cliente)\s+é\s+/i;
 
@@ -759,7 +773,7 @@ export async function runGeminiAgent(
       const t = line.trim();
       if (!t) return false;
       return (
-        INTERNAL_CONTENT.test(t) ||
+        !!extractLeadingUpperLabel(t) ||
         LEAD_PROFILE_LINE.test(t) ||
         INTERNAL_SECTION.test(t) ||
         NARRATED_MOTIVO_LINE.test(t) ||
@@ -790,7 +804,7 @@ export async function runGeminiAgent(
       if (BULLET_MOTIVO_LINE.test(t)) return false;
       if (INTERNAL_SECTION.test(t)) return false;
       if (TOOL_CALL_NARRATION.test(t)) return false;
-      if (INTERNAL_CONTENT.test(t)) return false;
+      if (extractLeadingUpperLabel(t)) return false;
       if (LEAD_PROFILE_LINE.test(t)) return false;
       return true;
     })
