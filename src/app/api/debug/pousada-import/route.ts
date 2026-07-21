@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById, upsertClient, getAllAgentConfigs } from "@/lib/clients";
 import { getSheetHeadersCached, getAllRows, getSpreadsheetInfo } from "@/lib/google-sheets";
-import { getReservas, createReserva } from "@/lib/pousada";
+import { getReservas, createReserva, deleteReserva } from "@/lib/pousada";
 import type { PousadaTipo, Pessoa } from "@/lib/pousada-types";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +81,16 @@ export async function POST(req: NextRequest) {
   const client = getClientById(clientId);
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
+  // ?reset=true apaga as reservas com origem "manual" (importadas) desse
+  // cliente antes de reimportar do zero — útil pra reaplicar correções do
+  // parser sem herdar dados de uma tentativa anterior. Nunca apaga reservas
+  // origem "ia" (reais, vindas de conversas de verdade).
+  if (req.nextUrl.searchParams.get("reset") === "true") {
+    for (const r of getReservas(clientId)) {
+      if (r.origem === "manual") deleteReserva(r.id);
+    }
+  }
+
   const agentConfigs = getAllAgentConfigs(client);
   const existentes = getReservas(clientId);
   const results: Record<string, unknown>[] = [];
@@ -152,6 +162,8 @@ export async function POST(req: NextRequest) {
 
         let imported = 0;
         let skipped = 0;
+        let amostraPessoasTexto: string | undefined;
+        let amostraPessoasParsed: Pessoa[] | undefined;
         for (const row of rows) {
           const nomeResponsavel = hResponsavel ? row[hResponsavel] : "";
           if (!nomeResponsavel) { skipped++; continue; }
@@ -165,6 +177,10 @@ export async function POST(req: NextRequest) {
           if (jaExiste) { skipped++; continue; }
 
           const pessoas = parsePessoasTexto(hPessoas ? row[hPessoas] : undefined);
+          if (amostraPessoasTexto === undefined && hPessoas && row[hPessoas]) {
+            amostraPessoasTexto = row[hPessoas];
+            amostraPessoasParsed = pessoas;
+          }
           const cpfsResponsavel = hCpf ? row[hCpf].split(",")[0]?.trim() : undefined;
           // Usa a coluna só se a CÉLULA tiver valor — coluna existir mas
           // célula vazia (ex: "Falta Pagar" em branco numa reserva parcial)
@@ -183,15 +199,12 @@ export async function POST(req: NextRequest) {
               ? "parcial"
               : "pendente";
 
-          const obsExtras: string[] = [];
-          if (hObs && row[hObs]) obsExtras.push(row[hObs]);
-          if (hQuarto && row[hQuarto]) obsExtras.push(`Quarto/Chalé: ${row[hQuarto]}`);
-          if (hCheckout && row[hCheckout]) obsExtras.push(`Check-out: ${row[hCheckout]}`);
-
           createReserva({
             clientId,
             tipo: canonTipo,
             data,
+            dataCheckout: hCheckout ? parseDateToIso(row[hCheckout]) : undefined,
+            quarto: hQuarto && row[hQuarto] ? row[hQuarto] : undefined,
             hora: hHora ? row[hHora] || undefined : undefined,
             responsavel: { nome: nomeResponsavel, cpf: cpfsResponsavel || undefined },
             telefone: hTelefone ? row[hTelefone] || undefined : undefined,
@@ -201,7 +214,7 @@ export async function POST(req: NextRequest) {
             faltaPagar,
             status,
             cidade: hCidade ? row[hCidade] || undefined : undefined,
-            observacoes: obsExtras.length ? obsExtras.join(" | ") : undefined,
+            observacoes: hObs && row[hObs] ? row[hObs] : undefined,
             origem: "manual",
           });
           imported++;
@@ -216,6 +229,8 @@ export async function POST(req: NextRequest) {
           linhas: rows.length,
           importadas: imported,
           puladas: skipped,
+          amostraPessoasTexto: amostraPessoasTexto ?? null,
+          amostraPessoasParsed: amostraPessoasParsed ?? null,
         });
       } catch (e) {
         results.push({ aba: tabName, abaConfigurada: mapping.tabName, tipo: canonTipo, erro: e instanceof Error ? e.message : String(e) });

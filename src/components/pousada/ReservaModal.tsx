@@ -31,6 +31,8 @@ export function ReservaModal({
   const [form, setForm] = useState({
     tipo: initial?.tipo ?? tipos[0]?.slug ?? "",
     data: initial?.data ?? today,
+    dataCheckout: initial?.dataCheckout ?? "",
+    quarto: initial?.quarto ?? "",
     hora: initial?.hora ?? "",
     responsavelNome: initial?.responsavel.nome ?? "",
     responsavelCpf: initial?.responsavel.cpf ?? "",
@@ -80,6 +82,8 @@ export function ReservaModal({
         clientId,
         tipo: form.tipo,
         data: form.data,
+        dataCheckout: form.dataCheckout || undefined,
+        quarto: form.quarto || undefined,
         hora: form.hora || undefined,
         responsavel: { nome: form.responsavelNome, cpf: form.responsavelCpf || undefined },
         telefone: form.telefone || undefined,
@@ -144,13 +148,24 @@ export function ReservaModal({
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">Data *</label>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Data (check-in) *</label>
               <input type="date" value={form.data} onChange={(e) => setForm((f) => ({ ...f, data: e.target.value }))}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">Hora</label>
               <input type="time" value={form.hora} onChange={(e) => setForm((f) => ({ ...f, hora: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Check-out (se houver pernoite)</label>
+              <input type="date" value={form.dataCheckout} onChange={(e) => setForm((f) => ({ ...f, dataCheckout: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Quarto/Chalé</label>
+              <input value={form.quarto} onChange={(e) => setForm((f) => ({ ...f, quarto: e.target.value }))}
+                placeholder="Ex: 12"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
             </div>
             <div className="col-span-2">

@@ -103,6 +103,7 @@ export type Client = {
   kanbanAgentPrompt?: string;   // Prompt configurável que guia quando mover/pular um lead no Kanban
   enabledSystems?: string[];    // Slugs de AVAILABLE_SYSTEMS (src/lib/systems.ts) habilitados pra este cliente
   pousadaTipos?: PousadaTipo[]; // Tipos de reserva configuráveis do sistema de Pousada (ex: Hospedagem, Day Use, Dia das Mães)
+  pousadaTotalQuartos?: number; // Total de quartos/chalés pro mapa de ocupação do sistema de Pousada
   metaPageId?: string;          // ID da página do Facebook (para Lead Ads — vincula leads ao cliente certo)
   agentConfig?: AgentConfig;    // Configuração do agente principal (retrocompat)
   agentConfigs?: AgentConfig[]; // Lista de agentes — um por conexão WhatsApp

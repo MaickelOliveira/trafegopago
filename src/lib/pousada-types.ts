@@ -20,7 +20,9 @@ export type Reserva = {
   id: string;
   clientId: string;
   tipo: string; // slug — referencia client.pousadaTipos[].slug
-  data: string; // ISO date
+  data: string; // ISO date — check-in, no caso de hospedagem/pernoite
+  dataCheckout?: string; // ISO date — só reservas com pernoite (hospedagem); ausente = evento de um dia só
+  quarto?: string; // número/nome do quarto ou chalé (ex: "12"), só hospedagem
   hora?: string; // HH:MM
   responsavel: { nome: string; cpf?: string };
   telefone?: string; // contato para lookup/atualização por telefone

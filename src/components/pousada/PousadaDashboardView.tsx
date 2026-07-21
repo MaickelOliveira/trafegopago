@@ -36,6 +36,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   const [editingTipos, setEditingTipos] = useState(false);
   const [tiposDraft, setTiposDraft] = useState<PousadaTipo[]>([]);
   const [novoTipoLabel, setNovoTipoLabel] = useState("");
+  const [tipoAberto, setTipoAberto] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,17 +56,10 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
     .filter((r) => r.data >= today && r.status !== "cancelada")
     .sort((a, b) => a.data.localeCompare(b.data));
 
-  function countByTipo(slug: string) {
-    return upcoming.filter((r) => r.tipo === slug).length;
-  }
+  const aReceber = upcoming.reduce((s, r) => s + r.faltaPagar, 0);
 
-  function tipoLabel(slug: string) {
-    return tipos.find((t) => t.slug === slug)?.label ?? slug;
-  }
-
-  function openTiposEditor() {
-    setTiposDraft(tipos.length ? [...tipos] : []);
-    setEditingTipos(true);
+  function reservasDoTipo(slug: string) {
+    return upcoming.filter((r) => r.tipo === slug);
   }
 
   async function saveTipos() {
@@ -100,44 +94,70 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl font-semibold text-slate-900 flex items-center gap-2">🏡 Pousada</h1>
-        <div className="flex items-center gap-2">
-          <Link
-            href={role === "manager" ? `/gestor/${clientId}/pousada/relatorios` : "/cliente/pousada/relatorios"}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-          >
-            📊 Relatórios
-          </Link>
-          <button
-            onClick={openTiposEditor}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-          >
-            ⚙️ Tipos de reserva
-          </button>
-          <button
-            onClick={() => setModal("new")}
-            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
-          >
-            + Nova reserva
-          </button>
+    <div className="p-6 md:p-10 space-y-10 max-w-5xl mx-auto">
+      {/* Cabeçalho */}
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2">🏡 Pousada</h1>
+        <p className="text-sm text-slate-500">Reservas de hospedagem, day use, almoço e eventos em um só lugar.</p>
+      </div>
+
+      {/* Ações */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setModal("new")}
+          className="rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700"
+        >
+          + Nova reserva
+        </button>
+        <Link
+          href={role === "manager" ? `/gestor/${clientId}/pousada/ocupacao` : "/cliente/pousada/ocupacao"}
+          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50"
+        >
+          🛏️ Mapa de ocupação
+        </Link>
+        <Link
+          href={role === "manager" ? `/gestor/${clientId}/pousada/relatorios` : "/cliente/pousada/relatorios"}
+          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50"
+        >
+          📊 Relatórios
+        </Link>
+        <button
+          onClick={() => { setTiposDraft(tipos.length ? [...tipos] : []); setEditingTipos(true); }}
+          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 ml-auto"
+        >
+          ⚙️ Tipos de reserva
+        </button>
+      </div>
+
+      {/* Resumo */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Próximas reservas</p>
+          <p className="text-3xl font-semibold text-slate-900 mt-1">{upcoming.length}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <p className="text-xs uppercase tracking-wide text-slate-400">A receber</p>
+          <p className="text-3xl font-semibold text-amber-600 mt-1">{fmt(aReceber)}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Tipos de reserva ativos</p>
+          <p className="text-3xl font-semibold text-slate-900 mt-1">{tipos.length}</p>
         </div>
       </div>
 
+      {/* Editor de tipos */}
       {editingTipos && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
-          <p className="text-sm font-medium text-amber-900">Tipos de reserva</p>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 space-y-4">
+          <p className="text-sm font-semibold text-amber-900">Tipos de reserva</p>
           <div className="space-y-2">
             {tiposDraft.map((t, i) => (
               <div key={t.slug} className="flex items-center gap-2">
                 <input
                   value={t.label}
                   onChange={(e) => setTiposDraft((prev) => prev.map((x, idx) => (idx === i ? { ...x, label: e.target.value } : x)))}
-                  className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-amber-400"
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400"
                 />
-                <span className="text-xs text-slate-400 w-28 truncate">{t.slug}</span>
-                <button onClick={() => setTiposDraft((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500 text-lg leading-none">×</button>
+                <button onClick={() => setTiposDraft((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500 text-xl leading-none px-2">×</button>
               </div>
             ))}
           </div>
@@ -146,79 +166,76 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
               value={novoTipoLabel}
               onChange={(e) => setNovoTipoLabel(e.target.value)}
               placeholder="Novo tipo, ex: Dia das Mães"
-              className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-amber-400"
+              className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400"
             />
-            <button onClick={addTipoDraft} className="rounded-lg border border-amber-300 px-3 py-1.5 text-sm text-amber-800 hover:bg-amber-100">
-              Adicionar
+            <button onClick={addTipoDraft} className="rounded-lg border border-amber-300 px-3 py-2 text-sm text-amber-800 hover:bg-amber-100 whitespace-nowrap">
+              + Adicionar
             </button>
           </div>
           <div className="flex gap-2 pt-1">
-            <button onClick={() => setEditingTipos(false)} className="text-sm text-slate-500 hover:text-slate-700 px-3 py-1.5">Cancelar</button>
-            <button onClick={saveTipos} className="rounded-lg bg-amber-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-amber-700">Salvar</button>
+            <button onClick={saveTipos} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">Salvar</button>
+            <button onClick={() => setEditingTipos(false)} className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">Cancelar</button>
           </div>
         </div>
       )}
 
-      {/* Cards por tipo */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {tipos.map((t) => (
-          <div key={t.slug} className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-xs text-slate-400">{t.label}</p>
-            <p className="text-2xl font-semibold text-slate-900">{countByTipo(t.slug)}</p>
-            <p className="text-xs text-slate-400">próximas reservas</p>
-          </div>
-        ))}
+      {/* Uma seção por tipo de reserva */}
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Por tipo de reserva</h2>
         {tipos.length === 0 && (
-          <p className="col-span-full text-sm text-slate-400">Nenhum tipo de reserva configurado ainda — clique em &quot;Tipos de reserva&quot; pra adicionar.</p>
+          <p className="text-sm text-slate-400">Nenhum tipo de reserva configurado ainda — clique em &quot;Tipos de reserva&quot; acima pra adicionar.</p>
         )}
-      </div>
+        {tipos.map((t) => {
+          const lista = reservasDoTipo(t.slug);
+          const aberto = tipoAberto === t.slug;
+          return (
+            <div key={t.slug} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+              <button
+                onClick={() => setTipoAberto(aberto ? null : t.slug)}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50"
+              >
+                <span className="font-medium text-slate-800">{t.label}</span>
+                <span className="flex items-center gap-3">
+                  <span className="text-sm text-slate-400">{lista.length} próxima{lista.length === 1 ? "" : "s"}</span>
+                  <span className="text-slate-300">{aberto ? "▲" : "▼"}</span>
+                </span>
+              </button>
 
-      {/* Tabela de próximas reservas */}
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100">
-          <p className="text-sm font-medium text-slate-700">Próximas reservas</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
-                <th className="px-4 py-2">Data</th>
-                <th className="px-4 py-2">Tipo</th>
-                <th className="px-4 py-2">Responsável</th>
-                <th className="px-4 py-2">Pessoas</th>
-                <th className="px-4 py-2">Valor</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {upcoming.map((r) => (
-                <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50">
-                  <td className="px-4 py-2 whitespace-nowrap">{new Date(r.data + "T00:00:00").toLocaleDateString("pt-BR")}{r.hora ? ` ${r.hora}` : ""}</td>
-                  <td className="px-4 py-2">{tipoLabel(r.tipo)}</td>
-                  <td className="px-4 py-2">{r.responsavel.nome}</td>
-                  <td className="px-4 py-2">{r.pessoas.length}</td>
-                  <td className="px-4 py-2">{fmt(r.valorTotal)}</td>
-                  <td className="px-4 py-2">
-                    <span className={clsx("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_BADGE[r.status])}>
-                      {STATUS_LABEL[r.status]}
-                    </span>
-                    {r.origem === "ia" && <span className="ml-1 text-xs text-slate-400">🤖</span>}
-                  </td>
-                  <td className="px-4 py-2 text-right whitespace-nowrap">
-                    <button onClick={() => setModal(r)} className="text-xs text-amber-700 hover:text-amber-800 mr-2">Editar</button>
-                    {role === "manager" && (
-                      <button onClick={() => removeReserva(r.id)} className="text-xs text-slate-400 hover:text-red-500">Excluir</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {upcoming.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-400">Nenhuma reserva próxima.</td></tr>
+              {aberto && (
+                <div className="border-t border-slate-100 divide-y divide-slate-50">
+                  {lista.length === 0 && (
+                    <p className="px-5 py-4 text-sm text-slate-400">Nenhuma reserva próxima desse tipo.</p>
+                  )}
+                  {lista.map((r) => (
+                    <div key={r.id} className="px-5 py-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <div className="w-24 text-sm text-slate-500 shrink-0">
+                        {new Date(r.data + "T00:00:00").toLocaleDateString("pt-BR")}
+                      </div>
+                      <div className="flex-1 min-w-[140px]">
+                        <p className="text-sm font-medium text-slate-800">{r.responsavel.nome}</p>
+                        <p className="text-xs text-slate-400">
+                          {r.pessoas.length} pessoa{r.pessoas.length === 1 ? "" : "s"}
+                          {r.quarto ? ` · Quarto ${r.quarto}` : ""}
+                        </p>
+                      </div>
+                      <span className="text-sm text-slate-600 w-24 shrink-0">{fmt(r.valorTotal)}</span>
+                      <span className={clsx("rounded-full px-2.5 py-1 text-xs font-medium shrink-0", STATUS_BADGE[r.status])}>
+                        {STATUS_LABEL[r.status]}
+                        {r.origem === "ia" && " · 🤖"}
+                      </span>
+                      <div className="flex gap-2 shrink-0">
+                        <button onClick={() => setModal(r)} className="text-xs text-amber-700 hover:text-amber-800">Editar</button>
+                        {role === "manager" && (
+                          <button onClick={() => removeReserva(r.id)} className="text-xs text-slate-400 hover:text-red-500">Excluir</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          );
+        })}
       </div>
 
       {modal && (

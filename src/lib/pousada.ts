@@ -98,6 +98,19 @@ export function calcularFaixasEtarias(reservas: Reserva[]): FaixaEtariaResumo {
   return { faixa0a5, faixa6a12 };
 }
 
+export type OcupacaoQuarto = { quarto: string; reserva: Reserva };
+
+// Quartos ocupados numa data específica — considera qualquer reserva com
+// `quarto` preenchido cujo intervalo [data, dataCheckout ?? data] cubra o dia
+// consultado (inclusive nas duas pontas, pra não arriscar dupla-reserva no
+// dia da troca de hóspede).
+export function getOcupacaoPorData(clientId: string, data: string): OcupacaoQuarto[] {
+  return getReservas(clientId)
+    .filter((r) => r.quarto && r.status !== "cancelada")
+    .filter((r) => data >= r.data && data <= (r.dataCheckout ?? r.data))
+    .map((r) => ({ quarto: r.quarto!, reserva: r }));
+}
+
 export function calcularTotais(reservas: Reserva[]) {
   return reservas.reduce(
     (acc, r) => ({
