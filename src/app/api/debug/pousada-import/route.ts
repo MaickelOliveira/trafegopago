@@ -51,6 +51,17 @@ function findCol(headers: string[], regex: RegExp): string | undefined {
   return headers.find((h) => regex.test(h));
 }
 
+function slugify(label: string): string {
+  return (
+    label
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "tipo"
+  );
+}
+
 export async function POST(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
@@ -62,17 +73,27 @@ export async function POST(req: NextRequest) {
   const existentes = getReservas(clientId);
   const results: Record<string, unknown>[] = [];
 
-  // Une todos os sheetMappings de todas as conexões num único conjunto de tipos
-  const tiposUniao = new Map<string, PousadaTipo>();
-  for (const t of client.pousadaTipos ?? []) tiposUniao.set(t.slug, t);
+  // Une todos os sheetMappings de todas as conexões num único conjunto de tipos,
+  // deduplicando por LABEL normalizado (não pelo "tipo" bruto salvo em cada
+  // sheetMapping — vários deles vieram com IDs gerados tipo "tipo_1782328965480"
+  // e "Day Use"/"Day use" com capitalização diferente contavam como tipos
+  // distintos antes desta correção).
+  const labelByCanonical = new Map<string, string>();
+  function registerLabel(label: string): string {
+    const canon = slugify(label);
+    if (!labelByCanonical.has(canon)) labelByCanonical.set(canon, label);
+    return canon;
+  }
+  for (const t of client.pousadaTipos ?? []) registerLabel(t.label);
   for (const cfg of agentConfigs) {
-    for (const m of cfg.sheetMappings ?? []) tiposUniao.set(m.tipo, { slug: m.tipo, label: m.label });
+    for (const m of cfg.sheetMappings ?? []) registerLabel(m.label);
   }
 
   for (const cfg of agentConfigs) {
     if (!cfg.googleRefreshToken || !cfg.spreadsheetId || !cfg.sheetMappings?.length) continue;
 
     for (const mapping of cfg.sheetMappings) {
+      const canonTipo = slugify(mapping.label);
       try {
         const headers = await getSheetHeadersCached(cfg.googleRefreshToken, cfg.spreadsheetId, mapping.tabName);
         if (!headers.length) {
@@ -81,7 +102,11 @@ export async function POST(req: NextRequest) {
         }
         const rows = await getAllRows(cfg.googleRefreshToken, cfg.spreadsheetId, mapping.tabName, headers);
 
-        const hResponsavel = findCol(headers, /respons[aá]vel/i);
+        const hResponsavel =
+          findCol(headers, /respons[aá]vel/i) ??
+          findCol(headers, /^nome$/i) ??
+          findCol(headers, /cliente/i) ??
+          findCol(headers, /titular/i);
         const hData = findCol(headers, /^data$/i);
         const hHora = findCol(headers, /hora/i);
         const hPessoas = findCol(headers, /pessoas/i);
@@ -104,7 +129,7 @@ export async function POST(req: NextRequest) {
 
           // Evita duplicar se o script rodar mais de uma vez
           const jaExiste = existentes.some(
-            (r) => r.tipo === mapping.tipo && r.data === data && r.responsavel.nome === nomeResponsavel
+            (r) => r.tipo === canonTipo && r.data === data && r.responsavel.nome === nomeResponsavel
           );
           if (jaExiste) { skipped++; continue; }
 
@@ -122,7 +147,7 @@ export async function POST(req: NextRequest) {
 
           createReserva({
             clientId,
-            tipo: mapping.tipo,
+            tipo: canonTipo,
             data,
             hora: hHora ? row[hHora] || undefined : undefined,
             responsavel: { nome: nomeResponsavel, cpf: cpfsResponsavel || undefined },
@@ -139,15 +164,25 @@ export async function POST(req: NextRequest) {
           imported++;
         }
 
-        results.push({ aba: mapping.tabName, tipo: mapping.tipo, linhas: rows.length, importadas: imported, puladas: skipped });
+        results.push({
+          aba: mapping.tabName,
+          tipo: canonTipo,
+          headers,
+          colunaResponsavelDetectada: hResponsavel ?? null,
+          linhas: rows.length,
+          importadas: imported,
+          puladas: skipped,
+        });
       } catch (e) {
-        results.push({ aba: mapping.tabName, erro: e instanceof Error ? e.message : String(e) });
+        results.push({ aba: mapping.tabName, tipo: canonTipo, erro: e instanceof Error ? e.message : String(e) });
       }
     }
   }
 
-  // Garante que os tipos usados nas planilhas fiquem disponíveis no dashboard
-  upsertClient({ ...client, pousadaTipos: Array.from(tiposUniao.values()) });
+  // Garante que os tipos usados nas planilhas fiquem disponíveis no dashboard,
+  // já deduplicados por label
+  const tiposFinais: PousadaTipo[] = Array.from(labelByCanonical.entries()).map(([slug, label]) => ({ slug, label }));
+  upsertClient({ ...client, pousadaTipos: tiposFinais });
 
-  return NextResponse.json({ clientId, tipos: Array.from(tiposUniao.values()), results });
+  return NextResponse.json({ clientId, tipos: tiposFinais, results });
 }
