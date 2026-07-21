@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById, upsertClient, getAllAgentConfigs } from "@/lib/clients";
-import { getSheetHeadersCached, getAllRows } from "@/lib/google-sheets";
+import { getSheetHeadersCached, getAllRows, getSpreadsheetInfo } from "@/lib/google-sheets";
 import { getReservas, createReserva } from "@/lib/pousada";
 import type { PousadaTipo, Pessoa } from "@/lib/pousada-types";
 
@@ -91,6 +91,18 @@ export async function POST(req: NextRequest) {
 
   for (const cfg of agentConfigs) {
     if (!cfg.googleRefreshToken || !cfg.spreadsheetId || !cfg.sheetMappings?.length) continue;
+
+    try {
+      const info = await getSpreadsheetInfo(cfg.googleRefreshToken, cfg.spreadsheetId);
+      results.push({
+        planilha: info.title,
+        spreadsheetId: cfg.spreadsheetId,
+        abasReais: info.tabs.map((t) => t.title),
+        abasMapeadas: cfg.sheetMappings.map((m) => m.tabName),
+      });
+    } catch (e) {
+      results.push({ spreadsheetId: cfg.spreadsheetId, erroListandoAbas: e instanceof Error ? e.message : String(e) });
+    }
 
     for (const mapping of cfg.sheetMappings) {
       const canonTipo = slugify(mapping.label);
