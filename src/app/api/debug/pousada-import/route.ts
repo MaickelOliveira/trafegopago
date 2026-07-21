@@ -145,6 +145,10 @@ export async function POST(req: NextRequest) {
         const hCidade = findCol(headers, /cidade/i);
         const hObs = findCol(headers, /observa[cç][oõ]es/i);
         const hCpf = findCol(headers, /cpf/i);
+        // Abas de hospedagem/pernoite têm colunas próprias (sem "Pessoas" em
+        // texto livre) que não podem se perder na migração
+        const hQuarto = findCol(headers, /quarto|chal[eé]/i);
+        const hCheckout = findCol(headers, /check-?\s*out/i);
 
         let imported = 0;
         let skipped = 0;
@@ -162,15 +166,27 @@ export async function POST(req: NextRequest) {
 
           const pessoas = parsePessoasTexto(hPessoas ? row[hPessoas] : undefined);
           const cpfsResponsavel = hCpf ? row[hCpf].split(",")[0]?.trim() : undefined;
-          const valorTotal = hValorTotal ? parseMoneyBR(row[hValorTotal]) : pessoas.reduce((s, p) => s + p.valor, 0);
-          const valorPago = hValorPago ? parseMoneyBR(row[hValorPago]) : 0;
-          const faltaPagar = hFaltaPagar ? parseMoneyBR(row[hFaltaPagar]) : Math.max(valorTotal - valorPago, 0);
+          // Usa a coluna só se a CÉLULA tiver valor — coluna existir mas
+          // célula vazia (ex: "Falta Pagar" em branco numa reserva parcial)
+          // deve cair no fallback calculado, não virar 0 silenciosamente.
+          const valorTotal = hValorTotal && row[hValorTotal]
+            ? parseMoneyBR(row[hValorTotal])
+            : pessoas.reduce((s, p) => s + p.valor, 0);
+          const valorPago = hValorPago && row[hValorPago] ? parseMoneyBR(row[hValorPago]) : 0;
+          const faltaPagar = hFaltaPagar && row[hFaltaPagar]
+            ? parseMoneyBR(row[hFaltaPagar])
+            : Math.max(valorTotal - valorPago, 0);
           const statusRaw = (hStatus ? row[hStatus] : "").toLowerCase();
           const status = statusRaw.includes("pago") && !statusRaw.includes("parc")
             ? "pago"
             : statusRaw.includes("parc")
               ? "parcial"
               : "pendente";
+
+          const obsExtras: string[] = [];
+          if (hObs && row[hObs]) obsExtras.push(row[hObs]);
+          if (hQuarto && row[hQuarto]) obsExtras.push(`Quarto/Chalé: ${row[hQuarto]}`);
+          if (hCheckout && row[hCheckout]) obsExtras.push(`Check-out: ${row[hCheckout]}`);
 
           createReserva({
             clientId,
@@ -185,7 +201,7 @@ export async function POST(req: NextRequest) {
             faltaPagar,
             status,
             cidade: hCidade ? row[hCidade] || undefined : undefined,
-            observacoes: hObs ? row[hObs] || undefined : undefined,
+            observacoes: obsExtras.length ? obsExtras.join(" | ") : undefined,
             origem: "manual",
           });
           imported++;
