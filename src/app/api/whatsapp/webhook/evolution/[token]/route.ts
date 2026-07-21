@@ -881,7 +881,10 @@ export async function POST(
                 motivo: motivoBatch,
               }).catch((e) => console.warn("[Evolution] pousada-extractor erro:", e instanceof Error ? e.message : e));
             }
-          } else if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+          }
+          // Escreve também na planilha em paralelo enquanto o sistema da
+          // Pousada ainda está em validação.
+          if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
             const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
             if (apiKey) {
               const leadBatch = getLeadByPhone(_clientId, _phone);
@@ -944,7 +947,10 @@ export async function POST(
           motivo: motivoImediato,
         }).catch((e) => console.warn("[Evolution] pousada-extractor erro:", e instanceof Error ? e.message : e));
       }
-    } else if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+    }
+    // Escreve também na planilha em paralelo enquanto o sistema da Pousada
+    // ainda está em validação.
+    if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
         const leadImediato = getLeadByPhone(clientId, phone);

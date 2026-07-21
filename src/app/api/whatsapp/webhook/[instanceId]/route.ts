@@ -1012,7 +1012,11 @@ export async function POST(
                   motivo: motivoResumo,
                 }).catch((e) => console.warn("[webhook] pousada-extractor erro:", e instanceof Error ? e.message : e));
               }
-            } else if (resumoAction && agCfg?.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
+            }
+            // Escreve também na planilha em paralelo enquanto o sistema da
+            // Pousada ainda está em validação — remover este bloco quando o
+            // cliente confirmar que pode confiar só na plataforma.
+            if (resumoAction && agCfg?.googleRefreshToken && agCfg.spreadsheetId && agCfg.sheetMappings?.length) {
               const apiKey = getGeminiApiKey(agCfg.geminiApiKey);
               if (apiKey) {
                 extractAndWriteToSheet({
@@ -1118,7 +1122,11 @@ export async function POST(
           motivo: motivoResumoImediato,
         }).catch((e) => console.warn("[webhook] pousada-extractor erro:", e instanceof Error ? e.message : e));
       }
-    } else if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+    }
+    // Escreve também na planilha em paralelo enquanto o sistema da Pousada
+    // ainda está em validação — remover quando o cliente confirmar que pode
+    // confiar só na plataforma.
+    if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
         extractAndWriteToSheet({

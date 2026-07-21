@@ -994,7 +994,10 @@ export async function POST(
                 motivo: motivoBatch,
               }).catch((e) => console.warn("[WPPConnect] pousada-extractor erro:", e instanceof Error ? e.message : e));
             }
-          } else if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+          }
+          // Escreve também na planilha em paralelo enquanto o sistema da
+          // Pousada ainda está em validação.
+          if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
             const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
             if (apiKey) {
               // Usa o número real resolvido (lead.realPhone) em vez do LID bruto —
@@ -1063,7 +1066,10 @@ export async function POST(
           motivo: motivoImediato,
         }).catch((e) => console.warn("[WPPConnect] pousada-extractor erro:", e instanceof Error ? e.message : e));
       }
-    } else if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+    }
+    // Escreve também na planilha em paralelo enquanto o sistema da Pousada
+    // ainda está em validação.
+    if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
         // Usa o número real resolvido (lead.realPhone) em vez do LID bruto —

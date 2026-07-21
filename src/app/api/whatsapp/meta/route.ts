@@ -293,7 +293,9 @@ export async function POST(req: NextRequest) {
           // Marca o lead como precisando de atenção humana (painel de urgência no portal do cliente)
           markLeadNeedsAttention(cid, phone, effectiveFunnelId, resumoAction.motivo);
 
-          // Extrator interno (Pousada) ou planilha Google Sheets
+          // Extrator interno (Pousada) e/ou planilha Google Sheets — grava
+          // nos dois em paralelo enquanto o sistema da Pousada ainda está em
+          // validação, pra não correr risco de perder dado.
           const clientForExtractor = getClientById(cid);
           if (clientForExtractor?.enabledSystems?.includes("pousada") && clientForExtractor.pousadaTipos?.length) {
             const hist = getHistory(phone, clientId, connId ?? undefined);
@@ -305,7 +307,8 @@ export async function POST(req: NextRequest) {
               phone,
               motivo: resumoAction.motivo,
             }).catch((e) => console.error("[meta] pousada-extractor ERRO:", e));
-          } else if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+          }
+          if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
             const hist = getHistory(phone, clientId, connId ?? undefined);
             extractAndWriteToSheet({
               apiKey: agentCfg.geminiApiKey || getGeminiApiKey() || "",
