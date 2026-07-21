@@ -482,12 +482,26 @@ export async function runGeminiAgent(
         finalText = (candidate.text() ?? "").trim();
 
         // Modelo chamou tools (ex: enviar_resumo) mas não gerou texto de resposta —
-        // sem isso o cliente ficava sem NENHUMA mensagem, mesmo o aviso interno
-        // (grupo/planilha) tendo sido processado normalmente. Usa um fallback
-        // genérico para nunca deixar o cliente sem retorno.
+        // antes disso o cliente ficava com um "já te retorno" que nunca era
+        // cumprido (a conversa simplesmente parava ali, sem ninguém voltar).
+        // Pede explicitamente ao modelo que responda agora — e o fallback
+        // final (se essa segunda tentativa também vier vazia) NUNCA promete um
+        // retorno futuro, porque não há nenhum mecanismo que garanta esse
+        // retorno de fato acontecer.
         if (!finalText) {
-          console.log("[gemini-agent] Texto vazio após tools — usando fallback para não deixar o cliente sem resposta");
-          finalText = "Só um instante, já te retorno! 😊";
+          console.log("[gemini-agent] Texto vazio após tools — pedindo resposta explícita ao cliente");
+          try {
+            const nudge = await chat.sendMessage(
+              "[sistema] Nenhuma ferramenta adicional é necessária agora. Responda ao cliente em texto normal, confirmando o que foi feito e os próximos passos. Não diga que vai verificar/conferir algo e retornar depois — se não tiver a resposta final agora, não prometa retorno futuro."
+            );
+            finalText = (nudge.response.text() ?? "").trim();
+          } catch (e) {
+            console.warn("[gemini-agent] nudge pós-tools falhou:", e instanceof Error ? e.message : e);
+          }
+          if (!finalText) {
+            console.log("[gemini-agent] Nudge também veio vazio — usando fallback estático");
+            finalText = "Recebido, obrigada! 🌿";
+          }
         }
 
         break;

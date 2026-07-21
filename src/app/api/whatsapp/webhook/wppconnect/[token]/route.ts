@@ -18,6 +18,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
+import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
@@ -976,9 +977,24 @@ export async function POST(
           if (actions.length && activeClient && agentCfg) {
             await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, _phone, isLidPhone, _clientId, connId).catch(() => {});
           }
-          // Extrator planilha — dispara somente quando enviar_resumo foi chamado
+          // Extrator planilha/Pousada — dispara somente quando enviar_resumo foi chamado
           const resumoActionBatch = actions.find((a) => a.type === "resumo_solicitado");
-          if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+          const motivoBatch = resumoActionBatch?.type === "resumo_solicitado" ? resumoActionBatch.motivo : undefined;
+          if (resumoActionBatch && activeClient?.enabledSystems?.includes("pousada") && activeClient.pousadaTipos?.length) {
+            const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey);
+            if (apiKey) {
+              const leadBatch = getLeadByPhone(_clientId, _phone);
+              const realPhoneBatch = (leadBatch?.realPhone ?? _phone).replace(/\D/g, "");
+              extractAndWriteToPousada({
+                apiKey,
+                clientId: _clientId,
+                tipos: activeClient.pousadaTipos,
+                messages: getHistory(_phone, _clientId, connId),
+                phone: realPhoneBatch,
+                motivo: motivoBatch,
+              }).catch((e) => console.warn("[WPPConnect] pousada-extractor erro:", e instanceof Error ? e.message : e));
+            }
+          } else if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
             const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
             if (apiKey) {
               // Usa o número real resolvido (lead.realPhone) em vez do LID bruto —
@@ -992,7 +1008,7 @@ export async function POST(
                 sheetMappings: agentCfg.sheetMappings,
                 messages: getHistory(_phone, _clientId, connId),
                 phone: realPhoneBatch,
-                motivo: resumoActionBatch.type === "resumo_solicitado" ? resumoActionBatch.motivo : undefined,
+                motivo: motivoBatch,
               }).catch((e) => console.warn("[WPPConnect] sheet-extractor erro:", e instanceof Error ? e.message : e));
             }
           }
@@ -1030,9 +1046,24 @@ export async function POST(
     if (actions.length && activeClient && agentCfg) {
       await processWppActions(actions, wppSession!.sessionName, wppSession!.sessionToken, activeClient.name, agentCfg, phone, isLidPhone, clientId, connId).catch(() => {});
     }
-    // Extrator planilha — dispara somente quando enviar_resumo foi chamado
+    // Extrator planilha/Pousada — dispara somente quando enviar_resumo foi chamado
     const resumoActionImediato = actions.find((a) => a.type === "resumo_solicitado");
-    if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+    const motivoImediato = resumoActionImediato?.type === "resumo_solicitado" ? resumoActionImediato.motivo : undefined;
+    if (resumoActionImediato && activeClient?.enabledSystems?.includes("pousada") && activeClient.pousadaTipos?.length) {
+      const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey);
+      if (apiKey) {
+        const leadImediato = getLeadByPhone(clientId, phone);
+        const realPhoneImediato = (leadImediato?.realPhone ?? phone).replace(/\D/g, "");
+        extractAndWriteToPousada({
+          apiKey,
+          clientId,
+          tipos: activeClient.pousadaTipos,
+          messages: getHistory(phone, clientId, connId),
+          phone: realPhoneImediato,
+          motivo: motivoImediato,
+        }).catch((e) => console.warn("[WPPConnect] pousada-extractor erro:", e instanceof Error ? e.message : e));
+      }
+    } else if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
         // Usa o número real resolvido (lead.realPhone) em vez do LID bruto —
@@ -1046,7 +1077,7 @@ export async function POST(
           sheetMappings: agentCfg.sheetMappings,
           messages: getHistory(phone, clientId, connId),
           phone: realPhoneImediato,
-          motivo: resumoActionImediato.type === "resumo_solicitado" ? resumoActionImediato.motivo : undefined,
+          motivo: motivoImediato,
         }).catch((e) => console.warn("[WPPConnect] sheet-extractor erro:", e instanceof Error ? e.message : e));
       }
     }

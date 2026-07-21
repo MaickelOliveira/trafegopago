@@ -31,6 +31,7 @@ export default async function ClienteLayout({ children }: { children: React.Reac
         permissions={permissions}
         clientLogoUrl={client.logoUrl ?? null}
         employeeName={employeeName}
+        enabledSystems={client.enabledSystems}
       />
       <main>{children}</main>
     </div>

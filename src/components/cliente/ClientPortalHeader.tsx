@@ -14,6 +14,7 @@ export function ClientPortalHeader({
   permissions,
   clientLogoUrl,
   employeeName,
+  enabledSystems,
 }: {
   clientName: string;
   clientColor: string;
@@ -21,6 +22,7 @@ export function ClientPortalHeader({
   permissions?: EmployeePermissions;
   clientLogoUrl?: string | null;
   employeeName?: string;
+  enabledSystems?: string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -206,6 +208,21 @@ export function ClientPortalHeader({
               )}
             >
               📨 Disparos WA
+            </Link>
+          )}
+
+          {/* Pousada — visível se o sistema estiver habilitado pro cliente */}
+          {enabledSystems?.includes("pousada") && (
+            <Link
+              href="/cliente/pousada"
+              className={clsx(
+                "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
+                pathname.startsWith("/cliente/pousada")
+                  ? "bg-amber-50 text-amber-700 font-medium"
+                  : "text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              🏡 Pousada
             </Link>
           )}
 

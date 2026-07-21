@@ -12,6 +12,7 @@ import { splitMessage } from "@/lib/uazapi";
 import { sendTemplate } from "@/lib/waba-templates";
 import { generateSummaryText } from "@/lib/summary-generator";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
+import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { transcribeMedia, type MediaKind } from "@/lib/media-transcribe";
 import { getAdInfoById } from "@/lib/meta-api";
 import type { GeminiAction } from "@/lib/gemini-agent";
@@ -292,8 +293,19 @@ export async function POST(req: NextRequest) {
           // Marca o lead como precisando de atenção humana (painel de urgência no portal do cliente)
           markLeadNeedsAttention(cid, phone, effectiveFunnelId, resumoAction.motivo);
 
-          // Sheet extractor
-          if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+          // Extrator interno (Pousada) ou planilha Google Sheets
+          const clientForExtractor = getClientById(cid);
+          if (clientForExtractor?.enabledSystems?.includes("pousada") && clientForExtractor.pousadaTipos?.length) {
+            const hist = getHistory(phone, clientId, connId ?? undefined);
+            extractAndWriteToPousada({
+              apiKey: agentCfg.geminiApiKey || getGeminiApiKey() || "",
+              clientId: cid,
+              tipos: clientForExtractor.pousadaTipos,
+              messages: hist,
+              phone,
+              motivo: resumoAction.motivo,
+            }).catch((e) => console.error("[meta] pousada-extractor ERRO:", e));
+          } else if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
             const hist = getHistory(phone, clientId, connId ?? undefined);
             extractAndWriteToSheet({
               apiKey: agentCfg.geminiApiKey || getGeminiApiKey() || "",

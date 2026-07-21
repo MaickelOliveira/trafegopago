@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { name, email, password, color, cplTarget, funnelType, adAccounts } = body;
+  const { name, email, password, color, cplTarget, funnelType, adAccounts, enabledSystems } = body;
 
   if (!name || !email || !password) {
     return NextResponse.json({ error: "Campos obrigatórios: name, email, password" }, { status: 400 });
@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
     cplTarget: cplTarget || 25,
     funnelType: funnelType || "leads",
     adAccounts: adAccounts || [],
+    enabledSystems: enabledSystems || [],
   });
 
   return NextResponse.json({ ok: true, id });

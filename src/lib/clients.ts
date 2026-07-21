@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import path from "path";
 import type { AutomationsConfig } from "./automations";
+import type { PousadaTipo } from "./pousada-types";
 
 export type AdAccount = {
   id: string;
@@ -100,6 +101,8 @@ export type Client = {
   googleConvLabel?: string;     // Label de conversão Google Ads (ex: AbCdEfGhI)
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
   kanbanAgentPrompt?: string;   // Prompt configurável que guia quando mover/pular um lead no Kanban
+  enabledSystems?: string[];    // Slugs de AVAILABLE_SYSTEMS (src/lib/systems.ts) habilitados pra este cliente
+  pousadaTipos?: PousadaTipo[]; // Tipos de reserva configuráveis do sistema de Pousada (ex: Hospedagem, Day Use, Dia das Mães)
   metaPageId?: string;          // ID da página do Facebook (para Lead Ads — vincula leads ao cliente certo)
   agentConfig?: AgentConfig;    // Configuração do agente principal (retrocompat)
   agentConfigs?: AgentConfig[]; // Lista de agentes — um por conexão WhatsApp

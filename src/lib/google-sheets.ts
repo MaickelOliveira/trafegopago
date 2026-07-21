@@ -194,6 +194,30 @@ export async function getRowValues(
   return result;
 }
 
+// Lê todas as linhas de dados (a partir da linha 2, pulando o cabeçalho) —
+// usada apenas para migração/importação única de dados históricos.
+export async function getAllRows(
+  refreshToken: string,
+  spreadsheetId: string,
+  sheetName: string,
+  headers: string[]
+): Promise<Record<string, string>[]> {
+  const sheets = await getSheetsClient(refreshToken);
+  const lastCol = colLetter(headers.length - 1);
+  const { data } = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}!A2:${lastCol}5000`,
+  });
+  const rows = data.values ?? [];
+  return rows
+    .filter((r) => r.some((v) => String(v ?? "").trim().length > 0))
+    .map((r) => {
+      const obj: Record<string, string> = {};
+      headers.forEach((h, i) => { obj[h] = String(r[i] ?? "").trim(); });
+      return obj;
+    });
+}
+
 // Atualiza campos específicos em uma linha existente (rowIndex é 1-based).
 export async function updateRowFields(
   refreshToken: string,

@@ -9,7 +9,7 @@ import {
   Megaphone, Users, LayoutDashboard, Palette, Zap, Bot,
   FileText, MessageSquare, Send, Link2, Code2, Phone,
   RefreshCw, Settings, LogOut, LayoutGrid, Share2,
-  Smartphone, DollarSign, ChevronLeft, Activity, CheckSquare,
+  Smartphone, DollarSign, ChevronLeft, Activity, CheckSquare, Home,
 } from "lucide-react";
 
 type AdAccount = { id: string; name: string; platform: string };
@@ -21,6 +21,7 @@ type Client = {
   logoUrl?: string;
   cplTarget: number;
   adAccounts: AdAccount[];
+  enabledSystems?: string[];
 };
 
 const NEXO_GREEN = "#C4E91E";
@@ -31,6 +32,7 @@ const NAV_ACTIVE   = "bg-[#C4E91E]/15 text-[#8aad00] font-semibold";
 
 /** Retorna a chave única da rota ativa — garante que APENAS 1 item fique ativo */
 function getActiveKey(pathname: string, clientId: string): string {
+  if (pathname.startsWith(`/gestor/${clientId}/pousada`))        return "pousada";
   if (pathname.startsWith(`/gestor/${clientId}/crm-automacoes`)) return "crm-automacoes";
   if (pathname.startsWith(`/gestor/${clientId}/crm`))            return "crm";
   if (pathname.startsWith(`/gestor/${clientId}/dashboard`))      return "dashboard";
@@ -175,6 +177,8 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               {navItem("utm-builder",    `/gestor/${activeClient.id}/utm-builder`,         Code2,        "UTM Builder")}
               {navItem("wa-links",       `/gestor/${activeClient.id}/wa-links`,            Phone,        "Rastreio WhatsApp")}
               {navItem("crm-automacoes", `/gestor/${activeClient.id}/crm-automacoes`,      RefreshCw,    "Automações CRM")}
+              {activeClient.enabledSystems?.includes("pousada") &&
+                navItem("pousada", `/gestor/${activeClient.id}/pousada`, Home, "Pousada")}
             </nav>
           </div>
         </>

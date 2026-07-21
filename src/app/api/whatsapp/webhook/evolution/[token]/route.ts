@@ -26,6 +26,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
+import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
@@ -865,7 +866,22 @@ export async function POST(
             await processEvolutionActions(actions, instanceSnap, apiKeySnap, activeClient.name, agentCfg, _phone, isLidContact, _clientId, connId).catch(() => {});
           }
           const resumoActionBatch = actions.find((a) => a.type === "resumo_solicitado");
-          if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+          const motivoBatch = resumoActionBatch?.type === "resumo_solicitado" ? resumoActionBatch.motivo : undefined;
+          if (resumoActionBatch && activeClient?.enabledSystems?.includes("pousada") && activeClient.pousadaTipos?.length) {
+            const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey);
+            if (apiKey) {
+              const leadBatch = getLeadByPhone(_clientId, _phone);
+              const realPhoneBatch = (leadBatch?.realPhone ?? _phone).replace(/\D/g, "");
+              extractAndWriteToPousada({
+                apiKey,
+                clientId: _clientId,
+                tipos: activeClient.pousadaTipos,
+                messages: getHistory(_phone, _clientId, connId),
+                phone: realPhoneBatch,
+                motivo: motivoBatch,
+              }).catch((e) => console.warn("[Evolution] pousada-extractor erro:", e instanceof Error ? e.message : e));
+            }
+          } else if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
             const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
             if (apiKey) {
               const leadBatch = getLeadByPhone(_clientId, _phone);
@@ -877,7 +893,7 @@ export async function POST(
                 sheetMappings: agentCfg.sheetMappings,
                 messages: getHistory(_phone, _clientId, connId),
                 phone: realPhoneBatch,
-                motivo: resumoActionBatch.type === "resumo_solicitado" ? resumoActionBatch.motivo : undefined,
+                motivo: motivoBatch,
               }).catch((e) => console.warn("[Evolution] sheet-extractor erro:", e instanceof Error ? e.message : e));
             }
           }
@@ -913,7 +929,22 @@ export async function POST(
       await processEvolutionActions(actions, instanceSnap, apiKeySnap, activeClient.name, agentCfg, phone, isLidContact, clientId, connId).catch(() => {});
     }
     const resumoActionImediato = actions.find((a) => a.type === "resumo_solicitado");
-    if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
+    const motivoImediato = resumoActionImediato?.type === "resumo_solicitado" ? resumoActionImediato.motivo : undefined;
+    if (resumoActionImediato && activeClient?.enabledSystems?.includes("pousada") && activeClient.pousadaTipos?.length) {
+      const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey);
+      if (apiKey) {
+        const leadImediato = getLeadByPhone(clientId, phone);
+        const realPhoneImediato = (leadImediato?.realPhone ?? phone).replace(/\D/g, "");
+        extractAndWriteToPousada({
+          apiKey,
+          clientId,
+          tipos: activeClient.pousadaTipos,
+          messages: getHistory(phone, clientId, connId),
+          phone: realPhoneImediato,
+          motivo: motivoImediato,
+        }).catch((e) => console.warn("[Evolution] pousada-extractor erro:", e instanceof Error ? e.message : e));
+      }
+    } else if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
       const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
       if (apiKey) {
         const leadImediato = getLeadByPhone(clientId, phone);
@@ -925,7 +956,7 @@ export async function POST(
           sheetMappings: agentCfg.sheetMappings,
           messages: getHistory(phone, clientId, connId),
           phone: realPhoneImediato,
-          motivo: resumoActionImediato.type === "resumo_solicitado" ? resumoActionImediato.motivo : undefined,
+          motivo: motivoImediato,
         }).catch((e) => console.warn("[Evolution] sheet-extractor erro:", e instanceof Error ? e.message : e));
       }
     }

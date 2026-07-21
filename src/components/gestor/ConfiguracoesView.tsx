@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { clsx } from "clsx";
+import { AVAILABLE_SYSTEMS } from "@/lib/systems";
 
 type AdAccount = { id: string; name: string; platform: "meta" | "google" };
 type FunnelType = "leads" | "sales" | "traffic";
@@ -20,6 +21,7 @@ type Client = {
   metaPageId?: string;
   googleAdsId?: string;
   googleConvLabel?: string;
+  enabledSystems?: string[];
 };
 
 const FUNNEL_OPTIONS: { value: FunnelType; label: string; desc: string; icon: string }[] = [
@@ -218,6 +220,7 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
   const empty = (): Omit<Client, "id"> & { password: string } => ({
     name: "", email: "", password: "", color: COLORS[0], cplTarget: 25, funnelType: "leads", adAccounts: [],
     pixelId: "", capiToken: "", capiTestEventCode: "", metaPageId: "", googleAdsId: "", googleConvLabel: "",
+    enabledSystems: [],
   });
   const [form, setForm] = useState(empty());
 
@@ -866,6 +869,43 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                       <div className="text-slate-400 mt-0.5">{opt.desc}</div>
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Sistemas habilitados */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Sistemas habilitados</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {AVAILABLE_SYSTEMS.map((sys) => {
+                    const active = (form.enabledSystems ?? []).includes(sys.slug);
+                    return (
+                      <button
+                        key={sys.slug}
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => {
+                            const current = f.enabledSystems ?? [];
+                            return {
+                              ...f,
+                              enabledSystems: current.includes(sys.slug)
+                                ? current.filter((s) => s !== sys.slug)
+                                : [...current, sys.slug],
+                            };
+                          })
+                        }
+                        className={clsx(
+                          "rounded-lg border p-2.5 text-left transition text-xs",
+                          active
+                            ? "border-blue-500 bg-blue-50 text-blue-700"
+                            : "border-slate-200 hover:border-slate-300 text-slate-600"
+                        )}
+                      >
+                        <div className="text-base mb-1">{sys.icon}</div>
+                        <div className="font-semibold">{sys.label}</div>
+                        <div className="text-slate-400 mt-0.5">{sys.desc}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
