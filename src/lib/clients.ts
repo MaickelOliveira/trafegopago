@@ -1,6 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import path from "path";
-import type { AutomationsConfig } from "./automations";
 import type { PousadaTipo } from "./pousada-types";
 
 export type AdAccount = {
@@ -93,7 +92,6 @@ export type Client = {
   funnelType: FunnelType;
   adAccounts: AdAccount[];
   whatsappPhone?: string;
-  automations?: AutomationsConfig;
   pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
   capiToken?: string;           // Token de Conversão da API (gerado no Gerenciador de Eventos → Dataset)
   capiTestEventCode?: string;   // Código temporário da aba "Testar eventos" do Gerenciador de Eventos — só preencher durante testes, remover depois

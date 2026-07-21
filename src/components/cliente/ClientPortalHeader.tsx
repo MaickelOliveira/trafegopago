@@ -181,21 +181,6 @@ export function ClientPortalHeader({
             </Link>
           )}
 
-          {/* Monitoramento — visível se canViewAgentIa */}
-          {canViewAgentIa && (
-            <Link
-              href="/cliente/monitoramento"
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1.5",
-                pathname.startsWith("/cliente/monitoramento")
-                  ? "bg-violet-50 text-violet-700 font-medium"
-                  : "text-slate-500 hover:bg-slate-50"
-              )}
-            >
-              📡 Monitoramento
-            </Link>
-          )}
-
           {/* Disparos WA — visível se canViewWaba */}
           {canViewWaba && (
             <Link
