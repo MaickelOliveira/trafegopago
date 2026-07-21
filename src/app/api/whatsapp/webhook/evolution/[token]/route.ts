@@ -576,8 +576,14 @@ export async function POST(
   const nameToSave = contactNameFromApi ?? (shouldUpdateName ? pushName : undefined);
 
   // ── Lookup no Meta Ads API para enriquecer dados de campanha ──
+  // "alreadyAttributed" = este lead já tem exatamente este adId salvo (de uma
+  // mensagem anterior) — não repete a chamada à Meta API. IMPORTANTE: quando
+  // isso acontece, adFields fica {} (não reconstrói com dados parciais) —
+  // senão uma mensagem de follow-up que ainda carrega o mesmo externalAdReply
+  // sobrescreve o Conjunto/Anúncio/Campaign ID já resolvidos com null.
   let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-  const shouldLookupAd = !!ctwaAdId && (!existingLead?.adId || existingLead.adId !== ctwaAdId);
+  const alreadyAttributed = !!ctwaAdId && existingLead?.adId === ctwaAdId;
+  const shouldLookupAd = !!ctwaAdId && !alreadyAttributed;
   if (shouldLookupAd) {
     try {
       const cfg = getConfig();
@@ -603,6 +609,8 @@ export async function POST(
         campaignName: adInfo.campaignName,
         adSourceUrl: ctwaSourceUrl ?? null,
       }
+    : alreadyAttributed
+    ? {}
     : ctwaAdId || ctwaHeadline || ctwaSourceUrl
     ? {
         adPlatform: "meta" as const,
