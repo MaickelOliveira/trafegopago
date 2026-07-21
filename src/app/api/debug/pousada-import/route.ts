@@ -51,6 +51,18 @@ function findCol(headers: string[], regex: RegExp): string | undefined {
   return headers.find((h) => regex.test(h));
 }
 
+// O nome da aba salvo no sheetMapping às vezes não bate mais com o nome real
+// da aba na planilha (o usuário renomeou depois de configurar, ex: "Pernoite"
+// configurado vs "Pernoite- hospedagem " na planilha de verdade) — resolve
+// por aproximação em vez de depender de igualdade exata.
+function resolveTabName(tabName: string, realTabs: string[]): string {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  const exact = realTabs.find((t) => norm(t) === norm(tabName));
+  if (exact) return exact;
+  const partial = realTabs.find((t) => norm(t).includes(norm(tabName)) || norm(tabName).includes(norm(t)));
+  return partial ?? tabName;
+}
+
 function slugify(label: string): string {
   return (
     label
@@ -92,12 +104,14 @@ export async function POST(req: NextRequest) {
   for (const cfg of agentConfigs) {
     if (!cfg.googleRefreshToken || !cfg.spreadsheetId || !cfg.sheetMappings?.length) continue;
 
+    let realTabs: string[] = [];
     try {
       const info = await getSpreadsheetInfo(cfg.googleRefreshToken, cfg.spreadsheetId);
+      realTabs = info.tabs.map((t) => t.title);
       results.push({
         planilha: info.title,
         spreadsheetId: cfg.spreadsheetId,
-        abasReais: info.tabs.map((t) => t.title),
+        abasReais: realTabs,
         abasMapeadas: cfg.sheetMappings.map((m) => m.tabName),
       });
     } catch (e) {
@@ -106,13 +120,14 @@ export async function POST(req: NextRequest) {
 
     for (const mapping of cfg.sheetMappings) {
       const canonTipo = slugify(mapping.label);
+      const tabName = resolveTabName(mapping.tabName, realTabs);
       try {
-        const headers = await getSheetHeadersCached(cfg.googleRefreshToken, cfg.spreadsheetId, mapping.tabName);
+        const headers = await getSheetHeadersCached(cfg.googleRefreshToken, cfg.spreadsheetId, tabName);
         if (!headers.length) {
-          results.push({ aba: mapping.tabName, skipped: "sem cabeçalho" });
+          results.push({ aba: tabName, skipped: "sem cabeçalho" });
           continue;
         }
-        const rows = await getAllRows(cfg.googleRefreshToken, cfg.spreadsheetId, mapping.tabName, headers);
+        const rows = await getAllRows(cfg.googleRefreshToken, cfg.spreadsheetId, tabName, headers);
 
         const hResponsavel =
           findCol(headers, /respons[aá]vel/i) ??
@@ -177,7 +192,8 @@ export async function POST(req: NextRequest) {
         }
 
         results.push({
-          aba: mapping.tabName,
+          aba: tabName,
+          abaConfigurada: mapping.tabName,
           tipo: canonTipo,
           headers,
           colunaResponsavelDetectada: hResponsavel ?? null,
@@ -186,7 +202,7 @@ export async function POST(req: NextRequest) {
           puladas: skipped,
         });
       } catch (e) {
-        results.push({ aba: mapping.tabName, tipo: canonTipo, erro: e instanceof Error ? e.message : String(e) });
+        results.push({ aba: tabName, abaConfigurada: mapping.tabName, tipo: canonTipo, erro: e instanceof Error ? e.message : String(e) });
       }
     }
   }
