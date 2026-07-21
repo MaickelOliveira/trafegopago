@@ -19,7 +19,10 @@ function parseDateToIso(raw: string): string | undefined {
   if (!trimmed) return undefined;
   const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const br = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  // DD/MM/AAAA ou DD-MM-AAAA — a planilha do Vitalli usa traço em vez de
+  // barra em algumas abas ("18-07-2026"), o que antes caía silenciosamente
+  // no fallback de "hoje" por não bater com nenhum dos dois regexes.
+  const br = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
   if (br) return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
   return undefined;
 }
@@ -162,15 +165,22 @@ export async function POST(req: NextRequest) {
 
         let imported = 0;
         let skipped = 0;
+        let semData = 0;
         let amostraPessoasTexto: string | undefined;
         let amostraPessoasParsed: Pessoa[] | undefined;
         for (const row of rows) {
           const nomeResponsavel = hResponsavel ? row[hResponsavel] : "";
           if (!nomeResponsavel) { skipped++; continue; }
 
-          const data = parseDateToIso(hData ? row[hData] : "") ?? new Date().toISOString().slice(0, 10);
+          // Se a data não for reconhecível, pula em vez de gravar com "hoje"
+          // silenciosamente (já aconteceu de uma reserva real virar "hoje"
+          // por causa disso) — melhor faltar do que gravar errado.
+          const data = parseDateToIso(hData ? row[hData] : "");
+          if (!data) { semData++; skipped++; continue; }
 
-          // Evita duplicar se o script rodar mais de uma vez
+          // Evita duplicar se o script rodar mais de uma vez OU se a mesma
+          // reserva aparecer em mais de uma planilha/aba nesta MESMA execução
+          // (existentes é atualizado a cada gravação, não é uma foto do início)
           const jaExiste = existentes.some(
             (r) => r.tipo === canonTipo && r.data === data && r.responsavel.nome === nomeResponsavel
           );
@@ -199,7 +209,7 @@ export async function POST(req: NextRequest) {
               ? "parcial"
               : "pendente";
 
-          createReserva({
+          const criada = createReserva({
             clientId,
             tipo: canonTipo,
             data,
@@ -217,6 +227,7 @@ export async function POST(req: NextRequest) {
             observacoes: hObs && row[hObs] ? row[hObs] : undefined,
             origem: "manual",
           });
+          existentes.push(criada);
           imported++;
         }
 
@@ -229,6 +240,7 @@ export async function POST(req: NextRequest) {
           linhas: rows.length,
           importadas: imported,
           puladas: skipped,
+          puladasPorDataInvalida: semData,
           amostraPessoasTexto: amostraPessoasTexto ?? null,
           amostraPessoasParsed: amostraPessoasParsed ?? null,
         });
