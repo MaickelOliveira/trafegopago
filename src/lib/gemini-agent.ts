@@ -244,10 +244,11 @@ function sanitizeForWhatsApp(text: string): string {
     // número do próximo item colado direto na frente (ex: "R$ 19,152. Item" lia
     // "152" como o número do item, cortando o preço em "19," + "152.")
     .replace(/(,\d{2})(\d+[\.\)]\s)/g, "$1\n\n$2")
-    // 0 newlines → 2 — exclui "*" do grupo 1: sem isso, o próprio "*" de abertura
-    // de "*N. Título*" era tratado como "texto antes do número" e ficava isolado
-    // (depois apagado pela regra 10), sobrando só o "*" de fechamento
-    .replace(/([^\n*])(\*?\d+[\.\)]\s)/g, "$1\n\n$2")
+    // 0 newlines → 2 (usa lookbehind em vez de capturar o char anterior — não
+    // dispara: logo após \n ou * (regras 8/10 cuidam disso), no meio de um
+    // número de vários dígitos, ou logo após um horário tipo "12:30." — sem
+    // isso, "12:30. Como..." virava "12:\n\n30. Como..." no meio da frase.
+    .replace(/(?<!\n)(?<!\*)(?<!\d)(?<!\d:)(\*?\d+[\.\)]\s)/g, "\n\n$1")
     // 10. Remove asteriscos solitários em parágrafos próprios (resíduo de ** multi-linha)
     //     ex: "\n\n*\n\n" → "\n\n" e "* solt\n\nN." → "N."
     .replace(/\n\n\*\n\n(\d+[\.\)]\s)/g, "\n\n$1")  // *\n\nN. → N.
