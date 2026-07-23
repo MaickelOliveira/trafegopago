@@ -38,12 +38,18 @@ export type Reserva = {
   updatedAt: string;
 };
 
-export type PousadaTipo = { slug: string; label: string };
+// "hospedagem" tem campos próprios (quarto/chalé, check-in/check-out, CPF de
+// cada hóspede) — "evento" é pra day use, almoço e eventos esporádicos, que só
+// precisam nome/idade/cidade de cada participante. Controla qual formulário
+// e quais colunas o dashboard mostra pra cada tipo.
+export type CategoriaTipo = "hospedagem" | "evento";
+
+export type PousadaTipo = { slug: string; label: string; categoria?: CategoriaTipo };
 
 export type FaixaEtariaResumo = { faixa0a5: number; faixa6a12: number };
 
 export const TIPOS_PADRAO: PousadaTipo[] = [
-  { slug: "hospedagem", label: "Hospedagem" },
-  { slug: "day_use", label: "Day Use" },
-  { slug: "almoco", label: "Almoço" },
+  { slug: "hospedagem", label: "Hospedagem", categoria: "hospedagem" },
+  { slug: "day_use", label: "Day Use", categoria: "evento" },
+  { slug: "almoco", label: "Almoço", categoria: "evento" },
 ];

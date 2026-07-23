@@ -24,24 +24,30 @@ ID interno do cliente (WhatsApp): ${phone}
 REGRAS OBRIGATÓRIAS:
 1. Só extraia se houver no mínimo: nome completo do responsável pela reserva confirmado na conversa.
 2. "tipo" = escolha o tipo mais próximo semanticamente do assunto da conversa entre os listados acima. Se nenhum corresponder claramente, retorne [].
-3. "data" = data desejada para o evento/estadia, formato ISO AAAA-MM-DD. Se o cliente mencionar a data sem ano (ex: "07 de setembro", "próximo sábado"), use a "Data de hoje" acima como referência e escolha a PRÓXIMA ocorrência a partir de hoje — nunca uma data já passada.
+3. "data" = data de check-in (hospedagem) ou data do evento (day use, almoço etc), formato ISO AAAA-MM-DD. Se o cliente mencionar a data sem ano (ex: "07 de setembro", "próximo sábado"), use a "Data de hoje" acima como referência e escolha a PRÓXIMA ocorrência a partir de hoje — nunca uma data já passada.
 4. "hora" = se houver horário mencionado, formato HH:MM em 24h. Senão, omita o campo.
 5. "responsavel" = { "nome": nome completo de quem faz a reserva, "cpf": CPF do responsável se informado (senão omita) }.
-6. "pessoas" = array com TODOS os participantes da reserva, cada um com:
-   - "nome" (obrigatório)
-   - "idade" (número, se informada ou dedutível)
-   - "cpf", "rg", "nascimento" (ISO AAAA-MM-DD), "endereco", "cidade", "telefone", "email", "profissao" — inclua QUALQUER um desses campos que o cliente tiver informado para aquela pessoa (ficha de registro de hóspede), omita os que não foram informados. NUNCA invente valores.
+
+6. Se a categoria do tipo escolhido for HOSPEDAGEM:
+   - "dataCheckout" = data de saída, formato ISO AAAA-MM-DD, se o cliente informou quantas diárias ou uma data de saída (calcule a partir de "data" + número de diárias, se necessário). Omita se não for possível determinar.
+   - "quarto" = número/nome do quarto ou chalé, SOMENTE se explicitamente mencionado na conversa (normalmente é atribuído depois pela equipe) — na dúvida, omita.
+   - "pessoas" = array com TODOS os hóspedes, cada um com "nome" (obrigatório), "cpf" (obrigatório — ficha de hóspede sempre exige CPF de cada pessoa), e opcionalmente "rg", "nascimento" (ISO), "endereco", "cidade", "telefone", "email", "profissao", "idade" — inclua os que o cliente informou, omita os demais, NUNCA invente.
+
+   Se a categoria do tipo escolhido for EVENTO (day use, almoço, café da manhã, etc.):
+   - "pessoas" = array com TODOS os participantes, cada um com "nome" (obrigatório), "idade" (número, obrigatório se possível — usado para calcular faixas etárias infantis) e "cidade" se informada. NÃO peça CPF/RG/endereço para eventos.
+
+   Em ambos os casos, cada pessoa em "pessoas" também tem:
    - "valor" (número, valor cobrado calculado pelo atendente para aquela pessoa — obrigatório, use 0 se gratuito)
    - "gratuito" (true se a pessoa não paga, ex: criança de colo)
 7. "telefone" = número de telefone/celular que o cliente informou EXPLICITAMENTE na conversa. Se o cliente disser que é o mesmo número do WhatsApp atual, ou não informar nenhum número, OMITA este campo — o sistema preenche automaticamente com o número real do WhatsApp. NUNCA invente ou copie um número de exemplo.
 8. "valorTotal" = soma dos valores de "pessoas" (valor total cobrado pela reserva).
 9. "valorPago" = 0 (reserva recém criada, nada foi pago ainda) — NÃO PREENCHER com outro valor.
 10. "status" = sempre "pendente".
-11. "cidade" = cidade do responsável, se mencionada.
+11. "cidade" = cidade do responsável, se mencionada (principalmente relevante pra tipos EVENTO).
 12. "observacoes" = restrições alimentares, pedidos especiais ou informações extras, se houver.
 
 Retorne SOMENTE um array JSON — sem markdown, sem explicação:
-[{"tipo": "...", "data": "AAAA-MM-DD", "hora": "HH:MM", "responsavel": {"nome": "..."}, "telefone": "...", "pessoas": [...], "valorTotal": 0, "valorPago": 0, "status": "pendente", "cidade": "...", "observacoes": "..."}]
+[{"tipo": "...", "data": "AAAA-MM-DD", "dataCheckout": "AAAA-MM-DD", "quarto": "...", "hora": "HH:MM", "responsavel": {"nome": "..."}, "telefone": "...", "pessoas": [...], "valorTotal": 0, "valorPago": 0, "status": "pendente", "cidade": "...", "observacoes": "..."}]
 
 Se não houver dados suficientes (mínimo: nome do responsável), retorne: []
 
@@ -93,7 +99,9 @@ export async function extractAndWriteToPousada(opts: {
     .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 500)}`)
     .join("\n");
 
-  const tiposInfo = tipos.map((t) => `• tipo="${t.slug}" (${t.label})`).join("\n");
+  const tiposInfo = tipos
+    .map((t) => `• tipo="${t.slug}" (${t.label}) — categoria: ${t.categoria === "hospedagem" ? "HOSPEDAGEM" : "EVENTO"}`)
+    .join("\n");
 
   const prompt = isPagamento
     ? buildUpdatePrompt(tiposInfo, phone, conversation)
@@ -190,6 +198,8 @@ export async function extractAndWriteToPousada(opts: {
           const alreadyPaid = existing.status === "pago" || existing.status === "parcial";
           updateReserva(existing.id, {
             data: (row.data as string) ?? existing.data,
+            dataCheckout: (row.dataCheckout as string) ?? existing.dataCheckout,
+            quarto: (row.quarto as string) ?? existing.quarto,
             hora: (row.hora as string) ?? existing.hora,
             responsavel,
             telefone,
@@ -205,6 +215,8 @@ export async function extractAndWriteToPousada(opts: {
             clientId,
             tipo,
             data: (row.data as string) ?? new Date().toISOString().slice(0, 10),
+            dataCheckout: row.dataCheckout as string | undefined,
+            quarto: row.quarto as string | undefined,
             hora: row.hora as string | undefined,
             responsavel,
             telefone,

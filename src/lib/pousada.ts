@@ -3,7 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import type { Reserva, FaixaEtariaResumo } from "./pousada-types";
 
-export type { StatusReserva, OrigemReserva, Pessoa, Reserva, PousadaTipo, FaixaEtariaResumo } from "./pousada-types";
+export type { StatusReserva, OrigemReserva, Pessoa, Reserva, PousadaTipo, CategoriaTipo, FaixaEtariaResumo } from "./pousada-types";
 export { TIPOS_PADRAO } from "./pousada-types";
 
 const FILE = path.join(process.cwd(), "data", "pousada-reservas.json");

@@ -77,6 +77,14 @@ function slugify(label: string): string {
   );
 }
 
+// Detecta se o tipo é hospedagem/pernoite (quarto, check-in/check-out, CPF de
+// cada hóspede) ou um evento esporádico (day use, almoço etc — só nome/idade/
+// cidade) a partir do nome da aba/label, já que a planilha antiga não tinha
+// esse conceito explícito.
+function detectaCategoria(label: string): "hospedagem" | "evento" {
+  return /hospedagem|pernoite/i.test(label) ? "hospedagem" : "evento";
+}
+
 export async function POST(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
@@ -104,12 +112,19 @@ export async function POST(req: NextRequest) {
   // e "Day Use"/"Day use" com capitalização diferente contavam como tipos
   // distintos antes desta correção).
   const labelByCanonical = new Map<string, string>();
+  const categoriaByCanonical = new Map<string, "hospedagem" | "evento">();
   function registerLabel(label: string): string {
     const canon = slugify(label);
-    if (!labelByCanonical.has(canon)) labelByCanonical.set(canon, label);
+    if (!labelByCanonical.has(canon)) {
+      labelByCanonical.set(canon, label);
+      categoriaByCanonical.set(canon, detectaCategoria(label));
+    }
     return canon;
   }
-  for (const t of client.pousadaTipos ?? []) registerLabel(t.label);
+  for (const t of client.pousadaTipos ?? []) {
+    registerLabel(t.label);
+    if (t.categoria) categoriaByCanonical.set(slugify(t.label), t.categoria);
+  }
   for (const cfg of agentConfigs) {
     for (const m of cfg.sheetMappings ?? []) registerLabel(m.label);
   }
@@ -252,7 +267,11 @@ export async function POST(req: NextRequest) {
 
   // Garante que os tipos usados nas planilhas fiquem disponíveis no dashboard,
   // já deduplicados por label
-  const tiposFinais: PousadaTipo[] = Array.from(labelByCanonical.entries()).map(([slug, label]) => ({ slug, label }));
+  const tiposFinais: PousadaTipo[] = Array.from(labelByCanonical.entries()).map(([slug, label]) => ({
+    slug,
+    label,
+    categoria: categoriaByCanonical.get(slug) ?? "evento",
+  }));
   upsertClient({ ...client, pousadaTipos: tiposFinais });
 
   return NextResponse.json({ clientId, tipos: tiposFinais, results });

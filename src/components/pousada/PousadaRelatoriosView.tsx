@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { Reserva, PousadaTipo, FaixaEtariaResumo } from "@/lib/pousada-types";
+import { PousadaSubNav } from "./PousadaSubNav";
 
 function fmt(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -13,7 +14,7 @@ function firstDayOfMonth(): string {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
 }
 
-export function PousadaRelatoriosView({ clientId }: { clientId: string; role: "manager" | "client" }) {
+export function PousadaRelatoriosView({ clientId, role }: { clientId: string; role: "manager" | "client" }) {
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [tipo, setTipo] = useState("");
   const [from, setFrom] = useState(firstDayOfMonth());
@@ -44,7 +45,9 @@ export function PousadaRelatoriosView({ clientId }: { clientId: string; role: "m
   ];
 
   return (
-    <div className="p-6 md:p-8 space-y-6 max-w-6xl mx-auto">
+    <div>
+      <PousadaSubNav clientId={clientId} role={role} />
+      <div className="p-6 md:p-8 space-y-6 max-w-6xl mx-auto">
       <h1 className="text-xl font-semibold text-slate-900">📊 Relatórios — Pousada</h1>
 
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
@@ -107,6 +110,7 @@ export function PousadaRelatoriosView({ clientId }: { clientId: string; role: "m
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

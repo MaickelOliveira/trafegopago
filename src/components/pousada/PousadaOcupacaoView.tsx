@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { clsx } from "clsx";
 import type { Reserva } from "@/lib/pousada-types";
+import { PousadaSubNav } from "./PousadaSubNav";
 
 type Ocupado = { quarto: string; reserva: Reserva };
 
@@ -42,7 +43,9 @@ export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role
   const quartos = Array.from({ length: totalQuartos }, (_, i) => String(i + 1));
 
   return (
-    <div className="p-6 md:p-8 space-y-6 max-w-5xl mx-auto">
+    <div>
+      <PousadaSubNav clientId={clientId} role={role} />
+      <div className="p-6 md:p-8 space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-xl font-semibold text-slate-900 flex items-center gap-2">🛏️ Mapa de ocupação</h1>
         <p className="text-sm text-slate-500 mt-1">Veja quais quartos/chalés estão ocupados em uma data específica.</p>
@@ -127,6 +130,7 @@ export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
