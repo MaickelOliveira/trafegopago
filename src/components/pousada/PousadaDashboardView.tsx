@@ -1,18 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { clsx } from "clsx";
+import Link from "next/link";
 import type { Reserva, PousadaTipo, CategoriaTipo } from "@/lib/pousada-types";
 import { ReservaModal } from "./ReservaModal";
 import { PousadaSubNav } from "./PousadaSubNav";
 
 function fmt(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function fmtData(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR");
 }
 
 function slugify(label: string): string {
@@ -23,18 +18,7 @@ function slugify(label: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  pendente: "bg-yellow-100 text-yellow-700",
-  parcial: "bg-blue-100 text-blue-700",
-  pago: "bg-green-100 text-green-700",
-  cancelada: "bg-red-100 text-red-600",
-};
-const STATUS_LABEL: Record<string, string> = {
-  pendente: "Pendente", parcial: "Parcial", pago: "Pago", cancelada: "Cancelada",
-};
-
 export function PousadaDashboardView({ clientId, role }: { clientId: string; role: "manager" | "client" }) {
-  const router = useRouter();
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +27,6 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   const [tiposDraft, setTiposDraft] = useState<PousadaTipo[]>([]);
   const [novoTipoLabel, setNovoTipoLabel] = useState("");
   const [novoTipoCategoria, setNovoTipoCategoria] = useState<CategoriaTipo>("evento");
-  const [tipoAberto, setTipoAberto] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,12 +75,6 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
     if (!slug || tiposDraft.some((t) => t.slug === slug)) return;
     setTiposDraft((prev) => [...prev, { slug, label, categoria: novoTipoCategoria }]);
     setNovoTipoLabel("");
-  }
-
-  async function removeReserva(id: string) {
-    if (!confirm("Excluir esta reserva?")) return;
-    await fetch(`/api/pousada/reservas/${id}`, { method: "DELETE" });
-    setReservas((prev) => prev.filter((r) => r.id !== id));
   }
 
   if (loading) {
@@ -206,82 +183,33 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
         </div>
       )}
 
-      {/* Uma seção por tipo de reserva */}
+      {/* Uma seção por tipo de reserva — clique abre a página do serviço com tudo + filtro de datas */}
       <div className="space-y-4">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Por tipo de reserva</h2>
         {tipos.length === 0 && (
           <p className="text-sm text-slate-400">Nenhum tipo de reserva configurado ainda — clique em &quot;Tipos de reserva&quot; acima pra adicionar.</p>
         )}
-        {tipos.map((t) => {
-          const lista = reservasDoTipo(t.slug);
-          const aberto = tipoAberto === t.slug;
-          const categoria = categoriaDoTipo(t.slug);
-          return (
-            <div key={t.slug} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-              <button
-                onClick={() => setTipoAberto(aberto ? null : t.slug)}
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50"
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {tipos.map((t) => {
+            const lista = reservasDoTipo(t.slug);
+            const categoria = categoriaDoTipo(t.slug);
+            return (
+              <Link
+                key={t.slug}
+                href={`${role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada"}/servico/${t.slug}`}
+                className="rounded-2xl border border-slate-200 bg-white p-5 flex items-center justify-between hover:border-amber-300 hover:bg-amber-50/40 transition"
               >
                 <span className="font-medium text-slate-800 flex items-center gap-2">
                   {categoria === "hospedagem" ? "🛏️" : "🎉"} {t.label}
                 </span>
-                <span className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400">{lista.length} próxima{lista.length === 1 ? "" : "s"}</span>
-                  <span className="text-slate-300">{aberto ? "▲" : "▼"}</span>
+                <span className="flex items-center gap-2 text-sm text-slate-400">
+                  {lista.length} próxima{lista.length === 1 ? "" : "s"}
+                  <span className="text-slate-300">→</span>
                 </span>
-              </button>
-
-              {aberto && (
-                <div className="border-t border-slate-100 divide-y divide-slate-50">
-                  {lista.length === 0 && (
-                    <p className="px-5 py-4 text-sm text-slate-400">Nenhuma reserva próxima desse tipo.</p>
-                  )}
-                  {lista.map((r) => (
-                    <div
-                      key={r.id}
-                      onClick={() => router.push(`${role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada"}/reservas/${r.id}`)}
-                      className="px-5 py-4 flex flex-wrap items-center gap-x-4 gap-y-2 cursor-pointer hover:bg-slate-50"
-                    >
-                      <div className="w-32 text-sm text-slate-500 shrink-0">
-                        {categoria === "hospedagem" && r.dataCheckout
-                          ? `${fmtData(r.data)} → ${fmtData(r.dataCheckout)}`
-                          : fmtData(r.data)}
-                      </div>
-                      <div className="flex-1 min-w-[160px]">
-                        <p className="text-sm font-medium text-slate-800">{r.responsavel.nome}</p>
-                        <p className="text-xs text-slate-400">
-                          {categoria === "hospedagem" ? (
-                            <>
-                              {r.quarto ? `Quarto/Chalé ${r.quarto} · ` : ""}
-                              {r.pessoas.length} hóspede{r.pessoas.length === 1 ? "" : "s"}
-                              {r.telefone ? ` · ${r.telefone}` : ""}
-                            </>
-                          ) : (
-                            <>
-                              {r.pessoas.length} pessoa{r.pessoas.length === 1 ? "" : "s"}
-                              {r.cidade ? ` · ${r.cidade}` : ""}
-                            </>
-                          )}
-                        </p>
-                      </div>
-                      <span className="text-sm text-slate-600 w-24 shrink-0">{fmt(r.valorTotal)}</span>
-                      <span className={clsx("rounded-full px-2.5 py-1 text-xs font-medium shrink-0", STATUS_BADGE[r.status])}>
-                        {STATUS_LABEL[r.status]}
-                        {r.origem === "ia" && " · 🤖"}
-                      </span>
-                      <div className="flex gap-2 shrink-0">
-                        <button onClick={(e) => { e.stopPropagation(); setModal(r); }} className="text-xs text-amber-700 hover:text-amber-800">Editar</button>
-                        {role === "manager" && (
-                          <button onClick={(e) => { e.stopPropagation(); removeReserva(r.id); }} className="text-xs text-slate-400 hover:text-red-500">Excluir</button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       {modal && (

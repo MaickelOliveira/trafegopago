@@ -44,13 +44,33 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
     { faixa: "6-12 anos", quantidade: faixas.faixa6a12 },
   ];
 
+  function tipoLabel(slug: string) {
+    return tipos.find((t) => t.slug === slug)?.label ?? slug;
+  }
+
   return (
     <div>
-      <PousadaSubNav clientId={clientId} role={role} />
-      <div className="p-6 md:p-8 space-y-6 max-w-6xl mx-auto">
-      <h1 className="text-xl font-semibold text-slate-900">📊 Relatórios — Pousada</h1>
+      <div className="print:hidden">
+        <PousadaSubNav clientId={clientId} role={role} />
+      </div>
+      <div className="p-6 md:p-8 space-y-6 max-w-6xl mx-auto print:p-0 print:max-w-none">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">📊 Relatórios — Pousada</h1>
+          <p className="text-sm text-slate-500 print:block hidden">
+            Período: {new Date(from + "T00:00:00").toLocaleDateString("pt-BR")} a {new Date(to + "T00:00:00").toLocaleDateString("pt-BR")}
+            {tipo ? ` · ${tipoLabel(tipo)}` : ""}
+          </p>
+        </div>
+        <button
+          onClick={() => window.print()}
+          className="print:hidden rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+        >
+          🖨️ Baixar / Imprimir PDF
+        </button>
+      </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="print:hidden flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <div>
           <label className="text-xs font-medium text-slate-600 block mb-1">De</label>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
@@ -107,6 +127,37 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <p className="text-sm font-medium text-slate-700 px-4 pt-4 pb-2">Reservas no período ({reservas.length})</p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
+                  <th className="px-4 py-2">Data</th>
+                  <th className="px-4 py-2">Tipo</th>
+                  <th className="px-4 py-2">Responsável</th>
+                  <th className="px-4 py-2">Pessoas</th>
+                  <th className="px-4 py-2">Valor</th>
+                  <th className="px-4 py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reservas.map((r) => (
+                  <tr key={r.id} className="border-b border-slate-50">
+                    <td className="px-4 py-2 whitespace-nowrap">{new Date(r.data + "T00:00:00").toLocaleDateString("pt-BR")}</td>
+                    <td className="px-4 py-2">{tipoLabel(r.tipo)}</td>
+                    <td className="px-4 py-2">{r.responsavel.nome}</td>
+                    <td className="px-4 py-2">{r.pessoas.length}</td>
+                    <td className="px-4 py-2">{fmt(r.valorTotal)}</td>
+                    <td className="px-4 py-2 capitalize">{r.status}</td>
+                  </tr>
+                ))}
+                {reservas.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">Nenhuma reserva no período.</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </>
       )}

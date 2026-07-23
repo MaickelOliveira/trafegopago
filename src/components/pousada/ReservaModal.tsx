@@ -18,18 +18,20 @@ export function ReservaModal({
   clientId,
   tipos,
   initial,
+  defaultTipo,
   onSave,
   onClose,
 }: {
   clientId: string;
   tipos: PousadaTipo[];
   initial?: Reserva | null;
+  defaultTipo?: string;
   onSave: (r: Reserva) => void;
   onClose: () => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
-    tipo: initial?.tipo ?? tipos[0]?.slug ?? "",
+    tipo: initial?.tipo ?? defaultTipo ?? tipos[0]?.slug ?? "",
     data: initial?.data ?? today,
     dataCheckout: initial?.dataCheckout ?? "",
     quarto: initial?.quarto ?? "",
