@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { clsx } from "clsx";
 import type { Reserva, PousadaTipo, CategoriaTipo } from "@/lib/pousada-types";
 import { ReservaModal } from "./ReservaModal";
@@ -33,6 +34,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function PousadaDashboardView({ clientId, role }: { clientId: string; role: "manager" | "client" }) {
+  const router = useRouter();
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,7 +237,11 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
                     <p className="px-5 py-4 text-sm text-slate-400">Nenhuma reserva próxima desse tipo.</p>
                   )}
                   {lista.map((r) => (
-                    <div key={r.id} className="px-5 py-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <div
+                      key={r.id}
+                      onClick={() => router.push(`${role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada"}/reservas/${r.id}`)}
+                      className="px-5 py-4 flex flex-wrap items-center gap-x-4 gap-y-2 cursor-pointer hover:bg-slate-50"
+                    >
                       <div className="w-32 text-sm text-slate-500 shrink-0">
                         {categoria === "hospedagem" && r.dataCheckout
                           ? `${fmtData(r.data)} → ${fmtData(r.dataCheckout)}`
@@ -264,9 +270,9 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
                         {r.origem === "ia" && " · 🤖"}
                       </span>
                       <div className="flex gap-2 shrink-0">
-                        <button onClick={() => setModal(r)} className="text-xs text-amber-700 hover:text-amber-800">Editar</button>
+                        <button onClick={(e) => { e.stopPropagation(); setModal(r); }} className="text-xs text-amber-700 hover:text-amber-800">Editar</button>
                         {role === "manager" && (
-                          <button onClick={() => removeReserva(r.id)} className="text-xs text-slate-400 hover:text-red-500">Excluir</button>
+                          <button onClick={(e) => { e.stopPropagation(); removeReserva(r.id); }} className="text-xs text-slate-400 hover:text-red-500">Excluir</button>
                         )}
                       </div>
                     </div>
