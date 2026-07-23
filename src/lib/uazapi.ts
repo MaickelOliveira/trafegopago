@@ -438,11 +438,19 @@ export function splitMessage(text: string, maxLen = 300): string[] {
   if (current) chunks.push(current);
 
   // Pós-processamento: absorve chunk que seja APENAS dígitos soltos (ex: "1", "12.", "7-")
-  // no chunk anterior, com espaço quando necessário.
+  // OU um fragmento de texto muito curto que sobrou da quebra por palavra (ex: "informação.").
+  // Isso evita que a última palavra de uma frase vire uma bolha isolada e estranha no WhatsApp.
+  // Não mexe em chunks que iniciam uma seção/subseção nova ("1." ou "• *Título*"), pois ali
+  // a quebra em bolha própria é intencional.
+  const isTinyFragment = (s: string) => {
+    const t = s.trim();
+    if (!t) return false;
+    if (isSection(t) || isSubSection(t)) return false;
+    return /^\d{1,4}[-.\s]*$/.test(t) || t.length < 25;
+  };
   const merged: string[] = [];
   for (const chunk of chunks.filter(Boolean)) {
-    const isLoneNumber = /^\d{1,4}[-.\s]*$/.test(chunk.trim());
-    if (isLoneNumber && merged.length > 0) {
+    if (isTinyFragment(chunk) && merged.length > 0) {
       const prev = merged[merged.length - 1];
       const sep = /[\s\n\/]$/.test(prev) ? "" : " ";
       merged[merged.length - 1] = prev + sep + chunk.trim();
