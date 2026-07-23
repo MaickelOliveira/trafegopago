@@ -150,8 +150,11 @@ export function PousadaServicoView({
                   onClick={() => router.push(`${base}/reservas/${r.id}`)}
                   className="px-5 py-4 flex flex-wrap items-center gap-x-4 gap-y-2 cursor-pointer hover:bg-slate-50"
                 >
-                  <div className="w-32 text-sm text-slate-500 shrink-0">
-                    {isHospedagem && r.dataCheckout ? `${fmtData(r.data)} → ${fmtData(r.dataCheckout)}` : fmtData(r.data)}
+                  <div className="w-36 shrink-0">
+                    <p className="text-sm text-slate-700">
+                      {isHospedagem && r.dataCheckout ? `${fmtData(r.data)} → ${fmtData(r.dataCheckout)}` : fmtData(r.data)}
+                    </p>
+                    <p className="text-xs text-slate-400">Reservado em {fmtData(r.createdAt.slice(0, 10))}</p>
                   </div>
                   <div className="flex-1 min-w-[160px]">
                     <p className="text-sm font-medium text-slate-800">{r.responsavel.nome}</p>
