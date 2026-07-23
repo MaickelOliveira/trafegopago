@@ -351,20 +351,27 @@ Quando chamar enviar_resumo, o conteúdo do resumo/motivo vai SOMENTE para o ges
 • NUNCA narre para o cliente que você encaminhou/escalou: não diga "já encaminhei para...", "vou passar para...", "escalei para...".
 • Após chamar a ferramenta, responda ao cliente de forma natural e breve, sem repetir o conteúdo interno.`;
 
-  const resumoPart = hasSheet
-    ? `\n\nRegistro automático de reservas (planilha conectada):
-Você tem a ferramenta enviar_resumo disponível. Acione-a como chamada de ferramenta nos seguintes momentos:
+  // Quando o cliente já tem um prompt personalizado, é ELE quem define as regras de
+  // quando chamar enviar_resumo (evita que esta lista genérica, injetada por último no
+  // prompt final, acabe pesando mais que as regras específicas do cliente e fazendo a IA
+  // inventar motivos livres tipo "escalar por achar importante" fora do que foi combinado).
+  const resumoGenericTriggers = hasSheet
+    ? `Acione-a como chamada de ferramenta nos seguintes momentos:
 - Dados de reserva recebidos: use motivo iniciando com as palavras exatas DADOS RECEBIDOS seguido de um resumo curto
 - Comprovante ou confirmação de Pix recebidos: use motivo iniciando com as palavras exatas PAGAMENTO PIX seguido do valor
-- Quando não souber responder, precisar escalar para o gestor, ou o lead pedir atendimento humano: use motivo descrevendo o assunto
-Importante: acione a ferramenta, não escreva o nome dela como texto na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.
-${resumoRule}`
-    : hasAvisos
-    ? `\n\nVocê tem a ferramenta enviar_resumo disponível. Use-a como chamada de ferramenta (não como texto) nos seguintes casos:
+- Quando não souber responder, precisar escalar para o gestor, ou o lead pedir atendimento humano: use motivo descrevendo o assunto`
+    : `Use-a como chamada de ferramenta (não como texto) nos seguintes casos:
 - Quando não souber responder algo ou precisar escalar para o gestor: motivo descrevendo o assunto
 - Quando o lead pedir falar com humano ou com o responsável: motivo iniciando com ATENDIMENTO HUMANO
-- Quando o lead demonstrar intenção de compra e precisar de atendimento personalizado: motivo com resumo do interesse
-Importante: acione a ferramenta imediatamente, sem escrever o nome dela na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.
+- Quando o lead demonstrar intenção de compra e precisar de atendimento personalizado: motivo com resumo do interesse`;
+
+  const resumoTriggers = customPrompt?.trim()
+    ? `As instruções personalizadas acima já definem EXATAMENTE quando chamar enviar_resumo — siga EXCLUSIVAMENTE essas regras. NÃO chame enviar_resumo por nenhum outro motivo (ex: "achei importante avisar", progresso da negociação, orçamento apresentado, dúvida já coberta pelas próprias instruções) além do que estiver explicitamente listado ali.`
+    : resumoGenericTriggers;
+
+  const resumoPart = (hasSheet || hasAvisos)
+    ? `\n\n${hasSheet ? "Registro automático de reservas (planilha conectada):\n" : ""}Você tem a ferramenta enviar_resumo disponível. ${resumoTriggers}
+Importante: acione a ferramenta, não escreva o nome dela como texto na resposta. A mensagem visível ao cliente é só a parte natural da conversa — nunca inclua o nome da ferramenta, a palavra "motivo", nem qualquer narração tipo "(chamada da ferramenta...)" explicando o que você está fazendo internamente.
 ${resumoRule}`
     : "";
 
