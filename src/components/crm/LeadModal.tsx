@@ -323,6 +323,14 @@ export function LeadModal({
   const [loadingChat, setLoadingChat] = useState(false);
   const [connections, setConnections] = useState<LiveConnection[]>([]);
   const [selectedConnId, setSelectedConnId] = useState<string>("");
+  // true só quando o OPERADOR escolhe manualmente no seletor "Responder pelo
+  // número" — o auto-preenchimento abaixo (número padrão pra responder) não
+  // deve forçar a busca do histórico numa conexão específica, senão uma
+  // conversa cujo histórico real está numa OUTRA conexão (ou numa conexão já
+  // desconectada) aparece como "Nenhuma mensagem ainda" mesmo já tendo troca
+  // de mensagens — o backend só sabe procurar em todas as conexões quando
+  // "connId" não é passado explicitamente.
+  const [manualConnId, setManualConnId] = useState(false);
   const [msgInput, setMsgInput] = useState("");
   const [sending, setSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -405,7 +413,7 @@ export function LeadModal({
       const qsParams = new URLSearchParams();
       if (lead.clientId) qsParams.set("clientId", lead.clientId);
       if (lead.funnelId) qsParams.set("funnelId", lead.funnelId);
-      if (selectedConnId) qsParams.set("connId", selectedConnId);
+      if (selectedConnId && manualConnId) qsParams.set("connId", selectedConnId);
       const qs = qsParams.toString();
       const res = await fetch(`/api/crm/conversations/${lead.phone}${qs ? `?${qs}` : ""}`);
       if (res.ok) {
@@ -413,8 +421,10 @@ export function LeadModal({
         const msgs = data.messages ?? [];
         _convCache.set(cacheKey, { messages: msgs, fetchedAt: Date.now() });
         setMessages(msgs);
-        // Sem seleção manual ainda: alinha o seletor com o número que o backend resolveu
-        if (!selectedConnId && data.connId) setSelectedConnId(data.connId);
+        // Sem seleção manual do operador: alinha o seletor com a conexão que o
+        // backend de fato resolveu pelo histórico real (pode ser diferente do
+        // fallback só-de-exibição escolhido antes da 1ª busca terminar).
+        if (!manualConnId && data.connId && data.connId !== selectedConnId) setSelectedConnId(data.connId);
       }
     } finally {
       if (!silent) setLoadingChat(false);
@@ -954,7 +964,7 @@ export function LeadModal({
                 <span className="text-xs text-slate-400 font-medium shrink-0">Responder pelo número:</span>
                 <select
                   value={selectedConnId}
-                  onChange={(e) => setSelectedConnId(e.target.value)}
+                  onChange={(e) => { setSelectedConnId(e.target.value); setManualConnId(true); }}
                   className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-green-400"
                 >
                   {(["meta", "wppconnect", "evolution", "uazapi"] as const).map((type) => {
