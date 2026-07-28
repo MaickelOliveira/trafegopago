@@ -44,19 +44,52 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
 
   // "Retoma" a conversa chamando o próprio webhook da conexão, como se fosse
   // uma mensagem normal do cliente — reusa toda a lógica de agente/pousada/
-  // planilha já existente, sem duplicar nada disso aqui.
+  // planilha já existente, sem duplicar nada disso aqui. Cada provider tem um
+  // formato de rota E de payload diferente, então o corpo sintético precisa
+  // ser montado no formato que aquele webhook específico sabe interpretar.
   const appBaseUrl = getConfig().appBaseUrl?.replace(/\/$/, "");
   if (appBaseUrl && form.connId) {
-    fetch(`${appBaseUrl}/api/whatsapp/webhook/${form.connId}`, {
+    const { url, body } = buildResumePayload(appBaseUrl, form.connId, form.connType, form.phone, resumoTexto);
+    fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: form.phone, message: resumoTexto }),
+      body: JSON.stringify(body),
     }).catch((e) => console.error("[guest-forms] erro ao retomar conversa:", e));
   } else {
     console.warn(`[guest-forms] Não foi possível retomar a conversa — appBaseUrl=${!!appBaseUrl} connId=${form.connId}`);
   }
 
   return NextResponse.json({ ok: true });
+}
+
+function buildResumePayload(
+  appBaseUrl: string,
+  connId: string,
+  connType: string | null | undefined,
+  phone: string,
+  message: string,
+): { url: string; body: unknown } {
+  if (connType === "evolution") {
+    // Formato Baileys/Evolution ("messages_upsert") — mesmo shape que o
+    // webhook real recebe pra uma mensagem de texto simples do contato.
+    return {
+      url: `${appBaseUrl}/api/whatsapp/webhook/evolution/${connId}`,
+      body: {
+        event: "messages_upsert",
+        data: {
+          key: { remoteJid: `${phone}@s.whatsapp.net`, fromMe: false, id: `guest-form-${Date.now()}` },
+          message: { conversation: message },
+          messageType: "conversation",
+          messageTimestamp: Math.floor(Date.now() / 1000),
+        },
+      },
+    };
+  }
+  // uazapi/[instanceId] (padrão) — aceita o formato legado simples {phone, message}.
+  return {
+    url: `${appBaseUrl}/api/whatsapp/webhook/${connId}`,
+    body: { phone, message },
+  };
 }
 
 function formatPessoasParaConversa(pessoas: GuestFormPessoa[]): string {

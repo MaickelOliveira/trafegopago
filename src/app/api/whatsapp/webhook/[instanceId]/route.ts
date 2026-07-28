@@ -200,7 +200,7 @@ function resolveGuestFormMarker(
     console.warn("[guest-forms] appBaseUrl não configurado — não é possível gerar o link do formulário");
     return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, "").trim();
   }
-  const form = createGuestForm({ clientId, clientName, phone, connId: connId ?? null });
+  const form = createGuestForm({ clientId, clientName, phone, connId: connId ?? null, connType: "uazapi" });
   const url = `${baseUrl}/formulario-hospede/${form.id}`;
   return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, url);
 }

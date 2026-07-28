@@ -21,12 +21,19 @@ export type GuestFormPessoa = {
 // mensagem no chat. Depois de enviado, o texto vira uma mensagem sintética na
 // MESMA conversa do WhatsApp (ver /api/guest-forms/[token] POST), e a IA
 // processa normalmente como se o cliente tivesse digitado os dados.
+// "connType" define qual URL de webhook usar pra retomar a conversa depois do
+// envio (ver /api/guest-forms/[token] POST) — cada provider tem um formato de
+// rota diferente (/api/whatsapp/webhook/{connId} pro uazapi/[instanceId],
+// /api/whatsapp/webhook/evolution/{connId} pro Evolution, etc.).
+export type GuestFormConnType = "uazapi" | "evolution" | "wppconnect";
+
 export type GuestForm = {
   id: string; // token — usado na URL pública
   clientId: string;
   clientName?: string;
   phone: string; // telefone do contato no WhatsApp (dígitos)
   connId?: string | null; // connection.id — usado pra retomar a conversa na conexão certa
+  connType?: GuestFormConnType | null;
   status: GuestFormStatus;
   pessoas?: GuestFormPessoa[];
   createdAt: string;

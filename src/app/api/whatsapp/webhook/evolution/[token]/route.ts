@@ -28,6 +28,7 @@ import { transcribeMedia } from "@/lib/media-transcribe";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
+import { createGuestForm } from "@/lib/guest-forms";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
@@ -64,6 +65,29 @@ function extractMediaMarkers(text: string): { clean: string; names: string[]; fo
     return "";
   }).replace(/[ \t]{2,}/g, " ").trim();
   return { clean, names, followup };
+}
+
+/**
+ * Substitui o marcador [FORMULARIO_HOSPEDAGEM] pelo link da ficha de hóspedes
+ * (ver função equivalente em webhook/[instanceId]/route.ts). Cria o token só
+ * quando o marcador realmente aparece na resposta da IA.
+ */
+function resolveGuestFormMarker(
+  text: string,
+  clientId: string,
+  clientName: string | undefined,
+  phone: string,
+  connId: string | undefined,
+  baseUrl: string,
+): string {
+  if (!text.includes("[FORMULARIO_HOSPEDAGEM]")) return text;
+  if (!baseUrl) {
+    console.warn("[guest-forms] appBaseUrl não configurado — não é possível gerar o link do formulário");
+    return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, "").trim();
+  }
+  const form = createGuestForm({ clientId, clientName, phone, connId: connId ?? null, connType: "evolution" });
+  const url = `${baseUrl}/formulario-hospede/${form.id}`;
+  return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, url);
 }
 
 // ── Envia mídias marcadas via Evolution ──
