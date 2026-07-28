@@ -781,8 +781,22 @@ export function ConfiguracoesView({ clients: initial, appBaseUrl, allConnections
                   label="URL base pública"
                   value={globalConfig.appBaseUrl}
                   onChange={(v) => setGlobalConfig((c) => ({ ...c, appBaseUrl: v }))}
-                  placeholder="https://whatsappmonitor-trafegopago.ztcjzs.easypanel.host"
+                  placeholder="https://seu-dominio.com"
                 />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-slate-500">
+                    A URL que você usa pra acessar esta plataforma agora mesmo — sem barra no final.
+                  </p>
+                  {typeof window !== "undefined" && (
+                    <button
+                      type="button"
+                      onClick={() => setGlobalConfig((c) => ({ ...c, appBaseUrl: window.location.origin }))}
+                      className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                    >
+                      Usar URL atual ({window.location.origin})
+                    </button>
+                  )}
+                </div>
               </div>
 
               {configMsg && (
