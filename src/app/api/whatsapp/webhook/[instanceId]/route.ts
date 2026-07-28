@@ -180,6 +180,32 @@ function extractMediaMarkers(text: string): { clean: string; names: string[]; fo
 }
 
 /**
+ * Substitui o marcador [FORMULARIO_HOSPEDAGEM] pelo link da ficha de hóspedes
+ * (público, um por reserva) — usado no fluxo de Hospedagem em vez de pedir
+ * nome/CPF/RG/endereço de cada hóspede mensagem por mensagem no chat. Cria o
+ * registro do formulário (token) só quando o marcador realmente aparece na
+ * resposta, isolado por telefone+conexão pra retomar a conversa certa depois
+ * que o cliente preencher (ver /api/guest-forms/[token]).
+ */
+function resolveGuestFormMarker(
+  text: string,
+  clientId: string,
+  clientName: string | undefined,
+  phone: string,
+  connId: string | undefined,
+  baseUrl: string,
+): string {
+  if (!text.includes("[FORMULARIO_HOSPEDAGEM]")) return text;
+  if (!baseUrl) {
+    console.warn("[guest-forms] appBaseUrl não configurado — não é possível gerar o link do formulário");
+    return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, "").trim();
+  }
+  const form = createGuestForm({ clientId, clientName, phone, connId: connId ?? null });
+  const url = `${baseUrl}/formulario-hospede/${form.id}`;
+  return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, url);
+}
+
+/**
  * Envia mídias referenciadas pelo agente após enviar o texto principal.
  */
 /** Converte URL local /api/uploads/... em base64 lendo direto do disco */
@@ -242,6 +268,7 @@ import { processKanbanActions } from "@/lib/kanban-agent";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
+import { createGuestForm } from "@/lib/guest-forms";
 
 type Body = Record<string, unknown>;
 
@@ -479,6 +506,12 @@ export async function POST(
 
   // Forward para URL configurada (fire-and-forget)
   const config = getConfig();
+  // Base pra montar o link do formulário de hóspedes: prefere appBaseUrl
+  // configurado; cai pros headers do proxy reverso (EasyPanel) como fallback.
+  const guestFormBaseUrl = (
+    config.appBaseUrl ||
+    `${req.headers.get("x-forwarded-proto") ?? "https"}://${req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? ""}`
+  ).replace(/\/$/, "");
   if (config.uazapiWebhookForward) {
     fetch(config.uazapiWebhookForward, {
       method: "POST",
@@ -960,7 +993,8 @@ export async function POST(
             const clientName = getClientById(cid)?.name ?? cid;
             if (geminiText) {
               console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
-              const { clean, names: namesRaw, followup } = extractMediaMarkers(geminiText);
+              const { clean: cleanRaw, names: namesRaw, followup } = extractMediaMarkers(geminiText);
+              const clean = resolveGuestFormMarker(cleanRaw, cid, clientName, phone, uazConn?.id, guestFormBaseUrl);
               const names = filterUnsentMedia(clientId, uazConn?.id, phone, namesRaw);
               console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(namesRaw)} | a enviar (após dedup): ${JSON.stringify(names)} | library size: ${agCfg?.mediaLibrary?.length ?? 0}`);
               // Salva texto limpo (sem marcadores) no histórico
@@ -1068,7 +1102,8 @@ export async function POST(
 
     if (geminiText) {
       console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
-      const { clean, names: namesRaw, followup } = extractMediaMarkers(geminiText);
+      const { clean: cleanRaw, names: namesRaw, followup } = extractMediaMarkers(geminiText);
+      const clean = resolveGuestFormMarker(cleanRaw, cid, getClientById(cid)?.name ?? cid, phone, uazConn?.id, guestFormBaseUrl);
       const names = filterUnsentMedia(clientId, uazConn?.id, phone, namesRaw);
       console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(namesRaw)} | a enviar (após dedup): ${JSON.stringify(names)} | library size: ${agentCfg?.mediaLibrary?.length ?? 0}`);
       // Salva texto limpo (sem marcadores) no histórico

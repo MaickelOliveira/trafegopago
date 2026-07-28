@@ -348,6 +348,44 @@ export async function sendMedia(
   }
 }
 
+// Quebra por palavra — último recurso, só usado quando uma única FRASE já é
+// maior que maxLen sozinha (ex.: URL muito longa).
+function wrapByWords(text: string, maxLen: number, chunks: string[]): string {
+  const words = text.split(" ");
+  let wordBuf = "";
+  for (const word of words) {
+    const wjoined = wordBuf ? wordBuf + " " + word : word;
+    if (wjoined.length <= maxLen) {
+      wordBuf = wjoined;
+    } else {
+      if (wordBuf) chunks.push(wordBuf);
+      // Só corta uma palavra isolada se ela sozinha já for maior que maxLen.
+      wordBuf = word.length <= maxLen ? word : word.slice(0, maxLen);
+    }
+  }
+  return wordBuf;
+}
+
+// Divide no ponto/exclamação/interrogação seguido de espaço — nunca corta no
+// meio de uma frase. Só cai pra quebra por palavra quando uma frase sozinha
+// já é maior que maxLen. Sem isso, uma linha/parágrafo grande demais caía
+// direto na quebra por palavra e podia terminar uma bolha no meio de uma
+// frase (ex.: "...(dias 16 e" | "17) é em agosto...").
+function wrapBySentences(text: string, maxLen: number, chunks: string[]): string {
+  const sentences = text.split(/(?<=[.!?])\s+(?=\S)/).map((s) => s.trim()).filter(Boolean);
+  let buf = "";
+  for (const sentence of sentences) {
+    const joined = buf ? buf + " " + sentence : sentence;
+    if (joined.length <= maxLen) {
+      buf = joined;
+    } else {
+      if (buf) chunks.push(buf);
+      buf = sentence.length <= maxLen ? sentence : wrapByWords(sentence, maxLen, chunks);
+    }
+  }
+  return buf;
+}
+
 /**
  * Divide uma resposta longa em partes menores respeitando parágrafos e frases.
  * Prioridade: dupla quebra → quebra simples → ponto/exclamação/interrogação → tamanho máximo.
@@ -409,22 +447,9 @@ export function splitMessage(text: string, maxLen = 300): string[] {
             if (line.length <= maxLen) {
               lineBuf = line;
             } else {
-              // Linha sozinha maior que maxLen: quebra por palavras — NUNCA descarta
-              // o restante do texto (antes usava .slice() e perdia o final da frase).
-              const words = line.split(" ");
-              let wordBuf = "";
-              for (const word of words) {
-                const wjoined = wordBuf ? wordBuf + " " + word : word;
-                if (wjoined.length <= maxLen) {
-                  wordBuf = wjoined;
-                } else {
-                  if (wordBuf) chunks.push(wordBuf);
-                  // Só corta uma palavra isolada se ela sozinha já for maior que maxLen
-                  // (ex.: URL muito longa) — caso raro e inevitável.
-                  wordBuf = word.length <= maxLen ? word : word.slice(0, maxLen);
-                }
-              }
-              lineBuf = wordBuf;
+              // Linha sozinha maior que maxLen: quebra por frase (nunca por palavra
+              // direto) — NUNCA descarta o restante do texto.
+              lineBuf = wrapBySentences(line, maxLen, chunks);
             }
           }
         }
