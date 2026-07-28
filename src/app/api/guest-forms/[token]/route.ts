@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   if (!form) return NextResponse.json({ error: "Formulário não encontrado" }, { status: 404 });
 
   const { pessoas } = await req.json() as { pessoas?: GuestFormPessoa[] };
-  const REQUIRED_FIELDS: (keyof GuestFormPessoa)[] = ["nome", "nascimento", "cpf", "rg", "profissao", "endereco", "cidadeEstado", "telefone", "email"];
+  const REQUIRED_FIELDS: (keyof GuestFormPessoa)[] = ["nome", "nascimento", "cpf", "rg", "endereco", "cidadeEstado", "telefone", "email"];
   const isComplete = (p: GuestFormPessoa) => REQUIRED_FIELDS.every((k) => p[k]?.trim());
   if (!Array.isArray(pessoas) || pessoas.length === 0 || pessoas.some((p) => !isComplete(p))) {
     return NextResponse.json({ error: "Preencha todos os campos de cada hóspede" }, { status: 400 });
@@ -99,7 +99,6 @@ function formatPessoasParaConversa(pessoas: GuestFormPessoa[]): string {
       p.nascimento ? `Data de nascimento: ${p.nascimento}` : null,
       p.cpf ? `CPF: ${p.cpf}` : null,
       p.rg ? `RG: ${p.rg}` : null,
-      p.profissao ? `Profissão: ${p.profissao}` : null,
       p.endereco ? `Endereço: ${p.endereco}` : null,
       p.cidadeEstado ? `Cidade/Estado: ${p.cidadeEstado}` : null,
       p.telefone ? `Telefone: ${p.telefone}` : null,

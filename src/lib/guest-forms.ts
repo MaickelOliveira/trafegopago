@@ -9,7 +9,6 @@ export type GuestFormPessoa = {
   nascimento?: string;
   cpf?: string;
   rg?: string;
-  profissao?: string;
   endereco?: string;
   cidadeEstado?: string;
   telefone?: string;

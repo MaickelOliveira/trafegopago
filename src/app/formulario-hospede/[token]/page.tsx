@@ -8,7 +8,6 @@ type Hospede = {
   nascimento: string;
   cpf: string;
   rg: string;
-  profissao: string;
   endereco: string;
   cidadeEstado: string;
   telefone: string;
@@ -16,7 +15,7 @@ type Hospede = {
 };
 
 function emptyHospede(): Hospede {
-  return { nome: "", nascimento: "", cpf: "", rg: "", profissao: "", endereco: "", cidadeEstado: "", telefone: "", email: "" };
+  return { nome: "", nascimento: "", cpf: "", rg: "", endereco: "", cidadeEstado: "", telefone: "", email: "" };
 }
 
 // Todos obrigatórios — são exatamente os dados que a pousada exige de cada
@@ -27,7 +26,6 @@ const FIELDS: { key: keyof Hospede; label: string; required?: boolean; type?: st
   { key: "nascimento", label: "Data de nascimento", type: "date", required: true },
   { key: "cpf", label: "CPF", required: true },
   { key: "rg", label: "RG", required: true },
-  { key: "profissao", label: "Profissão", required: true },
   { key: "endereco", label: "Endereço completo", required: true },
   { key: "cidadeEstado", label: "Cidade/Estado", required: true },
   { key: "telefone", label: "Telefone", required: true },
