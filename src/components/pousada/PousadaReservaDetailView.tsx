@@ -113,6 +113,9 @@ export function PousadaReservaDetailView({
             <span className={clsx("rounded-full px-3 py-1 text-sm font-medium", STATUS_BADGE[reserva.status])}>
               {STATUS_LABEL[reserva.status]}
             </span>
+            <button onClick={() => window.print()} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
+              🖨️ Imprimir
+            </button>
             <button onClick={() => setEditando(true)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-amber-700 hover:bg-amber-50">
               Editar
             </button>
@@ -124,63 +127,73 @@ export function PousadaReservaDetailView({
           </div>
         </div>
 
-        {/* Dados da reserva */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-sm font-semibold text-slate-700 mb-4">Dados da reserva</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {isHospedagem ? (
-              <>
-                <Campo label="Check-in" value={fmtData(reserva.data)} />
-                <Campo label="Check-out" value={fmtData(reserva.dataCheckout)} />
-                <Campo label="Quarto/Chalé" value={reserva.quarto} />
-              </>
-            ) : (
-              <>
-                <Campo label="Data" value={fmtData(reserva.data)} />
-                <Campo label="Hora" value={reserva.hora} />
-                <Campo label="Cidade" value={reserva.cidade} />
-              </>
-            )}
-            <Campo label="Telefone" value={reserva.telefone} />
-            {isHospedagem && <Campo label="CPF do responsável" value={reserva.responsavel.cpf} />}
-            <Campo label="Quantidade de pessoas" value={reserva.pessoas.length} />
-            <Campo label="Valor total" value={fmt(reserva.valorTotal)} />
-            <Campo label="Valor pago" value={fmt(reserva.valorPago)} />
-            <Campo label="Falta pagar" value={fmt(reserva.faltaPagar)} />
+        {/* .print-area — SOMENTE este bloco aparece ao imprimir (ver globals.css) */}
+        <div className="print-area space-y-8">
+          <div className="hidden print:block mb-2">
+            <h1 className="text-lg font-semibold text-slate-900">
+              {isHospedagem ? "Ficha de Hóspedes" : "Ficha de Participantes"} — {tipoInfo?.label ?? reserva.tipo}
+            </h1>
+            <p className="text-sm text-slate-600">Responsável: {reserva.responsavel.nome}</p>
           </div>
-          {reserva.observacoes && (
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-xs text-slate-400">Observações</p>
-              <p className="text-sm text-slate-700 mt-0.5">{reserva.observacoes}</p>
-            </div>
-          )}
-        </div>
 
-        {/* Todas as pessoas */}
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <p className="text-sm font-semibold text-slate-700 px-5 pt-5 pb-3">
-            {isHospedagem ? "Hóspedes" : "Participantes"} ({reserva.pessoas.length})
-          </p>
-          <div className="divide-y divide-slate-50">
-            {reserva.pessoas.map((p, i) => (
-              <div key={i} className="px-5 py-4">
-                <p className="text-sm font-medium text-slate-800">
-                  {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
-                  <Campo label="Idade" value={p.idade} />
-                  <Campo label="CPF" value={p.cpf} />
-                  <Campo label="RG" value={p.rg} />
-                  <Campo label="Nascimento" value={fmtData(p.nascimento)} />
-                  <Campo label="Profissão" value={p.profissao} />
-                  <Campo label="Cidade" value={p.cidade} />
-                  <Campo label="Telefone" value={p.telefone} />
-                  <Campo label="E-mail" value={p.email} />
-                  <Campo label="Endereço" value={p.endereco} />
-                  <Campo label="Valor" value={fmt(p.valor)} />
-                </div>
+          {/* Dados da reserva */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <p className="text-sm font-semibold text-slate-700 mb-4">Dados da reserva</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {isHospedagem ? (
+                <>
+                  <Campo label="Check-in" value={fmtData(reserva.data)} />
+                  <Campo label="Check-out" value={fmtData(reserva.dataCheckout)} />
+                  <Campo label="Quarto/Chalé" value={reserva.quarto} />
+                </>
+              ) : (
+                <>
+                  <Campo label="Data" value={fmtData(reserva.data)} />
+                  <Campo label="Hora" value={reserva.hora} />
+                  <Campo label="Cidade" value={reserva.cidade} />
+                </>
+              )}
+              <Campo label="Telefone" value={reserva.telefone} />
+              {isHospedagem && <Campo label="CPF do responsável" value={reserva.responsavel.cpf} />}
+              <Campo label="Quantidade de pessoas" value={reserva.pessoas.length} />
+              <Campo label="Valor total" value={fmt(reserva.valorTotal)} />
+              <Campo label="Valor pago" value={fmt(reserva.valorPago)} />
+              <Campo label="Falta pagar" value={fmt(reserva.faltaPagar)} />
+            </div>
+            {reserva.observacoes && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-xs text-slate-400">Observações</p>
+                <p className="text-sm text-slate-700 mt-0.5">{reserva.observacoes}</p>
               </div>
-            ))}
+            )}
+          </div>
+
+          {/* Todas as pessoas */}
+          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+            <p className="text-sm font-semibold text-slate-700 px-5 pt-5 pb-3">
+              {isHospedagem ? "Hóspedes" : "Participantes"} ({reserva.pessoas.length})
+            </p>
+            <div className="divide-y divide-slate-50">
+              {reserva.pessoas.map((p, i) => (
+                <div key={i} className="px-5 py-4">
+                  <p className="text-sm font-medium text-slate-800">
+                    {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+                    <Campo label="Idade" value={p.idade} />
+                    <Campo label="CPF" value={p.cpf} />
+                    <Campo label="RG" value={p.rg} />
+                    <Campo label="Nascimento" value={fmtData(p.nascimento)} />
+                    <Campo label="Profissão" value={p.profissao} />
+                    <Campo label="Cidade" value={p.cidade} />
+                    <Campo label="Telefone" value={p.telefone} />
+                    <Campo label="E-mail" value={p.email} />
+                    <Campo label="Endereço" value={p.endereco} />
+                    <Campo label="Valor" value={fmt(p.valor)} />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
