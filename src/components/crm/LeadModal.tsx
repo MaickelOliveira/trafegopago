@@ -318,6 +318,15 @@ export function LeadModal({
   const [moveColumnId, setMoveColumnId] = useState("");
   const [moving, setMoving] = useState(false);
 
+  // Contatos "LID" (WhatsApp Business com lista de contatos oculta) têm
+  // lead.phone preenchido com um pseudo-ID interno (isLid=true) que não tem
+  // NENHUMA relação numérica com o telefone real — a conversa é sempre salva
+  // no histórico usando o telefone real (lead.realPhone). Usar lead.phone
+  // direto pra buscar/enviar mensagens desses leads nunca acha o histórico
+  // (foi o caso do "Maickel Oliveira": phone="252291043082372" só é um LID,
+  // realPhone="44998168355" é quem bate com a conversa salva).
+  const conversationPhone = lead.realPhone ?? lead.phone;
+
   // Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
@@ -399,7 +408,7 @@ export function LeadModal({
   }
 
   async function fetchMessages(silent = false) {
-    const cacheKey = `${lead.clientId ?? ""}:${lead.funnelId ?? ""}:${lead.phone}:${selectedConnId}`;
+    const cacheKey = `${lead.clientId ?? ""}:${lead.funnelId ?? ""}:${conversationPhone}:${selectedConnId}`;
     // Se não é polling silencioso, verifica cache primeiro (hit = sem loading)
     if (!silent) {
       const cached = _convCache.get(cacheKey);
@@ -415,7 +424,7 @@ export function LeadModal({
       if (lead.funnelId) qsParams.set("funnelId", lead.funnelId);
       if (selectedConnId && manualConnId) qsParams.set("connId", selectedConnId);
       const qs = qsParams.toString();
-      const res = await fetch(`/api/crm/conversations/${lead.phone}${qs ? `?${qs}` : ""}`);
+      const res = await fetch(`/api/crm/conversations/${conversationPhone}${qs ? `?${qs}` : ""}`);
       if (res.ok) {
         const data = await res.json();
         const msgs = data.messages ?? [];
@@ -440,7 +449,7 @@ export function LeadModal({
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, lead.phone, selectedConnId]);
+  }, [tab, conversationPhone, selectedConnId]);
 
   useEffect(() => {
     if (tab !== "chat") return;
@@ -467,7 +476,7 @@ export function LeadModal({
     const optimisticTs = Date.now();
     setMessages((prev) => [...prev, { role: "assistant", content: previewContent, ts: optimisticTs }]);
     try {
-      const res = await fetch(`/api/crm/conversations/${lead.phone}`, {
+      const res = await fetch(`/api/crm/conversations/${conversationPhone}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -527,7 +536,7 @@ export function LeadModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           templateId: tpl.id,
-          phone: lead.phone,
+          phone: conversationPhone,
           clientId: lead.clientId,
           funnelId: lead.funnelId,
           components,
