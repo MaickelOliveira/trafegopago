@@ -130,6 +130,7 @@ export function CrmClient({ clients, initialLeads, initialFunnels, selectedClien
             initialFunnels={clientFunnels}
             clients={clients}
             selectedClient={selectedClient}
+            isManager
           />
         )}
       </div>

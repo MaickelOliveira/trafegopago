@@ -11,6 +11,7 @@ type Conversation = {
   lastActivity: number;
   unread?: boolean;
   aiPaused?: boolean;
+  aiContextResetAt?: number;
 };
 
 type ConversationStore = Record<string, Conversation>;
@@ -279,6 +280,60 @@ export function getAiPaused(phone: string, clientId?: string | null): boolean {
     if (clientPhoneVariants(phone, clientId).some((v) => all[v]?.aiPaused === true)) return true;
   }
   return phoneVariants(phone).some((v) => all[v]?.aiPaused === true);
+}
+
+/**
+ * "Reseta o contexto da IA" pra um lead — usado pelo gestor durante testes,
+ * quando a IA está reagindo com base em mensagens antigas da conversa e o
+ * gestor quer que ela ignore tudo antes de agora. NÃO apaga nenhuma mensagem
+ * — a conversa continua inteira no chat/inbox. Só marca um timestamp que
+ * runGeminiAgent (gemini-agent.ts) usa pra filtrar o histórico que a IA
+ * efetivamente recebe como contexto, sem mexer no que é exibido na tela.
+ */
+export function resetAiContext(phone: string, clientId?: string | null, connId?: string | null): number {
+  const all = load();
+  const now = Date.now();
+  let changed = false;
+  if (clientId && connId) {
+    for (const v of phoneVariants(phone)) {
+      const connKey = `${clientId}:${connId}:${v}`;
+      if (all[connKey]) { all[connKey].aiContextResetAt = now; changed = true; }
+    }
+  }
+  if (clientId) {
+    for (const v of clientPhoneVariants(phone, clientId)) {
+      if (all[v]) { all[v].aiContextResetAt = now; changed = true; }
+    }
+  }
+  for (const v of phoneVariants(phone)) {
+    if (all[v] && (!clientId || !all[v].clientId || all[v].clientId === clientId)) {
+      all[v].aiContextResetAt = now;
+      changed = true;
+    }
+  }
+  if (changed) save(all);
+  return now;
+}
+
+export function getAiContextResetAt(phone: string, clientId?: string | null, connId?: string | null): number {
+  const all = load();
+  if (clientId && connId) {
+    for (const v of phoneVariants(phone)) {
+      const ts = all[`${clientId}:${connId}:${v}`]?.aiContextResetAt;
+      if (ts) return ts;
+    }
+  }
+  if (clientId) {
+    for (const v of clientPhoneVariants(phone, clientId)) {
+      const ts = all[v]?.aiContextResetAt;
+      if (ts) return ts;
+    }
+  }
+  for (const v of phoneVariants(phone)) {
+    const ts = all[v]?.aiContextResetAt;
+    if (ts) return ts;
+  }
+  return 0;
 }
 
 export function addMessage(

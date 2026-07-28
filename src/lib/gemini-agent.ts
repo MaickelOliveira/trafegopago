@@ -4,7 +4,7 @@ import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
 import { getSheetHeadersCached, appendRow } from "./google-sheets";
-import { getHistory } from "./conversations";
+import { getHistory, getAiContextResetAt } from "./conversations";
 import type { ChatMessage } from "./conversations";
 
 export type GeminiAction =
@@ -423,15 +423,22 @@ export async function runGeminiAgent(
     "gemini-2.5-flash",
   ];
 
+  // Gestor pode "resetar o contexto da IA" pra um lead específico (botão no
+  // CRM, usado durante testes) — some do que a IA VÊ a partir desse ponto,
+  // sem apagar a conversa de verdade do histórico exibido no chat/inbox
+  // (que continua usando getHistory() sem esse filtro em todo o resto do app).
+  const aiResetAt = getAiContextResetAt(phone, clientId, connectionId);
+  const history_ = aiResetAt ? history.filter((m) => m.ts > aiResetAt) : history;
+
   // Converte histórico para formato Gemini
   // A mensagem atual já foi salva em conversations.json antes de chegar aqui —
   // se incluirmos ela no histórico E enviarmos via sendMessage, o Gemini recebe
   // dois turns consecutivos do usuário e rejeita. Por isso removemos o último
   // item se for do usuário (ele será enviado via sendMessage).
   const historyWithoutCurrent =
-    history.length > 0 && history[history.length - 1].role === "user"
-      ? history.slice(0, -1)
-      : history;
+    history_.length > 0 && history_[history_.length - 1].role === "user"
+      ? history_.slice(0, -1)
+      : history_;
 
   // Mescla mensagens consecutivas do mesmo papel (pode ocorrer com batching)
   const mergedHistory: { role: "user" | "model"; parts: { text: string }[] }[] = [];

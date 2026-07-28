@@ -621,12 +621,14 @@ export function KanbanBoard({
   clients,
   selectedClient,
   canDeleteLeads = true,
+  isManager = false,
 }: {
   initialLeads: Lead[];
   initialFunnels: Funnel[];
   clients: ClientOption[];
   selectedClient?: string;
   canDeleteLeads?: boolean;
+  isManager?: boolean;
 }) {
   const [leads, setLeads]     = useState<Lead[]>(initialLeads);
   const [funnels, setFunnels] = useState<Funnel[]>(initialFunnels);
@@ -1738,6 +1740,7 @@ export function KanbanBoard({
           onUpdated={handleUpdated}
           onDeleted={handleDeleted}
           canDeleteLeads={canDeleteLeads}
+          isManager={isManager}
         />
       )}
 

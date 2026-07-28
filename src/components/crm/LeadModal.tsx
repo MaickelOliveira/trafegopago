@@ -297,6 +297,7 @@ export function LeadModal({
   onUpdated,
   onDeleted,
   canDeleteLeads = true,
+  isManager = false,
 }: {
   lead: Lead;
   funnel: Funnel;
@@ -304,6 +305,7 @@ export function LeadModal({
   onUpdated: (lead: Lead) => void;
   onDeleted: (id: string) => void;
   canDeleteLeads?: boolean;
+  isManager?: boolean;
 }) {
   const [lead, setLead] = useState(initial);
   const [tab, setTab] = useState<"details" | "chat">(initial.source === "whatsapp" ? "chat" : "details");
@@ -342,6 +344,7 @@ export function LeadModal({
   const [manualConnId, setManualConnId] = useState(false);
   const [msgInput, setMsgInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [resettingContext, setResettingContext] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -461,6 +464,28 @@ export function LeadModal({
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, tab]);
+
+  async function resetAiContext() {
+    if (resettingContext) return;
+    if (!confirm("Resetar o contexto da IA para este lead?\n\nA IA vai passar a ignorar tudo o que foi conversado até agora — a conversa continua salva e visível aqui, só a memória da IA é reiniciada.")) return;
+    setResettingContext(true);
+    try {
+      const res = await fetch("/api/crm/reset-ai-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: conversationPhone, clientId: lead.clientId, connId: selectedConnId || undefined }),
+      });
+      if (res.ok) {
+        alert("Contexto da IA resetado para este lead.");
+      } else {
+        alert("Não foi possível resetar o contexto da IA.");
+      }
+    } catch {
+      alert("Não foi possível resetar o contexto da IA. Verifique sua conexão.");
+    } finally {
+      setResettingContext(false);
+    }
+  }
 
   async function sendMsg() {
     if ((!msgInput.trim() && !pendingImage) || sending) return;
@@ -990,6 +1015,19 @@ export function LeadModal({
                     );
                   })}
                 </select>
+              </div>
+            )}
+            {isManager && (
+              <div className="flex items-center justify-end px-4 py-1.5 border-b border-slate-100 bg-white shrink-0">
+                <button
+                  type="button"
+                  onClick={resetAiContext}
+                  disabled={resettingContext}
+                  title="A IA passa a ignorar as mensagens anteriores a agora — a conversa continua salva e visível aqui, só a memória da IA é reiniciada"
+                  className="text-xs text-slate-400 hover:text-red-500 disabled:opacity-50"
+                >
+                  {resettingContext ? "Resetando..." : "🧹 Resetar contexto da IA"}
+                </button>
               </div>
             )}
             <div
