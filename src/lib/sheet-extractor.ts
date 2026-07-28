@@ -50,6 +50,7 @@ REGRAS OBRIGATÓRIAS:
    - Use os valores que o atendente calculou para cada faixa etária (adulto, criança, gratuito)
    - Se criança gratuita, escreva "Gratuito" no lugar do valor
    - NUNCA omita os valores — eles são obrigatórios neste campo
+   - ⚠️ Esta lista é sempre a LISTA COMPLETA E ATUAL da reserva, não só quem foi mencionado na mensagem mais recente: releia a conversa inteira e junte todo mundo que ainda faz parte da reserva. Se o cliente mandou um grupo de pessoas num dia e depois, em outra mensagem (mesmo dias depois), acrescentou mais gente à MESMA reserva, liste TODOS — os de antes E os novos. Se o cliente disser explicitamente que alguém foi removido/cancelado/não vai mais, não inclua essa pessoa. Se corrigir o nome, idade ou valor de alguém já mencionado antes, use o dado mais recente. Nunca devolva só as pessoas da última mensagem quando já havia outras confirmadas antes na mesma reserva — isso apaga gente da planilha.
 5. "Telefone" = número de telefone/celular/WhatsApp que o cliente informou EXPLICITAMENTE na conversa (não o ID interno)
    Se o cliente disser que é o mesmo número do WhatsApp atual ("é esse mesmo", "é esse aqui", "pode usar esse número", "é esse número mesmo"), OU não informar nenhum número, deixe o campo VAZIO — o sistema preenche automaticamente com o número real do WhatsApp
    NUNCA invente, suponha ou copie um número de exemplo — se não houver um número EXATO escrito pelo cliente na conversa, deixe vazio
@@ -131,7 +132,12 @@ export async function extractAndWriteToSheet(opts: {
   }
   if (tabs.length === 0) return;
 
-  const recent = messages.slice(-10);
+  // Janela grande o suficiente pra cobrir reservas que o cliente complementa
+  // em visitas separadas (ex: manda 9 pessoas num dia, volta noutro dia e
+  // manda mais 8) — com só as últimas 10 mensagens, a lista de pessoas do
+  // primeiro dia ficava fora da janela e a extração reconstruía o campo
+  // "Pessoas" só com os novos nomes, apagando os antigos ao sobrescrever a linha.
+  const recent = messages.slice(-80);
   const conversation = recent
     .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 500)}`)
     .join("\n");
@@ -284,13 +290,19 @@ export async function extractAndWriteToSheet(opts: {
         }
       }
 
-      // Antes de inserir, checa se já existe uma linha desse telefone nesta aba —
-      // evita duplicar quando o agente chama o resumo de "dados confirmados" mais
-      // de uma vez pra mesma reserva (ex: uma regra do prompt pro fluxo específico
-      // do produto + a regra genérica de "dados recebidos" disparando as duas).
+      // Antes de inserir, checa se já existe uma linha desse telefone NA MESMA
+      // DATA nesta aba — evita duplicar quando o agente chama o resumo de "dados
+      // confirmados" mais de uma vez pra mesma reserva (ex: uma regra do prompt
+      // pro fluxo específico do produto + a regra genérica de "dados recebidos"
+      // disparando as duas). Se o telefone bater mas a data for OUTRA (ex: mesma
+      // pessoa reservando o Day Use de outro fim de semana), NÃO é a mesma
+      // reserva — cai no appendRow abaixo e cria uma linha nova, em vez de
+      // sobrescrever a reserva antiga com a data/dados da nova.
       try {
         const lookupPhone = (phoneHeader ? row.dados[phoneHeader] : phone) || phone;
-        const existingRowIndex = await findLastRowByPhone(googleRefreshToken, spreadsheetId, tab.tabName, lookupPhone);
+        const dataHeader = findHeader(tab.headers, /^data$/i);
+        const expectedDate = dataHeader ? row.dados[dataHeader] : undefined;
+        const existingRowIndex = await findLastRowByPhone(googleRefreshToken, spreadsheetId, tab.tabName, lookupPhone, expectedDate);
         if (existingRowIndex) {
           // Não reverte pagamento já registrado: se a linha já está Pago/Parcial,
           // não sobrescreve Status/Valor Pago/Falta Pagar com os defaults de

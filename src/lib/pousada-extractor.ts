@@ -10,6 +10,13 @@ function parseMoney(val: string | number | undefined): number {
   return isNaN(num) ? 0 : num;
 }
 
+// Recalcula o valor total a partir da lista de pessoas — mais confiável que
+// confiar na soma que o modelo devolveu em "valorTotal", especialmente agora
+// que "pessoas" pode ser uma lista grande, mesclada de várias mensagens.
+function sumPessoas(pessoas: Pessoa[]): number {
+  return pessoas.reduce((acc, p) => acc + (p.gratuito ? 0 : (typeof p.valor === "number" ? p.valor : 0)), 0);
+}
+
 function buildInsertPrompt(tiposInfo: string, phone: string, conversation: string): string {
   const today = new Date().toISOString().slice(0, 10);
   return `Você extrai dados de reservas de uma pousada a partir de conversas de WhatsApp, em formato JSON estruturado.
@@ -35,6 +42,8 @@ REGRAS OBRIGATÓRIAS:
 
    Se a categoria do tipo escolhido for EVENTO (day use, almoço, café da manhã, etc.):
    - "pessoas" = array com TODOS os participantes, cada um com "nome" (obrigatório), "idade" (número, obrigatório se possível — usado para calcular faixas etárias infantis) e "cidade" se informada. NÃO peça CPF/RG/endereço para eventos.
+
+   ⚠️ IMPORTANTE — "pessoas" é sempre a LISTA COMPLETA E ATUAL da reserva, não só as pessoas mencionadas na última mensagem: releia a conversa inteira e junte todo mundo que ainda faz parte da reserva. Se o cliente mandou um grupo de pessoas num dia e depois, em outra mensagem (mesmo dias depois), acrescentou mais gente à MESMA reserva, inclua TODOS — os de antes E os novos — no array. Se o cliente disser explicitamente que alguém foi removido/cancelado/não vai mais, NÃO inclua essa pessoa. Se o cliente corrigir o nome, idade ou valor de alguém já mencionado antes, use o dado mais recente. Nunca devolva só as pessoas da última mensagem quando já havia outras pessoas confirmadas antes na mesma reserva.
 
    Em ambos os casos, cada pessoa em "pessoas" também tem:
    - "valor" (número, valor cobrado calculado pelo atendente para aquela pessoa — obrigatório, use 0 se gratuito)
@@ -94,7 +103,12 @@ export async function extractAndWriteToPousada(opts: {
 
   if (!messages.length || !tipos.length) return;
 
-  const recent = messages.slice(-10);
+  // Janela grande o suficiente pra cobrir reservas que o cliente complementa
+  // em visitas separadas (ex: manda 9 hóspedes num dia, volta noutro dia e
+  // manda mais 8) — com só as últimas 10 mensagens, a lista de hóspedes do
+  // primeiro dia ficava fora da janela e a extração via só os novos, fazendo
+  // o merge abaixo sobrescrever a reserva com uma lista incompleta.
+  const recent = messages.slice(-80);
   const conversation = recent
     .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 500)}`)
     .join("\n");
@@ -188,33 +202,50 @@ export async function extractAndWriteToPousada(opts: {
           telefone = phone;
         }
 
+        // "data" resolvida (com fallback pra hoje) — usada tanto pra localizar
+        // uma reserva existente quanto pra criar/atualizar, garantindo que os
+        // dois usem exatamente a mesma referência.
+        const dataReserva = (row.data as string | undefined) ?? new Date().toISOString().slice(0, 10);
+
         // Evita duplicar quando o agente confirma "dados recebidos" mais de
-        // uma vez pra mesma reserva — atualiza a existente em vez de criar outra.
-        const existing = findReservaByPhone(clientId, telefone, tipo);
+        // uma vez pra MESMA reserva (mesmo telefone, tipo E data). Se o
+        // telefone e o tipo baterem mas a DATA for outra (ex: a mesma pessoa
+        // reservando o Day Use de outro fim de semana), NÃO é a mesma reserva
+        // — cai no createReserva abaixo e cria uma reserva nova, em vez de
+        // sobrescrever a reserva antiga com a data/dados da nova.
+        const existing = findReservaByPhone(clientId, telefone, tipo, dataReserva);
         const valorTotal = parseMoney(row.valorTotal as string | number | undefined);
         const responsavel = (row.responsavel as { nome: string; cpf?: string }) ?? { nome: "Não informado" };
 
         if (existing) {
           const alreadyPaid = existing.status === "pago" || existing.status === "parcial";
+          // Se a extração trouxe pessoas, ela é a lista completa e atual da
+          // reserva (ver instrução no prompt) — usa ela e recalcula o valor
+          // total a partir dela, em vez de confiar cegamente na soma que o
+          // modelo devolveu separadamente (que pode não bater com a lista).
+          const finalPessoas = pessoas.length ? pessoas : existing.pessoas;
+          const finalValorTotal = pessoas.length
+            ? (sumPessoas(pessoas) || valorTotal || existing.valorTotal)
+            : (valorTotal || existing.valorTotal);
           updateReserva(existing.id, {
-            data: (row.data as string) ?? existing.data,
+            data: dataReserva,
             dataCheckout: (row.dataCheckout as string) ?? existing.dataCheckout,
             quarto: (row.quarto as string) ?? existing.quarto,
             hora: (row.hora as string) ?? existing.hora,
             responsavel,
             telefone,
-            pessoas: pessoas.length ? pessoas : existing.pessoas,
-            valorTotal: valorTotal || existing.valorTotal,
+            pessoas: finalPessoas,
+            valorTotal: finalValorTotal,
             cidade: (row.cidade as string) ?? existing.cidade,
             observacoes: (row.observacoes as string) ?? existing.observacoes,
-            ...(alreadyPaid ? {} : { status: "pendente" as StatusReserva, valorPago: 0, faltaPagar: valorTotal || existing.valorTotal }),
+            ...(alreadyPaid ? {} : { status: "pendente" as StatusReserva, valorPago: 0, faltaPagar: finalValorTotal }),
           });
-          console.log(`[pousada-extractor] updateReserva (evitou duplicar) OK id=${existing.id} responsável="${responsavel.nome}"`);
+          console.log(`[pousada-extractor] updateReserva (evitou duplicar) OK id=${existing.id} responsável="${responsavel.nome}" pessoas=${finalPessoas.length}`);
         } else {
           const created = createReserva({
             clientId,
             tipo,
-            data: (row.data as string) ?? new Date().toISOString().slice(0, 10),
+            data: dataReserva,
             dataCheckout: row.dataCheckout as string | undefined,
             quarto: row.quarto as string | undefined,
             hora: row.hora as string | undefined,

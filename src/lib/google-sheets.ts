@@ -138,13 +138,28 @@ function colLetter(index: number): string {
   return result;
 }
 
+function normalizeSheetDate(raw: string): string {
+  // Aceita tanto ISO (AAAA-MM-DD) quanto BR (DD/MM/AAAA) e normaliza pra ISO,
+  // pra poder comparar a data gravada na planilha com a data extraída da conversa.
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  return raw.trim();
+}
+
 // Encontra o índice (1-based) da ÚLTIMA linha que contenha o telefone na coluna
 // "Telefone" (ou similar). Retorna null se não encontrar.
+// Se "expectedDate" for informado, só considera match quando a coluna "Data"
+// da linha também bater com essa data — evita tratar uma reserva NOVA (outro
+// fim de semana, por exemplo) como se fosse atualização de uma reserva antiga
+// do mesmo telefone; e evita marcar a MESMA data duas vezes.
 export async function findLastRowByPhone(
   refreshToken: string,
   spreadsheetId: string,
   sheetName: string,
-  phone: string
+  phone: string,
+  expectedDate?: string
 ): Promise<number | null> {
   const sheets = await getSheetsClient(refreshToken);
 
@@ -164,12 +179,30 @@ export async function findLastRowByPhone(
   const rows = data.values ?? [];
   const phoneDigits = phone.replace(/\D/g, "");
 
+  let dateCells: string[] | null = null;
+  const expectedIso = expectedDate ? normalizeSheetDate(expectedDate) : null;
+  if (expectedIso) {
+    const dataColIdx = headers.findIndex((h) => /^data$/i.test(h));
+    if (dataColIdx !== -1) {
+      const dataCol = colLetter(dataColIdx);
+      const { data: dData } = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheetName}!${dataCol}:${dataCol}`,
+      });
+      dateCells = (dData.values ?? []).map((r) => String(r?.[0] ?? ""));
+    }
+  }
+
   let lastMatch: number | null = null;
   for (let i = 1; i < rows.length; i++) {
     const cell = String(rows[i]?.[0] ?? "").replace(/\D/g, "");
-    if (cell && (cell === phoneDigits || phoneDigits.endsWith(cell) || cell.endsWith(phoneDigits))) {
-      lastMatch = i + 1; // 1-indexed
+    const phoneMatches = !!cell && (cell === phoneDigits || phoneDigits.endsWith(cell) || cell.endsWith(phoneDigits));
+    if (!phoneMatches) continue;
+    if (expectedIso && dateCells) {
+      const rowDate = normalizeSheetDate(dateCells[i] ?? "");
+      if (rowDate !== expectedIso) continue;
     }
+    lastMatch = i + 1; // 1-indexed
   }
   return lastMatch;
 }

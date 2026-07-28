@@ -75,11 +75,16 @@ export function deleteReserva(id: string): boolean {
 
 // Equivalente interno do antigo findLastRowByPhone (google-sheets.ts) — usado
 // pelo extrator da IA pra dedupe de inserção e lookup de confirmação de pagamento.
-export function findReservaByPhone(clientId: string, phone: string, tipo?: string): Reserva | undefined {
+// Se "data" for informada, só considera a MESMA reserva quando a data também
+// bater — evita tratar uma reserva NOVA (ex: mesma pessoa reservando o Day
+// Use de outro fim de semana) como se fosse atualização de uma reserva
+// antiga do mesmo telefone/tipo; e evita marcar a MESMA data duas vezes.
+export function findReservaByPhone(clientId: string, phone: string, tipo?: string, data?: string): Reserva | undefined {
   const digits = phone.replace(/\D/g, "").slice(-8);
   if (!digits) return undefined;
   let rows = getReservas(clientId).filter((r) => (r.telefone ?? "").replace(/\D/g, "").endsWith(digits));
   if (tipo) rows = rows.filter((r) => r.tipo === tipo);
+  if (data) rows = rows.filter((r) => r.data === data);
   return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 }
 

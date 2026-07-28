@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { clsx } from "clsx";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import type { Reserva, PousadaTipo, FaixaEtariaResumo } from "@/lib/pousada-types";
+import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
 import { PousadaSubNav } from "./PousadaSubNav";
 
 function fmt(v: number) {
@@ -59,7 +58,6 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
   const [from, setFrom] = useState(firstDayOfMonth());
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const [reservas, setReservas] = useState<Reserva[]>([]);
-  const [faixas, setFaixas] = useState<FaixaEtariaResumo>({ faixa0a5: 0, faixa6a12: 0 });
   const [totais, setTotais] = useState({ valorTotal: 0, valorPago: 0, faltaPagar: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -71,17 +69,11 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
     ]);
     setTipos(Array.isArray(tiposRes) ? tiposRes : []);
     setReservas(relRes.reservas ?? []);
-    setFaixas(relRes.faixasEtarias ?? { faixa0a5: 0, faixa6a12: 0 });
     setTotais(relRes.totais ?? { valorTotal: 0, valorPago: 0, faltaPagar: 0 });
     setLoading(false);
   }, [clientId, tipo, from, to]);
 
   useEffect(() => { load(); }, [load]);
-
-  const chartData = [
-    { faixa: "0-5 anos", quantidade: faixas.faixa0a5 },
-    { faixa: "6-12 anos", quantidade: faixas.faixa6a12 },
-  ];
 
   // Agrupa as reservas por tipo, na mesma ordem de "tipos" — cada grupo vira
   // uma tabela com as colunas certas pra sua categoria, igual as abas da
@@ -163,21 +155,6 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs text-slate-400">Falta pagar</p>
                 <p className="text-2xl font-semibold text-amber-600">{fmt(totais.faltaPagar)}</p>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <p className="text-sm font-medium text-slate-700 mb-3">Crianças por faixa etária</p>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="faixa" tick={{ fontSize: 12 }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="quantidade" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
               </div>
             </div>
 
