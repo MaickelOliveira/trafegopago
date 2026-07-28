@@ -731,6 +731,21 @@ export async function runGeminiAgent(
     }
   }
 
+  // Extrai o mesmo vazamento, mas no formato "[enviar_resumo: MOTIVO]" — o modelo
+  // às vezes escreve o nome da ferramenta seguido de dois-pontos dentro de colchetes,
+  // em vez de function call nativa ou da sintaxe "enviar_resumo(motivo='...')" acima.
+  // Sem isso, esse texto (incluindo o motivo interno) vaza inteiro pro cliente no
+  // WhatsApp — foi o que aconteceu com a Ana Maria Isolani (Vitalli, 28/07/2026).
+  const RESUMO_COLON_CALL = /\[\s*enviar_resumo\s*:\s*([\s\S]+?)\s*\]/gi;
+  finalText = finalText.replace(RESUMO_COLON_CALL, (_match, motivoRaw: string) => {
+    const motivo = motivoRaw.trim();
+    if (motivo && !actions.some((a) => a.type === "resumo_solicitado" && a.motivo === motivo)) {
+      console.warn(`[gemini-agent] enviar_resumo vazou como "[enviar_resumo: ...]" — extraindo motivo="${motivo}"`);
+      actions.push({ type: "resumo_solicitado", motivo, phone });
+    }
+    return "";
+  });
+
   // Extrai o mesmo vazamento, mas em forma NARRADA em português (ex: "*Motivo:
   // ATENDIMENTO HUMANO - ...*" seguido de "(Chamada da ferramenta enviar_resumo)")
   // em vez da sintaxe de função. Sem isso o aviso ao gestor não dispara mesmo
@@ -780,7 +795,7 @@ export async function runGeminiAgent(
   }
 
   // ── Filtros de conteúdo interno ──────────────────────────────────────────
-  const KNOWN_TOOL_CALL   = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*\(/;
+  const KNOWN_TOOL_CALL   = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*[:(]/;
   const NARRATED_MOTIVO_LINE = /^\*?Motivo:\s*.+$/i;
   const BULLET_MOTIVO_LINE   = /^[•\-–]\s*\*?Motivo:\s*.+$/i;
   const TOOL_CALL_NARRATION  = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
