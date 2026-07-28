@@ -997,17 +997,20 @@ export async function POST(
               const clean = resolveGuestFormMarker(cleanRaw, cid, clientName, phone, uazConn?.id, guestFormBaseUrl);
               const names = filterUnsentMedia(clientId, uazConn?.id, phone, namesRaw);
               console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(namesRaw)} | a enviar (após dedup): ${JSON.stringify(names)} | library size: ${agCfg?.mediaLibrary?.length ?? 0}`);
-              // Salva texto limpo (sem marcadores) no histórico
-              addMessage(phone, { role: "assistant", content: clean || geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
-              const textToSend = clean || geminiText;
-              const chunks = agCfg?.splitMessages
-                ? splitMessage(textToSend, agCfg.maxMessageLength ?? 300)
-                : [textToSend];
-              const chunkDelayMs = Math.round((agCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
-              for (let i = 0; i < chunks.length; i++) {
-                const sent = await sendText(instanceUazToken, phone, chunks[i]);
-                console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent} token=${instanceUazToken.slice(0, 8)}... phone=${phone}`);
-                if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+              // Salva texto limpo (sem marcadores) no histórico. ⚠️ NUNCA cai de
+              // volta pro texto bruto quando "clean" fica vazio (resposta que era
+              // só um marcador) — isso vazava o marcador literal pro cliente.
+              if (clean) {
+                addMessage(phone, { role: "assistant", content: clean, ts: Date.now() }, clientId, { connId: uazConn?.id });
+                const chunks = agCfg?.splitMessages
+                  ? splitMessage(clean, agCfg.maxMessageLength ?? 300)
+                  : [clean];
+                const chunkDelayMs = Math.round((agCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
+                for (let i = 0; i < chunks.length; i++) {
+                  const sent = await sendText(instanceUazToken, phone, chunks[i]);
+                  console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent} token=${instanceUazToken.slice(0, 8)}... phone=${phone}`);
+                  if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+                }
               }
               if (names.length > 0 && agCfg?.mediaLibrary?.length) {
                 await sendMarkedMedia(instanceUazToken, phone, names, agCfg.mediaLibrary);
@@ -1106,17 +1109,19 @@ export async function POST(
       const clean = resolveGuestFormMarker(cleanRaw, cid, getClientById(cid)?.name ?? cid, phone, uazConn?.id, guestFormBaseUrl);
       const names = filterUnsentMedia(clientId, uazConn?.id, phone, namesRaw);
       console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(namesRaw)} | a enviar (após dedup): ${JSON.stringify(names)} | library size: ${agentCfg?.mediaLibrary?.length ?? 0}`);
-      // Salva texto limpo (sem marcadores) no histórico
-      addMessage(phone, { role: "assistant", content: clean || geminiText, ts: Date.now() }, clientId, { connId: uazConn?.id });
-      const textToSend = clean || geminiText;
-      const chunks = agentCfg?.splitMessages
-        ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
-        : [textToSend];
-      const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
-      for (let i = 0; i < chunks.length; i++) {
-        const sent = await sendText(instanceUazToken, phone, chunks[i]);
-        console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent}`);
-        if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+      // Salva texto limpo (sem marcadores) no histórico. ⚠️ NUNCA cai de volta
+      // pro texto bruto quando "clean" fica vazio — vazava o marcador literal.
+      if (clean) {
+        addMessage(phone, { role: "assistant", content: clean, ts: Date.now() }, clientId, { connId: uazConn?.id });
+        const chunks = agentCfg?.splitMessages
+          ? splitMessage(clean, agentCfg.maxMessageLength ?? 300)
+          : [clean];
+        const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
+        for (let i = 0; i < chunks.length; i++) {
+          const sent = await sendText(instanceUazToken, phone, chunks[i]);
+          console.log(`[webhook/${instanceId}] sendText[${i + 1}/${chunks.length}] result=${sent}`);
+          if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+        }
       }
       if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
         await sendMarkedMedia(instanceUazToken, phone, names, agentCfg.mediaLibrary);

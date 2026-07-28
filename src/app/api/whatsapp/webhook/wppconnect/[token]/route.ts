@@ -918,19 +918,24 @@ export async function POST(
     if (names.length < namesRaw.length) {
       console.log(`[WPPConnect sendReply] Mídia(s) já enviada(s) nesta conversa, ignorando repetição: ${JSON.stringify(namesRaw.filter((n) => !names.includes(n)))}`);
     }
-    const textToSend = clean || reply;
-    const chunks = agentCfg?.splitMessages
-      ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
-      : [textToSend];
-    // Marca cada chunk antes de enviar (evita pausar IA no onselfmessage de volta)
-    for (const chunk of chunks) markSent(phone, chunk);
-    // Salva texto limpo (sem marcadores) no histórico
-    addMessage(phone, { role: "assistant", content: textToSend, ts: Date.now() }, clientId, { connId });
-    // Envia cada chunk separadamente, com pausa entre eles pra não parecer um "flood"
-    const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
-    for (let i = 0; i < chunks.length; i++) {
-      await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, chunks[i], isLidPhone);
-      if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+    // ⚠️ NUNCA cair de volta pro texto bruto ("clean || reply") — se a resposta
+    // da IA for só um marcador (ex: só "[MIDIA:x]", sem mais texto), "clean"
+    // fica vazio e o fallback vazava o marcador literal pro cliente. Quando não
+    // sobra texto, simplesmente não envia bolha nenhuma (mídia segue normal).
+    if (clean) {
+      const chunks = agentCfg?.splitMessages
+        ? splitMessage(clean, agentCfg.maxMessageLength ?? 300)
+        : [clean];
+      // Marca cada chunk antes de enviar (evita pausar IA no onselfmessage de volta)
+      for (const chunk of chunks) markSent(phone, chunk);
+      // Salva texto limpo (sem marcadores) no histórico
+      addMessage(phone, { role: "assistant", content: clean, ts: Date.now() }, clientId, { connId });
+      // Envia cada chunk separadamente, com pausa entre eles pra não parecer um "flood"
+      const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
+      for (let i = 0; i < chunks.length; i++) {
+        await wppSendText(wppSession!.sessionName, wppSession!.sessionToken, phone, chunks[i], isLidPhone);
+        if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+      }
     }
     // Envia mídias referenciadas (se houver)
     if (names.length > 0 && agentCfg?.mediaLibrary?.length) {

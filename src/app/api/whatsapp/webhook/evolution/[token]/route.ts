@@ -575,6 +575,12 @@ export async function POST(
   const clientId = evoSession.clientId ?? funnel?.clientId ?? "sem-cliente";
   const connId = evoSession.id;
 
+  // Base pra montar o link do formulário de hóspedes (ver resolveGuestFormMarker).
+  const guestFormBaseUrl = (
+    getConfig().appBaseUrl ||
+    `${req.headers.get("x-forwarded-proto") ?? "https"}://${req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? ""}`
+  ).replace(/\/$/, "");
+
   const leadInDefaultFunnel = getLeadByPhone(clientId, phone, defaultFunnelId);
   const leadElsewhere = leadInDefaultFunnel ? null : getLeadByPhone(clientId, phone);
   const hasHistoryOnThisConn = !!leadElsewhere && getHistory(phone, clientId, connId).length > 0;
@@ -842,21 +848,29 @@ export async function POST(
   async function sendReply(reply: string) {
     clearInterval(typingInterval);
     stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
-    const { clean, names: namesRaw, followup } = extractMediaMarkers(reply);
+    const { clean: cleanRaw, names: namesRaw, followup } = extractMediaMarkers(reply);
+    // ⚠️ NUNCA cair de volta pro texto bruto ("clean || reply") — se a
+    // resposta da IA for só um marcador (ex: só "[MIDIA:x]" ou só
+    // "[FORMULARIO_HOSPEDAGEM]", sem mais nenhum texto), "clean" fica
+    // string vazia e o fallback pro texto original vazava o marcador
+    // literal pro cliente. Quando não sobra texto, simplesmente não
+    // envia bolha de texto nenhuma (mídia/link seguem enviados normalmente).
+    const clean = resolveGuestFormMarker(cleanRaw, clientId, activeClient?.name ?? clientId, phone, connId, guestFormBaseUrl);
     const names = filterUnsentMedia(clientId, connId, phone, namesRaw);
     if (names.length < namesRaw.length) {
       console.log(`[Evolution sendReply] Mídia(s) já enviada(s) nesta conversa, ignorando repetição: ${JSON.stringify(namesRaw.filter((n) => !names.includes(n)))}`);
     }
-    const textToSend = clean || reply;
-    const chunks = agentCfg?.splitMessages
-      ? splitMessage(textToSend, agentCfg.maxMessageLength ?? 300)
-      : [textToSend];
-    for (const chunk of chunks) markSent(phone, chunk);
-    addMessage(phone, { role: "assistant", content: textToSend, ts: Date.now() }, clientId, { connId });
-    const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
-    for (let i = 0; i < chunks.length; i++) {
-      await evoSendText(instanceSnap, apiKeySnap, phone, chunks[i], isLidContact, true);
-      if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+    if (clean) {
+      const chunks = agentCfg?.splitMessages
+        ? splitMessage(clean, agentCfg.maxMessageLength ?? 300)
+        : [clean];
+      for (const chunk of chunks) markSent(phone, chunk);
+      addMessage(phone, { role: "assistant", content: clean, ts: Date.now() }, clientId, { connId });
+      const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
+      for (let i = 0; i < chunks.length; i++) {
+        await evoSendText(instanceSnap, apiKeySnap, phone, chunks[i], isLidContact, true);
+        if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+      }
     }
     if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
       await sendEvolutionMarkedMedia(instanceSnap, apiKeySnap, phone, names, agentCfg.mediaLibrary, isLidContact, true);
