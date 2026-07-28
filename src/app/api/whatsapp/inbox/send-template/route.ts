@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTemplateById, sendTemplate, type WabaTemplate } from "@/lib/waba-templates";
-import { addMessage, setAiPaused, getAllConversationsByClientId, getHistory } from "@/lib/conversations";
+import { addMessage, setAiPaused, getAllConversationsByClientId, getHistory, phoneVariants } from "@/lib/conversations";
 import { getLeadByPhone, updateLead } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
@@ -72,12 +72,11 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!activeConnId) {
-    const tail9 = cleanPhone.slice(-9);
+    // Compara pelas variantes reais do número (com/sem 9º dígito móvel), não
+    // pelos últimos N dígitos — ver comentário em /api/crm/conversations/[phone].
+    const normVariants = new Set(phoneVariants(cleanPhone));
     const matched = getAllConversationsByClientId(clientId)
-      .filter((c) => {
-        const d = c.phone.replace(/\D/g, "");
-        return d === cleanPhone || d.endsWith(tail9) || cleanPhone.endsWith(d.slice(-9));
-      })
+      .filter((c) => normVariants.has(c.phone.replace(/\D/g, "")))
       .sort((a, b) => b.lastActivity - a.lastActivity);
     activeConnId = matched.find((c) => getHistory(c.phone, clientId, c.connId ?? undefined).length > 0)?.connId ?? undefined;
   }

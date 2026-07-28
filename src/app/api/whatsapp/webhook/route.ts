@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
-import { getHistory, addMessage, sanitizeContactName } from "@/lib/conversations";
+import { getHistory, addMessage, sanitizeContactName, phoneVariants } from "@/lib/conversations";
 import { generateResponse } from "@/lib/ai-agent";
 import { sendWhatsApp } from "@/lib/whatsapp";
 import { sendMessage as sendMessageUnified } from "@/lib/whatsapp-send";
@@ -326,7 +326,7 @@ export async function POST(req: NextRequest) {
     // testPhone: quando configurado, IA responde APENAS este número
     if (geminiEnabled && agentCfg?.testPhone) {
       const testNorm = agentCfg.testPhone.replace(/\D/g, "");
-      if (phone !== testNorm && !phone.endsWith(testNorm.slice(-9))) {
+      if (phone !== testNorm && !phoneVariants(testNorm).includes(phone)) {
         return NextResponse.json({ ok: true });
       }
     }

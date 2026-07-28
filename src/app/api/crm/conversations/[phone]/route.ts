@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, existsSync, writeFileSync } from "fs";
 import path from "path";
 import { getSession } from "@/lib/auth";
-import { getHistory, addMessage, getClientId, getAllConversationsByClientId } from "@/lib/conversations";
+import { getHistory, addMessage, getClientId, getAllConversationsByClientId, phoneVariants } from "@/lib/conversations";
 import { markSent, markPhoneSending } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, upsertLeadByPhone } from "@/lib/leads";
 import { cancelPendingForPhone } from "@/lib/pending-responses";
@@ -35,13 +35,17 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   // connId gravado na conversa quando a conexão foi reconfigurada/duplicada.
   if (explicitConnId) {
     if (clientId) {
-      const tail9 = normalized.slice(-9);
+      // ⚠️ Compara pelas variantes reais do número (com/sem o 9º dígito móvel,
+      // com/sem código do país) — NUNCA pelos últimos N dígitos. O 9º dígito
+      // é inserido/removido logo APÓS o DDD (no meio do número), então cortar
+      // só a "cauda" quebra o match: "5544998168355" e "554498168355" têm
+      // caudas de 9 dígitos diferentes ("998168355" vs "498168355") mesmo
+      // sendo o MESMO número — foi exatamente essa comparação que fazia uma
+      // conversa real (salva sem o 9) nunca aparecer pro lead salvo com o 9.
+      const normVariants = new Set(phoneVariants(normalized));
       const matched = getAllConversationsByClientId(clientId)
         .filter((c) => c.connId === explicitConnId)
-        .filter((c) => {
-          const d = c.phone.replace(/\D/g, "");
-          return d === normalized || d.endsWith(tail9) || normalized.endsWith(d.slice(-9));
-        })
+        .filter((c) => normVariants.has(c.phone.replace(/\D/g, "")))
         .sort((a, b) => b.lastActivity - a.lastActivity);
       for (const conv of matched) {
         const msgs = getHistory(conv.phone, clientId, explicitConnId);
@@ -79,12 +83,11 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   // Necessário quando o lead está em um funil diferente do que recebeu a mensagem.
   if (clientId) {
     const allConvs = getAllConversationsByClientId(clientId);
-    const tail9 = normalized.slice(-9); // últimos 9 dígitos para comparação fuzzy
+    // Mesma correção acima: compara pelas variantes reais do número (ver
+    // comentário no bloco explicitConnId), não pelos últimos N dígitos.
+    const normVariants = new Set(phoneVariants(normalized));
     const matched = allConvs
-      .filter((c) => {
-        const d = c.phone.replace(/\D/g, "");
-        return d === normalized || d.endsWith(tail9) || normalized.endsWith(d.slice(-9));
-      })
+      .filter((c) => normVariants.has(c.phone.replace(/\D/g, "")))
       .sort((a, b) => b.lastActivity - a.lastActivity);
 
     for (const conv of matched) {
@@ -162,12 +165,11 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     // é a conexão que de fato já trocou mensagens com o lead (histórico e token
     // corretos), evitando enviar/salvar por uma conexão duplicada/desativada.
     if (!wppSession && !evoSession && !connId) {
-      const tail9 = normalized.slice(-9);
+      // Mesma correção do GET acima: compara pelas variantes reais do número
+      // (com/sem 9º dígito), não pelos últimos N dígitos.
+      const normVariants = new Set(phoneVariants(normalized));
       const matched = getAllConversationsByClientId(clientId)
-        .filter((c) => {
-          const d = c.phone.replace(/\D/g, "");
-          return d === normalized || d.endsWith(tail9) || normalized.endsWith(d.slice(-9));
-        })
+        .filter((c) => normVariants.has(c.phone.replace(/\D/g, "")))
         .sort((a, b) => b.lastActivity - a.lastActivity);
 
       for (const conv of matched) {
