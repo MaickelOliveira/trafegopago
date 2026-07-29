@@ -1,10 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientById, getAllAgentConfigs, getAgentConfigForConnection } from "@/lib/clients";
+import { getClientById, getAllAgentConfigs, getAgentConfigForConnection, getConfig } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
 
 export const dynamic = "force-dynamic";
+
+// Mostra só os 4 últimos caracteres — o suficiente pra confirmar "é essa chave
+// mesmo" sem expor o segredo completo numa rota sem autenticação.
+function maskKey(key: string | null | undefined): string | null {
+  if (!key) return null;
+  return key.length <= 4 ? "****" : `****${key.slice(-4)}`;
+}
+
+// Mesma ordem de fallback de getGeminiApiKey() em whatsapp-send.ts, mas retorna
+// também a FONTE (pra saber se veio do agente, do config global ou do ambiente)
+// em vez de só o valor — evitando duplicar getGeminiApiKey só pra isso.
+function resolveGeminiKeyWithSource(clientGeminiKey?: string): { source: string; masked: string | null } {
+  const config = getConfig();
+  if (clientGeminiKey) return { source: "agentConfig.geminiApiKey (específica)", masked: maskKey(clientGeminiKey) };
+  if (config.geminiApiKey) return { source: "config global (Configurações)", masked: maskKey(config.geminiApiKey) };
+  if (process.env.GEMINI_API_KEY) return { source: "env GEMINI_API_KEY", masked: maskKey(process.env.GEMINI_API_KEY) };
+  if (process.env.GOOGLE_IMAGEN_API_KEY) return { source: "env GOOGLE_IMAGEN_API_KEY", masked: maskKey(process.env.GOOGLE_IMAGEN_API_KEY) };
+  return { source: "nenhuma configurada", masked: null };
+}
 
 /** Lista, sem expor segredos, as configs relevantes de splitMessages/messageWaitSeconds por conexão. */
 export async function GET(req: NextRequest) {
@@ -46,6 +65,7 @@ export async function GET(req: NextRequest) {
             splitMessages: cfg.splitMessages,
             maxMessageLength: cfg.maxMessageLength,
             messageWaitSeconds: cfg.messageWaitSeconds,
+            geminiKey: resolveGeminiKeyWithSource(cfg.geminiApiKey),
           }
         : null,
     };
@@ -61,5 +81,11 @@ export async function GET(req: NextRequest) {
     followUpEnabled: cfg.followUpEnabled,
   }));
 
-  return NextResponse.json({ clientId, connections, resolved, configs });
+  // O agente de gerenciamento de leads (kanban-agent.ts) NÃO usa
+  // getAgentConfigForConnection — ele sempre lê client.agentConfig?.geminiApiKey
+  // (o campo legado único), independente de quantas conexões/agentConfigs[]
+  // o cliente tiver. Por isso é reportado à parte, não por conexão.
+  const kanbanAgentGeminiKey = resolveGeminiKeyWithSource(client.agentConfig?.geminiApiKey);
+
+  return NextResponse.json({ clientId, connections, resolved, configs, kanbanAgentGeminiKey });
 }
