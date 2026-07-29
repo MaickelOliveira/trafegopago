@@ -104,17 +104,37 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   const [periodo, setPeriodo] = useState<PeriodoFiltro>("mes_atual");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [pixChave, setPixChave] = useState("");
+  const [pixFavorecido, setPixFavorecido] = useState("");
+  const [editingPix, setEditingPix] = useState(false);
+  const [pixDraft, setPixDraft] = useState({ chave: "", favorecido: "" });
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [tiposRes, reservasRes] = await Promise.all([
+    const [tiposRes, reservasRes, configRes] = await Promise.all([
       fetch(`/api/pousada/tipos?clientId=${clientId}`).then((r) => r.json()),
       fetch(`/api/pousada/reservas?clientId=${clientId}`).then((r) => r.json()),
+      fetch(`/api/pousada/config?clientId=${clientId}`).then((r) => r.json()),
     ]);
     setTipos(Array.isArray(tiposRes) ? tiposRes : []);
     setReservas(reservasRes.reservas ?? []);
+    setPixChave(configRes.pixChave ?? "");
+    setPixFavorecido(configRes.pixFavorecido ?? "");
     setLoading(false);
   }, [clientId]);
+
+  async function salvarPix() {
+    const res = await fetch("/api/pousada/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, pixChave: pixDraft.chave, pixFavorecido: pixDraft.favorecido }),
+    });
+    if (res.ok) {
+      setPixChave(pixDraft.chave);
+      setPixFavorecido(pixDraft.favorecido);
+      setEditingPix(false);
+    }
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -225,9 +245,17 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
         >
           🔗 Link do formulário de hóspedes
         </button>
+        {role === "manager" && (
+          <button
+            onClick={() => { setPixDraft({ chave: pixChave, favorecido: pixFavorecido }); setEditingPix(true); }}
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 ml-auto"
+          >
+            💳 Pix
+          </button>
+        )}
         <button
           onClick={() => { setTiposDraft(tipos.length ? [...tipos] : []); setEditingTipos(true); }}
-          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 ml-auto"
+          className={`rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 ${role === "manager" ? "" : "ml-auto"}`}
         >
           ⚙️ Tipos de reserva
         </button>
@@ -334,6 +362,42 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
           <div className="flex gap-2 pt-1">
             <button onClick={saveTipos} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">Salvar</button>
             <button onClick={() => setEditingTipos(false)} className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Editor de Pix — usado na cobrança automática enviada logo após o cliente preencher o formulário de hóspedes */}
+      {editingPix && role === "manager" && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 space-y-4">
+          <div>
+            <p className="text-sm font-semibold text-amber-900">Dados do Pix</p>
+            <p className="text-xs text-amber-800/70 mt-0.5">
+              Usados na mensagem de cobrança enviada automaticamente assim que o cliente preenche o formulário de hóspedes da hospedagem.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Chave Pix</label>
+              <input
+                value={pixDraft.chave}
+                onChange={(e) => setPixDraft((p) => ({ ...p, chave: e.target.value }))}
+                placeholder="Ex: CNPJ 63.529.514/0001-59"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Favorecido</label>
+              <input
+                value={pixDraft.favorecido}
+                onChange={(e) => setPixDraft((p) => ({ ...p, favorecido: e.target.value }))}
+                placeholder="Ex: Vitalli"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={salvarPix} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">Salvar</button>
+            <button onClick={() => setEditingPix(false)} className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">Cancelar</button>
           </div>
         </div>
       )}

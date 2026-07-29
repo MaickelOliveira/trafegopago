@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGuestFormByToken, submitGuestForm, type GuestFormPessoa } from "@/lib/guest-forms";
-import { getConfig } from "@/lib/clients";
+import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
+import { getGeminiApiKey, sendMessage } from "@/lib/whatsapp-send";
+import { addMessage, getHistory } from "@/lib/conversations";
+import { getLeadByPhone } from "@/lib/leads";
+import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
+import { processKanbanActions } from "@/lib/kanban-agent";
 
 export const dynamic = "force-dynamic";
 
@@ -21,10 +26,6 @@ export async function GET(_req: NextRequest, { params }: { params: Params }) {
 }
 
 // POST /api/guest-forms/[token] — público, o cliente envia os dados de cada hóspede.
-// Depois de salvar, injeta os dados como se fosse uma mensagem do cliente na
-// MESMA conversa do WhatsApp — a IA processa normalmente (regra 15 do prompt:
-// agradece, pede o pagamento e chama enviar_resumo), sem nenhum código novo
-// de "retomada" — reaproveita 100% do pipeline já existente do webhook.
 export async function POST(req: NextRequest, { params }: { params: Params }) {
   const { token } = await params;
   const form = getGuestFormByToken(token);
@@ -42,24 +43,122 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
 
   const resumoTexto = formatPessoasParaConversa(pessoas);
 
-  // "Retoma" a conversa chamando o próprio webhook da conexão, como se fosse
-  // uma mensagem normal do cliente — reusa toda a lógica de agente/pousada/
-  // planilha já existente, sem duplicar nada disso aqui. Cada provider tem um
-  // formato de rota E de payload diferente, então o corpo sintético precisa
-  // ser montado no formato que aquele webhook específico sabe interpretar.
-  const appBaseUrl = getConfig().appBaseUrl?.replace(/\/$/, "");
-  if (appBaseUrl && form.connId) {
-    const { url, body } = buildResumePayload(appBaseUrl, form.connId, form.connType, form.phone, resumoTexto);
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }).catch((e) => console.error("[guest-forms] erro ao retomar conversa:", e));
-  } else {
-    console.warn(`[guest-forms] Não foi possível retomar a conversa — appBaseUrl=${!!appBaseUrl} connId=${form.connId}`);
+  // ── Cobrança determinística (preferida) ──────────────────────────────────
+  // Em vez de depender da IA conversacional acertar "confirmar dados + repetir
+  // valor + Pix" toda vez (já falhou várias vezes na prática — respostas
+  // genéricas tipo "fico à disposição" sem valor nem Pix), quando o cliente
+  // tem o sistema de Pousada habilitado E o Pix configurado, o PRÓPRIO CÓDIGO
+  // extrai o valor da reserva e monta/envia essa mensagem — sem depender do
+  // modelo de linguagem pra esse passo crítico. Cai no fluxo antigo (IA
+  // conversacional) só quando falta alguma dessas condições.
+  const sentDeterministically = await tryChargeMessage(form.clientId, form.phone, form.connId ?? null, resumoTexto);
+
+  if (!sentDeterministically) {
+    // ── Fluxo antigo — "retoma" a conversa chamando o próprio webhook da
+    // conexão, como se fosse uma mensagem normal do cliente, deixando a IA
+    // conversacional responder do jeito dela.
+    const appBaseUrl = getConfig().appBaseUrl?.replace(/\/$/, "");
+    if (appBaseUrl && form.connId) {
+      const { url, body } = buildResumePayload(appBaseUrl, form.connId, form.connType, form.phone, resumoTexto);
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).catch((e) => console.error("[guest-forms] erro ao retomar conversa:", e));
+    } else {
+      console.warn(`[guest-forms] Não foi possível retomar a conversa — appBaseUrl=${!!getConfig().appBaseUrl} connId=${form.connId}`);
+    }
   }
 
   return NextResponse.json({ ok: true });
+}
+
+// Tenta o caminho determinístico: extrai o valor da reserva de hospedagem
+// recém-completada e envia a cobrança (valor + Pix) diretamente, sem passar
+// pela IA conversacional. Retorna true se conseguiu enviar, false se deve
+// cair no fluxo antigo (IA responde na conversa normalmente).
+async function tryChargeMessage(
+  clientId: string,
+  phone: string,
+  connId: string | null,
+  resumoTexto: string,
+): Promise<boolean> {
+  const client = getClientById(clientId);
+  if (!client?.enabledSystems?.includes("pousada") || !client.pousadaTipos?.length) return false;
+  if (!client.pousadaPixChave?.trim() || !client.pousadaPixFavorecido?.trim()) return false;
+
+  const tipoHospedagem = client.pousadaTipos.find((t) => t.categoria === "hospedagem");
+  if (!tipoHospedagem) return false;
+
+  // Lead pausado (atendente já assumiu manualmente) — não manda cobrança
+  // automática por cima, deixa o humano conduzir. Não conta como "não
+  // conseguiu enviar" pro efeito de fallback: aqui a decisão certa É não
+  // mandar nada automaticamente, então retorna true pra NÃO cair no fluxo
+  // antigo (que tentaria acionar a IA, também indevido nesse caso).
+  const lead = getLeadByPhone(clientId, phone);
+  if (lead?.aiPaused) return true;
+
+  const agentCfg = getAgentConfigForConnection(client, connId);
+  const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
+  if (!apiKey) return false;
+
+  // Grava a mensagem do cliente (dados do formulário) no histórico ANTES de
+  // extrair — a extração lê o histórico completo pra montar a reserva.
+  const historyAntes = getHistory(phone, clientId, connId ?? undefined);
+  addMessage(phone, { role: "user", content: resumoTexto, ts: Date.now() }, clientId, { connId: connId ?? undefined });
+  const historyDepois = getHistory(phone, clientId, connId ?? undefined);
+
+  // Movimenta o Kanban normalmente (mesmo efeito que uma mensagem real do
+  // WhatsApp teria) — não bloqueia o restante do fluxo.
+  processKanbanActions(resumoTexto, historyAntes, clientId, phone).catch(() => {});
+
+  let valorTotal = 0;
+  try {
+    const affected = await extractAndWriteToPousada({
+      apiKey,
+      clientId,
+      tipos: client.pousadaTipos,
+      totalQuartos: client.pousadaTotalQuartos ?? 0,
+      messages: historyDepois,
+      phone,
+      motivo: "DADOS RECEBIDOS: formulário de hóspedes preenchido",
+    });
+    const reserva = affected.find((r) => r.tipo === tipoHospedagem.slug) ?? affected[0];
+    valorTotal = reserva?.valorTotal ?? 0;
+  } catch (e) {
+    console.error("[guest-forms] erro ao extrair reserva pra cobrança determinística:", e instanceof Error ? e.message : e);
+  }
+
+  if (!valorTotal) {
+    // Não conseguiu determinar o valor — melhor deixar a IA conversacional
+    // tentar (ela pode reler a conversa e achar o valor já dito antes) do que
+    // mandar uma cobrança sem número nenhum.
+    console.warn(`[guest-forms] valorTotal não encontrado — caindo no fluxo antigo (IA) — clientId=${clientId} phone=${phone}`);
+    return false;
+  }
+
+  const entrada = Math.round(valorTotal * 0.5 * 100) / 100;
+  const mensagem = `Recebi seus dados do formulário! 😊
+
+Para garantirmos sua reserva, o próximo passo é o pagamento da entrada de 50% do valor total, que corresponde a R$ ${entrada.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.
+
+Dados para o Pix:
+Chave: ${client.pousadaPixChave}
+Favorecido: ${client.pousadaPixFavorecido}
+
+Após o pagamento, envie o comprovante aqui para que possamos confirmar sua reserva. 😊
+
+⚠️ A reserva só é concluída após a confirmação do pagamento.`;
+
+  const realPhone = lead?.realPhone ?? phone;
+  // sendMessage() nunca pausa a IA (diferente do envio manual pelo inbox) —
+  // é o próprio sistema falando, não um atendente assumindo a conversa, então
+  // a IA deve continuar respondendo normalmente daqui pra frente.
+  const ok = await sendMessage(realPhone, mensagem, clientId, connId ?? undefined);
+  if (ok) {
+    addMessage(phone, { role: "assistant", content: mensagem, ts: Date.now() }, clientId, { connId: connId ?? undefined });
+  }
+  return ok;
 }
 
 function buildResumePayload(

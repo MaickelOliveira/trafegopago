@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ChatMessage } from "./conversations";
-import type { PousadaTipo, Pessoa, StatusReserva } from "./pousada-types";
+import type { PousadaTipo, Pessoa, Reserva, StatusReserva } from "./pousada-types";
 import { createReserva, updateReserva, findReservaByPhone, atribuirQuartoLivre } from "./pousada";
 
 function parseMoney(val: string | number | undefined): number {
@@ -96,13 +96,18 @@ export async function extractAndWriteToPousada(opts: {
   messages: ChatMessage[];
   phone: string;
   motivo?: string;
-}): Promise<void> {
+}): Promise<Reserva[]> {
   const { apiKey, clientId, tipos, totalQuartos = 0, messages, phone, motivo } = opts;
+  // Reservas criadas/atualizadas nesta chamada — devolvidas pro chamador poder
+  // ler valorTotal/tipo direto (ex: montar a mensagem de cobrança
+  // deterministicamente após o formulário de hóspedes, sem depender da IA
+  // conversacional acertar isso na resposta).
+  const affected: Reserva[] = [];
 
   const isPagamento = !!(motivo && /^PAGAMENTO PIX:/i.test(motivo.trim()));
   console.log(`[pousada-extractor] iniciando — clientId=${clientId} phone=${phone} messages=${messages.length} mode=${isPagamento ? "UPDATE(pagamento)" : "INSERT(dados)"}`);
 
-  if (!messages.length || !tipos.length) return;
+  if (!messages.length || !tipos.length) return affected;
 
   // Janela grande o suficiente pra cobrir reservas que o cliente complementa
   // em visitas separadas (ex: manda 9 hóspedes num dia, volta noutro dia e
@@ -144,7 +149,7 @@ export async function extractAndWriteToPousada(opts: {
   }
   if (!text) {
     console.warn("[pousada-extractor] Todos os modelos Gemini falharam — abortando");
-    return;
+    return affected;
   }
 
   const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -153,11 +158,11 @@ export async function extractAndWriteToPousada(opts: {
     rows = JSON.parse(jsonStr);
     if (!Array.isArray(rows) || rows.length === 0) {
       console.log("[pousada-extractor] Nenhum dado para registrar");
-      return;
+      return affected;
     }
   } catch {
     console.warn("[pousada-extractor] JSON inválido:", jsonStr.slice(0, 200));
-    return;
+    return affected;
   }
 
   const tipoSlugs = new Set(tipos.map((t) => t.slug));
@@ -209,7 +214,8 @@ export async function extractAndWriteToPousada(opts: {
           patch.valorPago = valorPago;
           patch.faltaPagar = Math.max(existing.valorTotal - valorPago, 0);
         }
-        updateReserva(existing.id, patch);
+        const updated = updateReserva(existing.id, patch);
+        if (updated) affected.push(updated);
         console.log(`[pousada-extractor] updateReserva OK id=${existing.id} status=${status}`);
       } catch (e) {
         console.error("[pousada-extractor] updateReserva ERRO:", e instanceof Error ? e.message : e);
@@ -267,7 +273,7 @@ export async function extractAndWriteToPousada(opts: {
           const finalValorTotal = pessoas.length
             ? (sumPessoas(pessoas) || valorTotal || existing.valorTotal)
             : (valorTotal || existing.valorTotal);
-          updateReserva(existing.id, {
+          const updated = updateReserva(existing.id, {
             data: dataReserva,
             dataCheckout: (row.dataCheckout as string) ?? existing.dataCheckout,
             quarto: resolveQuarto((row.quarto as string) ?? existing.quarto),
@@ -280,6 +286,7 @@ export async function extractAndWriteToPousada(opts: {
             observacoes: (row.observacoes as string) ?? existing.observacoes,
             ...(alreadyPaid ? {} : { status: "pendente" as StatusReserva, valorPago: 0, faltaPagar: finalValorTotal }),
           });
+          if (updated) affected.push(updated);
           console.log(`[pousada-extractor] updateReserva (evitou duplicar) OK id=${existing.id} responsável="${responsavel.nome}" pessoas=${finalPessoas.length}`);
         } else {
           const created = createReserva({
@@ -299,6 +306,7 @@ export async function extractAndWriteToPousada(opts: {
             observacoes: row.observacoes as string | undefined,
             origem: "ia",
           });
+          affected.push(created);
           console.log(`[pousada-extractor] createReserva OK id=${created.id} responsável="${responsavel.nome}" quarto=${created.quarto ?? "—"}`);
         }
       } catch (e) {
@@ -306,4 +314,5 @@ export async function extractAndWriteToPousada(opts: {
       }
     }
   }
+  return affected;
 }
