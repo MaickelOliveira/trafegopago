@@ -79,7 +79,20 @@ export async function GET(req: NextRequest) {
     maxMessageLength: cfg.maxMessageLength,
     messageWaitSeconds: cfg.messageWaitSeconds,
     followUpEnabled: cfg.followUpEnabled,
+    dailySummaryEnabled: cfg.dailySummaryEnabled,
+    dailySummaryTime: cfg.dailySummaryTime,
+    dailySummaryLastSentDate: cfg.dailySummaryLastSentDate,
+    aiAutoResumeEnabled: cfg.aiAutoResumeEnabled,
+    aiAutoResumeMode: cfg.aiAutoResumeMode,
+    aiAutoResumeHours: cfg.aiAutoResumeHours,
   }));
+
+  // Leads pausados deste cliente e há quanto tempo — útil pra diagnosticar
+  // a reativação automática sem expor dados sensíveis além do necessário.
+  const { getLeads } = await import("@/lib/leads");
+  const leadsPausados = getLeads(clientId)
+    .filter((l) => l.aiPaused)
+    .map((l) => ({ id: l.id, phone: l.phone, aiPausedAt: l.aiPausedAt ?? null }));
 
   // O agente de gerenciamento de leads (kanban-agent.ts) NÃO usa
   // getAgentConfigForConnection — ele sempre lê client.agentConfig?.geminiApiKey
@@ -87,5 +100,5 @@ export async function GET(req: NextRequest) {
   // o cliente tiver. Por isso é reportado à parte, não por conexão.
   const kanbanAgentGeminiKey = resolveGeminiKeyWithSource(client.agentConfig?.geminiApiKey);
 
-  return NextResponse.json({ clientId, connections, resolved, configs, kanbanAgentGeminiKey });
+  return NextResponse.json({ clientId, connections, resolved, configs, kanbanAgentGeminiKey, leadsPausados });
 }

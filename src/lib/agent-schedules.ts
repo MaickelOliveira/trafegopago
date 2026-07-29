@@ -101,9 +101,21 @@ export function reativarIaAutomaticamente(): number {
     const activeCfg = getAllAgentConfigs(client).find((c) => c.aiAutoResumeEnabled);
     if (!activeCfg) continue;
 
-    const leadsPausados = getLeads(client.id).filter((l) => l.aiPaused && l.aiPausedAt);
+    // Leads pausados ANTES dessa função existir nunca tiveram aiPausedAt
+    // carimbado (o carimbo só acontece na transição aiPaused:false→true em
+    // updateLead/upsertLeadByPhone) — exigir aiPausedAt aqui os deixava
+    // pausados pra sempre, nunca elegíveis pra reativação automática.
+    const leadsPausados = getLeads(client.id).filter((l) => l.aiPaused);
     for (const lead of leadsPausados) {
-      const pausedAtMs = new Date(lead.aiPausedAt!).getTime();
+      if (!lead.aiPausedAt) {
+        // Carimba agora em vez de assumir "pausado há muito tempo" — evita
+        // reativar de uma hora pra outra vários leads antigos que um
+        // atendente ainda pode estar tratando; a partir daqui passam a
+        // contar normalmente pro modo configurado (duração ou meia-noite).
+        updateLead(lead.id, { aiPausedAt: new Date().toISOString() });
+        continue;
+      }
+      const pausedAtMs = new Date(lead.aiPausedAt).getTime();
       const shouldResume = activeCfg.aiAutoResumeMode === "midnight"
         ? pausedAtMs < startOfTodayMs // reseta tudo que ficou pausado de um dia pro outro
         : (now - pausedAtMs) >= (activeCfg.aiAutoResumeHours ?? 24) * 3600000;
