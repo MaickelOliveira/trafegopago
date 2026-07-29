@@ -483,7 +483,30 @@ export function splitMessage(text: string, maxLen = 300): string[] {
       merged.push(chunk);
     }
   }
-  return merged;
+
+  // Pós-processamento: nunca deixa uma bolha terminar com parênteses "abertos"
+  // (ex: "...no domingo (dia" | "16) ou..." — já aconteceu na prática com o
+  // Vitalli). Se uma bolha tem mais "(" do que ")", gruda ela na próxima até
+  // fechar — mesma ideia do merge de fragmento curto acima, mas para parênteses.
+  const unclosedParens = (s: string) => {
+    let depth = 0;
+    for (const ch of s) {
+      if (ch === "(") depth++;
+      else if (ch === ")") depth = Math.max(0, depth - 1);
+    }
+    return depth;
+  };
+  const parenFixed: string[] = [];
+  for (const chunk of merged) {
+    const last = parenFixed[parenFixed.length - 1];
+    if (last !== undefined && unclosedParens(last) > 0) {
+      const sep = /[\s\n]$/.test(last) ? "" : " ";
+      parenFixed[parenFixed.length - 1] = last + sep + chunk;
+    } else {
+      parenFixed.push(chunk);
+    }
+  }
+  return parenFixed;
 }
 
 export async function getPairingCode(token: string, phone: string): Promise<string | null> {
