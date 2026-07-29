@@ -68,6 +68,11 @@ type AgentCfg = {
   sheetMappings?: { tipo: string; label: string; tabName: string }[];
   appsScriptUrl?: string;
   metaSummaryTemplateName?: string;
+  dailySummaryEnabled?: boolean;
+  dailySummaryTime?: string;
+  aiAutoResumeEnabled?: boolean;
+  aiAutoResumeMode?: "duration" | "midnight";
+  aiAutoResumeHours?: number;
 };
 
 type SheetTab = { title: string; sheetId: number };
@@ -1431,6 +1436,88 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             </div>
           );
         })()}
+      </div>
+
+      {/* Resumo diário */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
+        <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">📋 Resumo diário</p>
+        <Toggle
+          label="Enviar resumo de todas as conversas do dia"
+          sub="No horário escolhido, manda pros mesmos destinatários de Avisos (acima) um resumo de todas as conversas que tiveram atividade hoje — pra você ver o que aconteceu no dia."
+          checked={cfg.dailySummaryEnabled ?? false}
+          onChange={(v) => setCfg((c) => ({ ...c, dailySummaryEnabled: v }))}
+        />
+        {cfg.dailySummaryEnabled && (
+          <div className="pl-1">
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Horário de disparo</label>
+            <input
+              type="time"
+              value={cfg.dailySummaryTime ?? "17:00"}
+              onChange={(e) => setCfg((c) => ({ ...c, dailySummaryTime: e.target.value }))}
+              className="mt-1 w-40 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            <p className="text-xs text-slate-400 mt-1">Ex: 17:00 — dispara todo dia nesse horário, uma vez por dia.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Reativação automática da IA */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
+        <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">⏰ Reativação automática da IA</p>
+        <Toggle
+          label="Reativar a IA sozinha depois de um tempo"
+          sub="Se não marcar essa opção, um lead que teve a IA pausada (ex: um atendente assumiu a conversa) continua pausado até alguém reativar manualmente — nada muda no comportamento atual."
+          checked={cfg.aiAutoResumeEnabled ?? false}
+          onChange={(v) => setCfg((c) => ({ ...c, aiAutoResumeEnabled: v }))}
+        />
+        {cfg.aiAutoResumeEnabled && (
+          <div className="space-y-3 pl-1">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCfg((c) => ({ ...c, aiAutoResumeMode: "duration" }))}
+                className={clsx(
+                  "flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition",
+                  (cfg.aiAutoResumeMode ?? "duration") === "duration"
+                    ? "border-amber-400 bg-amber-50 text-amber-700"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                Depois de X horas/dias
+              </button>
+              <button
+                type="button"
+                onClick={() => setCfg((c) => ({ ...c, aiAutoResumeMode: "midnight" }))}
+                className={clsx(
+                  "flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition",
+                  cfg.aiAutoResumeMode === "midnight"
+                    ? "border-amber-400 bg-amber-50 text-amber-700"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                Resetar todo dia à meia-noite
+              </button>
+            </div>
+
+            {(cfg.aiAutoResumeMode ?? "duration") === "duration" ? (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Reativar depois de quantas horas?</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="number"
+                    min={1}
+                    value={cfg.aiAutoResumeHours ?? 24}
+                    onChange={(e) => setCfg((c) => ({ ...c, aiAutoResumeHours: Math.max(1, Number(e.target.value) || 1) }))}
+                    className="w-28 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  <span className="text-sm text-slate-500">horas ({((cfg.aiAutoResumeHours ?? 24) / 24).toFixed(1)} dia(s))</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">Toda vez que o relógio virar meia-noite, qualquer lead que ainda estiver com a IA pausada de um dia anterior volta a ser atendido pela IA normalmente.</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cron */}

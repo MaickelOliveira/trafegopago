@@ -10,6 +10,7 @@ import { sendMessage, getGeminiApiKey } from "./whatsapp-send";
 import { runGeminiAgent, generateFollowUpAI } from "./gemini-agent";
 import { addMessage, getHistory, setAiPaused, type ChatMessage } from "./conversations";
 import { runScheduledDailyAutomations, processDueCrmAutomationJobs } from "./crm-automations";
+import { runDailySummaries, reativarIaAutomaticamente } from "./agent-schedules";
 import { getLeadByPhone, updateLead } from "./leads";
 import { getFunnels, getFunnelById } from "./funnels";
 import { getTemplateById, sendTemplate } from "./waba-templates";
@@ -134,6 +135,7 @@ function resolveAgentConfig(allCfgs: AgentConfig[], stepId: string | undefined):
 export async function processDueFollowUpsAndBatches(): Promise<{
   processed: number; skipped: number; total: number; batchesProcessed: number;
   crmJobsProcessed: number; crmJobsFailed: number;
+  dailySummariesSent: number; aiAutoResumed: number;
 }> {
   const due = claimDueFollowUps();
   let processed = 0;
@@ -316,5 +318,21 @@ export async function processDueFollowUpsAndBatches(): Promise<{
   // sobrevivem a restart do servidor, diferente do setTimeout puro de antes) ──
   const { processed: crmJobsProcessed, failed: crmJobsFailed } = await processDueCrmAutomationJobs();
 
-  return { processed, skipped, total: due.length, batchesProcessed, crmJobsProcessed, crmJobsFailed };
+  // ── Resumo diário do Agente IA (só clientes com dailySummaryEnabled) ─────
+  let dailySummariesSent = 0;
+  try {
+    dailySummariesSent = await runDailySummaries();
+  } catch (e) {
+    console.error("[cron-tasks] Erro no resumo diário:", e);
+  }
+
+  // ── Reativação automática da IA (só clientes com aiAutoResumeEnabled) ────
+  let aiAutoResumed = 0;
+  try {
+    aiAutoResumed = reativarIaAutomaticamente();
+  } catch (e) {
+    console.error("[cron-tasks] Erro na reativação automática da IA:", e);
+  }
+
+  return { processed, skipped, total: due.length, batchesProcessed, crmJobsProcessed, crmJobsFailed, dailySummariesSent, aiAutoResumed };
 }

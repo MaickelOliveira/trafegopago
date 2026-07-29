@@ -73,6 +73,18 @@ export type AgentConfig = {
   sheetTabName?: string;         // Legado — aba única; use sheetMappings para múltiplas abas
   sheetMappings?: SheetTabMapping[]; // Mapeamento tipo-de-reserva → aba da planilha
   appsScriptUrl?: string;        // URL do Google Apps Script para preenchimento da planilha (gratuito, sem OAuth)
+
+  // ── Resumo diário ── envia pra avisos[] (mesmos destinatários do enviar_resumo)
+  // um resumo de todas as conversas do dia, no horário configurado.
+  dailySummaryEnabled?: boolean;      // Liga/desliga o resumo diário
+  dailySummaryTime?: string;          // "HH:MM" — horário de disparo (ex: "17:00")
+  dailySummaryLastSentDate?: string;  // "AAAA-MM-DD" — evita reenviar no mesmo dia
+
+  // ── Reativação automática da IA ── só funciona se aiAutoResumeEnabled=true;
+  // se não estiver marcado, a IA pausada continua pausada até reativação manual.
+  aiAutoResumeEnabled?: boolean;
+  aiAutoResumeMode?: "duration" | "midnight"; // "duration" = X horas depois de pausar; "midnight" = reativa tudo à meia-noite
+  aiAutoResumeHours?: number;          // usado quando aiAutoResumeMode === "duration"
 };
 
 export type SheetTabMapping = {

@@ -57,6 +57,7 @@ export type Lead = {
   notes: string;
   ai: LeadAI | null;
   aiPaused?: boolean; // IA pausada para esta conversa (especialista assumiu)
+  aiPausedAt?: string | null; // timestamp de quando aiPaused virou true — usado pela reativação automática (ver reativarIaAutomaticamente em cron-tasks.ts)
   followUpDisabled?: boolean; // Follow-up automático desativado só para este lead
   isLid?: boolean;    // Contato usa LID interno do WhatsApp (novo protocolo) — envia com isLid:true
   realPhone?: string; // Número real resolvido do contato LID (para exibição)
@@ -244,6 +245,11 @@ export function updateLead(id: string, patch: Partial<Omit<Lead, "id" | "created
   const normalizedPatch = { ...patch };
   if (normalizedPatch.phone) normalizedPatch.phone = normalizePhone(normalizedPatch.phone);
   if (normalizedPatch.realPhone) normalizedPatch.realPhone = normalizePhone(normalizedPatch.realPhone);
+  // Carimba (ou limpa) aiPausedAt centralizado aqui — usado pela reativação
+  // automática da IA (cron-tasks.ts) pra saber há quanto tempo está pausada,
+  // sem precisar duplicar essa lógica em cada chamador que pausa/retoma a IA.
+  if (normalizedPatch.aiPaused === true) normalizedPatch.aiPausedAt = new Date().toISOString();
+  else if (normalizedPatch.aiPaused === false) normalizedPatch.aiPausedAt = null;
   leads[idx] = { ...leads[idx], ...normalizedPatch, updatedAt: new Date().toISOString() };
   save(leads);
   return leads[idx];
@@ -316,6 +322,9 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
       patch = { ...patch };
       delete (patch as Partial<Lead> & { name?: string }).name;
     }
+    // Mesmo carimbo de aiPausedAt de updateLead() — ver comentário lá.
+    if (patch.aiPaused === true) patch = { ...patch, aiPausedAt: now };
+    else if (patch.aiPaused === false) patch = { ...patch, aiPausedAt: null };
     leads[idx] = { ...leads[idx], ...patch, updatedAt: now };
     save(leads);
     return leads[idx];
