@@ -124,18 +124,29 @@ export function getOcupacaoPorData(clientId: string, data: string): OcupacaoQuar
     .map((r) => ({ quarto: r.quarto!, reserva: r }));
 }
 
+// Reservas (com quarto) que ocupam QUALQUER dia do intervalo [dataInicio,
+// dataFim] — usado tanto pelo seletor visual de quarto no modal de reserva
+// quanto por quartosOcupadosNoPeriodo/atribuirQuartoLivre abaixo.
+// excludeId permite ignorar a própria reserva sendo editada, senão ela
+// apareceria "ocupando" o quarto que já é dela mesma.
+export function getOcupacaoPorPeriodo(
+  clientId: string,
+  dataInicio: string,
+  dataFim: string,
+  excludeId?: string,
+): OcupacaoQuarto[] {
+  return getReservas(clientId)
+    .filter((r) => r.quarto && !r.arquivada && r.status !== "cancelada" && r.id !== excludeId)
+    // Dois intervalos se sobrepõem se início de um <= fim do outro nos dois sentidos.
+    .filter((r) => dataInicio <= (r.dataCheckout ?? r.data) && dataFim >= r.data)
+    .map((r) => ({ quarto: r.quarto!, reserva: r }));
+}
+
 // Quartos ocupados em QUALQUER dia do intervalo [dataInicio, dataFim] — usado
 // pra achar o primeiro quarto livre pro período todo da nova reserva, não só
 // pra um dia isolado (ver atribuirQuartoLivre).
 function quartosOcupadosNoPeriodo(clientId: string, dataInicio: string, dataFim: string): Set<string> {
-  const ocupados = new Set<string>();
-  for (const r of getReservas(clientId)) {
-    if (!r.quarto || r.arquivada || r.status === "cancelada") continue;
-    const fimR = r.dataCheckout ?? r.data;
-    // Dois intervalos se sobrepõem se início de um <= fim do outro nos dois sentidos.
-    if (dataInicio <= fimR && dataFim >= r.data) ocupados.add(r.quarto);
-  }
-  return ocupados;
+  return new Set(getOcupacaoPorPeriodo(clientId, dataInicio, dataFim).map((o) => o.quarto));
 }
 
 // Atribui automaticamente o primeiro quarto/chalé livre (1..totalQuartos) pro

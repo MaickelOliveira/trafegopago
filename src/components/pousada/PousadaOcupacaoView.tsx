@@ -166,8 +166,24 @@ export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role
               <p><span className="text-slate-400">Responsável:</span> {selecionado.reserva.responsavel.nome}</p>
               <p><span className="text-slate-400">Check-in:</span> {new Date(selecionado.reserva.data + "T00:00:00").toLocaleDateString("pt-BR")}</p>
               <p><span className="text-slate-400">Check-out:</span> {selecionado.reserva.dataCheckout ? new Date(selecionado.reserva.dataCheckout + "T00:00:00").toLocaleDateString("pt-BR") : "—"}</p>
-              <p><span className="text-slate-400">Pessoas:</span> {selecionado.reserva.pessoas.length}</p>
               <p><span className="text-slate-400">Status:</span> {selecionado.reserva.status}</p>
+            </div>
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <p className="text-xs font-medium text-slate-500 mb-2">Hóspedes ({selecionado.reserva.pessoas.length})</p>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {selecionado.reserva.pessoas.map((p, i) => (
+                  <div key={i} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                    <p className="font-medium text-slate-800">{p.nome}</p>
+                    <p className="text-xs text-slate-500">
+                      {[
+                        p.cpf ? `CPF: ${p.cpf}` : null,
+                        typeof p.idade === "number" ? `${p.idade} anos` : null,
+                        p.telefone ? `Tel: ${p.telefone}` : null,
+                      ].filter(Boolean).join(" · ") || "—"}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

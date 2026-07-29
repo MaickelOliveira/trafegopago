@@ -4,6 +4,8 @@ import { useState } from "react";
 import { clsx } from "clsx";
 import type { Reserva, Pessoa, PousadaTipo, StatusReserva } from "@/lib/pousada-types";
 
+type QuartoOcupado = { quarto: string; reserva: Reserva };
+
 type PessoaForm = Pessoa & { _expanded?: boolean };
 
 function emptyPessoa(): PessoaForm {
@@ -49,6 +51,30 @@ export function ReservaModal({
     initial?.pessoas?.length ? initial.pessoas.map((p) => ({ ...p, _expanded: false })) : [emptyPessoa()]
   );
   const [saving, setSaving] = useState(false);
+
+  // Seletor visual de quarto/chalé — mesma ideia do mapa de Ocupação, mas
+  // restrito ao período [data, dataCheckout] desta reserva, pra saber na hora
+  // quais quartos estão livres pro intervalo inteiro (não só o dia do check-in).
+  const [quartoPicker, setQuartoPicker] = useState<{
+    loading: boolean;
+    total: number;
+    ocupados: Map<string, Reserva>;
+  } | null>(null);
+
+  async function abrirQuartoPicker() {
+    setQuartoPicker({ loading: true, total: 0, ocupados: new Map() });
+    const params = new URLSearchParams({
+      clientId,
+      data: form.data,
+      dataFim: form.dataCheckout || form.data,
+    });
+    if (initial?.id) params.set("excludeId", initial.id);
+    const res = await fetch(`/api/pousada/ocupacao?${params}`).then((r) => r.json());
+    const ocupados = new Map<string, Reserva>(
+      (res.ocupados as QuartoOcupado[] ?? []).map((o) => [o.quarto, o.reserva])
+    );
+    setQuartoPicker({ loading: false, total: res.totalQuartos ?? 0, ocupados });
+  }
 
   const categoria = tipos.find((t) => t.slug === form.tipo)?.categoria ?? "evento";
   const isHospedagem = categoria === "hospedagem";
@@ -175,9 +201,16 @@ export function ReservaModal({
             {isHospedagem && (
               <div>
                 <label className="text-xs font-medium text-slate-600 block mb-1">Quarto/Chalé</label>
-                <input value={form.quarto} onChange={(e) => setForm((f) => ({ ...f, quarto: e.target.value }))}
-                  placeholder="Ex: 12"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+                <button
+                  type="button"
+                  onClick={abrirQuartoPicker}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-left outline-none hover:border-amber-400 flex items-center justify-between"
+                >
+                  <span className={form.quarto ? "text-slate-900 font-medium" : "text-slate-400"}>
+                    {form.quarto || "Escolher quarto/chalé"}
+                  </span>
+                  <span className="text-slate-400 text-xs">🔎</span>
+                </button>
               </div>
             )}
             <div className="col-span-2">
@@ -365,6 +398,64 @@ export function ReservaModal({
           </button>
         </div>
       </div>
+
+      {quartoPicker && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setQuartoPicker(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-semibold text-slate-900">Escolher quarto/chalé</h3>
+              <button onClick={() => setQuartoPicker(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">
+              Disponibilidade para {form.data ? new Date(form.data + "T00:00:00").toLocaleDateString("pt-BR") : "—"}
+              {form.dataCheckout && form.dataCheckout !== form.data ? ` até ${new Date(form.dataCheckout + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}
+            </p>
+
+            {quartoPicker.loading ? (
+              <p className="text-sm text-slate-400 py-4">Carregando...</p>
+            ) : quartoPicker.total === 0 ? (
+              <p className="text-sm text-slate-400 py-4">
+                Nenhum quarto/chalé cadastrado ainda — configure o total na tela de Ocupação.
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center gap-4 text-xs text-slate-500 mb-2">
+                  <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-green-400 inline-block" /> Livre</span>
+                  <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-400 inline-block" /> Ocupado</span>
+                </div>
+                <div className="grid grid-cols-6 gap-2 max-h-72 overflow-y-auto">
+                  {Array.from({ length: quartoPicker.total }, (_, i) => String(i + 1)).map((q) => {
+                    const reserva = quartoPicker.ocupados.get(q);
+                    const selecionado = form.quarto === q;
+                    return (
+                      <button
+                        key={q}
+                        type="button"
+                        disabled={!!reserva}
+                        title={reserva ? `Ocupado por ${reserva.responsavel.nome}` : "Livre"}
+                        onClick={() => {
+                          setForm((f) => ({ ...f, quarto: q }));
+                          setQuartoPicker(null);
+                        }}
+                        className={clsx(
+                          "rounded-lg py-3 text-sm font-semibold text-center transition border-2",
+                          reserva
+                            ? "bg-red-100 text-red-700 cursor-not-allowed border-transparent"
+                            : selecionado
+                              ? "bg-amber-100 text-amber-800 border-amber-500"
+                              : "bg-green-50 text-green-700 hover:bg-green-100 border-transparent cursor-pointer"
+                        )}
+                      >
+                        {q}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
