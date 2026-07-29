@@ -14,6 +14,7 @@ import { markPhoneSending } from "./wppconnect-sent";
 import { addMessage } from "./conversations";
 import { getTemplates, sendTemplate } from "./waba-templates";
 import type { TemplateComponent } from "./waba-templates";
+import { currentHHMMBrasilia } from "./timezone";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -544,8 +545,11 @@ export function runAutomationsForMessage(clientId: string, lead: Lead, messageTe
  * Dispara para todos os leads ativos nas colunas configuradas cujo scheduledTime == hora atual.
  */
 export function runScheduledDailyAutomations() {
-  const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  // Horário configurado pelo gestor é sempre pensado em Brasília — usar
+  // getHours()/getMinutes() (hora local do processo Node) quebra o disparo se
+  // o servidor rodar em UTC (comum em containers sem TZ configurado): o
+  // horário nunca bate com o esperado, deslocado em 3h. Ver src/lib/timezone.ts.
+  const currentTime = currentHHMMBrasilia();
 
   const all = getAutomations().filter((a) => {
     if (!a.active) return false;

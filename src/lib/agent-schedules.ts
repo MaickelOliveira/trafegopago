@@ -5,15 +5,7 @@ import { getClients, getAllAgentConfigs, upsertAgentConfigForConnection } from "
 import { getLeads, getLeadByPhone, updateLead } from "./leads";
 import { getAllConversationsByClientId, setAiPaused } from "./conversations";
 import { sendMessage } from "./whatsapp-send";
-
-function currentHHMM(): string {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-}
-
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { currentHHMMBrasilia, todayISOBrasilia, startOfTodayBrasiliaMs, dateISOBrasilia } from "./timezone";
 
 // Mesma janela de tolerância (±1min) usada em runScheduledDailyAutomations —
 // o tick roda a cada 60s, então o horário exato pode cair entre dois ticks.
@@ -31,8 +23,8 @@ function timeMatches(configured: string, current: string): boolean {
  */
 export async function runDailySummaries(): Promise<number> {
   let sent = 0;
-  const today = todayISO();
-  const nowHHMM = currentHHMM();
+  const today = todayISOBrasilia();
+  const nowHHMM = currentHHMMBrasilia();
 
   for (const client of getClients()) {
     for (const cfg of getAllAgentConfigs(client)) {
@@ -53,7 +45,7 @@ export async function runDailySummaries(): Promise<number> {
       const connId = cfg.whatsappConnectionId;
       const conversas = getAllConversationsByClientId(client.id)
         .filter((c) => (connId ? c.connId === connId : true))
-        .filter((c) => new Date(c.lastActivity).toISOString().slice(0, 10) === today)
+        .filter((c) => dateISOBrasilia(c.lastActivity) === today)
         .sort((a, b) => b.lastActivity - a.lastActivity);
 
       if (conversas.length > 0) {
@@ -93,9 +85,7 @@ export async function runDailySummaries(): Promise<number> {
 export function reativarIaAutomaticamente(): number {
   let count = 0;
   const now = Date.now();
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfTodayMs = startOfToday.getTime();
+  const startOfTodayMs = startOfTodayBrasiliaMs();
 
   for (const client of getClients()) {
     const activeCfg = getAllAgentConfigs(client).find((c) => c.aiAutoResumeEnabled);
