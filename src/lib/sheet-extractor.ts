@@ -137,7 +137,10 @@ export async function extractAndWriteToSheet(opts: {
   // manda mais 8) — com só as últimas 10 mensagens, a lista de pessoas do
   // primeiro dia ficava fora da janela e a extração reconstruía o campo
   // "Pessoas" só com os novos nomes, apagando os antigos ao sobrescrever a linha.
-  const recent = messages.slice(-80);
+  // ⚠️ 30 é um meio-termo — 80 chegou a multiplicar o custo da chamada por ~8x
+  // (e esse extrator roda em paralelo com o da Pousada pra cada enviar_resumo),
+  // gerando um pico visível de uso na API do Gemini.
+  const recent = messages.slice(-30);
   const conversation = recent
     .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 500)}`)
     .join("\n");

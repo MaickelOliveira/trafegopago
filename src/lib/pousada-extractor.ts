@@ -108,7 +108,10 @@ export async function extractAndWriteToPousada(opts: {
   // manda mais 8) — com só as últimas 10 mensagens, a lista de hóspedes do
   // primeiro dia ficava fora da janela e a extração via só os novos, fazendo
   // o merge abaixo sobrescrever a reserva com uma lista incompleta.
-  const recent = messages.slice(-80);
+  // ⚠️ 30 é um meio-termo — 80 chegou a multiplicar o custo da chamada por ~8x
+  // (e esse extrator roda em dobro quando o cliente também grava na planilha
+  // em paralelo), gerando um pico visível de uso na API do Gemini.
+  const recent = messages.slice(-30);
   const conversation = recent
     .map((m) => `${m.role === "user" ? "Cliente" : "Atendente"}: ${m.content.slice(0, 500)}`)
     .join("\n");
