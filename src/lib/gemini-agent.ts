@@ -802,11 +802,33 @@ export async function runGeminiAgent(
     }
   }
 
+  // Vazamento em colchetes tipo "[chamando ferramenta: enviar_resumo]" — o
+  // modelo escreve que VAI chamar/chamou a ferramenta como texto solto, em vez
+  // de invocar a function call nativa. Sem isso, nem o texto vaza (cobrimos
+  // abaixo) nem o resumo_solicitado é gerado — a ferramenta nunca roda de
+  // verdade. Extrai como resumo_solicitado (motivo genérico, já que essa forma
+  // não carrega o motivo) antes de descartar a linha do texto visível.
+  const TOOL_CALL_BRACKET_MENTION = /\[[^\]]*\b(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\b[^\]]*\]/gi;
+  let bracketMatch: RegExpExecArray | null;
+  while ((bracketMatch = TOOL_CALL_BRACKET_MENTION.exec(finalText)) !== null) {
+    if (bracketMatch[1].toLowerCase() === "enviar_resumo" && !actions.some((a) => a.type === "resumo_solicitado")) {
+      console.warn(`[gemini-agent] enviar_resumo vazou como "[chamando ferramenta: ...]" — sem motivo explícito, usando genérico`);
+      actions.push({ type: "resumo_solicitado", motivo: "DADOS RECEBIDOS: extraído de vazamento de tool-call (sem motivo explícito) — verificar conversa", phone });
+    }
+  }
+  finalText = finalText.replace(TOOL_CALL_BRACKET_MENTION, "");
+
   // ── Filtros de conteúdo interno ──────────────────────────────────────────
   const KNOWN_TOOL_CALL   = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*[:(]/;
   const NARRATED_MOTIVO_LINE = /^\*?Motivo:\s*.+$/i;
   const BULLET_MOTIVO_LINE   = /^[•\-–]\s*\*?Motivo:\s*.+$/i;
-  const TOOL_CALL_NARRATION  = /chamada\s+da\s+ferramenta|function\s*call|tool\s*call/i;
+  // "chamada da ferramenta" (nome) e "chamando (a) ferramenta" (gerúndio) —
+  // duas formas que o modelo usa pra narrar a chamada em vez de executá-la.
+  const TOOL_CALL_NARRATION  = /chamad[ao]\s+(da\s+)?ferramenta|chamando\s+(a\s+)?ferramenta|function\s*call|tool\s*call/i;
+  // Narração de que já contatou/acionou a equipe internamente — mesmo padrão do
+  // "já registrei os dados" (ver resumoRule acima), mas em texto que já vazou
+  // pra produção antes dessa regra existir — mantido como rede de segurança.
+  const INTERNAL_ACTION_NARRATION = /j[áa]\s+(chamei|contatei|acionei|avisei|notifiquei|registrei|salvei|anotei|gravei)\s+(a\s+|o\s+)?(equipe|time|setor|gestor|atendente|dados|sistema)/i;
   const INTERNAL_SECTION     = /resumo\s+para\s+o\s+gestor|para\s+o\s+gestor|resumo\s+da\s+conversa\s*:/i;
   // Análise de perfil do lead/cliente escrita para o gestor
   const LEAD_PROFILE_LINE = /^O\s+(lead|cliente)\s+é\s+/i;
@@ -825,6 +847,7 @@ export async function runGeminiAgent(
         BULLET_MOTIVO_LINE.test(t) ||
         KNOWN_TOOL_CALL.test(t) ||
         TOOL_CALL_NARRATION.test(t) ||
+        INTERNAL_ACTION_NARRATION.test(t) ||
         t === "tool_code" || t === "```tool_code" || t === "```"
       );
     });
@@ -849,6 +872,7 @@ export async function runGeminiAgent(
       if (BULLET_MOTIVO_LINE.test(t)) return false;
       if (INTERNAL_SECTION.test(t)) return false;
       if (TOOL_CALL_NARRATION.test(t)) return false;
+      if (INTERNAL_ACTION_NARRATION.test(t)) return false;
       if (extractLeadingUpperLabel(t)) return false;
       if (LEAD_PROFILE_LINE.test(t)) return false;
       return true;
