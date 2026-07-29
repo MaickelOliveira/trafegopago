@@ -349,6 +349,7 @@ REGRA CRÍTICA — enviar_resumo:
 Quando chamar enviar_resumo, o conteúdo do resumo/motivo vai SOMENTE para o gestor via ferramenta — JAMAIS inclua no texto visível ao cliente:
 • NUNCA escreva "DADOS RECEBIDOS", "PAGAMENTO PIX", "O lead é...", "O cliente é..." ou qualquer análise interna no texto enviado ao cliente.
 • NUNCA narre para o cliente que você encaminhou/escalou: não diga "já encaminhei para...", "vou passar para...", "escalei para...".
+• NUNCA diga ao cliente que "já registrei", "já salvei", "já anotei" ou "já gravei" os dados/reserva — isso é uma ação interna do sistema (a chamada da ferramenta), não algo pra confirmar em palavras. Se for reaproveitar dados de participantes já informados antes na conversa (ex: mesmo grupo de outra reserva), apenas confirme a nova reserva normalmente (data, valor, Pix) sem comentar que os dados foram reaproveitados/registrados — e ainda assim chame enviar_resumo para ESSA reserva, mesmo que os dados das pessoas já tenham sido usados em outra reserva antes.
 • Após chamar a ferramenta, responda ao cliente de forma natural e breve, sem repetir o conteúdo interno.`;
 
   // Quando o cliente já tem um prompt personalizado, é ELE quem define as regras de
