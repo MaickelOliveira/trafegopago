@@ -25,9 +25,13 @@ export function getReservas(clientId: string): Reserva[] {
 
 export function getReservasFiltradas(
   clientId: string,
-  opts: { tipo?: string; dataInicio?: string; dataFim?: string } = {}
+  opts: { tipo?: string; dataInicio?: string; dataFim?: string; incluirArquivadas?: boolean } = {}
 ): Reserva[] {
   let rows = getReservas(clientId);
+  // Relatórios/histórico precisam ver reservas arquivadas ("excluídas" pela
+  // equipe) também — só as listas ativas (dashboard, ocupação, próximas
+  // reservas) escondem por padrão. Ver comentário em Reserva.arquivada.
+  if (!opts.incluirArquivadas) rows = rows.filter((r) => !r.arquivada);
   if (opts.tipo) rows = rows.filter((r) => r.tipo === opts.tipo);
   if (opts.dataInicio) rows = rows.filter((r) => r.data >= opts.dataInicio!);
   if (opts.dataFim) rows = rows.filter((r) => r.data <= opts.dataFim!);
@@ -38,7 +42,7 @@ export function getUpcomingReservas(clientId: string, days = 30): Reserva[] {
   const today = new Date().toISOString().slice(0, 10);
   const limit = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
   return getReservas(clientId)
-    .filter((r) => r.data >= today && r.data <= limit && r.status !== "cancelada")
+    .filter((r) => !r.arquivada && r.data >= today && r.data <= limit && r.status !== "cancelada")
     .sort((a, b) => a.data.localeCompare(b.data));
 }
 
@@ -65,11 +69,15 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
   return all[idx];
 }
 
+// "Excluir" arquiva em vez de apagar de verdade — os dados continuam contando
+// pra relatórios/histórico (pedido explícito: nunca perder dado de reserva
+// passada), só somem das listas ativas. Nunca remove a linha do arquivo.
 export function deleteReserva(id: string): boolean {
   const all = load();
-  const filtered = all.filter((r) => r.id !== id);
-  if (filtered.length === all.length) return false;
-  save(filtered);
+  const idx = all.findIndex((r) => r.id === id);
+  if (idx < 0) return false;
+  all[idx] = { ...all[idx], arquivada: true, updatedAt: new Date().toISOString() };
+  save(all);
   return true;
 }
 
@@ -111,9 +119,43 @@ export type OcupacaoQuarto = { quarto: string; reserva: Reserva };
 // dia da troca de hóspede).
 export function getOcupacaoPorData(clientId: string, data: string): OcupacaoQuarto[] {
   return getReservas(clientId)
-    .filter((r) => r.quarto && r.status !== "cancelada")
+    .filter((r) => r.quarto && !r.arquivada && r.status !== "cancelada")
     .filter((r) => data >= r.data && data <= (r.dataCheckout ?? r.data))
     .map((r) => ({ quarto: r.quarto!, reserva: r }));
+}
+
+// Quartos ocupados em QUALQUER dia do intervalo [dataInicio, dataFim] — usado
+// pra achar o primeiro quarto livre pro período todo da nova reserva, não só
+// pra um dia isolado (ver atribuirQuartoLivre).
+function quartosOcupadosNoPeriodo(clientId: string, dataInicio: string, dataFim: string): Set<string> {
+  const ocupados = new Set<string>();
+  for (const r of getReservas(clientId)) {
+    if (!r.quarto || r.arquivada || r.status === "cancelada") continue;
+    const fimR = r.dataCheckout ?? r.data;
+    // Dois intervalos se sobrepõem se início de um <= fim do outro nos dois sentidos.
+    if (dataInicio <= fimR && dataFim >= r.data) ocupados.add(r.quarto);
+  }
+  return ocupados;
+}
+
+// Atribui automaticamente o primeiro quarto/chalé livre (1..totalQuartos) pro
+// período da reserva — sem isso, reservas fechadas pela IA nunca tinham
+// número de quarto (ficava "pra equipe decidir depois") e por isso nunca
+// apareciam na tela de Ocupação. Retorna undefined se não há quarto livre ou
+// se o cliente não tem total de quartos configurado.
+export function atribuirQuartoLivre(
+  clientId: string,
+  totalQuartos: number,
+  dataInicio: string,
+  dataFim: string,
+): string | undefined {
+  if (totalQuartos <= 0) return undefined;
+  const ocupados = quartosOcupadosNoPeriodo(clientId, dataInicio, dataFim);
+  for (let i = 1; i <= totalQuartos; i++) {
+    const quarto = String(i);
+    if (!ocupados.has(quarto)) return quarto;
+  }
+  return undefined;
 }
 
 export function calcularTotais(reservas: Reserva[]) {

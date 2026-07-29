@@ -65,7 +65,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
     setLoading(true);
     const [tiposRes, relRes] = await Promise.all([
       fetch(`/api/pousada/tipos?clientId=${clientId}`).then((r) => r.json()),
-      fetch(`/api/pousada/reservas?clientId=${clientId}&from=${from}&to=${to}${tipo ? `&tipo=${tipo}` : ""}`).then((r) => r.json()),
+      fetch(`/api/pousada/reservas?clientId=${clientId}&from=${from}&to=${to}${tipo ? `&tipo=${tipo}` : ""}&incluirArquivadas=1`).then((r) => r.json()),
     ]);
     setTipos(Array.isArray(tiposRes) ? tiposRes : []);
     setReservas(relRes.reservas ?? []);

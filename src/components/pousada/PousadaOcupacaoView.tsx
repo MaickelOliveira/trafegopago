@@ -7,6 +7,27 @@ import { PousadaSubNav } from "./PousadaSubNav";
 
 type Ocupado = { quarto: string; reserva: Reserva };
 
+function toISODate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// Próxima ocorrência de um dia da semana (0=domingo..6=sábado) a partir de hoje,
+// incluindo hoje se já cair nesse dia.
+function proximoDiaSemana(diaSemana: number): string {
+  const hoje = new Date();
+  const diff = (diaSemana - hoje.getDay() + 7) % 7;
+  const alvo = new Date(hoje);
+  alvo.setDate(hoje.getDate() + diff);
+  return toISODate(alvo);
+}
+
+const DATAS_RAPIDAS: { label: string; value: () => string }[] = [
+  { label: "Hoje", value: () => toISODate(new Date()) },
+  { label: "Amanhã", value: () => toISODate(new Date(Date.now() + 86400000)) },
+  { label: "Próximo sábado", value: () => proximoDiaSemana(6) },
+  { label: "Próximo domingo", value: () => proximoDiaSemana(0) },
+];
+
 export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role: "manager" | "client" }) {
   const [data, setData] = useState(new Date().toISOString().slice(0, 10));
   const [totalQuartos, setTotalQuartos] = useState(0);
@@ -56,6 +77,27 @@ export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role
           <label className="text-xs font-medium text-slate-600 block mb-1">Data</label>
           <input type="date" value={data} onChange={(e) => setData(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {DATAS_RAPIDAS.map((d) => {
+            const v = d.value();
+            const ativo = v === data;
+            return (
+              <button
+                key={d.label}
+                type="button"
+                onClick={() => setData(v)}
+                className={clsx(
+                  "rounded-lg px-3 py-2 text-xs font-medium border transition",
+                  ativo
+                    ? "bg-amber-600 border-amber-600 text-white"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                )}
+              >
+                {d.label}
+              </button>
+            );
+          })}
         </div>
         <div className="flex-1" />
         {role === "manager" && (

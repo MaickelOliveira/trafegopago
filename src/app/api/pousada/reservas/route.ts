@@ -23,8 +23,11 @@ export async function GET(req: NextRequest) {
   const tipo = req.nextUrl.searchParams.get("tipo") ?? undefined;
   const dataInicio = req.nextUrl.searchParams.get("from") ?? undefined;
   const dataFim = req.nextUrl.searchParams.get("to") ?? undefined;
+  // Relatórios pedem os dados arquivados também (nunca perder histórico);
+  // as listas ativas (dashboard, serviço) não pedem — ficam escondidas por padrão.
+  const incluirArquivadas = req.nextUrl.searchParams.get("incluirArquivadas") === "1";
 
-  const reservas = getReservasFiltradas(clientId, { tipo, dataInicio, dataFim });
+  const reservas = getReservasFiltradas(clientId, { tipo, dataInicio, dataFim, incluirArquivadas });
 
   return NextResponse.json({
     reservas,

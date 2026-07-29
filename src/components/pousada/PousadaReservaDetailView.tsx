@@ -68,9 +68,19 @@ export function PousadaReservaDetailView({
   const dashboardHref = role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada";
 
   async function excluir() {
-    if (!reserva || !confirm("Excluir esta reserva?")) return;
+    if (!reserva || !confirm("Excluir esta reserva?\n\nOs dados continuam salvos (aparecem em relatórios) — ela só some das listas ativas. Você pode restaurar depois.")) return;
     await fetch(`/api/pousada/reservas/${reserva.id}`, { method: "DELETE" });
     router.push(dashboardHref);
+  }
+
+  async function restaurar() {
+    if (!reserva) return;
+    const res = await fetch(`/api/pousada/reservas/${reserva.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ arquivada: false }),
+    });
+    if (res.ok) setReserva(await res.json());
   }
 
   if (loading) {
@@ -110,6 +120,11 @@ export function PousadaReservaDetailView({
             <h1 className="text-2xl font-semibold text-slate-900 mt-1">{reserva.responsavel.nome}</h1>
           </div>
           <div className="flex items-center gap-2">
+            {reserva.arquivada && (
+              <span className="rounded-full px-3 py-1 text-sm font-medium bg-slate-200 text-slate-600">
+                Arquivada
+              </span>
+            )}
             <span className={clsx("rounded-full px-3 py-1 text-sm font-medium", STATUS_BADGE[reserva.status])}>
               {STATUS_LABEL[reserva.status]}
             </span>
@@ -120,9 +135,15 @@ export function PousadaReservaDetailView({
               Editar
             </button>
             {role === "manager" && (
-              <button onClick={excluir} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-400 hover:text-red-500 hover:bg-red-50">
-                Excluir
-              </button>
+              reserva.arquivada ? (
+                <button onClick={restaurar} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-green-700 hover:bg-green-50">
+                  Restaurar
+                </button>
+              ) : (
+                <button onClick={excluir} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-400 hover:text-red-500 hover:bg-red-50">
+                  Excluir
+                </button>
+              )
             )}
           </div>
         </div>

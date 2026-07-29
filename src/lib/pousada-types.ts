@@ -34,6 +34,10 @@ export type Reserva = {
   cidade?: string;
   observacoes?: string;
   origem: OrigemReserva;
+  // "Excluir" na tela de reserva arquiva em vez de apagar — os dados continuam
+  // valendo pra relatórios/histórico, só somem das listas ativas (dashboard,
+  // ocupação, próximas reservas).
+  arquivada?: boolean;
   createdAt: string;
   updatedAt: string;
 };

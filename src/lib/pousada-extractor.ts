@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ChatMessage } from "./conversations";
 import type { PousadaTipo, Pessoa, StatusReserva } from "./pousada-types";
-import { createReserva, updateReserva, findReservaByPhone } from "./pousada";
+import { createReserva, updateReserva, findReservaByPhone, atribuirQuartoLivre } from "./pousada";
 
 function parseMoney(val: string | number | undefined): number {
   if (typeof val === "number") return val;
@@ -92,11 +92,12 @@ export async function extractAndWriteToPousada(opts: {
   apiKey: string;
   clientId: string;
   tipos: PousadaTipo[];
+  totalQuartos?: number;
   messages: ChatMessage[];
   phone: string;
   motivo?: string;
 }): Promise<void> {
-  const { apiKey, clientId, tipos, messages, phone, motivo } = opts;
+  const { apiKey, clientId, tipos, totalQuartos = 0, messages, phone, motivo } = opts;
 
   const isPagamento = !!(motivo && /^PAGAMENTO PIX:/i.test(motivo.trim()));
   console.log(`[pousada-extractor] iniciando — clientId=${clientId} phone=${phone} messages=${messages.length} mode=${isPagamento ? "UPDATE(pagamento)" : "INSERT(dados)"}`);
@@ -220,6 +221,20 @@ export async function extractAndWriteToPousada(opts: {
         const valorTotal = parseMoney(row.valorTotal as string | number | undefined);
         const responsavel = (row.responsavel as { nome: string; cpf?: string }) ?? { nome: "Não informado" };
 
+        // Auto-atribui o primeiro quarto/chalé livre pra reservas de Hospedagem
+        // sem quarto explícito — sem isso, reservas fechadas pela IA nunca
+        // tinham número de quarto (fica "pra equipe decidir depois" no prompt)
+        // e por isso nunca apareciam na tela de Ocupação. Só tenta quando o
+        // cliente configurou o total de quartos/chalés.
+        const tipoInfo = tipos.find((t) => t.slug === tipo);
+        const isHospedagem = tipoInfo?.categoria === "hospedagem";
+        const dataCheckoutReserva = (row.dataCheckout as string | undefined) ?? existing?.dataCheckout ?? dataReserva;
+        function resolveQuarto(quartoAtual?: string): string | undefined {
+          if (quartoAtual) return quartoAtual;
+          if (!isHospedagem || totalQuartos <= 0) return quartoAtual;
+          return atribuirQuartoLivre(clientId, totalQuartos, dataReserva, dataCheckoutReserva);
+        }
+
         if (existing) {
           const alreadyPaid = existing.status === "pago" || existing.status === "parcial";
           // Se a extração trouxe pessoas, ela é a lista completa e atual da
@@ -233,7 +248,7 @@ export async function extractAndWriteToPousada(opts: {
           updateReserva(existing.id, {
             data: dataReserva,
             dataCheckout: (row.dataCheckout as string) ?? existing.dataCheckout,
-            quarto: (row.quarto as string) ?? existing.quarto,
+            quarto: resolveQuarto((row.quarto as string) ?? existing.quarto),
             hora: (row.hora as string) ?? existing.hora,
             responsavel,
             telefone,
@@ -250,7 +265,7 @@ export async function extractAndWriteToPousada(opts: {
             tipo,
             data: dataReserva,
             dataCheckout: row.dataCheckout as string | undefined,
-            quarto: row.quarto as string | undefined,
+            quarto: resolveQuarto(row.quarto as string | undefined),
             hora: row.hora as string | undefined,
             responsavel,
             telefone,
@@ -262,7 +277,7 @@ export async function extractAndWriteToPousada(opts: {
             observacoes: row.observacoes as string | undefined,
             origem: "ia",
           });
-          console.log(`[pousada-extractor] createReserva OK id=${created.id} responsável="${responsavel.nome}"`);
+          console.log(`[pousada-extractor] createReserva OK id=${created.id} responsável="${responsavel.nome}" quarto=${created.quarto ?? "—"}`);
         }
       } catch (e) {
         console.error("[pousada-extractor] insert/update ERRO:", e instanceof Error ? e.message : e);
