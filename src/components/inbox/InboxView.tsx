@@ -84,6 +84,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [pendingTemplate, setPendingTemplate] = useState<WabaTemplate | null>(null);
   const [sendingTemplate, setSendingTemplate] = useState(false);
+  const [generatingGuestForm, setGeneratingGuestForm] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -193,6 +194,36 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const handleSelect = (phone: string, connId: string | null) => {
     setSelected({ phone, connId });
     setText("");
+  };
+
+  // Gera o link do formulário de hóspedes na mão — usado quando a IA está
+  // pausada e o atendente está conduzindo a reserva de hospedagem manualmente
+  // (a IA só gera esse link sozinha via marcador no prompt, então uma
+  // conversa assumida por um humano nunca tinha como oferecer o formulário).
+  const handleGenerateGuestFormLink = async () => {
+    if (!selected || generatingGuestForm) return;
+    setGeneratingGuestForm(true);
+    try {
+      const res = await fetch("/api/whatsapp/inbox/guest-form-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: selected.phone,
+          clientId,
+          connId: selectedConv?.connId ?? selectedConn ?? undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !data.ok) {
+        alert(`Erro ao gerar link: ${data?.error ?? "tente novamente"}`);
+        return;
+      }
+      setText((prev) => (prev.trim() ? `${prev.trim()} ${data.url}` : `Segue o link para preencher os dados de hospedagem: ${data.url}`));
+    } catch {
+      alert("Erro ao gerar link. Verifique sua conexão.");
+    } finally {
+      setGeneratingGuestForm(false);
+    }
   };
 
   const handleSend = async () => {
@@ -681,6 +712,16 @@ export default function InboxView({ clientId, initialConversations = [], initial
                 className="shrink-0 w-10 h-10 rounded-full bg-[#2a3942] flex items-center justify-center text-base hover:bg-[#3c4f5c] transition-colors"
               >
                 ⚡
+              </button>
+
+              {/* 🔗 Gerar link do formulário de hóspedes manualmente (IA pausada / atendimento manual) */}
+              <button
+                onClick={handleGenerateGuestFormLink}
+                disabled={generatingGuestForm}
+                title="Gerar link do formulário de hóspedes"
+                className="shrink-0 w-10 h-10 rounded-full bg-[#2a3942] flex items-center justify-center text-base hover:bg-[#3c4f5c] transition-colors disabled:opacity-50"
+              >
+                {generatingGuestForm ? "…" : "🔗"}
               </button>
 
               <div className="flex-1 bg-[#2a3942] rounded-lg px-4 py-2 flex items-end">
