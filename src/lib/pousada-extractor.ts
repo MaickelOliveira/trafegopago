@@ -30,7 +30,7 @@ ID interno do cliente (WhatsApp): ${phone}
 
 REGRAS OBRIGATÓRIAS:
 1. Só extraia se houver no mínimo: nome completo do responsável pela reserva confirmado na conversa.
-2. "tipo" = escolha o tipo mais próximo semanticamente do assunto da conversa entre os listados acima. Se nenhum corresponder claramente, retorne [].
+2. "tipo" = escolha o tipo mais próximo semanticamente do assunto da conversa ENTRE OS LISTADOS ACIMA — copie o valor exatamente como aparece na lista, nunca invente um tipo novo nem crie uma variação dele. A lista pode crescer com o tempo (atendentes cadastram novos tipos de evento na plataforma), então releia a lista atual acima a cada extração em vez de assumir os tipos de uma conversa anterior. Se nenhum tipo da lista corresponder claramente ao assunto, retorne [].
 3. "data" = data de check-in (hospedagem) ou data do evento (day use, almoço etc), formato ISO AAAA-MM-DD. Se o cliente mencionar a data sem ano (ex: "07 de setembro", "próximo sábado"), use a "Data de hoje" acima como referência e escolha a PRÓXIMA ocorrência a partir de hoje — nunca uma data já passada.
 4. "hora" = se houver horário mencionado, formato HH:MM em 24h. Senão, omita o campo.
 5. "responsavel" = { "nome": nome completo de quem faz a reserva, "cpf": CPF do responsável se informado (senão omita) }.
@@ -75,7 +75,7 @@ ID interno do cliente (WhatsApp): ${phone}
 O cliente acabou de confirmar o pagamento (enviou comprovante ou confirmou Pix).
 
 REGRAS:
-1. "tipo" = escolha o tipo mais próximo semanticamente do assunto da conversa. Se nenhum corresponder, retorne [].
+1. "tipo" = escolha o tipo mais próximo semanticamente do assunto da conversa ENTRE OS LISTADOS ACIMA — copie o valor exatamente como aparece na lista, nunca invente um tipo novo. Se nenhum corresponder, retorne [].
 2. "telefone" = número que o cliente informou na conversa (para localizar a reserva). Se não encontrar, omita — o sistema usa o telefone real do WhatsApp.
 3. "status" = "pago" se o cliente indicar que pagou o valor total ou enviou comprovante sem mencionar pagamento parcial. "parcial" se mencionar explicitamente que pagou apenas parte do valor.
 4. Se status = "parcial", inclua "valorPago" com o valor que o cliente informou ter pago (apenas número).
@@ -162,11 +162,33 @@ export async function extractAndWriteToPousada(opts: {
 
   const tipoSlugs = new Set(tipos.map((t) => t.slug));
 
+  // Normaliza pra comparação tolerante (minúsculas, sem acento, sem espaço
+  // extra) — o modelo às vezes devolve o tipo certo com uma variação mínima
+  // (maiúscula, acento, espaço a mais), e como a lista de tipos cresce à
+  // medida que atendentes cadastram novos serviços na Pousada, um match
+  // estritamente exato descartava a reserva inteira em silêncio em vez de
+  // cair no tipo certo.
+  function normalizeTipo(s: string): string {
+    return s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[\s-]+/g, "_");
+  }
+  const bySlugNormalized = new Map(tipos.map((t) => [normalizeTipo(t.slug), t.slug]));
+  const byLabelNormalized = new Map(tipos.map((t) => [normalizeTipo(t.label), t.slug]));
+
+  function resolveTipoSlug(raw: string): string | null {
+    if (tipoSlugs.has(raw)) return raw;
+    const norm = normalizeTipo(raw);
+    return bySlugNormalized.get(norm) ?? byLabelNormalized.get(norm) ?? null;
+  }
+
   for (const row of rows) {
-    const tipo = row.tipo as string;
-    if (!tipoSlugs.has(tipo)) {
-      console.warn(`[pousada-extractor] Tipo não encontrado: "${tipo}" — pulando`);
+    const tipoRaw = row.tipo as string;
+    const tipo = resolveTipoSlug(tipoRaw);
+    if (!tipo) {
+      console.warn(`[pousada-extractor] Tipo não encontrado: "${tipoRaw}" — tipos disponíveis: [${[...tipoSlugs].join(", ")}] — pulando`);
       continue;
+    }
+    if (tipo !== tipoRaw) {
+      console.log(`[pousada-extractor] Tipo "${tipoRaw}" normalizado para "${tipo}"`);
     }
 
     if (isPagamento) {
