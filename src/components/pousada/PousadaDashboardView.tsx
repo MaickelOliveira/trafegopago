@@ -18,6 +18,73 @@ function slugify(label: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+type PeriodoFiltro = "hoje" | "ontem" | "7d" | "15d" | "mes_atual" | "mes_passado" | "ano_atual" | "todo" | "personalizado";
+
+const PERIODOS: { value: PeriodoFiltro; label: string }[] = [
+  { value: "hoje", label: "Hoje" },
+  { value: "ontem", label: "Ontem" },
+  { value: "7d", label: "7 dias" },
+  { value: "15d", label: "15 dias" },
+  { value: "mes_atual", label: "Este mês" },
+  { value: "mes_passado", label: "Mês passado" },
+  { value: "ano_atual", label: "Este ano" },
+  { value: "todo", label: "Todo o período" },
+  { value: "personalizado", label: "Personalizado" },
+];
+
+function toISO(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// Calcula [de, até] (ISO, inclusive nas duas pontas) pro período selecionado.
+// null = sem filtro de data ("todo o período"). "7 dias"/"15 dias" olham pra
+// TRÁS (últimos N dias incluindo hoje), mesma convenção dos presets de data já
+// usados no resto da plataforma (last_7d/last_14d no dashboard de Meta Ads).
+function calcularRange(periodo: PeriodoFiltro, customFrom: string, customTo: string): { de: string; ate: string } | null {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  switch (periodo) {
+    case "hoje": {
+      const s = toISO(hoje);
+      return { de: s, ate: s };
+    }
+    case "ontem": {
+      const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
+      const s = toISO(ontem);
+      return { de: s, ate: s };
+    }
+    case "7d": {
+      const inicio = new Date(hoje); inicio.setDate(hoje.getDate() - 6);
+      return { de: toISO(inicio), ate: toISO(hoje) };
+    }
+    case "15d": {
+      const inicio = new Date(hoje); inicio.setDate(hoje.getDate() - 14);
+      return { de: toISO(inicio), ate: toISO(hoje) };
+    }
+    case "mes_atual": {
+      const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+      return { de: toISO(inicio), ate: toISO(fim) };
+    }
+    case "mes_passado": {
+      const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+      const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+      return { de: toISO(inicio), ate: toISO(fim) };
+    }
+    case "ano_atual": {
+      const inicio = new Date(hoje.getFullYear(), 0, 1);
+      const fim = new Date(hoje.getFullYear(), 11, 31);
+      return { de: toISO(inicio), ate: toISO(fim) };
+    }
+    case "personalizado":
+      if (!customFrom && !customTo) return null;
+      return { de: customFrom || "0000-01-01", ate: customTo || "9999-12-31" };
+    case "todo":
+    default:
+      return null;
+  }
+}
+
 export function PousadaDashboardView({ clientId, role }: { clientId: string; role: "manager" | "client" }) {
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [reservas, setReservas] = useState<Reserva[]>([]);
@@ -27,6 +94,10 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   const [tiposDraft, setTiposDraft] = useState<PousadaTipo[]>([]);
   const [novoTipoLabel, setNovoTipoLabel] = useState("");
   const [novoTipoCategoria, setNovoTipoCategoria] = useState<CategoriaTipo>("evento");
+  // Padrão: mês vigente — dá visão do mês corrente assim que abre a tela.
+  const [periodo, setPeriodo] = useState<PeriodoFiltro>("mes_atual");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,9 +112,10 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
 
   useEffect(() => { load(); }, [load]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const range = calcularRange(periodo, customFrom, customTo);
   const upcoming = reservas
-    .filter((r) => r.data >= today && r.status !== "cancelada")
+    .filter((r) => r.status !== "cancelada")
+    .filter((r) => !range || (r.data >= range.de && r.data <= range.ate))
     .sort((a, b) => a.data.localeCompare(b.data));
 
   const aReceber = upcoming.reduce((s, r) => s + r.faltaPagar, 0);
@@ -112,10 +184,44 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
         </button>
       </div>
 
+      {/* Filtro de período */}
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap gap-1.5">
+          {PERIODOS.map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              onClick={() => setPeriodo(p.value)}
+              className={
+                periodo === p.value
+                  ? "rounded-lg px-3 py-2 text-xs font-medium border transition bg-amber-600 border-amber-600 text-white"
+                  : "rounded-lg px-3 py-2 text-xs font-medium border transition border-slate-200 text-slate-600 hover:bg-slate-50"
+              }
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {periodo === "personalizado" && (
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">De</label>
+              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 block mb-1">Até</label>
+              <input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Resumo */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Próximas reservas</p>
+          <p className="text-xs uppercase tracking-wide text-slate-400">Reservas no período</p>
           <p className="text-3xl font-semibold text-slate-900 mt-1">{upcoming.length}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -203,7 +309,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
                   {categoria === "hospedagem" ? "🛏️" : "🎉"} {t.label}
                 </span>
                 <span className="flex items-center gap-2 text-sm text-slate-400">
-                  {lista.length} próxima{lista.length === 1 ? "" : "s"}
+                  {lista.length} no período
                   <span className="text-slate-300">→</span>
                 </span>
               </Link>
