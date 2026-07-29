@@ -8,6 +8,18 @@ function getConfigForConn(client: ReturnType<typeof getClientById>, connId: stri
     const found = client.agentConfigs.find(c => c.whatsappConnectionId === connId);
     if (found) return found;
   }
+  // Sem connId explícito (ex: tela carregou sem nenhuma conexão selecionada):
+  // nunca devolve o campo legado "solto" quando o cliente já tem conexões em
+  // agentConfigs[] — isso fazia a tela mostrar/editar uma config desconectada
+  // da que realmente está em uso, e qualquer save ali nunca refletia no
+  // agente de verdade. Tenta resolver pela conexão que o campo legado
+  // aponta, senão cai na primeira conexão disponível.
+  if (client?.agentConfigs?.length) {
+    const viaLegacy = client.agentConfig?.whatsappConnectionId
+      ? client.agentConfigs.find(c => c.whatsappConnectionId === client.agentConfig!.whatsappConnectionId)
+      : undefined;
+    return viaLegacy ?? client.agentConfigs[0];
+  }
   return client?.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] };
 }
 
@@ -16,16 +28,28 @@ function upsertConfigForConn(
   connId: string | null,
   updated: AgentConfig
 ) {
-  if (connId) {
+  // Se a requisição não veio com connId (ex: a tela carregou sem nenhuma
+  // conexão selecionada), mas o config sendo salvo JÁ identifica uma conexão
+  // (updated.whatsappConnectionId, vindo do GET anterior), usa esse valor —
+  // sem isso, o save caía no campo legado único (client.agentConfig), que
+  // getAllAgentConfigs() ignora por completo assim que agentConfigs[] já tem
+  // alguma entrada (caso de qualquer cliente com mais de uma conexão
+  // configurada). O resultado prático: toggles como resumo diário/reativação
+  // automática pareciam salvar (sem erro na tela) mas o cron nunca via a
+  // mudança, porque ela foi parar num campo que ninguém mais lê.
+  const effectiveConnId = connId ?? updated.whatsappConnectionId ?? null;
+  if (effectiveConnId) {
     // Upsert em agentConfigs
     const existing = client.agentConfigs ?? [];
-    const idx = existing.findIndex(c => c.whatsappConnectionId === connId);
+    const idx = existing.findIndex(c => c.whatsappConnectionId === effectiveConnId);
     const newConfigs = [...existing];
-    if (idx >= 0) newConfigs[idx] = updated;
-    else newConfigs.push({ ...updated, whatsappConnectionId: connId });
+    const withConnId = { ...updated, whatsappConnectionId: effectiveConnId };
+    if (idx >= 0) newConfigs[idx] = withConnId;
+    else newConfigs.push(withConnId);
     upsertClient({ ...client, agentConfigs: newConfigs });
   } else {
-    // Salva no agentConfig padrão
+    // Cliente sem nenhuma conexão configurada ainda — só aqui faz sentido
+    // salvar no campo legado único.
     upsertClient({ ...client, agentConfig: updated });
   }
 }
