@@ -100,5 +100,20 @@ export async function GET(req: NextRequest) {
   // o cliente tiver. Por isso é reportado à parte, não por conexão.
   const kanbanAgentGeminiKey = resolveGeminiKeyWithSource(client.agentConfig?.geminiApiKey);
 
-  return NextResponse.json({ clientId, connections, resolved, configs, kanbanAgentGeminiKey, leadsPausados });
+  // client.agentConfig (campo legado único) fica invisível pra getAllAgentConfigs()
+  // sempre que agentConfigs[] já tem alguma entrada — exposto aqui à parte pra
+  // diagnosticar um save que caiu nesse campo por engano (ex: tela sem conexão
+  // selecionada no momento de salvar) e nunca é considerado pelo cron.
+  const legacyAgentConfig = client.agentConfig
+    ? {
+        name: client.agentConfig.name,
+        whatsappConnectionId: client.agentConfig.whatsappConnectionId,
+        dailySummaryEnabled: client.agentConfig.dailySummaryEnabled,
+        dailySummaryTime: client.agentConfig.dailySummaryTime,
+        aiAutoResumeEnabled: client.agentConfig.aiAutoResumeEnabled,
+        ignoredByGetAllAgentConfigs: (client.agentConfigs?.length ?? 0) > 0,
+      }
+    : null;
+
+  return NextResponse.json({ clientId, connections, resolved, configs, kanbanAgentGeminiKey, leadsPausados, legacyAgentConfig });
 }
