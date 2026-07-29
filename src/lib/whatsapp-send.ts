@@ -22,7 +22,15 @@ export async function sendMessage(
   const funnels = getFunnels().filter((f) => f.clientId === clientId);
   const allConns = funnels.flatMap((f) => (f.connections ?? []).map((c) => ({ ...c, funnelId: f.id })));
 
-  // Se tem connectionId preferido, usa ele primeiro
+  // Se tem connectionId preferido, usa SOMENTE ele — nunca cai pra outro canal
+  // do cliente quando um específico foi pedido. Sem isso, um envio que falhava
+  // no canal certo (ex: Evolution retornando erro) caía silenciosamente em
+  // fallbacks completamente sem relação (Meta de outro funil, UazAPI legado
+  // genérico) e a função SEMPRE retornava true no final, mesmo quando nada
+  // realmente chegou ao destinatário — foi o que aconteceu com o resumo
+  // diário do JDF: a função "enviava" (retornava true), o guard de "já
+  // enviado hoje" era marcado, mas a mensagem nunca chegava de verdade no
+  // grupo configurado.
   if (preferredConnectionId) {
     // WPPConnect: verifica sessões WPPConnect primeiro (não estão em funnels[].connections)
     const wppSessions = getWppSessions();
@@ -33,8 +41,7 @@ export async function sendMessage(
       const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
       markPhoneSending(rawPhone);
       markWppSent(rawPhone, message);
-      const ok = await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message, isLid);
-      if (ok) return true;
+      return await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message, isLid);
     }
 
     // Evolution API: mesmo racional — não está em funnels[].connections
@@ -45,27 +52,26 @@ export async function sendMessage(
       const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
       markPhoneSending(rawPhone);
       markWppSent(rawPhone, message);
-      const ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, phone, message, isLid, true);
-      if (ok) return true;
+      return await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, phone, message, isLid, true);
     }
 
     const preferred = allConns.find((c) => c.id === preferredConnectionId);
     if (preferred) {
       // Meta Cloud API
       if (preferred.type === "meta" && preferred.metaPhoneNumberId && preferred.metaToken) {
-        const ok = await sendMessageDirect(phone, message, preferred.metaPhoneNumberId, preferred.metaToken);
-        if (ok) return true;
+        return await sendMessageDirect(phone, message, preferred.metaPhoneNumberId, preferred.metaToken);
       }
       // UazAPI
       if (preferred.type === "uazapi" && preferred.uazapiToken) {
-        const ok = await sendText(preferred.uazapiToken, phone, message);
-        if (ok) return true;
+        return await sendText(preferred.uazapiToken, phone, message);
       }
     }
 
+    console.error(`[sendMessage] preferredConnectionId="${preferredConnectionId}" não encontrado em nenhuma sessão/conexão do clientId=${clientId} — abortando sem tentar outro canal`);
+    return false;
   }
 
-  // Fallback: tenta qualquer Meta da conta
+  // Sem conexão preferida — tenta qualquer canal disponível do cliente.
   for (const funnel of funnels) {
     const metaConn = funnel.connections?.find((c) => c.type === "meta" && c.metaPhoneNumberId && c.metaToken);
     if (metaConn) {
@@ -74,7 +80,7 @@ export async function sendMessage(
     }
   }
 
-  // Fallback final: UazAPI
+  // Fallback final: UazAPI legado
   await sendWhatsApp(phone, message);
   return true;
 }

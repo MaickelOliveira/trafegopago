@@ -118,10 +118,24 @@ export async function runDailySummaries(): Promise<number> {
         });
         const msg = `📋 *Resumo do dia — ${client.name}*\n\n${conversas.length} conversa(s) hoje:\n\n${linhas.join("\n\n")}`;
 
+        // Rastreia se PELO MENOS UM destinatário realmente recebeu — antes a
+        // marcação de "já enviado hoje" acontecia sempre, mesmo quando
+        // sendMessage() falhava pra todo mundo (o envio real falhou, mas o
+        // dia ficava marcado como concluído do mesmo jeito, sem tentar de
+        // novo). Agora só marca como enviado se ao menos um destinatário
+        // recebeu — se todos falharem, tenta de novo no próximo tick.
+        let algumEnviado = false;
         for (const r of recipients) {
-          await sendMessage(r.value, msg, client.id, connId).catch((e) =>
-            console.error(`[daily-summary] erro ao enviar pra ${r.label}:`, e)
-          );
+          const ok = await sendMessage(r.value, msg, client.id, connId).catch((e) => {
+            console.error(`[daily-summary] erro ao enviar pra ${r.label}:`, e);
+            return false;
+          });
+          console.log(`[daily-summary] envio pra ${r.label} (${r.type} ${r.value}) → ok=${ok}`);
+          if (ok) algumEnviado = true;
+        }
+        if (!algumEnviado) {
+          console.error(`[daily-summary] TODOS os envios falharam — cliente=${client.id} connId=${connId ?? "default"} — não marca como enviado, tenta de novo no próximo tick`);
+          continue;
         }
         sent++;
         console.log(`[daily-summary] enviado — cliente=${client.id} connId=${connId ?? "default"} conversas=${conversas.length}`);
@@ -129,8 +143,8 @@ export async function runDailySummaries(): Promise<number> {
         console.log(`[daily-summary] sem conversas hoje — cliente=${client.id} connId=${connId ?? "default"}, marcando como enviado mesmo assim`);
       }
 
-      // Marca como enviado hoje mesmo sem conversas — evita ficar checando de novo
-      // a cada tick pelo resto do dia (só volta a valer amanhã).
+      // Marca como enviado hoje — chega aqui só quando não há conversas (nada
+      // pra reenviar) ou quando pelo menos um destinatário recebeu de fato.
       upsertAgentConfigForConnection(client, connId, { ...cfg, dailySummaryLastSentDate: today });
     }
   }
