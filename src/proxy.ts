@@ -23,13 +23,17 @@ export async function proxy(request: NextRequest) {
   const isBriefing = pathname.startsWith("/briefing");
   // Mesmo caso do briefing: link de conexão WhatsApp por QR, pra enviar a quem
   // tem o celular físico — precisa abrir mesmo com sessão ativa no navegador.
-  const isConectar = pathname.startsWith("/conectar");
-  const isPublic = pathname === "/" || pathname.startsWith("/login") || isBriefing || isConectar;
+  const isConectar = pathname.startsWith("/conectar") || pathname.startsWith("/conectar-evolution");
+  // Ficha de hóspedes: link mandado pelo WhatsApp pro cliente final preencher —
+  // nunca tem sessão logada (é o hóspede da pousada, não um usuário da
+  // plataforma). Sem isso, caía no redirect padrão pra /login.
+  const isGuestForm = pathname.startsWith("/formulario-hospede");
+  const isPublic = pathname === "/" || pathname.startsWith("/login") || isBriefing || isConectar || isGuestForm;
   const isGestor = pathname.startsWith("/gestor");
   const isCliente = pathname.startsWith("/cliente");
 
   if (isPublic) {
-    if (token && !isBriefing && !isConectar) {
+    if (token && !isBriefing && !isConectar && !isGuestForm) {
       try {
         const { payload } = await jwtVerify(token, SECRET);
         const role = (payload as { role: string }).role;
