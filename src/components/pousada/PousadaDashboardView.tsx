@@ -91,6 +91,12 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<"new" | Reserva | null>(null);
   const [editingTipos, setEditingTipos] = useState(false);
+  const [guestFormPicker, setGuestFormPicker] = useState(false);
+  const [guestFormPhone, setGuestFormPhone] = useState("");
+  const [guestFormGenerating, setGuestFormGenerating] = useState(false);
+  const [guestFormUrl, setGuestFormUrl] = useState<string | null>(null);
+  const [guestFormError, setGuestFormError] = useState<string | null>(null);
+  const [guestFormCopied, setGuestFormCopied] = useState(false);
   const [tiposDraft, setTiposDraft] = useState<PousadaTipo[]>([]);
   const [novoTipoLabel, setNovoTipoLabel] = useState("");
   const [novoTipoCategoria, setNovoTipoCategoria] = useState<CategoriaTipo>("evento");
@@ -149,6 +155,43 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
     setNovoTipoLabel("");
   }
 
+  // Gera o link do formulário de hóspedes na mão — usado quando a IA está
+  // pausada e o atendente está conduzindo a reserva de hospedagem manualmente
+  // (a IA só gera esse link sozinha via marcador no prompt). Não depende de
+  // uma conversa selecionada — o servidor detecta a conexão automaticamente.
+  async function gerarGuestFormLink() {
+    const digits = guestFormPhone.replace(/\D/g, "");
+    if (!digits) return;
+    setGuestFormGenerating(true);
+    setGuestFormError(null);
+    setGuestFormUrl(null);
+    try {
+      const res = await fetch("/api/whatsapp/inbox/guest-form-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: digits, clientId }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !data.ok) {
+        setGuestFormError(data?.error ?? "Erro ao gerar link — tente novamente.");
+        return;
+      }
+      setGuestFormUrl(data.url);
+    } catch {
+      setGuestFormError("Erro ao gerar link. Verifique sua conexão.");
+    } finally {
+      setGuestFormGenerating(false);
+    }
+  }
+
+  function fecharGuestFormPicker() {
+    setGuestFormPicker(false);
+    setGuestFormPhone("");
+    setGuestFormUrl(null);
+    setGuestFormError(null);
+    setGuestFormCopied(false);
+  }
+
   if (loading) {
     return (
       <div>
@@ -175,6 +218,12 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
           className="rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700"
         >
           + Nova reserva
+        </button>
+        <button
+          onClick={() => setGuestFormPicker(true)}
+          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50"
+        >
+          🔗 Link do formulário de hóspedes
         </button>
         <button
           onClick={() => { setTiposDraft(tipos.length ? [...tipos] : []); setEditingTipos(true); }}
@@ -326,6 +375,61 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
           onSave={() => load()}
           onClose={() => setModal(null)}
         />
+      )}
+
+      {guestFormPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={fecharGuestFormPicker}>
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="font-semibold text-slate-900">🔗 Link do formulário de hóspedes</h2>
+              <button onClick={fecharGuestFormPicker} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              Gera um link novo para o cliente preencher os dados de hospedagem — útil quando a IA está pausada e a reserva está sendo conduzida manualmente.
+            </p>
+
+            {!guestFormUrl ? (
+              <>
+                <label className="text-xs font-medium text-slate-600 block mb-1">Telefone do cliente (WhatsApp)</label>
+                <input
+                  value={guestFormPhone}
+                  onChange={(e) => setGuestFormPhone(e.target.value)}
+                  placeholder="Ex: 44998168355"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 mb-3"
+                />
+                {guestFormError && <p className="text-xs text-red-600 mb-3">{guestFormError}</p>}
+                <button
+                  onClick={gerarGuestFormLink}
+                  disabled={guestFormGenerating || !guestFormPhone.replace(/\D/g, "")}
+                  className="w-full rounded-lg bg-amber-600 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {guestFormGenerating ? "Gerando..." : "Gerar link"}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-700 break-all mb-3">
+                  {guestFormUrl}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(guestFormUrl);
+                      setGuestFormCopied(true);
+                      setTimeout(() => setGuestFormCopied(false), 2000);
+                    }}
+                    className="flex-1 rounded-lg bg-amber-600 py-2.5 text-sm font-semibold text-white hover:bg-amber-700"
+                  >
+                    {guestFormCopied ? "Copiado! ✓" : "Copiar link"}
+                  </button>
+                  <button onClick={fecharGuestFormPicker} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
+                    Fechar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
       </div>
     </div>

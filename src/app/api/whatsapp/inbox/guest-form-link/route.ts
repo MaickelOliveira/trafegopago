@@ -7,11 +7,10 @@ import { createGuestForm, type GuestFormConnType } from "@/lib/guest-forms";
 
 export const dynamic = "force-dynamic";
 
-// Gera o link do formulário de hóspedes manualmente pelo inbox — usado quando
-// a IA está pausada e o atendente está conduzindo a reserva de hospedagem na
-// mão: sem isso, só a IA (via marcador [FORMULARIO_HOSPEDAGEM] no prompt)
-// conseguia gerar o link, então uma conversa assumida manualmente nunca tinha
-// como oferecer o formulário ao cliente.
+// Gera o link do formulário de hóspedes manualmente pela tela da Pousada — usado
+// quando a IA está pausada e o atendente está conduzindo a reserva de
+// hospedagem na mão: sem isso, só a IA (via marcador [FORMULARIO_HOSPEDAGEM]
+// no prompt) conseguia gerar o link.
 export async function POST(req: NextRequest) {
   const { phone, clientId, connId } = (await req.json()) as {
     phone?: string;
@@ -29,11 +28,19 @@ export async function POST(req: NextRequest) {
   // Mesma detecção de tipo de conexão usada em sendMessage() (whatsapp-send.ts)
   // — sessões WPPConnect/Evolution ficam em stores separados, fora de
   // funnels[].connections.
+  function resolveConnType(id: string): GuestFormConnType | null {
+    if (getEvolutionSessions().some((s) => s.id === id)) return "evolution";
+    if (getWppSessions().some((s) => s.id === id)) return null; // ver bloqueio abaixo
+    const funnels = getFunnels().filter((f) => f.clientId === clientId);
+    const conn = funnels.flatMap((f) => f.connections ?? []).find((c) => c.id === id);
+    return conn?.type === "uazapi" ? "uazapi" : null;
+  }
+
+  let resolvedConnId = connId ?? null;
   let connType: GuestFormConnType | null = null;
-  if (connId) {
-    if (getEvolutionSessions().some((s) => s.id === connId)) {
-      connType = "evolution";
-    } else if (getWppSessions().some((s) => s.id === connId)) {
+
+  if (resolvedConnId) {
+    if (getWppSessions().some((s) => s.id === resolvedConnId)) {
       // A retomada automática (POST /api/guest-forms/[token]) ainda não sabe
       // montar o payload sintético no formato que o webhook do WPPConnect
       // espera (ver buildResumePayload) — bloqueado aqui até isso existir,
@@ -43,16 +50,30 @@ export async function POST(req: NextRequest) {
         { error: "Link manual ainda não é suportado para conexões WPPConnect." },
         { status: 400 },
       );
-    } else {
-      const funnels = getFunnels().filter((f) => f.clientId === clientId);
-      const conn = funnels.flatMap((f) => f.connections ?? []).find((c) => c.id === connId);
-      if (conn?.type === "uazapi") connType = "uazapi";
+    }
+    connType = resolveConnType(resolvedConnId);
+  } else {
+    // Sem connId explícito (não há tela de conversa aqui, na Pousada) —
+    // auto-detecta a primeira conexão elegível (Evolution ou UazAPI)
+    // vinculada aos funis deste cliente.
+    const funnels = getFunnels().filter((f) => f.clientId === clientId);
+    const clientFunnelIds = new Set(funnels.map((f) => f.id));
+
+    const evo = getEvolutionSessions().find((s) => s.funnelId && clientFunnelIds.has(s.funnelId));
+    const uazConn = funnels.flatMap((f) => f.connections ?? []).find((c) => c.type === "uazapi");
+
+    if (evo) {
+      resolvedConnId = evo.id;
+      connType = "evolution";
+    } else if (uazConn) {
+      resolvedConnId = uazConn.id;
+      connType = "uazapi";
     }
   }
 
-  if (!connType) {
+  if (!connType || !resolvedConnId) {
     return NextResponse.json(
-      { error: "Link manual só é suportado para conexões UazAPI ou Evolution." },
+      { error: "Nenhuma conexão UazAPI ou Evolution encontrada para este cliente." },
       { status: 400 },
     );
   }
@@ -70,7 +91,7 @@ export async function POST(req: NextRequest) {
     clientId,
     clientName: client?.name,
     phone: cleanPhone,
-    connId: connId ?? null,
+    connId: resolvedConnId,
     connType,
   });
 
