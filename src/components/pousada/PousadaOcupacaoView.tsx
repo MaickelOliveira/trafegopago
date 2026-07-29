@@ -29,7 +29,10 @@ const DATAS_RAPIDAS: { label: string; value: () => string }[] = [
 ];
 
 export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role: "manager" | "client" }) {
+  const [modo, setModo] = useState<"dia" | "periodo">("dia");
   const [data, setData] = useState(new Date().toISOString().slice(0, 10));
+  // Só usado no modo "período" — quando vazio, cai no próprio `data` (1 dia só).
+  const [dataFim, setDataFim] = useState("");
   const [totalQuartos, setTotalQuartos] = useState(0);
   const [ocupados, setOcupados] = useState<Ocupado[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,12 +42,17 @@ export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/pousada/ocupacao?clientId=${clientId}&data=${data}`).then((r) => r.json());
+    const params = new URLSearchParams({ clientId, data });
+    // No modo "por período", manda dataFim mesmo que ainda igual a `data`
+    // (intervalo de 1 dia) — a API só ativa a checagem por período quando
+    // esse parâmetro está presente.
+    if (modo === "periodo") params.set("dataFim", dataFim || data);
+    const res = await fetch(`/api/pousada/ocupacao?${params}`).then((r) => r.json());
     setTotalQuartos(res.totalQuartos ?? 0);
     setOcupados(res.ocupados ?? []);
     setTotalDraft(String(res.totalQuartos ?? 0));
     setLoading(false);
-  }, [clientId, data]);
+  }, [clientId, data, dataFim, modo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -69,36 +77,64 @@ export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role
       <div className="p-6 md:p-8 space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-xl font-semibold text-slate-900 flex items-center gap-2">🛏️ Mapa de ocupação</h1>
-        <p className="text-sm text-slate-500 mt-1">Veja quais quartos/chalés estão ocupados em uma data específica.</p>
+        <p className="text-sm text-slate-500 mt-1">
+          {modo === "dia"
+            ? "Veja quais quartos/chalés estão ocupados em uma data específica."
+            : "Veja quais quartos/chalés têm alguma reserva em QUALQUER dia do período — útil pra saber disponibilidade de uma estadia de várias diárias."}
+        </p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex rounded-lg border border-slate-200 p-0.5">
+          {(["dia", "periodo"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setModo(m)}
+              className={clsx(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition",
+                modo === m ? "bg-amber-600 text-white" : "text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              {m === "dia" ? "Por dia" : "Por período"}
+            </button>
+          ))}
+        </div>
         <div>
-          <label className="text-xs font-medium text-slate-600 block mb-1">Data</label>
+          <label className="text-xs font-medium text-slate-600 block mb-1">{modo === "dia" ? "Data" : "De"}</label>
           <input type="date" value={data} onChange={(e) => setData(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {DATAS_RAPIDAS.map((d) => {
-            const v = d.value();
-            const ativo = v === data;
-            return (
-              <button
-                key={d.label}
-                type="button"
-                onClick={() => setData(v)}
-                className={clsx(
-                  "rounded-lg px-3 py-2 text-xs font-medium border transition",
-                  ativo
-                    ? "bg-amber-600 border-amber-600 text-white"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                )}
-              >
-                {d.label}
-              </button>
-            );
-          })}
-        </div>
+        {modo === "periodo" && (
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">Até</label>
+            <input type="date" value={dataFim} min={data} onChange={(e) => setDataFim(e.target.value)}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+          </div>
+        )}
+        {modo === "dia" && (
+          <div className="flex flex-wrap gap-1.5">
+            {DATAS_RAPIDAS.map((d) => {
+              const v = d.value();
+              const ativo = v === data;
+              return (
+                <button
+                  key={d.label}
+                  type="button"
+                  onClick={() => setData(v)}
+                  className={clsx(
+                    "rounded-lg px-3 py-2 text-xs font-medium border transition",
+                    ativo
+                      ? "bg-amber-600 border-amber-600 text-white"
+                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  )}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="flex-1" />
         {role === "manager" && (
           editandoTotal ? (
