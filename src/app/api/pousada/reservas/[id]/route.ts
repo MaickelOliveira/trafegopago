@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getReservaById, updateReserva, deleteReserva } from "@/lib/pousada";
+import { getClientById } from "@/lib/clients";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -16,7 +17,11 @@ export async function GET(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json(reserva);
+  // clientName usado pra trocar o título da aba/impressão (mostra o nome do
+  // cliente, ex: "Vítallí Garden", em vez do nome fixo da plataforma) — ver
+  // PousadaReservaDetailView.tsx.
+  const clientName = getClientById(reserva.clientId)?.name;
+  return NextResponse.json({ ...reserva, clientName });
 }
 
 export async function PUT(req: NextRequest, { params }: Params) {

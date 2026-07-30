@@ -30,9 +30,14 @@ const STATUS_LABEL: Record<string, string> = {
 function Campo({ label, value }: { label: string; value?: string | number | null }) {
   if (value === undefined || value === null || value === "") return null;
   return (
-    <div>
+    // min-w-0 permite a coluna do grid encolher de verdade — sem isso, um
+    // valor sem espaços (e-mail, endereço sem vírgula) força a célula a
+    // manter a largura do conteúdo e o texto "vaza" por cima da célula
+    // vizinha em vez de quebrar linha (aconteceu na prática: e-mail cobrindo
+    // o início do endereço no hóspede do Eliézer).
+    <div className="min-w-0">
       <p className="text-xs text-slate-400">{label}</p>
-      <p className="text-sm text-slate-800">{value}</p>
+      <p className="text-sm text-slate-800 break-words">{value}</p>
     </div>
   );
 }
@@ -48,6 +53,7 @@ export function PousadaReservaDetailView({
 }) {
   const router = useRouter();
   const [reserva, setReserva] = useState<Reserva | null>(null);
+  const [clientName, setClientName] = useState<string | null>(null);
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [loading, setLoading] = useState(true);
   const [editando, setEditando] = useState(false);
@@ -59,11 +65,25 @@ export function PousadaReservaDetailView({
       fetch(`/api/pousada/tipos?clientId=${clientId}`).then((r) => r.json()),
     ]);
     setReserva(reservaRes);
+    setClientName(reservaRes?.clientName ?? null);
     setTipos(Array.isArray(tiposRes) ? tiposRes : []);
     setLoading(false);
   }, [clientId, reservaId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Título da aba/impressão — sem isso, o navegador imprime o título fixo da
+  // plataforma ("Nexo — Dashboard de Campanhas") no cabeçalho da página
+  // impressa em vez do nome do cliente, o que confundia quem recebia a ficha
+  // impressa (ex: aparecia "Nexo" numa ficha de hóspedes da Vítallí Garden).
+  useEffect(() => {
+    if (!reserva) return;
+    const prevTitle = document.title;
+    document.title = clientName
+      ? `${clientName} — Reserva de ${reserva.responsavel.nome}`
+      : `Reserva de ${reserva.responsavel.nome}`;
+    return () => { document.title = prevTitle; };
+  }, [reserva, clientName]);
 
   const dashboardHref = role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada";
 
