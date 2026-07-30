@@ -51,7 +51,18 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   // extrai o valor da reserva e monta/envia essa mensagem — sem depender do
   // modelo de linguagem pra esse passo crítico. Cai no fluxo antigo (IA
   // conversacional) só quando falta alguma dessas condições.
-  const sentDeterministically = await tryChargeMessage(form.clientId, form.phone, form.connId ?? null, resumoTexto);
+  // ⚠️ NUNCA deixa uma exceção aqui derrubar a resposta inteira — se
+  // tryChargeMessage() lançar por qualquer motivo, isso já aconteceu na
+  // prática (Vitalli, 30/07/2026): o cliente preencheu o formulário, nada
+  // apareceu na conversa (nem a cobrança automática, nem o fluxo antigo da
+  // IA), porque a exceção não tratada interrompia o handler antes de chegar
+  // no fallback abaixo. Trata como "não conseguiu" e sempre tenta o fallback.
+  let sentDeterministically = false;
+  try {
+    sentDeterministically = await tryChargeMessage(form.clientId, form.phone, form.connId ?? null, resumoTexto);
+  } catch (e) {
+    console.error("[guest-forms] tryChargeMessage lançou exceção — caindo no fluxo antigo:", e instanceof Error ? e.stack ?? e.message : e);
+  }
 
   if (!sentDeterministically) {
     // ── Fluxo antigo — "retoma" a conversa chamando o próprio webhook da
@@ -83,12 +94,23 @@ async function tryChargeMessage(
   connId: string | null,
   resumoTexto: string,
 ): Promise<boolean> {
+  console.log(`[guest-forms] tryChargeMessage iniciando — clientId=${clientId} phone=${phone} connId=${connId}`);
+
   const client = getClientById(clientId);
-  if (!client?.enabledSystems?.includes("pousada") || !client.pousadaTipos?.length) return false;
-  if (!client.pousadaPixChave?.trim() || !client.pousadaPixFavorecido?.trim()) return false;
+  if (!client?.enabledSystems?.includes("pousada") || !client.pousadaTipos?.length) {
+    console.log(`[guest-forms] tryChargeMessage: pousada não habilitada/sem tipos — clientId=${clientId}`);
+    return false;
+  }
+  if (!client.pousadaPixChave?.trim() || !client.pousadaPixFavorecido?.trim()) {
+    console.log(`[guest-forms] tryChargeMessage: Pix não configurado — clientId=${clientId}`);
+    return false;
+  }
 
   const tipoHospedagem = client.pousadaTipos.find((t) => t.categoria === "hospedagem");
-  if (!tipoHospedagem) return false;
+  if (!tipoHospedagem) {
+    console.log(`[guest-forms] tryChargeMessage: sem tipo categoria=hospedagem configurado — clientId=${clientId}`);
+    return false;
+  }
 
   // Lead pausado (atendente já assumiu manualmente) — não manda cobrança
   // automática por cima, deixa o humano conduzir. Não conta como "não
@@ -96,11 +118,17 @@ async function tryChargeMessage(
   // mandar nada automaticamente, então retorna true pra NÃO cair no fluxo
   // antigo (que tentaria acionar a IA, também indevido nesse caso).
   const lead = getLeadByPhone(clientId, phone);
-  if (lead?.aiPaused) return true;
+  if (lead?.aiPaused) {
+    console.log(`[guest-forms] tryChargeMessage: lead com IA pausada — pulando cobrança automática — clientId=${clientId} phone=${phone}`);
+    return true;
+  }
 
   const agentCfg = getAgentConfigForConnection(client, connId);
   const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
-  if (!apiKey) return false;
+  if (!apiKey) {
+    console.log(`[guest-forms] tryChargeMessage: sem apiKey Gemini — clientId=${clientId} connId=${connId}`);
+    return false;
+  }
 
   // Grava a mensagem do cliente (dados do formulário) no histórico ANTES de
   // extrair — a extração lê o histórico completo pra montar a reserva.
