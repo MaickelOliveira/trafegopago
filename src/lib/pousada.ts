@@ -175,7 +175,8 @@ export function calcularTotais(reservas: Reserva[]) {
       valorTotal: acc.valorTotal + r.valorTotal,
       valorPago: acc.valorPago + r.valorPago,
       faltaPagar: acc.faltaPagar + r.faltaPagar,
+      totalPessoas: acc.totalPessoas + r.pessoas.length,
     }),
-    { valorTotal: 0, valorPago: 0, faltaPagar: 0 }
+    { valorTotal: 0, valorPago: 0, faltaPagar: 0, totalPessoas: 0 }
   );
 }

@@ -58,7 +58,8 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
   const [from, setFrom] = useState(firstDayOfMonth());
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const [reservas, setReservas] = useState<Reserva[]>([]);
-  const [totais, setTotais] = useState({ valorTotal: 0, valorPago: 0, faltaPagar: 0 });
+  const [totais, setTotais] = useState({ valorTotal: 0, valorPago: 0, faltaPagar: 0, totalPessoas: 0 });
+  const [faixasEtarias, setFaixasEtarias] = useState({ faixa0a5: 0, faixa6a12: 0 });
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -69,7 +70,8 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
     ]);
     setTipos(Array.isArray(tiposRes) ? tiposRes : []);
     setReservas(relRes.reservas ?? []);
-    setTotais(relRes.totais ?? { valorTotal: 0, valorPago: 0, faltaPagar: 0 });
+    setTotais(relRes.totais ?? { valorTotal: 0, valorPago: 0, faltaPagar: 0, totalPessoas: 0 });
+    setFaixasEtarias(relRes.faixasEtarias ?? { faixa0a5: 0, faixa6a12: 0 });
     setLoading(false);
   }, [clientId, tipo, from, to]);
 
@@ -156,6 +158,18 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                 <p className="text-xs text-slate-400">Falta pagar</p>
                 <p className="text-2xl font-semibold text-amber-600">{fmt(totais.faltaPagar)}</p>
               </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs text-slate-400">Total de pessoas</p>
+                <p className="text-2xl font-semibold text-slate-900">{totais.totalPessoas}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs text-slate-400">Crianças 0-5 anos</p>
+                <p className="text-2xl font-semibold text-slate-900">{faixasEtarias.faixa0a5}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs text-slate-400">Crianças 6-12 anos</p>
+                <p className="text-2xl font-semibold text-slate-900">{faixasEtarias.faixa6a12}</p>
+              </div>
             </div>
 
             {/* Uma tabela por tipo, com as colunas da planilha original */}
@@ -165,6 +179,12 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
             {gruposOrdenados.map((t) => {
               const rows = gruposPorTipo.get(t.slug)!;
               const hospedagem = t.categoria === "hospedagem";
+              const totalPessoasTipo = rows.reduce((s, r) => s + r.pessoas.length, 0);
+              const totalValorTipo = rows.reduce((s, r) => s + r.valorTotal, 0);
+              const totalPagoTipo = rows.reduce((s, r) => s + r.valorPago, 0);
+              const totalFaltaTipo = rows.reduce((s, r) => s + r.faltaPagar, 0);
+              const totalF05Tipo = rows.reduce((s, r) => s + faixasDaReserva(r).f05, 0);
+              const totalF612Tipo = rows.reduce((s, r) => s + faixasDaReserva(r).f612, 0);
               return (
                 <div key={t.slug} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
                   <p className="text-sm font-medium text-slate-700 px-4 pt-4 pb-2">
@@ -250,6 +270,40 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                             </tr>
                           );
                         })}
+                        <tr className="bg-slate-50 font-semibold text-slate-700">
+                          {hospedagem ? (
+                            <>
+                              {/* Nº, Reservado em, Check-in, Check-out, Responsável, Telefone */}
+                              <td className={TD} colSpan={6}>Total</td>
+                              <td className={TD}>{totalPessoasTipo}</td>
+                              {/* Quarto/Chalé */}
+                              <td className={TD}>—</td>
+                              <td className={TD}>{fmt(totalValorTipo)}</td>
+                              <td className={TD}>{fmt(totalPagoTipo)}</td>
+                              <td className={TD}>{fmt(totalFaltaTipo)}</td>
+                              {/* CPF, Status */}
+                              <td className={TD}>—</td>
+                              <td className={TD}>—</td>
+                            </>
+                          ) : (
+                            <>
+                              {/* Nº, Reservado em, Data, Responsável, Pessoas */}
+                              <td className={TD} colSpan={5}>Total</td>
+                              <td className={clsx(TD, "text-center")}>{totalF05Tipo}</td>
+                              <td className={clsx(TD, "text-center")}>{totalF612Tipo}</td>
+                              {/* Telefone */}
+                              <td className={TD}>—</td>
+                              <td className={TD}>{totalPessoasTipo}</td>
+                              <td className={TD}>{fmt(totalValorTipo)}</td>
+                              <td className={TD}>{fmt(totalPagoTipo)}</td>
+                              <td className={TD}>{fmt(totalFaltaTipo)}</td>
+                              {/* Status, Cidade, Observações */}
+                              <td className={TD}>—</td>
+                              <td className={TD}>—</td>
+                              <td className={TD}>—</td>
+                            </>
+                          )}
+                        </tr>
                       </tbody>
                     </table>
                   </div>
