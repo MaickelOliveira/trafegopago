@@ -506,7 +506,24 @@ export function splitMessage(text: string, maxLen = 300): string[] {
       parenFixed.push(chunk);
     }
   }
-  return parenFixed;
+
+  // Pós-processamento: nunca deixa uma bolha terminar com vírgula decimal
+  // "solta" (ex: "...é de R$ 330," | "00." — já aconteceu na prática com o
+  // Vitalli, duas vezes na mesma mensagem). Uma vírgula logo após um dígito,
+  // bem no fim da bolha, nunca é o fim natural de uma frase — é sempre um
+  // valor decimal partido ao meio. Gruda na próxima bolha até sair da vírgula.
+  const endsWithDanglingComma = (s: string) => /\d,\s*$/.test(s);
+  const commaFixed: string[] = [];
+  for (const chunk of parenFixed) {
+    const last = commaFixed[commaFixed.length - 1];
+    if (last !== undefined && endsWithDanglingComma(last)) {
+      const sep = /[\s\n]$/.test(last) ? "" : " ";
+      commaFixed[commaFixed.length - 1] = last + sep + chunk;
+    } else {
+      commaFixed.push(chunk);
+    }
+  }
+  return commaFixed;
 }
 
 export async function getPairingCode(token: string, phone: string): Promise<string | null> {
