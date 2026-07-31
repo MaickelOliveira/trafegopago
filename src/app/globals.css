@@ -29,6 +29,13 @@ body {
    da Pousada) — evita que o menu lateral, cabeçalhos e filtros apareçam no
    PDF/impressão junto com o conteúdo do relatório. */
 @media print {
+  /* Paisagem — os relatórios têm tabelas com muitas colunas (até 15), que
+     nunca cabem em retrato sem cortar conteúdo. */
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -41,5 +48,33 @@ body {
     left: 0;
     top: 0;
     width: 100%;
+  }
+
+  /* Containers com overflow-x-auto (scroll horizontal na tela) recortavam as
+     colunas que ficavam fora da largura visível — na tela dá pra rolar, na
+     impressão o conteúdo simplesmente sumia. Deixa tudo visível e encolhe a
+     tabela (fonte/padding menores) pra caber na página em vez de cortar. */
+  .print-area .overflow-x-auto {
+    overflow: visible !important;
+  }
+  .print-area table {
+    width: 100%;
+    table-layout: auto;
+    font-size: 8px;
+    border-collapse: collapse;
+  }
+  .print-area th,
+  .print-area td {
+    padding: 3px 4px !important;
+    white-space: normal !important;
+    word-break: break-word;
+  }
+  /* Repete o cabeçalho em cada página quando a tabela quebra em várias
+     folhas, e evita cortar uma linha de hóspede/reserva no meio. */
+  .print-area thead {
+    display: table-header-group;
+  }
+  .print-area tr {
+    page-break-inside: avoid;
   }
 }
