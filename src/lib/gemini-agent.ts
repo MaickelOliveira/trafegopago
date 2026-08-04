@@ -215,7 +215,7 @@ function buildSheetToolMulti(
   };
 }
 
-function sanitizeForWhatsApp(text: string): string {
+export function sanitizeForWhatsApp(text: string): string {
   let result = text
     // 1. Remove blocos de código e backticks
     .replace(/```[\s\S]*?```/g, "")
@@ -246,9 +246,12 @@ function sanitizeForWhatsApp(text: string): string {
     .replace(/(,\d{2})(\d+[\.\)]\s)/g, "$1\n\n$2")
     // 0 newlines → 2 (usa lookbehind em vez de capturar o char anterior — não
     // dispara: logo após \n ou * (regras 8/10 cuidam disso), no meio de um
-    // número de vários dígitos, ou logo após um horário tipo "12:30." — sem
-    // isso, "12:30. Como..." virava "12:\n\n30. Como..." no meio da frase.
-    .replace(/(?<!\n)(?<!\*)(?<!\d)(?<!\d:)(\*?\d+[\.\)]\s)/g, "\n\n$1")
+    // número de vários dígitos, logo após um horário tipo "12:30." — sem
+    // isso, "12:30. Como..." virava "12:\n\n30. Como..." no meio da frase —
+    // nem logo após vírgula (centavos): "R$ 285,00. Segue" casava o "00. "
+    // porque o char anterior ao primeiro 0 é a vírgula, e virava
+    // "R$ 285,\n\n00. Segue" (duas bolhas no WhatsApp — Vitalli, 04/08/2026).
+    .replace(/(?<!\n)(?<!\*)(?<!\d)(?<!\d:)(?<!,)(\*?\d+[\.\)]\s)/g, "\n\n$1")
     // 10. Remove asteriscos solitários em parágrafos próprios (resíduo de ** multi-linha)
     //     ex: "\n\n*\n\n" → "\n\n" e "* solt\n\nN." → "N."
     .replace(/\n\n\*\n\n(\d+[\.\)]\s)/g, "\n\n$1")  // *\n\nN. → N.
@@ -263,8 +266,137 @@ function sanitizeForWhatsApp(text: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  console.log(`[sanitize v8] in=${text.length}chars out=${result.length}chars bullets=${(result.match(/\n•/g) ?? []).length}`);
+  console.log(`[sanitize v9] in=${text.length}chars out=${result.length}chars bullets=${(result.match(/\n•/g) ?? []).length}`);
   return result;
+}
+
+// Nomes de todas as ferramentas que o modelo conhece — usados para classificar
+// blocos JSON vazados como texto. adicionar_linha_planilha é declarada
+// dinamicamente (buildSheetTool), por isso não está em TOOL_DECLARATIONS.
+const KNOWN_TOOL_NAMES: string[] = [
+  ...TOOL_DECLARATIONS.map((d) => d.name!),
+  "adicionar_linha_planilha",
+];
+
+// Extrai o campo "motivo" de um bloco JSON de tool call vazado, com tolerância
+// aos formatos que o modelo alucina: action_input como objeto, como string JSON
+// válida, ou como pseudo-JSON de aspas simples ("{'motivo': '...'}").
+function extractMotivoFromLeak(raw: string): string | null {
+  try {
+    const obj = JSON.parse(raw);
+    let inner: unknown = obj.action_input ?? obj;
+    if (typeof inner === "string") {
+      const normalized = inner.trim();
+      try {
+        inner = JSON.parse(normalized);
+      } catch {
+        try {
+          inner = JSON.parse(normalized.replace(/'/g, '"'));
+        } catch {
+          inner = null;
+        }
+      }
+    }
+    if (inner && typeof inner === "object" && "motivo" in inner) {
+      const motivo = (inner as Record<string, unknown>).motivo;
+      if (typeof motivo === "string" && motivo.trim()) return motivo.trim();
+    }
+  } catch {
+    // JSON.parse do bloco inteiro falhou — cai no fallback por regex
+  }
+  // Fallback: acha 'motivo': '...' (aspas simples ou duplas) direto no texto bruto.
+  const m = raw.match(/['"]motivo['"]\s*:\s*(['"])([\s\S]*?)\1\s*[}\],]/);
+  if (m && m[2].trim()) return m[2].trim();
+  return null;
+}
+
+// Camada ESTRUTURAL anti-vazamento: o modelo às vezes escreve a chamada de
+// ferramenta como um bloco JSON literal no texto (formato ReAct alucinado:
+// {"action": "enviar_resumo", "action_input": "{'motivo': '...'}"}), em vez de
+// usar function calling nativo. As camadas de regex abaixo (RESUMO_TEXT_CALL
+// etc.) cobrem formatos anteriores mas não JSON com chaves — foi o 11º formato
+// observado (Vitalli, 04/08/2026). Esta função varre o texto por blocos {...}
+// balanceados, remove os que são tool call e recupera o motivo para que a
+// action dispare normalmente (sem isso, além de vazar pro cliente, o gestor
+// nunca é avisado). Deve rodar ANTES das camadas por linha/parágrafo (que
+// picariam o JSON) e ANTES de sanitizeForWhatsApp (que apaga code fences
+// levando o motivo junto).
+export function stripJsonToolCallLeaks(
+  text: string,
+  phone: string,
+): { text: string; recovered: GeminiAction[] } {
+  const recovered: GeminiAction[] = [];
+  const isToolCallBlock = (raw: string): boolean =>
+    /["']?action(?:_input)?["']?\s*:/.test(raw) ||
+    KNOWN_TOOL_NAMES.some((n) => raw.includes(n));
+
+  // Varre blocos {...} balanceados por contagem simples de chaves (sem rastrear
+  // aspas — apóstrofos do português quebrariam um rastreador de string; chaves
+  // aninhadas dentro de action_input são balanceadas, então a contagem fecha certo).
+  const blocks: Array<{ start: number; end: number }> = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0 && start !== -1) {
+          blocks.push({ start, end: i + 1 });
+          start = -1;
+        }
+      }
+    }
+  }
+  // Bloco truncado: abriu e nunca fechou (resposta cortada por limite de tokens).
+  if (depth > 0 && start !== -1 && isToolCallBlock(text.slice(start))) {
+    blocks.push({ start, end: text.length });
+  }
+
+  let result = text;
+  // Remove de trás pra frente pra não invalidar os índices dos blocos anteriores.
+  for (let b = blocks.length - 1; b >= 0; b--) {
+    const raw = text.slice(blocks[b].start, blocks[b].end);
+    if (!isToolCallBlock(raw)) continue;
+
+    const motivo = extractMotivoFromLeak(raw);
+    const isResumo = /enviar_resumo/.test(raw);
+    const otherTool = KNOWN_TOOL_NAMES.find((n) => n !== "enviar_resumo" && raw.includes(n));
+
+    if (isResumo && motivo) {
+      recovered.push({ type: "resumo_solicitado", motivo, phone });
+    } else if (otherTool) {
+      // Nunca executar outra ferramenta retroativamente a partir de texto
+      // malformado (risco de agendar/cancelar errado) — só avisa o gestor.
+      recovered.push({
+        type: "resumo_solicitado",
+        motivo: `Ferramenta ${otherTool} vazou como texto e NÃO foi executada — verificar conversa`,
+        phone,
+      });
+    } else {
+      recovered.push({
+        type: "resumo_solicitado",
+        motivo: `TOOL-CALL VAZADO (JSON não interpretado) — verificar conversa: ${raw.replace(/\s+/g, " ").slice(0, 400)}`,
+        phone,
+      });
+    }
+    result = result.slice(0, blocks[b].start) + result.slice(blocks[b].end);
+  }
+
+  if (recovered.length > 0) {
+    result = result
+      // Fences que sobraram vazios depois da remoção do bloco
+      .replace(/```(?:json|tool_code|javascript)?\s*```/g, "")
+      // Rótulo "json"/"tool_code" que ficou sozinho numa linha
+      .replace(/^\s*(?:json|tool_code)\s*$/gim, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  return { text: result, recovered };
 }
 
 function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[], sheetTypes?: string[], hasSheet?: boolean, hasAvisos?: boolean): string {
@@ -725,6 +857,21 @@ export async function runGeminiAgent(
     return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
   }
 
+  // Camada estrutural PRIMEIRO: remove blocos JSON de tool call vazados como
+  // texto (formato ReAct alucinado com chaves) e recupera o motivo — precisa
+  // rodar antes das camadas por linha/parágrafo abaixo, que picariam o JSON.
+  const jsonLeak = stripJsonToolCallLeaks(finalText, phone);
+  finalText = jsonLeak.text;
+  for (const rec of jsonLeak.recovered) {
+    if (
+      rec.type === "resumo_solicitado" &&
+      !actions.some((a) => a.type === "resumo_solicitado" && a.motivo === rec.motivo)
+    ) {
+      console.warn(`[gemini-agent] tool-call vazou como JSON — extraindo motivo="${rec.motivo.slice(0, 120)}"`);
+      actions.push(rec);
+    }
+  }
+
   // Extrai chamadas de enviar_resumo que o modelo escreveu como TEXTO em vez de
   // via function call nativa (ex: bloco "tool_code" / "print(enviar_resumo(motivo='...'))").
   // Sem isso, o motivo nunca chega a processMetaActions/sheet-extractor — o aviso
@@ -867,6 +1014,8 @@ export async function runGeminiAgent(
       const t = line.trim();
       if (!t) return true;
       if (t === "tool_code" || t === "```tool_code" || t === "```") return false;
+      // Chave solta residual de bloco JSON de tool call picado por linhas em branco
+      if (t === "{" || t === "}" || t === "},") return false;
       if (KNOWN_TOOL_CALL.test(t)) return false;
       if (NARRATED_MOTIVO_LINE.test(t)) return false;
       if (BULLET_MOTIVO_LINE.test(t)) return false;
