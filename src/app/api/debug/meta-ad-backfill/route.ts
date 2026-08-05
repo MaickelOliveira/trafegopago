@@ -16,6 +16,23 @@ export const dynamic = "force-dynamic";
  * POST /api/debug/meta-ad-backfill          — roda em todos os clientes
  * POST /api/debug/meta-ad-backfill?clientId=vitalli-garden — só um cliente
  */
+// Chamada direta à Graph API (bypassa getAdInfoById) só pra este endpoint de
+// diagnóstico conseguir devolver o texto real do erro na resposta — a versão
+// usada pelos webhooks engole o erro (só console.warn) porque ali só importa
+// o resultado, não a causa; aqui a causa é o que precisamos ver.
+async function fetchRawAdError(adId: string, token: string): Promise<string> {
+  const url = new URL(`https://graph.facebook.com/v19.0/${adId}`);
+  url.searchParams.set("access_token", token);
+  url.searchParams.set("fields", "name,adset_id,campaign_id,adset{id,name,campaign{id,name}}");
+  try {
+    const res = await fetch(url.toString());
+    const bodyText = await res.text();
+    return `HTTP ${res.status}: ${bodyText.slice(0, 500)}`;
+  } catch (e) {
+    return `fetch falhou: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
 export async function POST(req: Request) {
   const clientId = new URL(req.url).searchParams.get("clientId") ?? undefined;
   const cfg = getConfig();
@@ -31,7 +48,8 @@ export async function POST(req: Request) {
   for (const lead of leads) {
     const adInfo = await getAdInfoById(lead.adId!, cfg.metaToken);
     if (!adInfo) {
-      results.push({ leadId: lead.id, phone: lead.phone, clientId: lead.clientId, adId: lead.adId, updated: false, reason: "Graph API falhou de novo (ver logs)" });
+      const rawError = await fetchRawAdError(lead.adId!, cfg.metaToken);
+      results.push({ leadId: lead.id, phone: lead.phone, clientId: lead.clientId, adId: lead.adId, updated: false, reason: rawError });
       continue;
     }
     const updated = updateLead(lead.id, {
