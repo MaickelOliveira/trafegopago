@@ -1,6 +1,6 @@
 // Verificação manual de stripJsonToolCallLeaks e sanitizeForWhatsApp.
 // Rodar: npx tsx scripts/verify-sanitize.ts
-import { stripJsonToolCallLeaks, sanitizeForWhatsApp } from "../src/lib/gemini-agent";
+import { stripJsonToolCallLeaks, sanitizeForWhatsApp, isLikelyGarbageMotivo } from "../src/lib/gemini-agent";
 
 let passed = 0;
 let failed = 0;
@@ -146,6 +146,50 @@ console.log("\n=== BUG 2: sanitizeForWhatsApp (split de centavos) ===\n");
   const raw = "Perfeito! 🥩\n\nPara o Dia dos Pais (09/08), o valor total para 2 adultos e uma criança de 4 anos fica R$ 190,\n\n00.\n\n\n\nPara que eu possa registrar sua reserva, por gentileza, me informe o nome completo e a idade de cada participante.\n\nDados para o Pix (pagamento integral):\n• Chave: CNPJ 63.529.514/0001-59\n• Favorecido: Vitalli\n\nAssim que me passar os nomes e idades, já deixo tudo reservado para vocês! 😊";
   const out = sanitizeForWhatsApp(raw);
   check("14. R$ 190,00 (quebra gerada pelo modelo) reparado", out.includes("R$ 190,00.") && !out.includes("190,\n"), JSON.stringify(out.slice(0, 140)));
+}
+
+console.log("\n=== BUG 3: isLikelyGarbageMotivo (resumo espúrio, motivo-fragmento) ===\n");
+
+// 15. Os 14 motivos reais capturados em produção (Vitalli, 05/08/2026) devem
+// ser rejeitados — todos fragmentos soltos da própria resposta do modelo.
+{
+  const garbageReal = [
+    "4. INFORMAÇÕES ADICIONAIS",
+    "2. SOBRE OS FILHOS",
+    "CONDIÇÕES DE RESERVA",
+    "3. FORMA DE PAGAMENTO",
+    "2. DETALHES IMPORTANTES",
+    "POLÍTICA IMPORTANTE",
+    "1. CAFÉ DA MANHÃ E ALMOÇO",
+    "INFORMAÇÕES ADICIONAIS",
+    "1. EVENTO",
+    "3. DIFERENCIAIS",
+    "2. IMPORTANTE",
+    "2. DAY USE",
+    "🔹 CNPJ: 63.529.514/0001-59",
+    "• [MIDIA: almoco",
+  ];
+  const allRejected = garbageReal.every((m) => isLikelyGarbageMotivo(m));
+  check("15. todos os 14 motivos-fragmento reais são rejeitados", allRejected,
+    JSON.stringify(garbageReal.filter((m) => !isLikelyGarbageMotivo(m))));
+}
+
+// 16. Motivos legítimos reais (incluindo os do Padrão 2, que o Fix A NÃO deve
+// pegar — esses são resolvidos pelo reforço de prompt, Fix B) nunca são
+// rejeitados pelo filtro de código.
+{
+  const legitimosReal = [
+    "DADOS RECEBIDOS: cliente enviou dados para almoço de domingo 09/08 — aguardando pagamento",
+    "PAGAMENTO PIX: cliente informou que realizou o pagamento — verificar e confirmar reserva",
+    "ORÇAMENTO DE EVENTO: Day Use Corporativo (Equipe Caixa) — data 14/07 — 30 pessoas — equipe deve montar proposta personalizada",
+    "RESERVA DATA FUTURA: cliente quer reservar para 2026-09-05 — atendente deve contatar para confirmar disponibilidade",
+    "ARRAIÁ ADIADO — pessoa quer ser avisada da nova data: ainda não informou o nome",
+    "Dúvida sem resposta: cliente insiste em enviar menu de departamentos contábeis. Posso encerrar o atendimento ou devo ignorar?",
+    "PROPOSTA COMERCIAL: Marcos da empresa de marketing (Engaje) enviou mídia kit de painel de LED em Goioerê para parceria. Mídia kit recebido e repassado para gerência.",
+  ];
+  const noneRejected = legitimosReal.every((m) => !isLikelyGarbageMotivo(m));
+  check("16. motivos legítimos (incluindo Padrão 2) não são rejeitados", noneRejected,
+    JSON.stringify(legitimosReal.filter((m) => isLikelyGarbageMotivo(m))));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

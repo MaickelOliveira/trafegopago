@@ -408,6 +408,27 @@ export function stripJsonToolCallLeaks(
   return { text: result, recovered };
 }
 
+// Detecta "motivo" que na verdade é um pedaço solto da própria resposta que o
+// modelo estava escrevendo (título de seção tipo "4. INFORMAÇÕES ADICIONAIS",
+// ou fragmento de template tipo "🔹 CNPJ: ..." / "• [MIDIA: almoco") em vez de
+// uma razão de verdade pro gestor. Confirmado em produção (Vitalli, leads
+// "Marciele Nogoceki" e "Claudia", 05/08/2026 — 14 de 74 avisos enviados eram
+// exatamente esse padrão): esse texto não aparecia em nenhum lugar da
+// conversa real — é uma confusão do modelo entre o conteúdo da resposta e o
+// argumento da ferramenta, mesmo sendo uma function call nativa (não é
+// vazamento de texto, que já é tratado por stripJsonToolCallLeaks acima).
+// Todo motivo legítimo documentado (e o próprio TOOL_DECLARATIONS de
+// enviar_resumo, mais abaixo) segue "RÓTULO: descrição" com dois-pontos —
+// por isso essa checagem é segura para qualquer cliente, não só a Vitalli.
+export function isLikelyGarbageMotivo(motivo: string): boolean {
+  const t = motivo.trim();
+  if (!t) return true;
+  if (/\[MIDIA/i.test(t)) return true;
+  if (/^[•\-–🔹]/.test(t)) return true;
+  if (!t.includes(":") && t.length < 60) return true;
+  return false;
+}
+
 function buildSystemPrompt(clientName: string, customPrompt?: string, mediaLibrary?: AgentMedia[], knowledgeBase?: KnowledgeBaseDoc[], sheetHeaders?: string[], sheetTypes?: string[], hasSheet?: boolean, hasAvisos?: boolean): string {
   const now = new Date();
   const today = now.toLocaleDateString("pt-BR", {
@@ -798,7 +819,11 @@ export async function runGeminiAgent(
 
             else if (call.name === "enviar_resumo") {
               const motivo = (args.motivo as string) || "Solicitado pela IA";
-              actions.push({ type: "resumo_solicitado", motivo, phone });
+              if (isLikelyGarbageMotivo(motivo)) {
+                console.warn(`[gemini-agent] enviar_resumo com motivo suspeito (fragmento da própria resposta, não escalado) — clientId=${clientId} phone=${phone} motivo="${motivo}"`);
+              } else {
+                actions.push({ type: "resumo_solicitado", motivo, phone });
+              }
               result = { ok: true };
             }
 
