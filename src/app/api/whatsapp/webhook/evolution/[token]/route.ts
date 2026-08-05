@@ -606,13 +606,18 @@ export async function POST(
   const nameToSave = contactNameFromApi ?? (shouldUpdateName ? pushName : undefined);
 
   // ── Lookup no Meta Ads API para enriquecer dados de campanha ──
-  // "alreadyAttributed" = este lead já tem exatamente este adId salvo (de uma
-  // mensagem anterior) — não repete a chamada à Meta API. IMPORTANTE: quando
-  // isso acontece, adFields fica {} (não reconstrói com dados parciais) —
-  // senão uma mensagem de follow-up que ainda carrega o mesmo externalAdReply
-  // sobrescreve o Conjunto/Anúncio/Campaign ID já resolvidos com null.
+  // "alreadyAttributed" = este lead já tem exatamente este adId salvo E já
+  // resolveu campaignId via Graph API (não só o fallback de headline) — não
+  // repete a chamada à Meta API. IMPORTANTE: sem o "!!existingLead?.campaignId"
+  // aqui, um lead que caiu no fallback na primeira mensagem (token ausente,
+  // rate limit, erro transitório) ficava preso PARA SEMPRE com dados
+  // incompletos — nenhuma mensagem seguinte tentava de novo, porque o adId já
+  // "batia" com o salvo. Quando alreadyAttributed é true, adFields fica {}
+  // (não reconstrói com dados parciais) — senão uma mensagem de follow-up que
+  // ainda carrega o mesmo externalAdReply sobrescreve o Conjunto/Anúncio/
+  // Campaign ID já resolvidos com null.
   let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-  const alreadyAttributed = !!ctwaAdId && existingLead?.adId === ctwaAdId;
+  const alreadyAttributed = !!ctwaAdId && existingLead?.adId === ctwaAdId && !!existingLead?.campaignId;
   const shouldLookupAd = !!ctwaAdId && !alreadyAttributed;
   if (shouldLookupAd) {
     try {

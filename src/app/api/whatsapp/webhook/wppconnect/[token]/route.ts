@@ -579,10 +579,15 @@ export async function POST(
   const nameToSave = contactNameFromApi ?? (shouldUpdateName ? pushName : undefined);
 
   // ── Lookup no Meta Ads API para enriquecer dados de campanha ──
-  // Roda sempre que houver CTWa referral com Ad ID (novo ou retornante — lead pode ter
-  // clicado em anúncio diferente numa nova sessão).
+  // "alreadyFullyAttributed" = este lead já tem o mesmo adId E já resolveu campaignId
+  // via Graph API (não só o fallback de headline) — não repete a chamada.
+  // IMPORTANTE: sem o "!!existingLead?.campaignId" aqui, um lead que caiu no fallback
+  // na primeira mensagem (token ausente, rate limit, erro transitório da Graph API)
+  // ficava preso PARA SEMPRE com dados incompletos — nenhuma mensagem seguinte
+  // tentava de novo, porque o adId já "batia" com o salvo.
   let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-  const shouldLookupAd = !!ctwaAdId && (!existingLead?.adId || existingLead.adId !== ctwaAdId);
+  const alreadyFullyAttributed = !!ctwaAdId && existingLead?.adId === ctwaAdId && !!existingLead?.campaignId;
+  const shouldLookupAd = !!ctwaAdId && !alreadyFullyAttributed;
   if (shouldLookupAd) {
     try {
       const cfg = getConfig();
@@ -597,6 +602,9 @@ export async function POST(
     }
   }
 
+  // Quando já está totalmente atribuído, adFields fica {} (não reconstrói com dados
+  // parciais) — senão uma mensagem de follow-up que ainda carrega o mesmo
+  // externalAdReply sobrescreve o Conjunto/Anúncio/Campaign ID já resolvidos com null.
   const adFields = adInfo
     ? {
         adPlatform: "meta" as const,
@@ -608,6 +616,8 @@ export async function POST(
         campaignName: adInfo.campaignName,
         adSourceUrl: ctwaSourceUrl ?? null,
       }
+    : alreadyFullyAttributed
+    ? {}
     : ctwaAdId || ctwaHeadline || ctwaSourceUrl
     ? {
         adPlatform: "meta" as const,

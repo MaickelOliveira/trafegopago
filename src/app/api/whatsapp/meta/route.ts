@@ -153,9 +153,20 @@ export async function POST(req: NextRequest) {
         // (conn.metaToken), que só tem permissão de mensagens. Por isso a busca
         // usava o token errado, falhava silenciosamente e caía no headline como
         // nome de campanha. Mesmo padrão já usado no WPPConnect (cfg.metaToken).
+        //
+        // "alreadyFullyAttributed" = mesmo adId já salvo E já resolveu campaignId
+        // via Graph API (não só o fallback de headline). Sem o "!!existingLead
+        // ?.campaignId" aqui, um lead que caísse no fallback na primeira
+        // mensagem (token ausente, rate limit, erro transitório) ficava preso
+        // PARA SEMPRE com dados incompletos — nenhuma mensagem seguinte
+        // tentava de novo. Quando já está totalmente atribuído, adFields fica
+        // {} — senão uma mensagem de follow-up que ainda carrega o mesmo
+        // referral sobrescreve Conjunto/Anúncio/Campaign ID (e até o
+        // campaignName real da campanha) de volta pro headline.
         const metaAdsToken = getConfig().metaToken;
         let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-        const shouldLookupAd = !!ctwaAdId && !!metaAdsToken && (!existingLead?.adId || existingLead.adId !== ctwaAdId);
+        const alreadyFullyAttributed = !!ctwaAdId && existingLead?.adId === ctwaAdId && !!existingLead?.campaignId;
+        const shouldLookupAd = !!ctwaAdId && !!metaAdsToken && !alreadyFullyAttributed;
         if (shouldLookupAd) {
           adInfo = await getAdInfoById(ctwaAdId!, metaAdsToken).catch(() => null);
           console.log(`[meta/CTWa] adId=${ctwaAdId} lookup=${adInfo ? `campanha="${adInfo.campaignName}"` : "null (falhou ou sem token)"}`);
@@ -172,6 +183,8 @@ export async function POST(req: NextRequest) {
               campaignName: adInfo.campaignName,
               adSourceUrl: ctwaSourceUrl ?? null,
             }
+          : alreadyFullyAttributed
+          ? {}
           : ctwaAdId || ctwaHeadline || ctwaSourceUrl
           ? {
               adPlatform: "meta" as const,

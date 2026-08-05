@@ -632,9 +632,16 @@ export async function POST(
 
     const ctwaAdId = ctwaReferral?.source_id as string | undefined;
 
-    // Busca info completa do anúncio via Meta Ads API (assíncrono, apenas lead novo)
+    // Busca info completa do anúncio via Meta Ads API. "alreadyFullyAttributed" =
+    // mesmo adId já salvo E já resolveu campaignId via Graph API (não só o
+    // fallback de headline). Antes, isso só rodava "if (isNew && ctwaAdId)" —
+    // ou seja, um lead que caísse no fallback (sem token, rate limit, erro
+    // transitório) na primeira mensagem ficava preso PARA SEMPRE com dados
+    // incompletos, porque nenhuma mensagem seguinte (isNew sempre false depois
+    // da primeira) tentava a Graph API de novo.
     let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-    if (isNew && ctwaAdId) {
+    const alreadyFullyAttributed = !!ctwaAdId && existingLead?.adId === ctwaAdId && !!existingLead?.campaignId;
+    if (ctwaAdId && !alreadyFullyAttributed) {
       const cfg = getConfig();
       const token = cfg.metaToken;
       if (token) {
@@ -649,6 +656,9 @@ export async function POST(
       source: "whatsapp",
       ...(shouldUpdateName ? { name: contactName } : {}),
       ...(shouldUpdateStatus ? { status: entradaColumn } : {}),
+      // Quando já está totalmente atribuído, não reconstrói o patch de anúncio
+      // com dados parciais — senão uma mensagem de follow-up que ainda carrega
+      // o mesmo referral sobrescreve Conjunto/Anúncio/Campaign ID já resolvidos.
       ...(adInfo ? {
         adPlatform: "meta",
         adId: adInfo.adId,
@@ -658,7 +668,7 @@ export async function POST(
         campaignId: adInfo.campaignId,
         campaignName: adInfo.campaignName,
         adSourceUrl: (ctwaReferral?.source_url as string) ?? null,
-      } : ctwaReferral ? {
+      } : alreadyFullyAttributed ? {} : ctwaReferral ? {
         // Fallback: sem token Meta mas tem referral — salva o que veio no payload
         adPlatform: "meta",
         adId: ctwaAdId ?? null,
