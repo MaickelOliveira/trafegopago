@@ -217,6 +217,15 @@ function buildSheetToolMulti(
 
 export function sanitizeForWhatsApp(text: string): string {
   let result = text
+    // Repara valor decimal partido em dois parágrafos pelo próprio modelo
+    // (ex: "R$ 190,\n\n00." — Vitalli, lead Cristina, 05/08/2026, confirmado
+    // via /api/debug/conversations: o Gemini gerou a quebra sozinho, nenhuma
+    // regra de sanitização abaixo participou). Roda ANTES de tudo, pra
+    // nenhuma quebra pré-existente nessa posição sobreviver ao restante da
+    // cadeia — diferente do lookbehind (?<!,) mais abaixo, que só impede
+    // ESTA função de INSERIR uma quebra nova, não repara uma que já veio
+    // pronta do modelo.
+    .replace(/(\d),\s*\n\s*\n\s*(\d{2})(?!\d)/g, "$1,$2")
     // 1. Remove blocos de código e backticks
     .replace(/```[\s\S]*?```/g, "")
     .replace(/`([^`]+)`/g, "$1")

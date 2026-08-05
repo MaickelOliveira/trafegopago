@@ -8,7 +8,7 @@ import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import { runGeminiAgent } from "@/lib/gemini-agent";
-import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
+import { startFollowUpSequence, restartFollowUpSequence } from "@/lib/followups";
 import { upsertPending, getPendingForPhone, getDuePending, markDone, markProcessing, cancelPendingForPhone } from "@/lib/pending-responses";
 import { sendCapiEvent } from "@/lib/meta-capi";
 import { matchClick } from "@/lib/wa-clicks";
@@ -288,9 +288,9 @@ export async function POST(req: NextRequest) {
           // Lead novo: inicia sequência de follow-ups
           startFollowUpSequence(cid, phone, activeClientCfg.followUps, incomingConnectionId ?? undefined);
         } else {
-          // Lead existente respondeu: cancela follow-ups pendentes (sequência reinicia)
-          cancelFollowUpsForPhone(cid, phone);
-          startFollowUpSequence(cid, phone, activeClientCfg.followUps, incomingConnectionId ?? undefined);
+          // Lead existente respondeu: retoma a sequência do step em que já estava
+          // (não reinicia do zero — ver restartFollowUpSequence em src/lib/followups.ts)
+          restartFollowUpSequence(cid, phone, activeClientCfg.followUps, incomingConnectionId ?? undefined);
         }
       }
     }

@@ -32,7 +32,7 @@ import { createGuestForm } from "@/lib/guest-forms";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
-import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
+import { restartFollowUpSequence } from "@/lib/followups";
 import {
   upsertPending,
   getPendingForPhone,
@@ -767,8 +767,7 @@ export async function POST(
       const freshLead = getLeadByPhone(clientId, phone, funnelId);
       if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
       if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
-        cancelFollowUpsForPhone(clientId, phone);
-        startFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId);
+        restartFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId);
       }
     }
     return NextResponse.json({ ok: true });
@@ -787,8 +786,7 @@ export async function POST(
     const activeClientFU = getClientById(clientId);
     const agentCfgFU = activeClientFU ? getAgentConfigForConnection(activeClientFU, connId) : undefined;
     if (agentCfgFU?.followUpEnabled && (agentCfgFU.followUps?.length ?? 0) > 0) {
-      cancelFollowUpsForPhone(clientId, phone);
-      startFollowUpSequence(clientId, phone, agentCfgFU.followUps, connId);
+      restartFollowUpSequence(clientId, phone, agentCfgFU.followUps, connId);
     }
   }
 

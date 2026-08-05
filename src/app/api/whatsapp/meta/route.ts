@@ -6,7 +6,7 @@ import { addMessage, getHistory } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection, getConfig } from "@/lib/clients";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
-import { startFollowUpSequence, cancelFollowUpsForPhone, getFollowUpByWamid, markFailed } from "@/lib/followups";
+import { startFollowUpSequence, restartFollowUpSequence, getFollowUpByWamid, markFailed } from "@/lib/followups";
 import { sendMessageDirect, getGeminiApiKey, downloadMetaMedia } from "@/lib/whatsapp-send";
 import { splitMessage } from "@/lib/uazapi";
 import { sendTemplate } from "@/lib/waba-templates";
@@ -265,8 +265,7 @@ export async function POST(req: NextRequest) {
           if (isNew) {
             startFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined);
           } else {
-            cancelFollowUpsForPhone(cid, phone);
-            startFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined);
+            restartFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined);
           }
         }
 

@@ -138,5 +138,15 @@ console.log("\n=== BUG 2: sanitizeForWhatsApp (split de centavos) ===\n");
   check("13. horário 12:30. intocado", !out.includes("12:\n"), JSON.stringify(out));
 }
 
+// 14. Caso real (Vitalli, lead Cristina, 05/08/2026): o próprio Gemini gerou a
+// quebra "R$ 190,\n\n00." no texto bruto — antes de qualquer regra de
+// sanitização rodar. Confirma que a regra de reparo (topo de sanitizeForWhatsApp)
+// junta de volta o valor, não importa a origem da quebra.
+{
+  const raw = "Perfeito! 🥩\n\nPara o Dia dos Pais (09/08), o valor total para 2 adultos e uma criança de 4 anos fica R$ 190,\n\n00.\n\n\n\nPara que eu possa registrar sua reserva, por gentileza, me informe o nome completo e a idade de cada participante.\n\nDados para o Pix (pagamento integral):\n• Chave: CNPJ 63.529.514/0001-59\n• Favorecido: Vitalli\n\nAssim que me passar os nomes e idades, já deixo tudo reservado para vocês! 😊";
+  const out = sanitizeForWhatsApp(raw);
+  check("14. R$ 190,00 (quebra gerada pelo modelo) reparado", out.includes("R$ 190,00.") && !out.includes("190,\n"), JSON.stringify(out.slice(0, 140)));
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

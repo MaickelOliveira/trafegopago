@@ -256,7 +256,7 @@ async function sendMarkedMedia(
 }
 import {
   startFollowUpSequence,
-  cancelFollowUpsForPhone,
+  restartFollowUpSequence,
 } from "@/lib/followups";
 import {
   upsertPending,
@@ -929,8 +929,7 @@ export async function POST(
         if (isNew) {
           startFollowUpSequence(cid, phone, agentCfg.followUps, uazConn?.id);
         } else {
-          cancelFollowUpsForPhone(cid, phone);
-          startFollowUpSequence(cid, phone, agentCfg.followUps, uazConn?.id);
+          restartFollowUpSequence(cid, phone, agentCfg.followUps, uazConn?.id);
         }
       }
     }

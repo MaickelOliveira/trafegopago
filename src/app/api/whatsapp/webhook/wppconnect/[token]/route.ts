@@ -23,7 +23,7 @@ import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
-import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
+import { restartFollowUpSequence } from "@/lib/followups";
 import {
   upsertPending,
   getPendingForPhone,
@@ -786,8 +786,7 @@ export async function POST(
       if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
       // Operador assumiu o atendimento → reinicia sequência de follow-up
       if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
-        cancelFollowUpsForPhone(clientId, phone);
-        startFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId);
+        restartFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId);
       }
     }
     return NextResponse.json({ ok: true });
@@ -810,8 +809,7 @@ export async function POST(
     const agentCfgFU = activeClientFU ? getAgentConfigForConnection(activeClientFU, connId) : undefined;
     console.log(`[WPP-DIAG] agentCfgFU: found=${!!agentCfgFU} followUpEnabled=${agentCfgFU?.followUpEnabled} stepsCount=${agentCfgFU?.followUps?.length ?? 0} connMatch=${agentCfgFU?.whatsappConnectionId}`);
     if (agentCfgFU?.followUpEnabled && (agentCfgFU.followUps?.length ?? 0) > 0) {
-      cancelFollowUpsForPhone(clientId, phone);
-      startFollowUpSequence(clientId, phone, agentCfgFU.followUps, connId);
+      restartFollowUpSequence(clientId, phone, agentCfgFU.followUps, connId);
       console.log(`[WPP-DIAG] ✅ follow-up AGENDADO phone=${phone} steps=${agentCfgFU.followUps.length}`);
     } else {
       console.log(`[WPP-DIAG] ❌ follow-up NÃO agendado — followUpEnabled=${agentCfgFU?.followUpEnabled} steps=${agentCfgFU?.followUps?.length ?? 0}`);

@@ -158,6 +158,59 @@ export function startFollowUpSequence(
   });
 }
 
+/**
+ * Reinicia a "espera" de follow-up quando o lead volta a interagir (responde,
+ * ou o operador assume o atendimento), mas RETOMA do step em que a sequência
+ * já estava — nunca reseta pro step 0.
+ *
+ * Antes, todo ponto de entrada (webhooks WPPConnect/Evolution/UazAPI/Meta)
+ * fazia cancelFollowUpsForPhone + startFollowUpSequence, que sempre recomeça
+ * do step 0. Na prática isso quebrava a sequência inteira: se o lead
+ * respondesse qualquer coisa entre o step 0 (enviado) e o step 1 (ainda
+ * pendente), o step 1 era cancelado e um NOVO step 0 era agendado do zero —
+ * o step 1, 2, 3... programados nunca chegavam a ser enviados, só o
+ * primeiro (relatado pelo usuário: "meu followup está fazendo somente um e
+ * não os programados").
+ */
+export function restartFollowUpSequence(
+  clientId: string,
+  phone: string,
+  steps: { id: string; delayHours: number; message: string; messageType?: string; templateId?: string; templateVariables?: Record<string, string> }[],
+  connId?: string
+): void {
+  if (steps.length === 0) return;
+  const lead = getLeadByPhone(clientId, phone);
+  if (lead?.followUpDisabled) {
+    console.log(`[followups] follow-up desativado pra esse lead — clientId=${clientId} phone=${phone}`);
+    return;
+  }
+
+  const pending = load().filter(
+    (f) => f.clientId === clientId && f.phone === phone && f.status === "pending"
+  );
+  const resumeIdx = pending.length > 0
+    ? Math.min(Math.max(...pending.map((f) => f.stepIndex ?? 0)), steps.length - 1)
+    : 0;
+
+  cancelFollowUpsForPhone(clientId, phone);
+
+  const step = steps[resumeIdx];
+  const scheduledAt = new Date(Date.now() + step.delayHours * 3600000).toISOString();
+  scheduleFollowUp({
+    clientId,
+    phone,
+    scheduledAt,
+    message: step.message,
+    type: "followup",
+    connId,
+    stepIndex: resumeIdx,
+    stepId: step.id,
+    messageType: step.messageType as "text" | "ai" | "template" | undefined,
+    templateId: step.templateId,
+    templateVariables: step.templateVariables,
+  });
+}
+
 export function cancelFollowUpsForPhone(clientId: string, phone: string): void {
   const items = load();
   let changed = false;
