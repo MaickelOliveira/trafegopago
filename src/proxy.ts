@@ -2,10 +2,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET não está configurado — defina essa variável de ambiente antes de iniciar o servidor.");
+// Lazy — evita quebrar `next build` (que pode importar/avaliar este módulo
+// sem env vars de runtime disponíveis) e evita derrubar o processo inteiro na
+// inicialização caso a env var falte momentaneamente. A checagem real só
+// acontece quando uma requisição de fato precisa verificar um token.
+function getSecret(): Uint8Array {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET não está configurado — defina essa variável de ambiente antes de iniciar o servidor.");
+  }
+  return new TextEncoder().encode(process.env.JWT_SECRET);
 }
-const SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -36,7 +42,7 @@ export async function proxy(request: NextRequest) {
   if (isPublic) {
     if (token && !isBriefing && !isConectar && !isGuestForm) {
       try {
-        const { payload } = await jwtVerify(token, SECRET);
+        const { payload } = await jwtVerify(token, getSecret());
         const role = (payload as { role: string }).role;
         const url = request.nextUrl.clone();
         url.pathname = role === "manager" ? "/gestor" : "/cliente";
@@ -55,7 +61,7 @@ export async function proxy(request: NextRequest) {
   }
 
   try {
-    const { payload } = await jwtVerify(token, SECRET);
+    const { payload } = await jwtVerify(token, getSecret());
     const role = (payload as { role: string }).role;
 
     if (isGestor && role !== "manager") {

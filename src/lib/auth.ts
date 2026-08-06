@@ -1,11 +1,17 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET não está configurado — defina essa variável de ambiente antes de iniciar o servidor.");
-}
-const SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 const COOKIE = "tp_session";
+
+// Lazy — evita quebrar `next build` (que importa este módulo ao coletar dados
+// de página das rotas, sem env vars de runtime disponíveis). A checagem real
+// só acontece quando um token é de fato assinado/verificado.
+function getSecret(): Uint8Array {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET não está configurado — defina essa variável de ambiente antes de iniciar o servidor.");
+  }
+  return new TextEncoder().encode(process.env.JWT_SECRET);
+}
 
 export type JWTPayload = {
   sub: string;
@@ -20,12 +26,12 @@ export async function signToken(payload: JWTPayload): Promise<string> {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
-    .sign(SECRET);
+    .sign(getSecret());
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, SECRET);
+    const { payload } = await jwtVerify(token, getSecret());
     return payload as unknown as JWTPayload;
   } catch {
     return null;
