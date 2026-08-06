@@ -192,5 +192,36 @@ console.log("\n=== BUG 3: isLikelyGarbageMotivo (resumo espúrio, motivo-fragmen
     JSON.stringify(legitimosReal.filter((m) => isLikelyGarbageMotivo(m))));
 }
 
+console.log("\n=== BUG 4: sanitizeForWhatsApp (data partida em dois parágrafos) ===\n");
+
+// 17. Caso real (Vitalli, lead Valene Queiroz, 06/08/2026): o próprio Gemini
+// gerou a quebra "(09/\n\n08)" no texto bruto — texto puxado ao vivo via
+// /api/debug/conversations, não reconstruído da screenshot. Mesmo padrão do
+// teste 14 (bug 2), mas com data (DD/DD) em vez de vírgula decimal.
+{
+  const raw = "Boa tarde! 😊\n\nAqui é a Sollange, do atendimento do Vítallí Garden! Que ótimo receber seu contato.\n\nQue pena, mas as vagas para o nosso Almoço de Dia dos Pais (09/\n\n08) já esgotaram — foi um sucesso este ano!\n\nPosso te ajudar verificando a disponibilidade para outra data ou te apresentar uma de nossas outras opções, como Day Use, Almoço de fim de semana em outra data ou Hospedagem? 🌿";
+  const out = sanitizeForWhatsApp(raw);
+  check("17. (09/08) (quebra gerada pelo modelo) reparado", out.includes("(09/08)") && !out.includes("09/\n"), JSON.stringify(out));
+}
+
+// 18. Causa raiz real do bug 17: mesmo sem NENHUMA quebra vinda do modelo, a
+// regra de "1. Item numerado" (linha ~269) tratava "08)" de uma data
+// "(DD/DD)" como se fosse item de lista e INSERIA a quebra sozinha — bug
+// independente do modelo, reproduzido com texto 100% limpo. Guard (?<!\/)
+// corrige na origem (evita a regra 257 "1 newline → 2" e a regra 269
+// "0 newlines → 2" de disparar quando precedido por barra).
+{
+  const clean = "Pais (09/08) já esgotaram este ano!";
+  const out = sanitizeForWhatsApp(clean);
+  check("18. (09/08) em texto limpo não é quebrado pela regra de lista numerada", out === clean, JSON.stringify(out));
+}
+
+// 19. Lista numerada legítima continua quebrando normalmente — confirma que
+// o guard (?<!\/) do teste 18 não regrediu o comportamento original da regra.
+{
+  const out = sanitizeForWhatsApp("Temos duas opções: 1. Standard 2. Duplo");
+  check("19. lista numerada legítima ainda quebra (regressão do guard)", out.includes("\n\n1. ") && out.includes("\n\n2. "), JSON.stringify(out));
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

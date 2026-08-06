@@ -226,6 +226,12 @@ export function sanitizeForWhatsApp(text: string): string {
     // ESTA função de INSERIR uma quebra nova, não repara uma que já veio
     // pronta do modelo.
     .replace(/(\d),\s*\n\s*\n\s*(\d{2})(?!\d)/g, "$1,$2")
+    // Mesmo bug, mas com data (DD/DD) em vez de vírgula decimal — ex:
+    // "(09/\n\n08)" (Vitalli, lead Valene Queiroz, 06/08/2026, confirmado
+    // via /api/debug/conversations: o Gemini quebrou "09/08" sozinho no
+    // texto bruto). Mesma lógica: roda antes de tudo, repara independente
+    // da origem da quebra.
+    .replace(/(\d{1,2})\/\s*\n\s*\n\s*(\d{1,2})(?!\d)/g, "$1/$2")
     // 1. Remove blocos de código e backticks
     .replace(/```[\s\S]*?```/g, "")
     .replace(/`([^`]+)`/g, "$1")
@@ -248,7 +254,10 @@ export function sanitizeForWhatsApp(text: string): string {
     .replace(/\n\n\n(•)/g, "\n\n$1")                   // no máximo 2 newlines antes de bullet normal
     // 9. Garante \n\n antes de itens numerados: *1. *2. ou 1. 2. no meio do texto
     .replace(/([^\n]) (\d+\. [A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ])/g, "$1\n\n$2")  // "texto N. TÍTULO" → \n\n
-    .replace(/\n(\*?\d+[\.\)]\s)/g, "\n\n$1")           // 1 newline → 2
+    // (?<!\/) evita tratar "08)" de uma data "DD/\nDD)" como item de lista
+    // numerada — mesma causa do guard (?<!\/) da regra 269, aqui pro caso de
+    // quebra com 1 newline só em vez de 2.
+    .replace(/(?<!\/)\n(\*?\d+[\.\)]\s)/g, "\n\n$1")           // 1 newline → 2
     // Protege centavos (",NN" — sempre 2 dígitos em R$) de serem engolidos pelo
     // número do próximo item colado direto na frente (ex: "R$ 19,152. Item" lia
     // "152" como o número do item, cortando o preço em "19," + "152.")
@@ -259,8 +268,13 @@ export function sanitizeForWhatsApp(text: string): string {
     // isso, "12:30. Como..." virava "12:\n\n30. Como..." no meio da frase —
     // nem logo após vírgula (centavos): "R$ 285,00. Segue" casava o "00. "
     // porque o char anterior ao primeiro 0 é a vírgula, e virava
-    // "R$ 285,\n\n00. Segue" (duas bolhas no WhatsApp — Vitalli, 04/08/2026).
-    .replace(/(?<!\n)(?<!\*)(?<!\d)(?<!\d:)(?<!,)(\*?\d+[\.\)]\s)/g, "\n\n$1")
+    // "R$ 285,\n\n00. Segue" (duas bolhas no WhatsApp — Vitalli, 04/08/2026)
+    // — nem logo após barra (data DD/DD): "(09/08) já esgotaram" casava o
+    // "08) " como se fosse item de lista numerada e virava "(09/\n\n08) já
+    // esgotaram" — bug INDEPENDENTE do modelo, reproduzido com texto limpo
+    // (Vitalli, lead Valene Queiroz, 06/08/2026, confirmado via
+    // /api/debug/conversations).
+    .replace(/(?<!\n)(?<!\*)(?<!\d)(?<!\d:)(?<!,)(?<!\/)(\*?\d+[\.\)]\s)/g, "\n\n$1")
     // 10. Remove asteriscos solitários em parágrafos próprios (resíduo de ** multi-linha)
     //     ex: "\n\n*\n\n" → "\n\n" e "* solt\n\nN." → "N."
     .replace(/\n\n\*\n\n(\d+[\.\)]\s)/g, "\n\n$1")  // *\n\nN. → N.
