@@ -1,0 +1,17 @@
+{
+  "name": "conector-whatsapp-trafegopago",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Extensão Chrome que vincula o WhatsApp Web à conta do cliente na plataforma Nexo/Tráfego Pago via código temporário.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && node build.mjs",
+    "dist": "npm run build && node zip.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  }
+}

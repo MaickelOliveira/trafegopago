@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Conector WhatsApp</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main class="popup" role="main">
+    <header class="popup__header">
+      <span class="popup__logo" aria-hidden="true">🧩</span>
+      <h1 class="popup__title">Conector WhatsApp</h1>
+    </header>
+
+    <div id="status-indicator" class="status-indicator" role="status" aria-live="polite">
+      <span id="status-dot" class="status-dot"></span>
+      <span id="status-label">Carregando...</span>
+    </div>
+
+    <div id="content" class="popup__content"></div>
+
+    <footer class="popup__footer">
+      <p class="popup__hint">O WhatsApp Web precisa continuar aberto neste navegador para a conexão funcionar.</p>
+      <a href="#" id="privacy-link" class="popup__link">Política de privacidade</a>
+    </footer>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

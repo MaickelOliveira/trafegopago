@@ -176,7 +176,7 @@ export function WhatsAppManagerView({
   const [deletingToken, setDeletingToken] = useState<string | null>(null);
 
   // Main tab
-  const [mainTab, setMainTab] = useState<"uazapi" | "wppconnect" | "evolution" | "meta">("uazapi");
+  const [mainTab, setMainTab] = useState<"uazapi" | "wppconnect" | "evolution" | "meta" | "extensao">("uazapi");
 
   const fetchInstances = useCallback(async () => {
     try {
@@ -362,17 +362,18 @@ export function WhatsAppManagerView({
       {/* Tabs: UazAPI | WPPConnect | Evolution API | API Oficial Meta */}
       <div className="border-b border-slate-200 bg-white">
         <div className="flex max-w-6xl mx-auto px-6">
-          {(["uazapi", "wppconnect", "evolution", "meta"] as const).map(tab => (
+          {(["uazapi", "wppconnect", "evolution", "meta", "extensao"] as const).map(tab => (
             <button key={tab} onClick={() => setMainTab(tab)}
               className={`py-3 px-5 text-sm font-semibold border-b-2 transition -mb-px ${
                 mainTab === tab
                   ? tab === "uazapi" ? "border-green-500 text-green-700"
                   : tab === "wppconnect" ? "border-violet-500 text-violet-700"
                   : tab === "evolution" ? "border-emerald-500 text-emerald-700"
-                  : "border-blue-500 text-blue-700"
+                  : tab === "meta" ? "border-blue-500 text-blue-700"
+                  : "border-teal-500 text-teal-700"
                   : "border-transparent text-slate-500 hover:text-slate-700"
               }`}>
-              {tab === "uazapi" ? "⚡ UazAPI" : tab === "wppconnect" ? "🔌 WPPConnect" : tab === "evolution" ? "🧬 Evolution API" : "🏢 API Oficial Meta"}
+              {tab === "uazapi" ? "⚡ UazAPI" : tab === "wppconnect" ? "🔌 WPPConnect" : tab === "evolution" ? "🧬 Evolution API" : tab === "meta" ? "🏢 API Oficial Meta" : "🧩 Extensão Chrome"}
             </button>
           ))}
         </div>
@@ -381,6 +382,19 @@ export function WhatsAppManagerView({
       {mainTab === "meta" && <MetaApiView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "wppconnect" && <WppConnectView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "evolution" && <EvolutionView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
+      {mainTab === "extensao" && (
+        <div className="p-6 max-w-3xl mx-auto">
+          <div className="rounded-2xl border border-teal-200 bg-teal-50 p-6">
+            <h2 className="text-lg font-bold text-slate-900 mb-2">🧩 Conector WhatsApp (extensão do Chrome)</h2>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              Método adicional pra o próprio cliente vincular o WhatsApp Web dele à conta, sem precisar de um número dedicado nem QR Code pela plataforma. Cada cliente/colaborador com permissão &quot;gerenciar QR&quot; gera o código de conexão e instala a extensão pela própria tela dele — em <span className="font-mono text-xs bg-white px-1.5 py-0.5 rounded border border-teal-200">Extensão WA</span> no portal do cliente.
+            </p>
+            <p className="text-sm text-slate-500 mt-3">
+              Como gestor, você não gera código em nome do cliente (a extensão precisa ser instalada e o WhatsApp conectado na máquina de quem vai usar) — só acompanhe o status de cada conexão diretamente com o cliente por enquanto.
+            </p>
+          </div>
+        </div>
+      )}
       {mainTab === "uazapi" && (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}

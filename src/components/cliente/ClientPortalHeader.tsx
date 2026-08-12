@@ -64,6 +64,7 @@ export function ClientPortalHeader({
   const canViewAutomations = !isEmployee || (permissions?.canViewAutomations ?? false);
   const canViewAgentIa = !isEmployee || (permissions?.canViewAgentIa ?? false);
   const canViewWaba = !isEmployee || (permissions?.canViewWaba ?? false);
+  const canManageQR = !isEmployee || (permissions?.canManageQR ?? false);
 
   useEffect(() => {
     if (!canViewCreatives) return;
@@ -110,6 +111,7 @@ export function ClientPortalHeader({
     { href: "/cliente/automacoes", label: "Automações", icon: "⚡", show: canViewAutomations, activeColor: "bg-emerald-50 text-emerald-700" },
     { href: "/cliente/agente-ia", label: "Agente de IA", icon: "🤖", show: canViewAgentIa, activeColor: "bg-violet-50 text-violet-700" },
     { href: "/cliente/disparos-wa", label: "Disparos WA", icon: "📨", show: canViewWaba, activeColor: "bg-green-50 text-green-700" },
+    { href: "/cliente/whatsapp-extensao", label: "Extensão WA", icon: "🧩", show: canManageQR, activeColor: "bg-teal-50 text-teal-700" },
     { href: "/cliente/funcionarios", label: "Colaboradores", icon: "👥", show: !isEmployee, activeColor: "bg-slate-800 text-white" },
     { href: "/cliente/configuracoes", label: "Configurações", icon: "⚙️", show: !isEmployee, activeColor: "bg-slate-800 text-white" },
   ].filter((i) => i.show);
