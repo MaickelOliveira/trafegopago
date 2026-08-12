@@ -22,14 +22,19 @@ export type StoredAuth = {
   devicePublicId: string;
 };
 
+export type ConversationUpdate = {
+  phone: string | null;
+  contactName: string | null;
+  lastMessagePreview: string | null;
+};
+
 /** Mensagens trocadas entre content-script → service-worker. O content script
  *  nunca fala direto com o backend — só relata o que vê na página, o service
  *  worker decide o que fazer com isso (rate limit, retry, etc. ficam
  *  centralizados em um lugar só). */
-export type ContentToBackgroundMessage = {
-  type: "whatsapp-state";
-  state: ConnectorState;
-};
+export type ContentToBackgroundMessage =
+  | { type: "whatsapp-state"; state: ConnectorState }
+  | { type: "new-messages"; items: ConversationUpdate[] };
 
 /** Mensagens trocadas entre popup ↔ service-worker. */
 export type PopupToBackgroundMessage =

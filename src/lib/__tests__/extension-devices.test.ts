@@ -6,9 +6,11 @@ import {
   createDevice,
   getDeviceByToken,
   getDevicesForClient,
+  getAllDevices,
   computeDisplayState,
   updateHeartbeat,
   revokeDevice,
+  revokeDeviceAsManager,
   STALE_AFTER_MS,
 } from "../extension-devices";
 
@@ -105,5 +107,39 @@ describe("computeDisplayState — staleness", () => {
     revokeDevice(device.id, "client-a");
     const raw = JSON.parse(readFileSync(path.join(tmpDir, "data", "extension-devices.json"), "utf-8"))[0];
     expect(computeDisplayState(raw)).toBe("disconnected");
+  });
+});
+
+describe("getAllDevices — visão do gestor, sem isolamento por organização", () => {
+  it("retorna dispositivos de TODAS as organizações", () => {
+    createDevice({ clientId: "client-a", devicePublicId: "dev-a", consentVersion: "1.0.0" });
+    createDevice({ clientId: "client-b", devicePublicId: "dev-b", consentVersion: "1.0.0" });
+    const all = getAllDevices();
+    expect(all.map((d) => d.clientId).sort()).toEqual(["client-a", "client-b"]);
+  });
+});
+
+describe("revokeDeviceAsManager", () => {
+  it("revoga um dispositivo sem precisar saber o clientId dele", () => {
+    const { device } = createDevice({ clientId: "client-a", devicePublicId: "dev-a", consentVersion: "1.0.0" });
+    const ok = revokeDeviceAsManager(device.id);
+    expect(ok).toBe(true);
+    expect(getAllDevices()[0].status).toBe("revoked");
+  });
+
+  it("retorna false pra um id inexistente", () => {
+    expect(revokeDeviceAsManager("nao-existe")).toBe(false);
+  });
+});
+
+describe("funnelId propagado do createDevice ao registro", () => {
+  it("guarda o funnelId quando informado", () => {
+    const { device } = createDevice({ clientId: "client-a", devicePublicId: "dev-a", consentVersion: "1.0.0", funnelId: "funil-123" });
+    expect(device.funnelId).toBe("funil-123");
+  });
+
+  it("fica undefined quando não informado (comportamento anterior preservado)", () => {
+    const { device } = createDevice({ clientId: "client-a", devicePublicId: "dev-a", consentVersion: "1.0.0" });
+    expect(device.funnelId).toBeUndefined();
   });
 });

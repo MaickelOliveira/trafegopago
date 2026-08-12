@@ -16,13 +16,13 @@ Formulário de revisão da Chrome Web Store pede justificativa por permissão de
 
 ## `host_permissions` — `https://web.whatsapp.com/*`
 
-**Uso**: injetar o content script que observa (só visualmente, via seletores DOM) se a tela de conversas do WhatsApp Web está visível, se há QR Code, ou se está carregando.
+**Uso**: injetar o content script que (1) observa, via seletores DOM, se a tela de conversas está visível/há QR Code/está carregando, e (2) lê nome de contato + prévia da última mensagem de conversas novas na lista, pra criar/atualizar leads no CRM do usuário (mesma finalidade de uma integração de WhatsApp normal, ver `docs/PRIVACY.md`).
 
-**Por que é o mínimo necessário**: restrito exatamente ao domínio do WhatsApp Web — não há `<all_urls>` nem wildcard amplo. O content script nunca lê cookies, `localStorage`, `IndexedDB` ou conteúdo de mensagens (ver `src/whatsapp-dom-adapter.ts` — só presença/ausência de elementos estruturais).
+**Por que é o mínimo necessário**: restrito exatamente ao domínio do WhatsApp Web — não há `<all_urls>` nem wildcard amplo. O content script nunca lê cookies, `localStorage`, `IndexedDB`, nunca abre uma conversa pra ler o histórico completo, e nunca lê mídia (ver `src/whatsapp-dom-adapter.ts` — só a lista de conversas já visível na tela).
 
 ## `host_permissions` — domínio da plataforma
 
-**Uso**: `fetch()` do service worker e do popup para os endpoints `/api/integrations/whatsapp-extension/*` (claim do código, heartbeat).
+**Uso**: `fetch()` do service worker e do popup para os endpoints `/api/integrations/whatsapp-extension/*` (claim do código, heartbeat, envio de mensagens novas pra criação de lead).
 
 **Por que é o mínimo necessário**: restrito ao domínio exato de produção da plataforma — não é um wildcard, e a extensão nunca faz requisições a nenhum outro host.
 

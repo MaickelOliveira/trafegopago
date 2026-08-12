@@ -6,6 +6,7 @@ export type PairingCode = {
   id: string;             // uuid interno — nunca exposto ao cliente
   clientId: string;
   employeeId?: string;
+  funnelId?: string;      // funil onde os leads dessa conexão vão cair (ver upsertLeadByPhone)
   codeHash: string;       // sha256 do código puro — o código em si nunca é persistido
   expiresAt: string;
   usedAt?: string;
@@ -68,7 +69,7 @@ export function normalizeCode(input: string): string {
 
 export function createPairingCode(
   clientId: string,
-  opts?: { employeeId?: string; createdIp?: string }
+  opts?: { employeeId?: string; createdIp?: string; funnelId?: string }
 ): { code: string; expiresAt: string } {
   const codes = load();
   // Um código novo invalida qualquer código pendente da MESMA organização —
@@ -85,6 +86,7 @@ export function createPairingCode(
     id: randomUUID(),
     clientId,
     employeeId: opts?.employeeId,
+    funnelId: opts?.funnelId,
     codeHash: hashCode(normalizeCode(rawCode)),
     expiresAt,
     createdIp: opts?.createdIp,

@@ -98,3 +98,19 @@ describe("normalizeCode", () => {
     expect(normalizeCode(" ab3d-ef7h ")).toBe("AB3DEF7H");
   });
 });
+
+describe("funnelId propagado do createPairingCode ao claim", () => {
+  it("o pairing resultante do claim carrega o funnelId informado na criação", () => {
+    const { code } = createPairingCode("client-1", { funnelId: "funil-abc" });
+    const result = claimPairingCode(code);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.pairing.funnelId).toBe("funil-abc");
+  });
+
+  it("fica undefined quando não informado (comportamento anterior preservado)", () => {
+    const { code } = createPairingCode("client-1");
+    const result = claimPairingCode(code);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.pairing.funnelId).toBeUndefined();
+  });
+});

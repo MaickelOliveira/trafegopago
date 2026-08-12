@@ -382,19 +382,7 @@ export function WhatsAppManagerView({
       {mainTab === "meta" && <MetaApiView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "wppconnect" && <WppConnectView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "evolution" && <EvolutionView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
-      {mainTab === "extensao" && (
-        <div className="p-6 max-w-3xl mx-auto">
-          <div className="rounded-2xl border border-teal-200 bg-teal-50 p-6">
-            <h2 className="text-lg font-bold text-slate-900 mb-2">🧩 Conector WhatsApp (extensão do Chrome)</h2>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Método adicional pra o próprio cliente vincular o WhatsApp Web dele à conta, sem precisar de um número dedicado nem QR Code pela plataforma. Cada cliente/colaborador com permissão &quot;gerenciar QR&quot; gera o código de conexão e instala a extensão pela própria tela dele — em <span className="font-mono text-xs bg-white px-1.5 py-0.5 rounded border border-teal-200">Extensão WA</span> no portal do cliente.
-            </p>
-            <p className="text-sm text-slate-500 mt-3">
-              Como gestor, você não gera código em nome do cliente (a extensão precisa ser instalada e o WhatsApp conectado na máquina de quem vai usar) — só acompanhe o status de cada conexão diretamente com o cliente por enquanto.
-            </p>
-          </div>
-        </div>
-      )}
+      {mainTab === "extensao" && <ExtensionView />}
       {mainTab === "uazapi" && (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -822,6 +810,110 @@ type MetaConn = {
   hasAgentLinked: boolean;
   agentEnabled: boolean;
 };
+
+type ExtensionDeviceView = {
+  id: string;
+  devicePublicId: string;
+  connectorState: "connected" | "waiting_qr" | "disconnected";
+  lastSeenAt: string;
+  createdAt: string;
+  clientId?: string;
+  clientName?: string;
+};
+
+const EXT_STATE_LABEL: Record<ExtensionDeviceView["connectorState"], string> = {
+  connected: "Conectado", waiting_qr: "Aguardando QR", disconnected: "Desconectado",
+};
+const EXT_STATE_DOT: Record<ExtensionDeviceView["connectorState"], string> = {
+  connected: "bg-green-500 animate-pulse", waiting_qr: "bg-amber-400", disconnected: "bg-slate-300",
+};
+
+function extTimeAgo(iso: string): string {
+  const diffSec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diffSec < 60) return "agora mesmo";
+  if (diffSec < 3600) return `há ${Math.floor(diffSec / 60)} min`;
+  if (diffSec < 86400) return `há ${Math.floor(diffSec / 3600)} h`;
+  return `há ${Math.floor(diffSec / 86400)} d`;
+}
+
+function ExtensionView() {
+  const [devices, setDevices] = useState<ExtensionDeviceView[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDevices = useCallback(async () => {
+    try {
+      const res = await fetch("/api/integrations/whatsapp-extension/status");
+      if (res.ok) {
+        const data = await res.json();
+        setDevices(data.devices ?? []);
+      }
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchDevices();
+    const t = setInterval(fetchDevices, 10000);
+    return () => clearInterval(t);
+  }, [fetchDevices]);
+
+  async function revoke(deviceId: string, clientName?: string) {
+    if (!confirm(`Desconectar a extensão de ${clientName ?? "esse cliente"}?`)) return;
+    await fetch("/api/integrations/whatsapp-extension/revoke", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId }),
+    });
+    fetchDevices();
+  }
+
+  const connectedCount = devices.filter(d => d.connectorState === "connected").length;
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto space-y-4">
+      <div className="rounded-2xl border border-teal-200 bg-teal-50 p-5">
+        <h2 className="text-lg font-bold text-slate-900 mb-1.5">🧩 Conector WhatsApp (extensão do Chrome)</h2>
+        <p className="text-sm text-slate-600 leading-relaxed">
+          Método adicional pra o próprio cliente vincular o WhatsApp Web dele à conta, sem número dedicado. Cada cliente/colaborador com permissão &quot;gerenciar QR&quot; gera o código e escolhe o funil pela própria tela dele — em <span className="font-mono text-xs bg-white px-1.5 py-0.5 rounded border border-teal-200">Extensão WA</span> no portal do cliente. Depende do computador do cliente ficar ligado — pra uptime 24h independente disso, use Evolution API/WPPConnect.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-slate-800 text-sm">Dispositivos conectados</h3>
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
+          <span className={`h-2 w-2 rounded-full ${connectedCount > 0 ? "bg-green-500 animate-pulse" : "bg-slate-300"}`} />
+          <span className="text-xs font-medium text-slate-700">{connectedCount} / {devices.length} conectado{devices.length !== 1 ? "s" : ""}</span>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="animate-spin h-6 w-6 border-2 border-slate-200 border-t-teal-500 rounded-full" />
+        </div>
+      ) : devices.length === 0 ? (
+        <p className="text-sm text-slate-400 text-center py-10">Nenhum cliente conectou pela extensão ainda.</p>
+      ) : (
+        <div className="space-y-2">
+          {devices.map((d) => (
+            <div key={d.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${EXT_STATE_DOT[d.connectorState]}`} />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">{d.clientName ?? "(cliente não encontrado)"}</p>
+                  <p className="text-xs text-slate-400">{EXT_STATE_LABEL[d.connectorState]} · última atividade {extTimeAgo(d.lastSeenAt)}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => revoke(d.id, d.clientName)}
+                className="text-xs font-medium text-red-600 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition"
+              >
+                Desconectar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MetaApiView({ funnels, clients, appBaseUrl }: { funnels: FunnelOption[]; clients: ClientOption[]; appBaseUrl: string }) {
   const [connections, setConnections] = useState<MetaConn[]>([]);

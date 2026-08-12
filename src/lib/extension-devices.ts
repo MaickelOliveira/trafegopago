@@ -10,6 +10,7 @@ export type ExtensionDevice = {
   id: string;
   clientId: string;
   employeeId?: string;
+  funnelId?: string;            // funil onde os leads dessa conexão caem (mesmo papel de EvolutionSession.funnelId)
   devicePublicId: string;       // identificador não-secreto do navegador/instalação (exibição/auditoria)
   tokenHash: string;            // sha256 da credencial do dispositivo — a credencial em si nunca é persistida
   status: DeviceStatus;
@@ -65,6 +66,7 @@ export function generateDeviceToken(): string {
 export function createDevice(data: {
   clientId: string;
   employeeId?: string;
+  funnelId?: string;
   devicePublicId: string;
   consentVersion: string;
 }): { device: ExtensionDevice; token: string } {
@@ -75,6 +77,7 @@ export function createDevice(data: {
     id: randomUUID(),
     clientId: data.clientId,
     employeeId: data.employeeId,
+    funnelId: data.funnelId,
     devicePublicId: data.devicePublicId,
     tokenHash: hashToken(token),
     status: "active",
@@ -97,6 +100,13 @@ export function getDeviceByToken(rawToken: string): ExtensionDevice | undefined 
 
 export function getDevicesForClient(clientId: string): ExtensionDevice[] {
   return load().filter((d) => d.clientId === clientId);
+}
+
+/** Sem filtro de organização — só pra visão do gestor (mesmo padrão de
+ *  getClients() sem filtro usado em evolution-manager/route.ts). Nunca expor
+ *  isso num endpoint que não confira session.role === "manager" antes. */
+export function getAllDevices(): ExtensionDevice[] {
+  return load();
 }
 
 /** Status exibido pra UI — deriva "disconnected" por staleness mesmo que o
@@ -130,6 +140,19 @@ export function updateHeartbeat(
 export function revokeDevice(deviceId: string, clientId: string): boolean {
   const devices = load();
   const idx = devices.findIndex((d) => d.id === deviceId && d.clientId === clientId);
+  if (idx === -1) return false;
+  const now = new Date().toISOString();
+  devices[idx] = { ...devices[idx], status: "revoked", revokedAt: now, updatedAt: now };
+  save(devices);
+  return true;
+}
+
+/** Mesma coisa que revokeDevice, sem exigir clientId — só pra chamada do
+ *  gestor, que já tem acesso irrestrito a todas as organizações em todas as
+ *  outras telas administrativas do projeto (ex: evolution-manager). */
+export function revokeDeviceAsManager(deviceId: string): boolean {
+  const devices = load();
+  const idx = devices.findIndex((d) => d.id === deviceId);
   if (idx === -1) return false;
   const now = new Date().toISOString();
   devices[idx] = { ...devices[idx], status: "revoked", revokedAt: now, updatedAt: now };

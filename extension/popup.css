@@ -23,7 +23,7 @@ body {
   margin-bottom: 12px;
 }
 
-.popup__logo { font-size: 20px; }
+.popup__logo { width: 20px; height: 20px; border-radius: 4px; }
 
 .popup__title {
   font-size: 15px;

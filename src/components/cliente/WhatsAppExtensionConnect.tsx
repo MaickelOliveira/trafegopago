@@ -22,7 +22,11 @@ function timeAgo(iso: string): string {
   return `há ${Math.floor(diffSec / 3600)} h`;
 }
 
-export function WhatsAppExtensionConnect() {
+function secondsUntil(iso: string): number {
+  return Math.max(0, Math.floor((new Date(iso).getTime() - Date.now()) / 1000));
+}
+
+export function WhatsAppExtensionConnect({ funnels }: { funnels: { id: string; name: string }[] }) {
   const [devices, setDevices] = useState<DeviceStatusView[]>([]);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [consentAccepted, setConsentAccepted] = useState(false);
@@ -30,6 +34,7 @@ export function WhatsAppExtensionConnect() {
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [funnelId, setFunnelId] = useState<string>(funnels[0]?.id ?? "");
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -65,7 +70,11 @@ export function WhatsAppExtensionConnect() {
     setGenerating(true);
     setMsg(null);
     try {
-      const res = await fetch("/api/integrations/whatsapp-extension/pairing-code", { method: "POST" });
+      const res = await fetch("/api/integrations/whatsapp-extension/pairing-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ funnelId: funnelId || undefined }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao gerar código");
       setCode(data.code);
@@ -93,7 +102,7 @@ export function WhatsAppExtensionConnect() {
     }
   }
 
-  const secondsLeft = expiresAt ? Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)) : 0;
+  const secondsLeft = expiresAt ? secondsUntil(expiresAt) : 0;
 
   return (
     <div className="max-w-2xl space-y-5">
@@ -112,9 +121,9 @@ export function WhatsAppExtensionConnect() {
         <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3 text-sm text-slate-600">
           <p className="font-semibold text-slate-800">Antes de continuar</p>
           <ul className="list-disc list-inside space-y-1">
-            <li>A extensão só verifica se a tela de conversas do WhatsApp Web está visível — não lê, envia ou grava o conteúdo das suas conversas.</li>
-            <li>Não temos acesso à sua senha, QR Code de login ou aos cookies/credenciais do WhatsApp — a extensão nunca toca nesses dados.</li>
-            <li>Enviamos ao servidor apenas: status da conexão (conectado/aguardando/desconectado) e um identificador do dispositivo — nada do conteúdo das conversas.</li>
+            <li>A extensão lê o nome do contato e a prévia da última mensagem de cada conversa nova, pra criar/atualizar o lead no seu CRM — igual às outras integrações de WhatsApp da plataforma.</li>
+            <li>Não temos acesso à sua senha, QR Code de login ou aos cookies/credenciais do WhatsApp — a extensão nunca toca nesses dados, em nenhuma hipótese.</li>
+            <li>Não conseguimos capturar dados de clique de anúncio (campanha/anúncio de origem) por esse método — isso só existe no protocolo oficial do WhatsApp, não aparece na tela. Pra rastreio de campanha completo, use a Evolution API ou API Oficial Meta.</li>
             <li>Você pode desconectar a qualquer momento pelo botão &quot;Desconectar&quot; abaixo.</li>
           </ul>
           <p>
@@ -146,13 +155,34 @@ export function WhatsAppExtensionConnect() {
               </p>
             </div>
           ) : (
-            <button
-              onClick={generateCode}
-              disabled={generating}
-              className="rounded-lg bg-emerald-600 text-white text-sm font-medium px-4 py-2.5 hover:bg-emerald-700 disabled:opacity-60 transition"
-            >
-              {generating ? "Gerando..." : "Gerar código de conexão"}
-            </button>
+            <>
+              {funnels.length > 0 ? (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
+                  <select
+                    value={funnelId}
+                    onChange={(e) => setFunnelId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm mb-1"
+                  >
+                    {funnels.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-400 mb-3">Leads dessa conexão vão cair nesse funil.</p>
+                </div>
+              ) : (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                  Você ainda não tem nenhum funil criado no CRM — crie um primeiro pra os leads dessa conexão terem onde cair.
+                </p>
+              )}
+              <button
+                onClick={generateCode}
+                disabled={generating || funnels.length === 0}
+                className="rounded-lg bg-emerald-600 text-white text-sm font-medium px-4 py-2.5 hover:bg-emerald-700 disabled:opacity-60 transition"
+              >
+                {generating ? "Gerando..." : "Gerar código de conexão"}
+              </button>
+            </>
           )}
 
           {msg && (

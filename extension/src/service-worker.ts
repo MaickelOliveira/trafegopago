@@ -6,6 +6,7 @@ import type {
   ContentToBackgroundMessage,
   PopupToBackgroundMessage,
   BackgroundToPopupMessage,
+  ConversationUpdate,
 } from "./types";
 
 const ALARM_NAME = "heartbeat";
@@ -73,6 +74,22 @@ async function sendHeartbeat(connectorState: ConnectorState): Promise<"ok" | "re
     return res.ok ? "ok" : "error";
   } catch {
     return "error";
+  }
+}
+
+async function sendMessageBatch(items: ConversationUpdate[]): Promise<void> {
+  const auth = await getAuth();
+  if (!auth || items.length === 0) return;
+  try {
+    const res = await fetch(`${PLATFORM_BASE_URL}/api/integrations/whatsapp-extension/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.deviceToken}` },
+      body: JSON.stringify({ items }),
+    });
+    if (res.status === 401) await handleRevoked();
+  } catch {
+    // Perde esse lote específico se a rede falhar — próxima mudança de
+    // prévia detectada no content script gera um novo lote, não fica preso.
   }
 }
 
@@ -157,6 +174,11 @@ chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage | Popu
         if (result === "revoked") await handleRevoked();
       }
     })();
+    return false;
+  }
+
+  if (message.type === "new-messages") {
+    sendMessageBatch(message.items);
     return false;
   }
 

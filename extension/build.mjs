@@ -36,5 +36,6 @@ await esbuild.build({
 cpSync("manifest.json", `${OUT_DIR}/manifest.json`);
 cpSync("popup.html", `${OUT_DIR}/popup.html`);
 cpSync("popup.css", `${OUT_DIR}/popup.css`);
+cpSync("assets", `${OUT_DIR}/assets`, { recursive: true });
 
 console.log(`Build ok — pasta pronta em ./${OUT_DIR} para "Carregar sem compactação" no chrome://extensions`);

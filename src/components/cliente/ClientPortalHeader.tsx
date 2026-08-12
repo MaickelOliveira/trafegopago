@@ -58,7 +58,9 @@ export function ClientPortalHeader({
   const [loggingOut, setLoggingOut] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [maisOpen, setMaisOpen] = useState(false);
+  const [maisPos, setMaisPos] = useState<{ top: number; left: number } | null>(null);
   const maisRef = useRef<HTMLDivElement>(null);
+  const maisButtonRef = useRef<HTMLButtonElement>(null);
 
   const canViewCreatives = !isEmployee || (permissions?.canViewCreatives ?? false);
   const canViewAutomations = !isEmployee || (permissions?.canViewAutomations ?? false);
@@ -89,6 +91,16 @@ export function ClientPortalHeader({
   }, [maisOpen]);
 
   useEffect(() => { setMaisOpen(false); }, [pathname]);
+
+  // Calcula a posição na tela (fixed, não absolute) toda vez que abre — assim
+  // o painel nunca fica cortado por um ancestral com overflow (a barra de
+  // nav tem overflow-x-auto, que em alguns navegadores força overflow-y
+  // clipado também, cortando um dropdown absolute que nasce dentro dela).
+  useEffect(() => {
+    if (!maisOpen || !maisButtonRef.current) return;
+    const rect = maisButtonRef.current.getBoundingClientRect();
+    setMaisPos({ top: rect.bottom + 4, left: rect.left });
+  }, [maisOpen]);
 
   async function logout() {
     setLoggingOut(true);
@@ -150,6 +162,7 @@ export function ClientPortalHeader({
           {secundarios.length > 0 && (
             <div className="relative" ref={maisRef}>
               <button
+                ref={maisButtonRef}
                 onClick={() => setMaisOpen((v) => !v)}
                 className={clsx(
                   "rounded-lg px-3 py-1.5 text-sm transition flex items-center gap-1 whitespace-nowrap",
@@ -158,8 +171,11 @@ export function ClientPortalHeader({
               >
                 ⋯ Mais
               </button>
-              {maisOpen && (
-                <div className="absolute left-0 top-full mt-1 w-56 rounded-xl border border-slate-200 bg-white shadow-lg py-1.5 z-20">
+              {maisOpen && maisPos && (
+                <div
+                  className="fixed w-56 rounded-xl border border-slate-200 bg-white shadow-lg py-1.5 z-50"
+                  style={{ top: maisPos.top, left: maisPos.left }}
+                >
                   {secundarios.map((item) => {
                     const active = pathname.startsWith(item.href);
                     return (

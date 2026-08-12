@@ -1,6 +1,6 @@
 # Conector WhatsApp — Tráfego Pago Plataforma
 
-Extensão Chrome (Manifest V3) que vincula o WhatsApp Web já conectado no navegador do cliente à conta dele na plataforma, via código temporário de uso único. Não é uma integração oficial do WhatsApp/Meta — não acessa cookies, tokens ou o conteúdo de conversas.
+Extensão Chrome (Manifest V3) que vincula o WhatsApp Web já conectado no navegador do cliente à conta dele na plataforma, via código temporário de uso único. Reporta status de conexão e cria/atualiza leads no CRM a partir de conversas novas (nome + prévia de mensagem) — mesma finalidade da Evolution API/WPPConnect, escolhendo o funil de destino na hora de gerar o código. Não é uma integração oficial do WhatsApp/Meta — não acessa cookies, tokens, histórico completo de conversa, mídia, nem dado de clique de anúncio (ver `docs/PRIVACY.md`).
 
 ## Instalar localmente ("Carregar sem compactação")
 
@@ -62,7 +62,11 @@ extension/
 
 ## Limitações técnicas conhecidas (intencionais, não escondidas)
 
-- **Depende do computador e do Chrome permanecerem ligados**, com a aba do WhatsApp Web aberta — não é uma conexão em nuvem 24h como as integrações oficiais da plataforma (Evolution API, WPPConnect, Meta Cloud API).
-- **Não detecta o fechamento da aba em tempo real.** Um service worker Manifest V3 não tem como saber de forma confiável quando uma aba específica fecha. O status "Desconectado" é inferido pela ausência de heartbeat por `STALE_AFTER_MS` (150s, ver `src/lib/extension-devices.ts` no app principal) — ou seja, pode levar até ~2,5 min pra platform refletir que a aba fechou.
-- **Sem ícones próprios ainda** (`manifest.json` não referencia `icons` — Chrome usa um ícone genérico). Funciona normalmente em "Carregar sem compactação", mas a Chrome Web Store **exige** ícones (mínimo 128×128) antes de aceitar publicação — ver `docs/PUBLISHING.md`.
+- **Depende do computador e do Chrome permanecerem ligados**, com a aba do WhatsApp Web aberta — não é uma conexão em nuvem 24h como as integrações oficiais da plataforma (Evolution API, WPPConnect, Meta Cloud API). **Fisicamente impossível de contornar** com esse método (não é falta de código) — quem precisa de uptime 24h independente do PC do cliente deve usar Evolution API/WPPConnect.
+- **Não detecta o fechamento da aba em tempo real.** Um service worker Manifest V3 não tem como saber de forma confiável quando uma aba específica fecha. O status "Desconectado" é inferido pela ausência de heartbeat por `STALE_AFTER_MS` (150s, ver `src/lib/extension-devices.ts` no app principal) — ou seja, pode levar até ~2,5 min pra plataforma refletir que a aba fechou.
+- **Não captura dado de clique de anúncio/campanha (`ctwa_clid`, ad id, etc.).** Confirmado por engenharia reversa do próprio fluxo da Evolution API do projeto: esse dado vem só do protocolo interno do WhatsApp (`contextInfo.externalAdReply`), nunca é renderizado na interface visual — um content script só enxerga o DOM, não tem como captar isso. Não é uma limitação de esforço, é ausência física do dado no que o navegador consegue ver.
+- **Extração de telefone/nome/prévia de mensagem depende de seletores DOM do WhatsApp Web** (`src/whatsapp-dom-adapter.ts`), que podem mudar em atualizações do WhatsApp sem aviso. Todo o código de extração é defensivo (nunca lança exceção, degrada pra "sem esse dado" em vez de quebrar), mas pode parar de capturar telefone/prévia corretamente até alguém atualizar os seletores — teste manual após atualizações grandes do WhatsApp Web é recomendado.
+- **Telefone nem sempre é identificável** — o WhatsApp Web às vezes só expõe o nome do contato salvo, não o número, em certos pontos do DOM. Quando isso acontece, o item é descartado em vez de criar um lead com identidade arriscada/errada (ver comentário em `messages/route.ts` do app principal).
+- **Só mensagens NOVAS a partir da conexão** — a extensão não importa retroativamente o histórico de conversas que já existiam antes de conectar (escolha deliberada de privacidade/performance).
+- **Ícones**: já incluídos (`extension/assets/`, gerados a partir de `public/nexo-logo.png`), mas a Chrome Web Store também exige screenshots antes de aceitar publicação — ver `docs/PUBLISHING.md`.
 - **Heartbeat a cada 1 minuto**, não menos — é o período mínimo que `chrome.alarms` garante de forma confiável para extensões publicadas (empacotadas). Não dá pra reduzir isso sem trocar a estratégia de manter o service worker acordado (fora de escopo aqui, e geralmente contra as boas práticas do Chrome Web Store).
