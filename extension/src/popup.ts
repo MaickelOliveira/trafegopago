@@ -5,6 +5,7 @@ const dot = document.getElementById("status-dot")!;
 const label = document.getElementById("status-label")!;
 const content = document.getElementById("content")!;
 const privacyLink = document.getElementById("privacy-link") as HTMLAnchorElement;
+const sendDebugEl = document.getElementById("send-debug")!;
 
 privacyLink.href = `${PLATFORM_BASE_URL}/privacidade/extensao-whatsapp`;
 privacyLink.target = "_blank";
@@ -171,10 +172,23 @@ async function init() {
   }
 }
 
+// Mostra o resultado da ÚLTIMA tentativa de enviar mensagem pro servidor —
+// lido direto do storage (gravado por sendMessageBatch no service worker),
+// não depende de ter o console certo aberto no momento exato do envio.
+async function renderSendDebug() {
+  const data = await chrome.storage.local.get("lastSendDebug");
+  const debug = data.lastSendDebug as { at: string; result: string; itemCount: number } | undefined;
+  if (!debug) { sendDebugEl.textContent = ""; return; }
+  const timeStr = new Date(debug.at).toLocaleTimeString("pt-BR");
+  sendDebugEl.textContent = `Último envio: ${timeStr} — ${debug.result}`;
+}
+
 init();
+renderSendDebug();
 // Enquanto o popup estiver aberto, revalida o status periodicamente — só nos
 // estados de "aguardando"/conectado, nunca durante digitação de código (ver
 // INPUT_ACTIVE_STATES). Popup fecha sozinho ao clicar fora, sem precisar de cleanup.
 setInterval(() => {
+  renderSendDebug();
   if (currentState && !INPUT_ACTIVE_STATES.includes(currentState)) init();
 }, 5000);

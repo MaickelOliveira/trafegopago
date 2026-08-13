@@ -132,6 +132,12 @@ button.popup__btn:focus-visible { outline: 2px solid #0ea5a5; outline-offset: 2p
   line-height: 1.4;
 }
 
+.popup__hint--debug {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  word-break: break-word;
+}
+
 .popup__link {
   font-size: 11px;
   color: #0d9488;

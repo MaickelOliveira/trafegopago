@@ -14,6 +14,17 @@ const STORAGE_AUTH = "auth";
 const STORAGE_DEVICE_PUBLIC_ID = "devicePublicId";
 const STORAGE_LAST_WHATSAPP_STATE = "lastWhatsappState";
 const STORAGE_REVOKED_FLAG = "wasRevoked";
+const STORAGE_LAST_SEND_DEBUG = "lastSendDebug";
+
+// O console do service worker só mostra atividade de enquanto ele está
+// aberto (MV3 não guarda histórico de antes) — difícil de pegar no momento
+// exato. Grava o resultado da ÚLTIMA tentativa de envio num lugar
+// persistente que o popup lê a qualquer momento, sem precisar de timing.
+async function recordSendDebug(result: string, itemCount: number): Promise<void> {
+  await chrome.storage.local.set({
+    [STORAGE_LAST_SEND_DEBUG]: { at: new Date().toISOString(), result, itemCount },
+  });
+}
 
 // Estado do popup calculado a partir de storage — service worker MV3 pode
 // ser derrubado e reiniciado a qualquer momento, então nada crítico fica só
@@ -81,6 +92,7 @@ async function sendMessageBatch(items: IncomingMessage[]): Promise<void> {
   const auth = await getAuth();
   if (!auth) {
     console.warn("[Conector WhatsApp] sendMessageBatch chamado sem auth salva — dispositivo não pareado?");
+    await recordSendDebug("sem auth salva", items.length);
     return;
   }
   if (items.length === 0) return;
@@ -90,12 +102,18 @@ async function sendMessageBatch(items: IncomingMessage[]): Promise<void> {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.deviceToken}` },
       body: JSON.stringify({ items }),
     });
-    console.log(`[Conector WhatsApp] POST /messages status=${res.status} items=${items.length}`);
+    // Status 200 sozinho não prova que virou lead — a rota também responde
+    // 200 quando ignora tudo por falta de funil vinculado (processed: 0).
+    // Grava o corpo inteiro da resposta, não só o status.
+    const data = await res.json().catch(() => null) as { processed?: number; skipped?: number; reason?: string } | null;
+    console.log(`[Conector WhatsApp] POST /messages status=${res.status} items=${items.length} processed=${data?.processed ?? "?"} skipped=${data?.skipped ?? "?"} reason=${data?.reason ?? "-"}`);
+    await recordSendDebug(`status=${res.status} processed=${data?.processed ?? "?"} skipped=${data?.skipped ?? "?"} reason=${data?.reason ?? "-"}`, items.length);
     if (res.status === 401) await handleRevoked();
   } catch (e) {
     // Perde esse lote específico se a rede falhar — próxima mudança de
     // prévia detectada no content script gera um novo lote, não fica preso.
     console.error("[Conector WhatsApp] erro de rede ao mandar /messages:", e);
+    await recordSendDebug(`erro de rede: ${e instanceof Error ? e.message : String(e)}`, items.length);
   }
 }
 
