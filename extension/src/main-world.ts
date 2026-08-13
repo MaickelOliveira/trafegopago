@@ -1,4 +1,27 @@
-import { on, loader, chat } from "@wppconnect/wa-js";
+// @wppconnect/wa-js NÃO é um módulo ESM/CJS de verdade apesar do .d.ts sugerir
+// isso — o arquivo que o "exports" do package.json realmente aponta
+// (dist/wppconnect-wa.js) é um bundle Webpack autoexecutável feito pra ser
+// injetado como <script> solto (uso tradicional: Tampermonkey/Playwright), e
+// só faz `self.WPP = <tudo>` no final. `import { on, loader, chat } from
+// "@wppconnect/wa-js"` compila e passa no typecheck (o .d.ts existe), mas em
+// tempo de execução TODOS os named imports vêm `undefined` — confirmado ao
+// vivo (TypeError: Cannot read properties of undefined (reading
+// 'onFullReady')). Import só pelo efeito colateral (executa o bundle, que
+// seta o global) e usa a variável global de verdade.
+import "@wppconnect/wa-js";
+
+type WppGlobal = {
+  on: (event: string, listener: (msg: unknown) => void) => void;
+  loader: {
+    isFullReady: boolean;
+    onFullReady: (listener: () => void, delay?: number) => void;
+  };
+  chat: {
+    sendTextMessage: (chatId: string, content: string) => Promise<unknown>;
+  };
+};
+
+declare const self: Window & typeof globalThis & { WPP?: WppGlobal };
 
 /**
  * ⚠️ Roda no MUNDO PRINCIPAL (MAIN world) da página do WhatsApp Web — ver
@@ -76,17 +99,27 @@ function extractPhone(jid: string): string | null {
 // também carregou — sem esse log, "conectado" no popup pode enganar: o
 // heartbeat passa pelo outro script, não por este.
 console.log("[Conector WhatsApp] main-world.ts carregado — aguardando wa-js ficar pronto...");
+
+const WPP = self.WPP;
+if (!WPP) {
+  console.error("[Conector WhatsApp] window.WPP não existe depois de importar @wppconnect/wa-js — o bundle pode ter mudado de formato numa atualização da lib.");
+}
+
 setTimeout(() => {
-  if (!loader.isFullReady) {
+  if (!WPP?.loader.isFullReady) {
     console.warn("[Conector WhatsApp] wa-js ainda não ficou pronto depois de 20s — pode ser versão do WhatsApp Web incompatível com @wppconnect/wa-js.");
   }
 }, 20000);
 
 try {
-  loader.onFullReady(() => {
+  if (!WPP) throw new Error("WPP indisponível");
+  const wpp = WPP; // narrowed pra WppGlobal (não-opcional) — preserva o tipo dentro dos closures abaixo
+
+  wpp.loader.onFullReady(() => {
     console.log("[Conector WhatsApp] wa-js pronto — escutando mensagens novas.");
     try {
-      on("chat.new_message", (msg: IncomingMsg) => {
+      wpp.on("chat.new_message", (rawMsg: unknown) => {
+        const msg = rawMsg as IncomingMsg;
         try {
           if (msg?.id?.fromMe) return; // mensagem enviada por nós, não pelo cliente/lead
           const fromJid = msg.from?._serialized ?? "";
@@ -144,7 +177,7 @@ try {
       const { chatId, text, requestId } = data;
       if (!chatId || !text || !requestId) return;
 
-      chat.sendTextMessage(chatId, text)
+      wpp.chat.sendTextMessage(chatId, text)
         .then(() => {
           postToIsolatedWorld({ type: "send-result", requestId, ok: true });
         })
