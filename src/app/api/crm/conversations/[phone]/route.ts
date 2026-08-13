@@ -13,6 +13,7 @@ import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { sendText as evoSendText, sendMedia as evoSendMedia } from "@/lib/evolution-api";
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { getConfig, getClientById } from "@/lib/clients";
+import { getAllDevices } from "@/lib/extension-devices";
 
 type Params = Promise<{ phone: string }>;
 
@@ -62,10 +63,21 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   if (funnelId) {
     const wppSession = getWppSessions().find((s) => s.funnelId === funnelId);
     const evoSession = !wppSession ? getEvolutionSessions().find((s) => s.funnelId === funnelId) : undefined;
+    // Dispositivo da extensão Chrome vinculado a este funil — vive num
+    // arquivo à parte (extension-devices.json, associado por funnelId), não
+    // aparece em wppSession/evoSession/funnel.connections[]. Sem isso, todo
+    // lead vindo da extensão caía sempre no fallback abaixo, nunca no
+    // caminho principal (mesmo quando funcionava, não era o caminho testado
+    // que os outros canais usam).
+    const extDevice = (!wppSession && !evoSession)
+      ? getAllDevices().find((d) => d.funnelId === funnelId && d.status === "active")
+      : undefined;
     if (wppSession) {
       connId = wppSession.id;
     } else if (evoSession) {
       connId = evoSession.id;
+    } else if (extDevice) {
+      connId = extDevice.id;
     } else {
       const funnel = getFunnelById(funnelId);
       connId = funnel?.connections?.find((c) => c.type === "uazapi")?.id
@@ -76,7 +88,10 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
   // Tenta com o connId do funil do lead
   if (connId) {
     const msgs = getHistory(normalized, clientId, connId);
-    if (msgs.length > 0) return NextResponse.json({ messages: msgs, connId });
+    if (msgs.length > 0) {
+      console.log(`[crm-conversations] phone=${normalized} achado via connId do funil (connId=${connId}) — ${msgs.length} msg(ns)`);
+      return NextResponse.json({ messages: msgs, connId });
+    }
   }
 
   // Fallback: busca a conversa mais recente para este telefone em QUALQUER conexão.
@@ -92,12 +107,16 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
 
     for (const conv of matched) {
       const msgs = getHistory(conv.phone, clientId, conv.connId ?? undefined);
-      if (msgs.length > 0) return NextResponse.json({ messages: msgs, connId: conv.connId ?? null });
+      if (msgs.length > 0) {
+        console.log(`[crm-conversations] phone=${normalized} achado via fallback fuzzy (conv.phone=${conv.phone}, conv.connId=${conv.connId ?? "null"}) — ${msgs.length} msg(ns)`);
+        return NextResponse.json({ messages: msgs, connId: conv.connId ?? null });
+      }
     }
   }
 
   // Último recurso: chave legada sem connId
   const messages = getHistory(normalized, clientId);
+  console.log(`[crm-conversations] phone=${normalized} ${messages.length > 0 ? `achado via chave legada — ${messages.length} msg(ns)` : "NADA encontrado em nenhum caminho"}`);
   return NextResponse.json({ messages, connId: null });
 }
 

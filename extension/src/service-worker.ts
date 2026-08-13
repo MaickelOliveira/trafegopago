@@ -151,6 +151,13 @@ async function submitCode(code: string): Promise<BackgroundToPopupMessage> {
     });
     await chrome.storage.local.remove(STORAGE_REVOKED_FLAG);
     await ensureAlarm();
+    // Sinal claro de sucesso: abre a plataforma numa aba NOVA (não navega a
+    // aba do WhatsApp Web, que o usuário provavelmente ainda está usando) —
+    // sem isso, a única confirmação visível é reabrir o popup manualmente.
+    chrome.tabs.create({ url: `${PLATFORM_BASE_URL}/cliente/whatsapp-extensao` }).catch(() => {
+      // Falha ao abrir aba (ex: sem foco de janela) não deve travar o
+      // pareamento, que já está confirmado no servidor nesse ponto.
+    });
     return { type: "status-update", popupState: "open_whatsapp" };
   } catch {
     return { type: "status-update", popupState: "comm_error", errorMessage: "Não foi possível falar com a plataforma. Verifique sua conexão." };
