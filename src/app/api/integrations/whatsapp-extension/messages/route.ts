@@ -15,6 +15,7 @@ type IncomingItem = {
   phone: string;
   chatId: string;
   isLid: boolean;
+  realPhone: string | null;
   contactName: string | null;
   body: string;
   ts: number;
@@ -168,6 +169,7 @@ export async function POST(req: NextRequest) {
       ...(item.contactName ? { name: item.contactName } : {}),
       ...(isNew ? { status: entradaColumnId } : {}),
       ...(item.isLid ? { isLid: true } : {}),
+      ...(item.realPhone ? { realPhone: item.realPhone } : {}),
       ...adFields,
     });
 

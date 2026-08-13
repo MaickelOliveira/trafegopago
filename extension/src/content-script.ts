@@ -96,13 +96,14 @@ window.addEventListener("message", (event) => {
   if (data?.source !== MAIN_WORLD_SOURCE) return;
 
   if (data.type === "whatsapp-message") {
-    const { phone, chatId, isLid, contactName, body, ts, adId, adSourceUrl, adTitle } = data;
+    const { phone, chatId, isLid, realPhone, contactName, body, ts, adId, adSourceUrl, adTitle } = data;
     if (typeof phone !== "string" || typeof chatId !== "string" || typeof body !== "string") return;
 
     pendingBatch.push({
       phone,
       chatId,
       isLid: isLid === true,
+      realPhone: typeof realPhone === "string" ? realPhone : null,
       contactName: typeof contactName === "string" ? contactName : null,
       body,
       ts: typeof ts === "number" ? ts : Date.now(),

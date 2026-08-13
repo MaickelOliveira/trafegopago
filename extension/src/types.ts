@@ -30,6 +30,7 @@ export type IncomingMessage = {
   phone: string;
   chatId: string; // JID completo (ex "5511999998888@c.us") — usado pra endereçar a resposta da IA depois
   isLid: boolean; // true quando o JID é "@lid" (identificador opaco, não é o telefone real)
+  realPhone: string | null; // telefone real resolvido via WPP.contact.getPnLidEntry, só quando isLid e o WhatsApp expõe o mapeamento
   contactName: string | null;
   body: string;
   ts: number;

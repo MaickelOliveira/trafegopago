@@ -19,6 +19,14 @@ type WppGlobal = {
   chat: {
     sendTextMessage: (chatId: string, content: string) => Promise<unknown>;
   };
+  contact: {
+    // Consulta o mapeamento LID↔telefone que o próprio WhatsApp Web mantém
+    // internamente (sem isso, um contato "@lid" só expõe um identificador
+    // opaco, nunca o número de telefone real). Nem todo contato resolve —
+    // WhatsApp não expõe esse mapeamento pra todo mundo (ex: contas que
+    // nunca compartilharam o número) — trata como "sem resolução" quando não vier.
+    getPnLidEntry: (contactId: string) => Promise<{ phoneNumber?: { _serialized?: string } }>;
+  };
 };
 
 declare const self: Window & typeof globalThis & { WPP?: WppGlobal };
@@ -120,6 +128,9 @@ try {
     try {
       wpp.on("chat.new_message", (rawMsg: unknown) => {
         const msg = rawMsg as IncomingMsg;
+        // IIFE async — o event emitter do wa-js não espera retorno, e a
+        // resolução de LID (getPnLidEntry) é assíncrona.
+        (async () => {
         try {
           if (msg?.id?.fromMe) return; // mensagem enviada por nós, não pelo cliente/lead
           const fromJid = msg.from?._serialized ?? "";
@@ -134,20 +145,33 @@ try {
           if (!phone) return; // JID em formato que não reconhecemos — não arrisca criar lead com chave errada
           // "@lid" é um identificador opaco interno do WhatsApp (protocolo mais
           // novo), não o telefone real — a parte numérica extraída dele NÃO é
-          // discável. Reporta o tipo pro backend marcar isLid (mesmo campo que
-          // o webhook Evolution já usa), em vez de tratar como telefone normal.
+          // discável por si só. Tenta resolver o telefone de verdade via o
+          // mapeamento LID↔telefone que o próprio WhatsApp Web mantém
+          // internamente — nem sempre existe (conta que nunca compartilhou o
+          // número), nesse caso segue sem realPhone, backend trata como LID puro.
           const isLid = fromJid.endsWith("@lid");
+          let realPhone: string | null = null;
+          if (isLid) {
+            try {
+              const entry = await wpp.contact.getPnLidEntry(fromJid);
+              const resolvedJid = entry?.phoneNumber?._serialized;
+              if (resolvedJid) realPhone = extractPhone(resolvedJid);
+            } catch {
+              // sem resolução — mensagem segue como LID puro, não trava nada
+            }
+          }
 
           const contactName = typeof msg.notifyName === "string" && msg.notifyName.trim() ? msg.notifyName.trim() : null;
           const ts = typeof msg.t === "number" && msg.t > 0 ? msg.t * 1000 : Date.now();
 
-          console.log(`[Conector WhatsApp] mensagem capturada de ${phone}${isLid ? " (lid)" : ""}`);
+          console.log(`[Conector WhatsApp] mensagem capturada de ${phone}${isLid ? ` (lid${realPhone ? `, resolvido: ${realPhone}` : ""})` : ""}`);
 
           postToIsolatedWorld({
             type: "whatsapp-message",
             phone,
             chatId: fromJid,
             isLid,
+            realPhone,
             contactName,
             body,
             ts,
@@ -158,6 +182,7 @@ try {
         } catch {
           // uma mensagem malformada não derruba o listener inteiro
         }
+        })();
       });
     } catch (e) {
       // API de evento do wa-js não bateu com o esperado (versão do

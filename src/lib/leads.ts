@@ -296,6 +296,10 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
   const leads = load();
   const normalized = normalizePhone(phone);
   const funnelId = patch.funnelId ?? "default";
+  // Normaliza ANTES de ramificar create/update — senão um lead novo (que lê
+  // patch.realPhone direto no literal abaixo) e um lead existente (que só dá
+  // spread no patch) guardariam o número real em formatos diferentes.
+  if (patch.realPhone) patch = { ...patch, realPhone: normalizePhone(patch.realPhone) };
   // Busca por clientId + funnelId + telefone normalizado.
   // Mesmo número em funnels diferentes = leads separados (cada agente/canal tem seu próprio lead).
   // Mesmo número no mesmo funil = um único lead (sem duplicata).
@@ -359,6 +363,8 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     status: patch.status ?? "novo",
     notes: patch.notes ?? "",
     ai: patch.ai ?? null,
+    isLid: patch.isLid,
+    realPhone: patch.realPhone,
     createdAt: now,
     updatedAt: now,
   };
