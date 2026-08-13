@@ -2,10 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDeviceByToken } from "@/lib/extension-devices";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
-import { addMessage } from "@/lib/conversations";
+import { addMessage, getHistory } from "@/lib/conversations";
+import { getConfig } from "@/lib/clients";
+import { getAdInfoById } from "@/lib/meta-api";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-type IncomingItem = { phone: string | null; contactName: string | null; lastMessagePreview: string | null };
+type IncomingItem = {
+  phone: string;
+  contactName: string | null;
+  body: string;
+  ts: number;
+  adId: string | null;
+  adSourceUrl: string | null;
+  adTitle: string | null;
+};
 
 function deviceToken(req: NextRequest): string | null {
   const header = req.headers.get("authorization");
@@ -13,10 +23,13 @@ function deviceToken(req: NextRequest): string | null {
   return header.slice("Bearer ".length).trim();
 }
 
-/** Chamada pelo service worker da extensão quando o content script detecta
- *  prévia de mensagem nova numa conversa. Reaproveita a MESMA função de
- *  upsert de lead que o webhook da Evolution API usa (src/lib/leads.ts) —
- *  mesmo comportamento de CRM pros dois canais, como pedido. */
+/** Chamada pelo service worker da extensão quando main-world.ts (via
+ *  @wppconnect/wa-js) detecta uma mensagem nova de verdade — não mais uma
+ *  prévia raspada do DOM. Reaproveita a MESMA função de upsert de lead que o
+ *  webhook da Evolution API usa (src/lib/leads.ts), incluindo o mesmo
+ *  reaproveitamento de lead entre funis quando já existe histórico nesta
+ *  conexão, e o mesmo enriquecimento de campanha via Graph API quando a
+ *  mensagem carrega contexto de anúncio (CTWa). */
 export async function POST(req: NextRequest) {
   const token = deviceToken(req);
   if (!token) return NextResponse.json({ error: "Token ausente" }, { status: 401 });
@@ -37,38 +50,87 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "items obrigatório" }, { status: 400 });
   }
 
-  // Resolve a coluna de entrada do funil uma única vez (mesmo padrão do
-  // webhook Evolution: src/app/api/whatsapp/webhook/evolution/[token]/route.ts).
-  const funnel = device.funnelId ? getFunnelById(device.funnelId) : undefined;
-  const entradaColumnId = funnel?.columns?.[0]?.id ?? "entrada";
+  // Sem funil vinculado ainda (o gestor vincula depois de conectar — ver
+  // /api/integrations/whatsapp-extension/link), ignora silenciosamente.
+  // Mesmo comportamento do webhook Evolution pra sessão sem funil: nunca
+  // grava lead com um funnelId inválido/inexistente.
+  if (!device.funnelId) {
+    return NextResponse.json({ ok: true, processed: 0, skipped: body.items.length, reason: "no_funnel_linked" });
+  }
+
+  const funnel = getFunnelById(device.funnelId);
+  if (!funnel) {
+    return NextResponse.json({ ok: true, processed: 0, skipped: body.items.length, reason: "funnel_not_found" });
+  }
+  const defaultFunnelId = funnel.id;
+  const clientId = device.clientId;
+  const entradaColumnId = funnel.columns?.[0]?.id ?? "entrada";
+  const cfg = getConfig();
 
   let processed = 0;
   let skipped = 0;
 
   for (const item of body.items.slice(0, 50)) {
-    // Sem telefone extraído, não dá pra usar como chave de identidade do
-    // lead com segurança (ver whatsapp-dom-adapter.ts) — pula em vez de
-    // arriscar colidir leads diferentes numa chave sintética.
-    if (!item.phone) { skipped++; continue; }
+    if (!item.phone || !item.body) { skipped++; continue; }
 
-    const isNew = !getLeadByPhone(device.clientId, item.phone, device.funnelId);
+    // Reaproveita lead existente do mesmo telefone em outro funil quando já
+    // existe histórico nesta MESMA conexão (mesmo padrão do webhook Evolution)
+    // — evita duplicar o lead de alguém que já conversou por outro canal.
+    const leadInDefaultFunnel = getLeadByPhone(clientId, item.phone, defaultFunnelId);
+    const leadElsewhere = leadInDefaultFunnel ? null : getLeadByPhone(clientId, item.phone);
+    const hasHistoryOnThisConn = !!leadElsewhere && getHistory(item.phone, clientId, device.id).length > 0;
+    const existingLead = leadInDefaultFunnel ?? (hasHistoryOnThisConn ? leadElsewhere : null);
+    const isNew = !existingLead;
+    const funnelId = existingLead?.funnelId ?? defaultFunnelId;
 
-    upsertLeadByPhone(device.clientId, item.phone, {
-      clientId: device.clientId,
-      funnelId: device.funnelId ?? "default",
+    // ── Contexto de anúncio (CTWa) — só presente quando a mensagem veio de
+    // um clique em anúncio Meta, capturado por main-world.ts via wa-js. ──
+    const alreadyAttributed = !!item.adId && existingLead?.adId === item.adId && !!existingLead?.campaignId;
+    let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
+    if (item.adId && !alreadyAttributed && cfg.metaToken) {
+      adInfo = await getAdInfoById(item.adId, cfg.metaToken).catch(() => null);
+    }
+    const adFields = adInfo
+      ? {
+          adPlatform: "meta" as const,
+          adId: adInfo.adId,
+          adName: adInfo.adName,
+          adSetId: adInfo.adSetId,
+          adSetName: adInfo.adSetName,
+          campaignId: adInfo.campaignId,
+          campaignName: adInfo.campaignName,
+          adSourceUrl: item.adSourceUrl ?? null,
+        }
+      : alreadyAttributed
+      ? {}
+      : item.adId || item.adTitle || item.adSourceUrl
+      ? {
+          adPlatform: "meta" as const,
+          adId: item.adId ?? null,
+          adName: null,
+          adSetId: null,
+          adSetName: null,
+          campaignId: null,
+          campaignName: item.adTitle ?? null,
+          adSourceUrl: item.adSourceUrl ?? null,
+        }
+      : {};
+
+    upsertLeadByPhone(clientId, item.phone, {
+      clientId,
+      funnelId,
       source: "whatsapp",
       ...(item.contactName ? { name: item.contactName } : {}),
       ...(isNew ? { status: entradaColumnId } : {}),
+      ...adFields,
     });
 
-    if (item.lastMessagePreview) {
-      addMessage(
-        item.phone,
-        { role: "user", content: item.lastMessagePreview, ts: Date.now() },
-        device.clientId,
-        { connId: device.id, contactName: item.contactName ?? undefined }
-      );
-    }
+    addMessage(
+      item.phone,
+      { role: "user", content: item.body, ts: item.ts },
+      clientId,
+      { connId: device.id, contactName: item.contactName ?? undefined }
+    );
 
     processed++;
   }

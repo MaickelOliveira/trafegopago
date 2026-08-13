@@ -22,10 +22,18 @@ export type StoredAuth = {
   devicePublicId: string;
 };
 
-export type ConversationUpdate = {
-  phone: string | null;
+/** Uma mensagem real (não uma "prévia" raspada do DOM) — vem do main-world.ts,
+ *  que lê o estado interno já decodificado do WhatsApp Web via @wppconnect/wa-js.
+ *  adId/adSourceUrl/adTitle só vêm preenchidos quando a mensagem se originou de
+ *  um clique em anúncio (contexto nunca exposto no DOM visível). */
+export type IncomingMessage = {
+  phone: string;
   contactName: string | null;
-  lastMessagePreview: string | null;
+  body: string;
+  ts: number;
+  adId: string | null;
+  adSourceUrl: string | null;
+  adTitle: string | null;
 };
 
 /** Mensagens trocadas entre content-script → service-worker. O content script
@@ -34,7 +42,7 @@ export type ConversationUpdate = {
  *  centralizados em um lugar só). */
 export type ContentToBackgroundMessage =
   | { type: "whatsapp-state"; state: ConnectorState }
-  | { type: "new-messages"; items: ConversationUpdate[] };
+  | { type: "new-messages"; items: IncomingMessage[] };
 
 /** Mensagens trocadas entre popup ↔ service-worker. */
 export type PopupToBackgroundMessage =

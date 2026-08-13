@@ -66,7 +66,6 @@ export function generateDeviceToken(): string {
 export function createDevice(data: {
   clientId: string;
   employeeId?: string;
-  funnelId?: string;
   devicePublicId: string;
   consentVersion: string;
 }): { device: ExtensionDevice; token: string } {
@@ -77,7 +76,9 @@ export function createDevice(data: {
     id: randomUUID(),
     clientId: data.clientId,
     employeeId: data.employeeId,
-    funnelId: data.funnelId,
+    // funnelId começa vazio — o gestor vincula o CRM depois pelo botão
+    // "🔀 Vincular CRM" (mesmo fluxo da Evolution/UazAPI/WPPConnect), não o
+    // próprio cliente no momento de gerar o código de pareamento.
     devicePublicId: data.devicePublicId,
     tokenHash: hashToken(token),
     status: "active",
@@ -156,6 +157,21 @@ export function revokeDeviceAsManager(deviceId: string): boolean {
   if (idx === -1) return false;
   const now = new Date().toISOString();
   devices[idx] = { ...devices[idx], status: "revoked", revokedAt: now, updatedAt: now };
+  save(devices);
+  return true;
+}
+
+/** Vincula (ou desvincula, com funnelId=null) o funil de CRM de um
+ *  dispositivo — chamada só pelo gestor, mesmo papel de updateEvolutionSession
+ *  pra funnelId. Sem exigir clientId pela mesma razão de revokeDeviceAsManager. */
+export function updateDeviceFunnel(deviceId: string, funnelId: string | null): boolean {
+  const devices = load();
+  const idx = devices.findIndex((d) => d.id === deviceId);
+  if (idx === -1) return false;
+  const updated = { ...devices[idx], updatedAt: new Date().toISOString() };
+  if (funnelId) updated.funnelId = funnelId;
+  else delete updated.funnelId;
+  devices[idx] = updated;
   save(devices);
   return true;
 }

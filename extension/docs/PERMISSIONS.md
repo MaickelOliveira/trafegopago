@@ -16,9 +16,11 @@ Formulário de revisão da Chrome Web Store pede justificativa por permissão de
 
 ## `host_permissions` — `https://web.whatsapp.com/*`
 
-**Uso**: injetar o content script que (1) observa, via seletores DOM, se a tela de conversas está visível/há QR Code/está carregando, e (2) lê nome de contato + prévia da última mensagem de conversas novas na lista, pra criar/atualizar leads no CRM do usuário (mesma finalidade de uma integração de WhatsApp normal, ver `docs/PRIVACY.md`).
+**Uso**: injetar dois content scripts. (1) `content-script.ts`, mundo ISOLADO padrão, observa via seletores DOM se a tela de conversas está visível/há QR Code/está carregando, e faz o relay das mensagens que (2) `main-world.ts` reporta — esse roda no mundo PRINCIPAL da página (`"world": "MAIN"` em `manifest.json`), compartilhando o contexto JS da própria aplicação do WhatsApp Web, e usa a lib `@wppconnect/wa-js` pra ler nome de contato, telefone, texto de mensagens novas e contexto de anúncio de origem — dado que não é exposto de forma confiável no DOM visível. Tudo isso pra criar/atualizar leads no CRM do usuário (mesma finalidade de uma integração de WhatsApp normal, ver `docs/PRIVACY.md`).
 
-**Por que é o mínimo necessário**: restrito exatamente ao domínio do WhatsApp Web — não há `<all_urls>` nem wildcard amplo. O content script nunca lê cookies, `localStorage`, `IndexedDB`, nunca abre uma conversa pra ler o histórico completo, e nunca lê mídia (ver `src/whatsapp-dom-adapter.ts` — só a lista de conversas já visível na tela).
+**⚠️ Nota de risco**: rodar no mundo principal e ler o estado interno da aplicação via `@wppconnect/wa-js` é uma técnica não-oficial, fora dos termos de uso do WhatsApp — mesma categoria de risco de Evolution API/WPPConnect, mas recaindo sobre o número pessoal do cliente. `main-world.ts` só chama a função de LEITURA de evento do pacote (`WPP.on(...)`) — nunca envio/automação. Ver disclosure completo em `docs/PRIVACY.md`.
+
+**Por que é o mínimo necessário**: restrito exatamente ao domínio do WhatsApp Web — não há `<all_urls>` nem wildcard amplo. Nenhum dos dois scripts lê cookies, `localStorage`, `IndexedDB`, nenhum abre uma conversa pra ler o histórico completo, e nenhum lê mídia ou conversa em grupo (ver `src/main-world.ts` e `src/whatsapp-dom-adapter.ts`).
 
 ## `host_permissions` — domínio da plataforma
 

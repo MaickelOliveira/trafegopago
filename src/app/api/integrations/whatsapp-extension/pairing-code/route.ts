@@ -3,7 +3,6 @@ import { getSession } from "@/lib/auth";
 import { createPairingCode } from "@/lib/extension-pairing-codes";
 import { recordAuditEvent, truncateIp } from "@/lib/extension-audit-log";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { getFunnelById } from "@/lib/funnels";
 
 function clientIp(req: NextRequest): string | undefined {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || undefined;
@@ -30,23 +29,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Muitas tentativas. Aguarde alguns minutos." }, { status: 429 });
   }
 
-  const body = await req.json().catch(() => ({})) as { funnelId?: string };
-  // Nunca confia no funnelId cru vindo do cliente sem checar que é
-  // realmente um funil DESSA organização — senão um clientId manipulado
-  // conseguiria direcionar leads pro funil de outra empresa.
-  let funnelId: string | undefined;
-  if (body.funnelId) {
-    const funnel = getFunnelById(body.funnelId);
-    if (!funnel || funnel.clientId !== session.clientId) {
-      return NextResponse.json({ error: "Funil inválido" }, { status: 400 });
-    }
-    funnelId = funnel.id;
-  }
-
   const { code, expiresAt } = createPairingCode(session.clientId, {
     employeeId: session.employeeId,
     createdIp: ip,
-    funnelId,
   });
 
   recordAuditEvent({

@@ -26,7 +26,7 @@ function secondsUntil(iso: string): number {
   return Math.max(0, Math.floor((new Date(iso).getTime() - Date.now()) / 1000));
 }
 
-export function WhatsAppExtensionConnect({ funnels }: { funnels: { id: string; name: string }[] }) {
+export function WhatsAppExtensionConnect() {
   const [devices, setDevices] = useState<DeviceStatusView[]>([]);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [consentAccepted, setConsentAccepted] = useState(false);
@@ -34,7 +34,6 @@ export function WhatsAppExtensionConnect({ funnels }: { funnels: { id: string; n
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [funnelId, setFunnelId] = useState<string>(funnels[0]?.id ?? "");
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -73,7 +72,6 @@ export function WhatsAppExtensionConnect({ funnels }: { funnels: { id: string; n
       const res = await fetch("/api/integrations/whatsapp-extension/pairing-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ funnelId: funnelId || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao gerar código");
@@ -121,9 +119,13 @@ export function WhatsAppExtensionConnect({ funnels }: { funnels: { id: string; n
         <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3 text-sm text-slate-600">
           <p className="font-semibold text-slate-800">Antes de continuar</p>
           <ul className="list-disc list-inside space-y-1">
-            <li>A extensão lê o nome do contato e a prévia da última mensagem de cada conversa nova, pra criar/atualizar o lead no seu CRM — igual às outras integrações de WhatsApp da plataforma.</li>
-            <li>Não temos acesso à sua senha, QR Code de login ou aos cookies/credenciais do WhatsApp — a extensão nunca toca nesses dados, em nenhuma hipótese.</li>
-            <li>Não conseguimos capturar dados de clique de anúncio (campanha/anúncio de origem) por esse método — isso só existe no protocolo oficial do WhatsApp, não aparece na tela. Pra rastreio de campanha completo, use a Evolution API ou API Oficial Meta.</li>
+            <li>A extensão lê o nome do contato e o conteúdo de mensagens de texto novas em cada conversa, pra criar/atualizar o lead no seu CRM — igual às outras integrações de WhatsApp da plataforma.</li>
+            <li>Quando a mensagem vier de um clique em anúncio, também capturamos automaticamente de qual campanha/anúncio ela veio — mesmo rastreio de campanha das outras integrações.</li>
+            <li>Não temos acesso à sua senha, QR Code de login ou aos cookies/credenciais do WhatsApp — a extensão nunca toca nesses dados, em nenhuma hipótese, e nunca envia mensagem nem executa nenhuma ação no seu WhatsApp: só lê.</li>
+            <li className="text-amber-700">
+              ⚠️ Pra ler mensagem e contexto de anúncio, a extensão usa uma técnica não-oficial (lê o estado interno do próprio WhatsApp Web no seu navegador) — fora dos termos de uso do WhatsApp. Isso carrega um risco real, embora não determinístico, de restrição/banimento da conta. Diferente de outras integrações da plataforma (que usam um número dedicado da agência), aqui o número em risco é o <strong>seu número pessoal</strong>.
+            </li>
+            <li>O funil de CRM dessa conexão é definido pelo seu gestor de tráfego depois que você conectar — se as conversas não aparecerem no CRM, fale com ele.</li>
             <li>Você pode desconectar a qualquer momento pelo botão &quot;Desconectar&quot; abaixo.</li>
           </ul>
           <p>
@@ -133,7 +135,7 @@ export function WhatsAppExtensionConnect({ funnels }: { funnels: { id: string; n
             onClick={() => setConsentAccepted(true)}
             className="rounded-lg bg-slate-800 text-white text-sm font-medium px-4 py-2 hover:bg-slate-900 transition"
           >
-            Entendi, continuar
+            Entendi o risco, continuar
           </button>
         </div>
       )}
@@ -156,28 +158,10 @@ export function WhatsAppExtensionConnect({ funnels }: { funnels: { id: string; n
             </div>
           ) : (
             <>
-              {funnels.length > 0 ? (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
-                  <select
-                    value={funnelId}
-                    onChange={(e) => setFunnelId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm mb-1"
-                  >
-                    {funnels.map((f) => (
-                      <option key={f.id} value={f.id}>{f.name}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-slate-400 mb-3">Leads dessa conexão vão cair nesse funil.</p>
-                </div>
-              ) : (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-                  Você ainda não tem nenhum funil criado no CRM — crie um primeiro pra os leads dessa conexão terem onde cair.
-                </p>
-              )}
+              <p className="text-xs text-slate-400 mb-3">Depois de conectar, seu gestor de tráfego vincula essa conexão a um funil do CRM.</p>
               <button
                 onClick={generateCode}
-                disabled={generating || funnels.length === 0}
+                disabled={generating}
                 className="rounded-lg bg-emerald-600 text-white text-sm font-medium px-4 py-2.5 hover:bg-emerald-700 disabled:opacity-60 transition"
               >
                 {generating ? "Gerando..." : "Gerar código de conexão"}

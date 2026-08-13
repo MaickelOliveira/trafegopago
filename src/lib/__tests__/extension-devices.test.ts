@@ -11,6 +11,7 @@ import {
   updateHeartbeat,
   revokeDevice,
   revokeDeviceAsManager,
+  updateDeviceFunnel,
   STALE_AFTER_MS,
 } from "../extension-devices";
 
@@ -132,14 +133,29 @@ describe("revokeDeviceAsManager", () => {
   });
 });
 
-describe("funnelId propagado do createDevice ao registro", () => {
-  it("guarda o funnelId quando informado", () => {
-    const { device } = createDevice({ clientId: "client-a", devicePublicId: "dev-a", consentVersion: "1.0.0", funnelId: "funil-123" });
-    expect(device.funnelId).toBe("funil-123");
-  });
-
-  it("fica undefined quando não informado (comportamento anterior preservado)", () => {
+describe("createDevice — sem funil no momento da criação", () => {
+  it("todo dispositivo novo nasce sem funil vinculado (gestor vincula depois)", () => {
     const { device } = createDevice({ clientId: "client-a", devicePublicId: "dev-a", consentVersion: "1.0.0" });
     expect(device.funnelId).toBeUndefined();
+  });
+});
+
+describe("updateDeviceFunnel", () => {
+  it("vincula um funil a um dispositivo existente", () => {
+    const { device } = createDevice({ clientId: "client-a", devicePublicId: "dev-a", consentVersion: "1.0.0" });
+    const ok = updateDeviceFunnel(device.id, "funil-123");
+    expect(ok).toBe(true);
+    expect(getAllDevices()[0].funnelId).toBe("funil-123");
+  });
+
+  it("desvincula quando chamado com null", () => {
+    const { device } = createDevice({ clientId: "client-a", devicePublicId: "dev-a", consentVersion: "1.0.0" });
+    updateDeviceFunnel(device.id, "funil-123");
+    updateDeviceFunnel(device.id, null);
+    expect(getAllDevices()[0].funnelId).toBeUndefined();
+  });
+
+  it("retorna false pra um id inexistente", () => {
+    expect(updateDeviceFunnel("nao-existe", "funil-123")).toBe(false);
   });
 });

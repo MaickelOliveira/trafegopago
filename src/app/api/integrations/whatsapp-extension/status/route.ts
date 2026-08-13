@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getDevicesForClient, getAllDevices, computeDisplayState } from "@/lib/extension-devices";
 import { getClients } from "@/lib/clients";
+import { getFunnels } from "@/lib/funnels";
 import type { DeviceStatusView } from "@/lib/extension-types";
 
 export async function GET() {
@@ -13,6 +14,7 @@ export async function GET() {
   if (session.role === "manager") {
     const clients = getClients();
     const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
+    const funnelNameById = new Map(getFunnels().map((f) => [f.id, f.name]));
     const devices = getAllDevices().filter((d) => d.status === "active");
     const view: DeviceStatusView[] = devices.map((d) => ({
       id: d.id,
@@ -22,6 +24,8 @@ export async function GET() {
       createdAt: d.createdAt,
       clientId: d.clientId,
       clientName: clientNameById.get(d.clientId) ?? "(cliente não encontrado)",
+      funnelId: d.funnelId,
+      funnelName: d.funnelId ? funnelNameById.get(d.funnelId) : undefined,
     }));
     return NextResponse.json({ devices: view });
   }

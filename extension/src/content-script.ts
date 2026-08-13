@@ -1,8 +1,10 @@
-import { detectWhatsAppState, scanConversations } from "./whatsapp-dom-adapter";
-import type { ContentToBackgroundMessage, ConversationUpdate } from "./types";
+import { detectWhatsAppState } from "./whatsapp-dom-adapter";
+import type { ContentToBackgroundMessage, IncomingMessage } from "./types";
 
-// Roda SÓ em web.whatsapp.com (ver manifest.json content_scripts.matches).
-// Nunca lê cookies, localStorage, IndexedDB ou credenciais do WhatsApp.
+// Roda SÓ em web.whatsapp.com (ver manifest.json content_scripts.matches),
+// no mundo ISOLADO (padrão de content script) — só lê o DOM renderizado pra
+// detectar estado de conexão. Nunca lê cookies, localStorage, IndexedDB ou
+// credenciais do WhatsApp.
 
 let lastReportedState: string | null = null;
 
@@ -19,21 +21,35 @@ function reportState() {
   });
 }
 
-// ── Detecção de mensagens novas ──────────────────────────────────────────
-// Baseline: na primeira varredura depois de carregar, só REGISTRA o estado
-// atual de cada conversa, sem enviar nada — evita "importar" retroativamente
-// todo o histórico de conversas já existente assim que o usuário conecta.
-// Só a partir da segunda varredura em diante, uma prévia de mensagem
-// diferente da última vista vira um evento "new-messages".
-let baselineReady = false;
-const lastPreviewByKey = new Map<string, string>();
-let pendingBatch: ConversationUpdate[] = [];
+// WhatsApp Web dispara MUITAS mutações de DOM por segundo (indicador de
+// digitando, presença, timestamps) — checar o estado a cada uma seria
+// pesado. Throttle: no máximo 1 checagem por segundo, mesmo com mutações
+// mais frequentes que isso.
+let scanThrottled = false;
+function throttledReportState() {
+  if (scanThrottled) return;
+  scanThrottled = true;
+  setTimeout(() => { scanThrottled = false; }, 1000);
+  reportState();
+}
+
+const observer = new MutationObserver(throttledReportState);
+observer.observe(document.documentElement, { childList: true, subtree: true });
+
+reportState();
+
+// ── Mensagens novas (via main-world.ts) ──────────────────────────────────
+// main-world.ts roda no mundo PRINCIPAL da página (compartilha contexto JS
+// com o próprio WhatsApp Web) e lê o estado interno já decodificado de cada
+// mensagem nova via @wppconnect/wa-js — muito mais confiável que raspar o
+// DOM da lista de conversas (que não expõe telefone de forma estável). Os
+// dois mundos não compartilham escopo, então a comunicação é via
+// window.postMessage — só aceita eventos com a origem exata desta própria
+// página e o marcador de fonte esperado, pra não processar mensagens de
+// outro script qualquer rodando na mesma página.
+let pendingBatch: IncomingMessage[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const BATCH_DELAY_MS = 2000; // agrupa rajadas de mensagens chegando juntas numa só chamada
-
-function rowKey(row: { phone: string | null; contactName: string | null }): string | null {
-  return row.phone ?? row.contactName;
-}
 
 function flushBatch() {
   flushTimer = null;
@@ -42,62 +58,28 @@ function flushBatch() {
   pendingBatch = [];
   const message: ContentToBackgroundMessage = { type: "new-messages", items };
   chrome.runtime.sendMessage(message).catch(() => {
-    // Se falhar (service worker reiniciando), essas atualizações específicas
-    // se perdem — a próxima mudança de prévia detectada reenvia o estado
-    // atual mesmo assim, então não fica preso.
+    // Se falhar (service worker reiniciando), esse lote específico se perde
+    // — a próxima mensagem detectada gera um novo lote, não fica preso.
   });
 }
 
-function scanForNewMessages() {
-  const rows = scanConversations();
-  if (rows.length === 0) {
-    if (baselineReady) {
-      // Já tínhamos visto linhas antes e agora não vemos nenhuma — pode ser
-      // só uma tela transitória (busca ativa, etc.), não loga como erro.
-    }
-    return;
-  }
+window.addEventListener("message", (event) => {
+  if (event.source !== window || event.origin !== window.location.origin) return;
+  const data = event.data as { source?: string; type?: string } | undefined;
+  if (data?.source !== "conector-whatsapp-main-world" || data.type !== "whatsapp-message") return;
 
-  for (const row of rows) {
-    const key = rowKey(row);
-    if (!key || row.lastMessagePreview === null) continue;
+  const { phone, contactName, body, ts, adId, adSourceUrl, adTitle } = event.data as Record<string, unknown>;
+  if (typeof phone !== "string" || typeof body !== "string") return;
 
-    const previous = lastPreviewByKey.get(key);
-    lastPreviewByKey.set(key, row.lastMessagePreview);
+  pendingBatch.push({
+    phone,
+    contactName: typeof contactName === "string" ? contactName : null,
+    body,
+    ts: typeof ts === "number" ? ts : Date.now(),
+    adId: typeof adId === "string" ? adId : null,
+    adSourceUrl: typeof adSourceUrl === "string" ? adSourceUrl : null,
+    adTitle: typeof adTitle === "string" ? adTitle : null,
+  });
 
-    if (!baselineReady) continue; // primeira varredura: só grava o baseline, não reporta
-    if (previous === row.lastMessagePreview) continue; // sem mudança
-
-    pendingBatch.push(row);
-  }
-
-  if (!baselineReady) {
-    baselineReady = true;
-    return;
-  }
-
-  if (pendingBatch.length > 0 && !flushTimer) {
-    flushTimer = setTimeout(flushBatch, BATCH_DELAY_MS);
-  }
-}
-
-// WhatsApp Web dispara MUITAS mutações de DOM por segundo (indicador de
-// digitando, presença, timestamps) — escanear todas as linhas da lista a
-// cada uma seria pesado. Throttle: no máximo 1 varredura completa por
-// segundo, mesmo com mutações mais frequentes que isso.
-let scanThrottled = false;
-function throttledScan() {
-  if (scanThrottled) return;
-  scanThrottled = true;
-  setTimeout(() => { scanThrottled = false; }, 1000);
-  reportState();
-  scanForNewMessages();
-}
-
-// A UI do WhatsApp Web é uma SPA — muda de tela sem navegação de página,
-// então observamos mutações do DOM em vez de só rodar uma vez no load.
-const observer = new MutationObserver(throttledScan);
-observer.observe(document.documentElement, { childList: true, subtree: true });
-
-reportState();
-scanForNewMessages();
+  if (!flushTimer) flushTimer = setTimeout(flushBatch, BATCH_DELAY_MS);
+});

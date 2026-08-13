@@ -6,7 +6,7 @@ import type {
   ContentToBackgroundMessage,
   PopupToBackgroundMessage,
   BackgroundToPopupMessage,
-  ConversationUpdate,
+  IncomingMessage,
 } from "./types";
 
 const ALARM_NAME = "heartbeat";
@@ -77,7 +77,7 @@ async function sendHeartbeat(connectorState: ConnectorState): Promise<"ok" | "re
   }
 }
 
-async function sendMessageBatch(items: ConversationUpdate[]): Promise<void> {
+async function sendMessageBatch(items: IncomingMessage[]): Promise<void> {
   const auth = await getAuth();
   if (!auth || items.length === 0) return;
   try {

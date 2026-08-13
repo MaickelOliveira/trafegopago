@@ -23,8 +23,11 @@ await esbuild.build({
   sourcemap: true,
 });
 
+// main-world roda no MAIN world (ver manifest.json) — mesma regra de script
+// clássico do content-script, e além disso PRECISA ser autocontido: o
+// mundo principal não tem acesso ao runtime de módulos da extensão.
 await esbuild.build({
-  entryPoints: { "content-script": "src/content-script.ts" },
+  entryPoints: { "content-script": "src/content-script.ts", "main-world": "src/main-world.ts" },
   bundle: true,
   format: "iife",
   target: "chrome116",

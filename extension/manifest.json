@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Conector WhatsApp — Tráfego Pago Plataforma",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Vincula o WhatsApp Web já conectado no seu navegador à sua conta na plataforma, sem acessar suas credenciais do WhatsApp.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
@@ -17,6 +17,12 @@
       "matches": ["https://web.whatsapp.com/*"],
       "js": ["content-script.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["main-world.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "action": {

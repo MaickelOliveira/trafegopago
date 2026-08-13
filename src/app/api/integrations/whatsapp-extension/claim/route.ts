@@ -43,7 +43,6 @@ export async function POST(req: NextRequest) {
   const { device, token } = createDevice({
     clientId: result.pairing.clientId,
     employeeId: result.pairing.employeeId,
-    funnelId: result.pairing.funnelId,
     devicePublicId: body.devicePublicId,
     consentVersion: body.consentVersion,
   });

@@ -7,7 +7,7 @@
 1. ~~Ícones~~ — ✅ já incluídos (`extension/assets/icon{16,48,128}.png`, gerados a partir de `public/nexo-logo.png`, declarados em `manifest.json`).
 2. **Screenshots** — a loja pede pelo menos 1 screenshot (1280×800 ou 640×400) mostrando o popup em uso.
 3. **Confirmar `PLATFORM_BASE_URL`** em `src/config.ts` e `host_permissions` em `manifest.json` apontando pro domínio de produção definitivo (hoje: `https://trafegopago-trafegopago.ztcjzs.easypanel.host` — confirmar se é esse mesmo o domínio final antes de publicar, já que apareceu com aviso de certificado/conteúdo misto numa checagem anterior).
-4. **Formulário de uso de dados da Chrome Web Store** vai pedir declaração explícita de "dados pessoais coletados" — marcar que a extensão coleta dados de comunicação (nome de contato + prévia de mensagem) pra funcionalidade central (criação de lead no CRM), com link pra política de privacidade completa.
+4. **Formulário de uso de dados da Chrome Web Store** vai pedir declaração explícita de "dados pessoais coletados" — marcar que a extensão coleta dados de comunicação (nome de contato, telefone, texto de mensagem e contexto de anúncio de origem) pra funcionalidade central (criação de lead no CRM), com link pra política de privacidade completa. Considerar se a revisão do Google vai questionar o uso de `@wppconnect/wa-js` (técnica não-oficial de leitura do WhatsApp Web, ver `docs/PRIVACY.md`) — ter a justificativa pronta (mesma finalidade de leitura de mensagem que uma integração de WhatsApp qualquer, sem envio/automação).
 
 ## Passos
 

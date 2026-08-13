@@ -382,7 +382,7 @@ export function WhatsAppManagerView({
       {mainTab === "meta" && <MetaApiView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "wppconnect" && <WppConnectView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
       {mainTab === "evolution" && <EvolutionView funnels={funnels} clients={clients} appBaseUrl={appBaseUrl} />}
-      {mainTab === "extensao" && <ExtensionView />}
+      {mainTab === "extensao" && <ExtensionView funnels={funnels} clients={clients} />}
       {mainTab === "uazapi" && (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -819,6 +819,8 @@ type ExtensionDeviceView = {
   createdAt: string;
   clientId?: string;
   clientName?: string;
+  funnelId?: string;
+  funnelName?: string;
 };
 
 const EXT_STATE_LABEL: Record<ExtensionDeviceView["connectorState"], string> = {
@@ -836,9 +838,12 @@ function extTimeAgo(iso: string): string {
   return `há ${Math.floor(diffSec / 86400)} d`;
 }
 
-function ExtensionView() {
+function ExtensionView({ funnels, clients }: { funnels: FunnelOption[]; clients: ClientOption[] }) {
   const [devices, setDevices] = useState<ExtensionDeviceView[]>([]);
   const [loading, setLoading] = useState(true);
+  const [linkingDevice, setLinkingDevice] = useState<ExtensionDeviceView | null>(null);
+  const [linkFunnelId, setLinkFunnelId] = useState("");
+  const [savingLink, setSavingLink] = useState(false);
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -865,6 +870,16 @@ function ExtensionView() {
     fetchDevices();
   }
 
+  async function handleLink() {
+    if (!linkingDevice) return;
+    setSavingLink(true);
+    await fetch("/api/integrations/whatsapp-extension/link", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId: linkingDevice.id, funnelId: linkFunnelId || null }),
+    });
+    setSavingLink(false); setLinkingDevice(null); fetchDevices();
+  }
+
   const connectedCount = devices.filter(d => d.connectorState === "connected").length;
 
   return (
@@ -872,7 +887,7 @@ function ExtensionView() {
       <div className="rounded-2xl border border-teal-200 bg-teal-50 p-5">
         <h2 className="text-lg font-bold text-slate-900 mb-1.5">🧩 Conector WhatsApp (extensão do Chrome)</h2>
         <p className="text-sm text-slate-600 leading-relaxed">
-          Método adicional pra o próprio cliente vincular o WhatsApp Web dele à conta, sem número dedicado. Cada cliente/colaborador com permissão &quot;gerenciar QR&quot; gera o código e escolhe o funil pela própria tela dele — em <span className="font-mono text-xs bg-white px-1.5 py-0.5 rounded border border-teal-200">Extensão WA</span> no portal do cliente. Depende do computador do cliente ficar ligado — pra uptime 24h independente disso, use Evolution API/WPPConnect.
+          Método adicional pro próprio cliente vincular o WhatsApp Web dele à conta, sem número dedicado. Cada cliente/colaborador com permissão &quot;gerenciar QR&quot; gera o código pela própria tela dele — em <span className="font-mono text-xs bg-white px-1.5 py-0.5 rounded border border-teal-200">Extensão WA</span> no portal do cliente. O vínculo com o funil do CRM é feito por aqui, igual Evolution/UazAPI/WPPConnect. Depende do computador do cliente ficar ligado — pra uptime 24h independente disso, use Evolution API/WPPConnect.
         </p>
       </div>
 
@@ -898,18 +913,51 @@ function ExtensionView() {
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${EXT_STATE_DOT[d.connectorState]}`} />
                 <div>
                   <p className="text-sm font-medium text-slate-800">{d.clientName ?? "(cliente não encontrado)"}</p>
-                  <p className="text-xs text-slate-400">{EXT_STATE_LABEL[d.connectorState]} · última atividade {extTimeAgo(d.lastSeenAt)}</p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span className="text-xs text-slate-400">{EXT_STATE_LABEL[d.connectorState]} · última atividade {extTimeAgo(d.lastSeenAt)}</span>
+                    {d.funnelName
+                      ? <span className="text-xs text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 font-medium">🎯 {d.funnelName}</span>
+                      : <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">Sem funil — leads não caem no CRM</span>}
+                  </div>
                 </div>
               </div>
-              <button
-                onClick={() => revoke(d.id, d.clientName)}
-                className="text-xs font-medium text-red-600 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition"
-              >
-                Desconectar
-              </button>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <ActionBtn
+                  onClick={() => { setLinkFunnelId(d.funnelId ?? ""); setLinkingDevice(d); }}
+                  title="Vincular CRM"
+                  className="border-slate-200 text-slate-600 hover:text-teal-700 hover:bg-teal-50"
+                >🔀</ActionBtn>
+                <button
+                  onClick={() => revoke(d.id, d.clientName)}
+                  className="text-xs font-medium text-red-600 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition"
+                >
+                  Desconectar
+                </button>
+              </div>
             </div>
           ))}
         </div>
+      )}
+
+      {linkingDevice && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" onClick={() => setLinkingDevice(null)} />
+          <Modal title={`Vincular CRM — ${linkingDevice.clientName ?? "cliente"}`} onClose={() => setLinkingDevice(null)}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
+                <ClientFunnelSelect clients={clients} funnels={funnels} value={linkFunnelId} onChange={setLinkFunnelId} accentColor="green" />
+                <p className="text-xs text-slate-400 mt-1">Mensagens recebidas criarão leads neste funil.</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setLinkingDevice(null)} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600">Cancelar</button>
+                <button onClick={handleLink} disabled={savingLink} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                  {savingLink ? "Salvando..." : "Salvar Vínculo"}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        </>
       )}
     </div>
   );
