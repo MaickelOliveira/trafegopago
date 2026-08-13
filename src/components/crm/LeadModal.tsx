@@ -669,10 +669,15 @@ export function LeadModal({
                   IA {lead.ai.score}/10
                 </span>
               )}
-              <a href={`https://wa.me/${lead.realPhone ?? lead.phone}`} target="_blank" rel="noreferrer"
-                className="rounded-full bg-green-100 text-green-700 px-2.5 py-0.5 text-xs font-semibold hover:bg-green-200 transition shrink-0">
-                Abrir WA ↗
-              </a>
+              {/* LID sem número real resolvido: lead.phone é um identificador interno
+                  do WhatsApp, não um telefone discável — um link wa.me com ele não
+                  abre conversa nenhuma, só engana quem clica. */}
+              {!(lead.isLid && !lead.realPhone) && (
+                <a href={`https://wa.me/${lead.realPhone ?? lead.phone}`} target="_blank" rel="noreferrer"
+                  className="rounded-full bg-green-100 text-green-700 px-2.5 py-0.5 text-xs font-semibold hover:bg-green-200 transition shrink-0">
+                  Abrir WA ↗
+                </a>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition shrink-0 p-1 rounded-lg hover:bg-slate-100">
@@ -777,7 +782,15 @@ export function LeadModal({
                         </div>
                       ) : (
                         <div>
-                          <p className="text-sm font-medium text-slate-800 font-mono">{withCountryCode(lead.realPhone ?? lead.phone)}</p>
+                          {/* isLid sem realPhone: lead.phone é um identificador interno do
+                              WhatsApp (LID), não um número de telefone — nunca formata/exibe
+                              como se fosse um, senão parece um número real errado em vez de
+                              "não temos esse dado". */}
+                          {lead.isLid && !lead.realPhone ? (
+                            <p className="text-sm text-slate-400 italic">Não identificado</p>
+                          ) : (
+                            <p className="text-sm font-medium text-slate-800 font-mono">{withCountryCode(lead.realPhone ?? lead.phone)}</p>
+                          )}
                           {lead.isLid && !lead.realPhone && <span className="text-xs text-amber-600">LID — edite para inserir o número real</span>}
                         </div>
                       )}
