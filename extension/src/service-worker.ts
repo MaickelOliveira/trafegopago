@@ -79,17 +79,23 @@ async function sendHeartbeat(connectorState: ConnectorState): Promise<"ok" | "re
 
 async function sendMessageBatch(items: IncomingMessage[]): Promise<void> {
   const auth = await getAuth();
-  if (!auth || items.length === 0) return;
+  if (!auth) {
+    console.warn("[Conector WhatsApp] sendMessageBatch chamado sem auth salva — dispositivo não pareado?");
+    return;
+  }
+  if (items.length === 0) return;
   try {
     const res = await fetch(`${PLATFORM_BASE_URL}/api/integrations/whatsapp-extension/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.deviceToken}` },
       body: JSON.stringify({ items }),
     });
+    console.log(`[Conector WhatsApp] POST /messages status=${res.status} items=${items.length}`);
     if (res.status === 401) await handleRevoked();
-  } catch {
+  } catch (e) {
     // Perde esse lote específico se a rede falhar — próxima mudança de
     // prévia detectada no content script gera um novo lote, não fica preso.
+    console.error("[Conector WhatsApp] erro de rede ao mandar /messages:", e);
   }
 }
 

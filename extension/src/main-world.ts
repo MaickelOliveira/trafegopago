@@ -74,7 +74,7 @@ type CtwaContext = {
 };
 
 type IncomingMsg = {
-  id?: { fromMe?: boolean };
+  id?: { fromMe?: boolean; _serialized?: string };
   from?: Wid;
   body?: string;
   notifyName?: unknown;
@@ -99,6 +99,25 @@ function postToIsolatedWorld(payload: Record<string, unknown>) {
 
 function extractPhone(jid: string): string | null {
   return jid.match(JID_PHONE_RE)?.[1] ?? null;
+}
+
+// wa-js dispara "chat.new_message" mais de uma vez pra MESMA mensagem —
+// confirmado ao vivo (dezenas de disparos repetidos pro mesmo contato,
+// provavelmente re-sync interno do WhatsApp Web re-emitindo mensagens já
+// processadas, não só chegada de verdade). Sem essa trava, cada repetição
+// reprocessa (inclusive rechama getPnLidEntry) e manda de novo pro backend.
+// Cap de tamanho pra não crescer sem limite numa aba que fica aberta o dia
+// inteiro — descarta as entradas mais antigas quando estoura.
+const MAX_PROCESSED_IDS = 2000;
+const processedMsgIds = new Set<string>();
+function alreadyProcessed(id: string): boolean {
+  if (processedMsgIds.has(id)) return true;
+  processedMsgIds.add(id);
+  if (processedMsgIds.size > MAX_PROCESSED_IDS) {
+    const oldest = processedMsgIds.values().next().value;
+    if (oldest !== undefined) processedMsgIds.delete(oldest);
+  }
+  return false;
 }
 
 // Log de diagnóstico — deliberadamente sempre ligado (não é dado sensível,
@@ -133,6 +152,8 @@ try {
         (async () => {
         try {
           if (msg?.id?.fromMe) return; // mensagem enviada por nós, não pelo cliente/lead
+          const msgId = msg?.id?._serialized;
+          if (msgId && alreadyProcessed(msgId)) return; // wa-js re-disparou uma mensagem já vista
           const fromJid = msg.from?._serialized ?? "";
           if (!fromJid || fromJid.endsWith("@g.us")) return; // ignora grupos — mesmo filtro do webhook Evolution
 
