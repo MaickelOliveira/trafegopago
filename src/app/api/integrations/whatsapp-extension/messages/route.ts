@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { ExtensionDevice } from "@/lib/extension-devices";
 import { getDeviceByToken } from "@/lib/extension-devices";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { addMessage, getHistory } from "@/lib/conversations";
-import { getConfig } from "@/lib/clients";
+import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { runGeminiAgent } from "@/lib/gemini-agent";
+import { splitMessage } from "@/lib/uazapi";
+import { queueReply } from "@/lib/extension-outbox";
 
 type IncomingItem = {
   phone: string;
+  chatId: string;
+  isLid: boolean;
   contactName: string | null;
   body: string;
   ts: number;
@@ -21,6 +27,37 @@ function deviceToken(req: NextRequest): string | null {
   const header = req.headers.get("authorization");
   if (!header?.startsWith("Bearer ")) return null;
   return header.slice("Bearer ".length).trim();
+}
+
+/** Gera e enfileira a resposta da IA (se ligada nesta conexão) — dispara em
+ *  background, sem bloquear a resposta HTTP pro service worker (mesmo padrão
+ *  de processMessages(...).catch(...) do webhook Evolution). A extensão não
+ *  tem canal de envio direto: em vez de mandar a resposta na hora, enfileira
+ *  em extension-outbox.ts pra content-script.ts buscar por polling e enviar
+ *  via wa-js (ver main-world.ts). */
+async function maybeGenerateAiReply(device: ExtensionDevice, item: IncomingItem, funnelId: string) {
+  // chatId ausente = extensão numa versão antiga (ainda não manda esse
+  // campo) — sem ele não tem como endereçar uma resposta, nem tenta gerar.
+  if (!item.chatId) return;
+  const client = getClientById(device.clientId);
+  if (!client) return;
+  const agentCfg = getAgentConfigForConnection(client, device.id);
+  if (!agentCfg?.enabled) return;
+  if (getLeadByPhone(device.clientId, item.phone, funnelId)?.aiPaused) return;
+
+  const history = getHistory(item.phone, device.clientId, device.id);
+  const { text } = await runGeminiAgent(item.body, history, device.clientId, item.phone, device.id);
+  if (!text) return;
+
+  // A chamada à IA leva alguns segundos — reconfirma aiPaused depois (mesma
+  // proteção contra corrida que o webhook Evolution já tem: um atendente
+  // pode ter assumido a conversa manualmente enquanto a IA gerava a resposta).
+  if (getLeadByPhone(device.clientId, item.phone, funnelId)?.aiPaused) return;
+
+  const chunks = agentCfg.splitMessages ? splitMessage(text, agentCfg.maxMessageLength ?? 300) : [text];
+  for (const chunk of chunks) {
+    queueReply(device.id, item.chatId, item.phone, chunk);
+  }
 }
 
 /** Chamada pelo service worker da extensão quando main-world.ts (via
@@ -122,6 +159,7 @@ export async function POST(req: NextRequest) {
       source: "whatsapp",
       ...(item.contactName ? { name: item.contactName } : {}),
       ...(isNew ? { status: entradaColumnId } : {}),
+      ...(item.isLid ? { isLid: true } : {}),
       ...adFields,
     });
 
@@ -131,6 +169,10 @@ export async function POST(req: NextRequest) {
       clientId,
       { connId: device.id, contactName: item.contactName ?? undefined }
     );
+
+    maybeGenerateAiReply(device, item, funnelId).catch((e) => {
+      console.error("[whatsapp-extension/messages] erro ao gerar resposta da IA:", e);
+    });
 
     processed++;
   }

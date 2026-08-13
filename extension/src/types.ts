@@ -28,12 +28,22 @@ export type StoredAuth = {
  *  um clique em anúncio (contexto nunca exposto no DOM visível). */
 export type IncomingMessage = {
   phone: string;
+  chatId: string; // JID completo (ex "5511999998888@c.us") — usado pra endereçar a resposta da IA depois
+  isLid: boolean; // true quando o JID é "@lid" (identificador opaco, não é o telefone real)
   contactName: string | null;
   body: string;
   ts: number;
   adId: string | null;
   adSourceUrl: string | null;
   adTitle: string | null;
+};
+
+/** Uma resposta da IA esperando ser enviada — buscada por polling em
+ *  GET /pending-replies (ver content-script.ts). */
+export type PendingReply = {
+  id: string;
+  chatId: string;
+  text: string;
 };
 
 /** Mensagens trocadas entre content-script → service-worker. O content script

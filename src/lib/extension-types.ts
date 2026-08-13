@@ -5,14 +5,14 @@
 
 export type ExtensionConnectorState = "connected" | "waiting_qr" | "disconnected";
 
-// 3.0.0: extensão passou a ler o estado interno do próprio WhatsApp Web
-// (via lib de terceiros injetada na página, técnica não-oficial — mesma
-// categoria de risco de Evolution/WPPConnect, mas agora recaindo sobre o
-// WhatsApp PESSOAL do cliente, não um número dedicado) pra capturar o
-// contexto de anúncio (campanha/anúncio de origem) de mensagens vindas de
-// clique em anúncio — antes disso, o texto/nome já lidos vinham só do DOM
-// visível. Quem já tinha aceitado a v2.0.0 precisa re-consentir.
-export const EXTENSION_CONSENT_VERSION = "3.0.0";
+// 4.0.0: extensão passou a poder ENVIAR mensagem — resposta automática do
+// Agente IA, entregue via a mesma técnica não-oficial (@wppconnect/wa-js) já
+// usada pra leitura. Diferente de leitura passiva, ENVIO automatizado é
+// exatamente o padrão que sistemas de detecção de bot do WhatsApp mais
+// observam — risco de restrição/banimento mais sério, ainda recaindo sobre o
+// WhatsApp pessoal do cliente. Quem já tinha aceitado a v3.0.0 (só leitura)
+// precisa re-consentir.
+export const EXTENSION_CONSENT_VERSION = "4.0.0";
 
 export type DeviceStatusView = {
   id: string;
@@ -29,4 +29,8 @@ export type DeviceStatusView = {
   // próprio cliente no momento de gerar o código).
   funnelId?: string;
   funnelName?: string;
+  // Agente IA vinculado a este dispositivo (client.agentConfig(s).whatsappConnectionId
+  // === device.id) — mesmo papel de EnrichedEvolutionSession.hasAgentLinked/agentEnabled.
+  hasAgentLinked?: boolean;
+  agentEnabled?: boolean;
 };

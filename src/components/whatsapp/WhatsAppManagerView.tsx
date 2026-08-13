@@ -821,6 +821,8 @@ type ExtensionDeviceView = {
   clientName?: string;
   funnelId?: string;
   funnelName?: string;
+  hasAgentLinked?: boolean;
+  agentEnabled?: boolean;
 };
 
 const EXT_STATE_LABEL: Record<ExtensionDeviceView["connectorState"], string> = {
@@ -843,7 +845,10 @@ function ExtensionView({ funnels, clients }: { funnels: FunnelOption[]; clients:
   const [loading, setLoading] = useState(true);
   const [linkingDevice, setLinkingDevice] = useState<ExtensionDeviceView | null>(null);
   const [linkFunnelId, setLinkFunnelId] = useState("");
+  const [linkAgent, setLinkAgent] = useState(false);
+  const [reuseConnectionId, setReuseConnectionId] = useState("");
   const [savingLink, setSavingLink] = useState(false);
+  const [linkError, setLinkError] = useState("");
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -873,11 +878,25 @@ function ExtensionView({ funnels, clients }: { funnels: FunnelOption[]; clients:
   async function handleLink() {
     if (!linkingDevice) return;
     setSavingLink(true);
-    await fetch("/api/integrations/whatsapp-extension/link", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deviceId: linkingDevice.id, funnelId: linkFunnelId || null }),
-    });
-    setSavingLink(false); setLinkingDevice(null); fetchDevices();
+    setLinkError("");
+    try {
+      const res = await fetch("/api/integrations/whatsapp-extension/link", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deviceId: linkingDevice.id,
+          funnelId: linkFunnelId || null,
+          linkAgent,
+          reuseConnectionId: reuseConnectionId || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setLinkError(data.error || "Erro ao salvar vínculo"); setSavingLink(false); return; }
+      setLinkingDevice(null);
+      fetchDevices();
+    } catch {
+      setLinkError("Erro ao salvar vínculo");
+    }
+    setSavingLink(false);
   }
 
   const connectedCount = devices.filter(d => d.connectorState === "connected").length;
@@ -918,12 +937,29 @@ function ExtensionView({ funnels, clients }: { funnels: FunnelOption[]; clients:
                     {d.funnelName
                       ? <span className="text-xs text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 font-medium">🎯 {d.funnelName}</span>
                       : <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">Sem funil — leads não caem no CRM</span>}
+                    {d.hasAgentLinked && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${d.agentEnabled ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-slate-500 bg-slate-50 border-slate-200"}`}>
+                        🤖 Agente {d.agentEnabled ? "ativo" : "inativo"}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <ActionBtn
-                  onClick={() => { setLinkFunnelId(d.funnelId ?? ""); setLinkingDevice(d); }}
+                  onClick={() => {
+                    setLinkFunnelId(d.funnelId ?? "");
+                    if (d.hasAgentLinked) {
+                      setLinkAgent(true);
+                      setReuseConnectionId("");
+                    } else {
+                      const defaults = d.clientId ? getOrphanLinkDefaults(clients, d.clientId) : { linkAgent: false, reuseConnectionId: "" };
+                      setLinkAgent(defaults.linkAgent);
+                      setReuseConnectionId(defaults.reuseConnectionId);
+                    }
+                    setLinkError("");
+                    setLinkingDevice(d);
+                  }}
                   title="Vincular CRM"
                   className="border-slate-200 text-slate-600 hover:text-teal-700 hover:bg-teal-50"
                 >🔀</ActionBtn>
@@ -946,9 +982,27 @@ function ExtensionView({ funnels, clients }: { funnels: FunnelOption[]; clients:
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
-                <ClientFunnelSelect clients={clients} funnels={funnels} value={linkFunnelId} onChange={setLinkFunnelId} accentColor="green" />
+                {/* Dispositivo já pertence a um cliente fixo desde o pareamento — diferente de
+                    Evolution/UazAPI, aqui NUNCA se escolhe outro cliente, só o funil dentro dele.
+                    Passar só esse cliente pro ClientFunnelSelect impede selecionar funil de outra
+                    organização (a lista nem aparece), em vez de só validar depois no backend. */}
+                <ClientFunnelSelect clients={clients.filter(c => c.id === linkingDevice.clientId)} funnels={funnels} value={linkFunnelId} onChange={setLinkFunnelId} accentColor="green" />
                 <p className="text-xs text-slate-400 mt-1">Mensagens recebidas criarão leads neste funil.</p>
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">🤖 Agente IA</label>
+                <label className="flex items-center gap-2.5 cursor-pointer mb-2" onClick={() => setLinkAgent(v => !v)}>
+                  <div className={`relative w-10 rounded-full transition-colors ${linkAgent ? "bg-emerald-500" : "bg-slate-300"}`} style={{ height: "22px" }}>
+                    <span className="absolute top-[2px] bg-white shadow rounded-full transition-transform" style={{ width: 18, height: 18, left: 2, transform: linkAgent ? "translateX(18px)" : "translateX(0)" }} />
+                  </div>
+                  <span className="text-sm text-slate-700">Ativar Agente IA nesta conexão</span>
+                </label>
+                {linkAgent && linkingDevice.clientId && (
+                  <ReuseAgentSelect clients={clients} clientId={linkingDevice.clientId} value={reuseConnectionId} onChange={setReuseConnectionId} accentColor="violet" />
+                )}
+                <p className="text-xs text-slate-400 mt-1">⚠️ A IA responde automaticamente pelo WhatsApp pessoal do cliente — envio via técnica não-oficial, mesmo risco de restrição descrito no consentimento da extensão.</p>
+              </div>
+              {linkError && <p className="text-xs text-red-600">{linkError}</p>}
               <div className="flex gap-2">
                 <button onClick={() => setLinkingDevice(null)} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600">Cancelar</button>
                 <button onClick={handleLink} disabled={savingLink} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50">

@@ -1,10 +1,14 @@
 import { detectWhatsAppState } from "./whatsapp-dom-adapter";
-import type { ContentToBackgroundMessage, IncomingMessage } from "./types";
+import { PLATFORM_BASE_URL } from "./config";
+import type { ContentToBackgroundMessage, IncomingMessage, PendingReply, StoredAuth } from "./types";
 
 // Roda SÓ em web.whatsapp.com (ver manifest.json content_scripts.matches),
 // no mundo ISOLADO (padrão de content script) — só lê o DOM renderizado pra
 // detectar estado de conexão. Nunca lê cookies, localStorage, IndexedDB ou
 // credenciais do WhatsApp.
+
+const MAIN_WORLD_SOURCE = "conector-whatsapp-main-world";
+const ISOLATED_SOURCE = "conector-whatsapp-isolated";
 
 let lastReportedState: string | null = null;
 
@@ -63,23 +67,100 @@ function flushBatch() {
   });
 }
 
+// ── Resposta da IA: pede pro main-world enviar, pelo mesmo bridge ────────
+// Correlaciona pedido↔resultado por requestId — postMessage é assíncrono e
+// os dois mundos não compartilham nada além dessa troca de mensagens.
+const pendingSendResolvers = new Map<string, (result: { ok: boolean; error?: string }) => void>();
+
+function requestSend(chatId: string, text: string): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    const requestId = crypto.randomUUID();
+    pendingSendResolvers.set(requestId, resolve);
+    window.postMessage({ source: ISOLATED_SOURCE, type: "send-reply", chatId, text, requestId }, window.location.origin);
+    // main-world pode nunca responder (wa-js travou, página mudou de estrutura) —
+    // sem timeout, essa resposta pendente travaria o polling pra sempre.
+    setTimeout(() => {
+      if (pendingSendResolvers.has(requestId)) {
+        pendingSendResolvers.delete(requestId);
+        resolve({ ok: false, error: "timeout" });
+      }
+    }, 15000);
+  });
+}
+
 window.addEventListener("message", (event) => {
   if (event.source !== window || event.origin !== window.location.origin) return;
-  const data = event.data as { source?: string; type?: string } | undefined;
-  if (data?.source !== "conector-whatsapp-main-world" || data.type !== "whatsapp-message") return;
+  const data = event.data as Record<string, unknown> | undefined;
+  if (data?.source !== MAIN_WORLD_SOURCE) return;
 
-  const { phone, contactName, body, ts, adId, adSourceUrl, adTitle } = event.data as Record<string, unknown>;
-  if (typeof phone !== "string" || typeof body !== "string") return;
+  if (data.type === "whatsapp-message") {
+    const { phone, chatId, isLid, contactName, body, ts, adId, adSourceUrl, adTitle } = data;
+    if (typeof phone !== "string" || typeof chatId !== "string" || typeof body !== "string") return;
 
-  pendingBatch.push({
-    phone,
-    contactName: typeof contactName === "string" ? contactName : null,
-    body,
-    ts: typeof ts === "number" ? ts : Date.now(),
-    adId: typeof adId === "string" ? adId : null,
-    adSourceUrl: typeof adSourceUrl === "string" ? adSourceUrl : null,
-    adTitle: typeof adTitle === "string" ? adTitle : null,
-  });
+    pendingBatch.push({
+      phone,
+      chatId,
+      isLid: isLid === true,
+      contactName: typeof contactName === "string" ? contactName : null,
+      body,
+      ts: typeof ts === "number" ? ts : Date.now(),
+      adId: typeof adId === "string" ? adId : null,
+      adSourceUrl: typeof adSourceUrl === "string" ? adSourceUrl : null,
+      adTitle: typeof adTitle === "string" ? adTitle : null,
+    });
 
-  if (!flushTimer) flushTimer = setTimeout(flushBatch, BATCH_DELAY_MS);
+    if (!flushTimer) flushTimer = setTimeout(flushBatch, BATCH_DELAY_MS);
+    return;
+  }
+
+  if (data.type === "send-result") {
+    const requestId = data.requestId;
+    if (typeof requestId !== "string") return;
+    const resolver = pendingSendResolvers.get(requestId);
+    if (!resolver) return;
+    pendingSendResolvers.delete(requestId);
+    resolver({ ok: data.ok === true, error: typeof data.error === "string" ? data.error : undefined });
+  }
 });
+
+// ── Busca respostas pendentes da IA e manda enviar ───────────────────────
+// Fica no content-script (não no service worker) de propósito: content
+// script não sofre a suspensão de service worker MV3 nem o piso de 1 min do
+// chrome.alarms — fica vivo exatamente enquanto esta aba (única janela em
+// que enviar é fisicamente possível) estiver aberta. Lê o token direto do
+// storage, sem depender do service worker pra cada poll.
+const POLL_INTERVAL_MS = 5000;
+let pollInFlight = false;
+
+async function pollPendingReplies() {
+  if (pollInFlight) return;
+  pollInFlight = true;
+  try {
+    const stored = await chrome.storage.local.get("auth");
+    const auth = stored.auth as StoredAuth | undefined;
+    if (!auth) return;
+
+    const res = await fetch(`${PLATFORM_BASE_URL}/api/integrations/whatsapp-extension/pending-replies`, {
+      headers: { Authorization: `Bearer ${auth.deviceToken}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json().catch(() => null) as { replies?: PendingReply[] } | null;
+    if (!data?.replies?.length) return;
+
+    for (const reply of data.replies) {
+      const result = await requestSend(reply.chatId, reply.text);
+      await fetch(`${PLATFORM_BASE_URL}/api/integrations/whatsapp-extension/pending-replies/ack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.deviceToken}` },
+        body: JSON.stringify({ id: reply.id, ok: result.ok, error: result.error }),
+      }).catch(() => {});
+    }
+  } catch {
+    // rede instável — o próximo poll tenta de novo, nada fica preso
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+setInterval(pollPendingReplies, POLL_INTERVAL_MS);
+pollPendingReplies();

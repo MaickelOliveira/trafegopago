@@ -8,13 +8,13 @@ export default function PrivacidadeExtensaoPage() {
       <div className="mx-auto max-w-3xl rounded-2xl bg-white p-8 shadow-sm border border-slate-200">
         <img src="/nexo-logo.png" alt="Nexo" className="h-10 w-auto object-contain mb-6" />
         <h1 className="text-2xl font-bold text-slate-900 mb-2">Conector WhatsApp — Privacidade, termos e exclusão de dados</h1>
-        <p className="text-sm text-slate-400 mb-8">Extensão do Chrome &quot;Conector WhatsApp — Tráfego Pago Plataforma&quot; — versão do consentimento 3.0.0</p>
+        <p className="text-sm text-slate-400 mb-8">Extensão do Chrome &quot;Conector WhatsApp — Tráfego Pago Plataforma&quot; — versão do consentimento 4.0.0</p>
 
         <div className="space-y-6 text-sm text-slate-700 leading-relaxed">
           <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
             <h2 className="text-base font-semibold text-amber-900 mb-2">⚠️ Aviso de risco — leia antes de conectar</h2>
             <p className="text-amber-800">
-              Pra ler mensagem, nome de contato e contexto de anúncio de origem, a extensão usa uma biblioteca de terceiros (<code className="font-mono bg-amber-100 px-1 rounded">@wppconnect/wa-js</code>) injetada na própria página do WhatsApp Web, que lê o estado interno já decodificado da aplicação — a mesma técnica usada por bibliotecas de automação de WhatsApp não-oficiais. Isso está <strong>fora dos termos de uso do WhatsApp</strong> e carrega um risco real, embora não determinístico, de restrição/banimento da conta conectada. Diferente das integrações Evolution API/WPPConnect da plataforma (que usam um número dedicado da agência), aqui o número em risco é o <strong>seu número pessoal</strong>. A extensão nunca envia mensagem nem executa nenhuma ação no WhatsApp — só lê eventos.
+              Pra ler mensagem, nome de contato e contexto de anúncio de origem — e, quando o Agente IA estiver ativado nessa conexão, pra <strong>enviar</strong> a resposta automática — a extensão usa uma biblioteca de terceiros (<code className="font-mono bg-amber-100 px-1 rounded">@wppconnect/wa-js</code>) injetada na própria página do WhatsApp Web, que lê e escreve no estado interno já decodificado da aplicação — a mesma técnica usada por bibliotecas de automação de WhatsApp não-oficiais. Isso está <strong>fora dos termos de uso do WhatsApp</strong> e carrega um risco real, embora não determinístico, de restrição/banimento da conta conectada — <strong>envio automático de mensagem é justamente o padrão que sistemas de detecção de bot mais observam</strong>, por isso é um risco mais sério que só leitura. Diferente das integrações Evolution API/WPPConnect da plataforma (que usam um número dedicado da agência), aqui o número em risco é o <strong>seu número pessoal</strong>. Fora enviar a resposta da IA quando ativada, a extensão não envia mensagem nem executa nenhuma outra ação no WhatsApp.
             </p>
           </section>
 
@@ -33,20 +33,23 @@ export default function PrivacidadeExtensaoPage() {
               <li><strong>Contexto de anúncio de origem</strong> (campanha/conjunto/anúncio), quando a mensagem vier de um clique em anúncio Meta — mesmo rastreio de campanha das outras integrações de WhatsApp da plataforma.</li>
               <li>Um identificador aleatório do próprio dispositivo/instalação da extensão (não identifica você pessoalmente, só distingue uma instalação de outra).</li>
             </ul>
+            <p className="mt-2 font-medium">Se o Agente IA estiver ativado nesta conexão (decisão do seu gestor de tráfego, não automática):</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>A resposta gerada pela IA é <strong>enviada automaticamente</strong> pelo seu WhatsApp — essa é a única ação de escrita que a extensão faz, sem exceção (nunca mensagem em massa, nunca outra automação).</li>
+            </ul>
             <p className="mt-2 font-medium">A extensão nunca acessa, lê ou copia:</p>
             <ul className="list-disc pl-5 space-y-1">
               <li>Cookies, tokens ou credenciais de login do WhatsApp;</li>
               <li>IndexedDB, LocalStorage ou SessionStorage do WhatsApp Web;</li>
               <li>Mídia (imagem, áudio, vídeo) ou o histórico completo de conversas antigas;</li>
               <li>Conversas em grupo (só conversas individuais viram lead);</li>
-              <li>Conversas que já existiam antes de você conectar a extensão — só mensagens novas a partir da conexão são consideradas;</li>
-              <li>E a extensão nunca envia mensagem nem executa qualquer ação no WhatsApp — só lê.</li>
+              <li>Conversas que já existiam antes de você conectar a extensão — só mensagens novas a partir da conexão são consideradas.</li>
             </ul>
           </section>
 
           <section>
-            <h2 className="text-base font-semibold text-slate-900 mb-2">3. O que é enviado ao servidor</h2>
-            <p>Estado da conexão, o identificador do dispositivo, horário do último sinal de atividade (heartbeat), e — quando há mensagem nova — nome do contato, telefone, o texto da mensagem e o contexto de anúncio de origem (se houver), pra criar/atualizar o lead no funil vinculado pelo seu gestor de tráfego.</p>
+            <h2 className="text-base font-semibold text-slate-900 mb-2">3. O que é enviado ao servidor (e o que volta do servidor)</h2>
+            <p>Ao servidor: estado da conexão, o identificador do dispositivo, horário do último sinal de atividade (heartbeat), e — quando há mensagem nova — nome do contato, telefone, o texto da mensagem e o contexto de anúncio de origem (se houver), pra criar/atualizar o lead no funil vinculado pelo seu gestor de tráfego. Do servidor: se o Agente IA estiver ativo, o texto da resposta que a extensão deve enviar de volta pelo seu WhatsApp — buscado periodicamente enquanto a aba estiver aberta (não é uma conexão em tempo real).</p>
           </section>
 
           <section>

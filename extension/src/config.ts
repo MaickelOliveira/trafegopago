@@ -4,7 +4,7 @@ export const PLATFORM_BASE_URL = "https://trafegopago-trafegopago.ztcjzs.easypan
 
 // Precisa bater com EXTENSION_CONSENT_VERSION em src/lib/extension-types.ts
 // no app principal — o /claim rejeita se as versões não forem idênticas.
-export const CONSENT_VERSION = "3.0.0";
+export const CONSENT_VERSION = "4.0.0";
 
 // chrome.alarms trava período mínimo em 1 minuto pra extensões publicadas
 // (empacotadas) — não dá pra ir mais rápido que isso de forma confiável em

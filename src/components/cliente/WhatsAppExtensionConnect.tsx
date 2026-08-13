@@ -121,9 +121,12 @@ export function WhatsAppExtensionConnect() {
           <ul className="list-disc list-inside space-y-1">
             <li>A extensão lê o nome do contato e o conteúdo de mensagens de texto novas em cada conversa, pra criar/atualizar o lead no seu CRM — igual às outras integrações de WhatsApp da plataforma.</li>
             <li>Quando a mensagem vier de um clique em anúncio, também capturamos automaticamente de qual campanha/anúncio ela veio — mesmo rastreio de campanha das outras integrações.</li>
-            <li>Não temos acesso à sua senha, QR Code de login ou aos cookies/credenciais do WhatsApp — a extensão nunca toca nesses dados, em nenhuma hipótese, e nunca envia mensagem nem executa nenhuma ação no seu WhatsApp: só lê.</li>
+            <li>Não temos acesso à sua senha, QR Code de login ou aos cookies/credenciais do WhatsApp — a extensão nunca toca nesses dados, em nenhuma hipótese.</li>
+            <li className="text-amber-700 font-medium">
+              ⚠️ Se seu gestor de tráfego ativar o Agente IA nesta conexão, a extensão passa a <strong>enviar</strong> as respostas da IA automaticamente pelo seu WhatsApp — é a única ação de escrita que ela faz (nunca mais que isso: sem mensagem em massa, sem outra automação).
+            </li>
             <li className="text-amber-700">
-              ⚠️ Pra ler mensagem e contexto de anúncio, a extensão usa uma técnica não-oficial (lê o estado interno do próprio WhatsApp Web no seu navegador) — fora dos termos de uso do WhatsApp. Isso carrega um risco real, embora não determinístico, de restrição/banimento da conta. Diferente de outras integrações da plataforma (que usam um número dedicado da agência), aqui o número em risco é o <strong>seu número pessoal</strong>.
+              ⚠️ Pra ler mensagem/contexto de anúncio e (se a IA estiver ativa) enviar resposta, a extensão usa uma técnica não-oficial (lê e escreve no estado interno do próprio WhatsApp Web no seu navegador) — fora dos termos de uso do WhatsApp. Isso carrega risco real, embora não determinístico, de restrição/banimento da conta — <strong>envio automático é o padrão que sistemas de detecção de bot mais observam</strong>, por isso é um risco mais sério que só leitura. Diferente de outras integrações da plataforma (que usam um número dedicado da agência), aqui o número em risco é o <strong>seu número pessoal</strong>.
             </li>
             <li>O funil de CRM dessa conexão é definido pelo seu gestor de tráfego depois que você conectar — se as conversas não aparecerem no CRM, fale com ele.</li>
             <li>Você pode desconectar a qualquer momento pelo botão &quot;Desconectar&quot; abaixo.</li>

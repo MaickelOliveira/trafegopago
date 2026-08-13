@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getDevicesForClient, getAllDevices, computeDisplayState } from "@/lib/extension-devices";
-import { getClients } from "@/lib/clients";
+import { getClients, getAllAgentConfigs } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import type { DeviceStatusView } from "@/lib/extension-types";
 
@@ -15,6 +15,18 @@ export async function GET() {
     const clients = getClients();
     const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
     const funnelNameById = new Map(getFunnels().map((f) => [f.id, f.name]));
+
+    // Mesmo padrão de evolution-manager/route.ts: considera TODAS as configs
+    // de agente do cliente (legado + array por conexão), não só o campo
+    // legado — senão um agente salvo pela tela normal de edição aparece como
+    // "sem agente vinculado" mesmo estando configurado certinho.
+    const connIdToAgent = new Map<string, boolean>();
+    for (const client of clients) {
+      for (const cfg of getAllAgentConfigs(client)) {
+        if (cfg.whatsappConnectionId) connIdToAgent.set(cfg.whatsappConnectionId, cfg.enabled ?? false);
+      }
+    }
+
     const devices = getAllDevices().filter((d) => d.status === "active");
     const view: DeviceStatusView[] = devices.map((d) => ({
       id: d.id,
@@ -26,6 +38,8 @@ export async function GET() {
       clientName: clientNameById.get(d.clientId) ?? "(cliente não encontrado)",
       funnelId: d.funnelId,
       funnelName: d.funnelId ? funnelNameById.get(d.funnelId) : undefined,
+      hasAgentLinked: connIdToAgent.has(d.id),
+      agentEnabled: connIdToAgent.get(d.id) ?? false,
     }));
     return NextResponse.json({ devices: view });
   }

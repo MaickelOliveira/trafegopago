@@ -99,6 +99,10 @@ export function getDeviceByToken(rawToken: string): ExtensionDevice | undefined 
   return load().find((d) => d.tokenHash === hash);
 }
 
+export function getDeviceById(id: string): ExtensionDevice | undefined {
+  return load().find((d) => d.id === id);
+}
+
 export function getDevicesForClient(clientId: string): ExtensionDevice[] {
   return load().filter((d) => d.clientId === clientId);
 }

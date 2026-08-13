@@ -5,6 +5,7 @@ import path from "path";
 import {
   createDevice,
   getDeviceByToken,
+  getDeviceById,
   getDevicesForClient,
   getAllDevices,
   computeDisplayState,
@@ -45,6 +46,17 @@ describe("createDevice / getDeviceByToken", () => {
   it("token aleatório não resolve nenhum dispositivo", () => {
     createDevice({ clientId: "c1", devicePublicId: "dev-1", consentVersion: "1.0.0" });
     expect(getDeviceByToken("whx_nao-existe")).toBeUndefined();
+  });
+});
+
+describe("getDeviceById", () => {
+  it("encontra o dispositivo pelo id", () => {
+    const { device } = createDevice({ clientId: "c1", devicePublicId: "dev-1", consentVersion: "1.0.0" });
+    expect(getDeviceById(device.id)?.clientId).toBe("c1");
+  });
+
+  it("id inexistente devolve undefined", () => {
+    expect(getDeviceById("nao-existe")).toBeUndefined();
   });
 });
 
