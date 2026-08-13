@@ -60,10 +60,12 @@ function flushBatch() {
   if (pendingBatch.length === 0) return;
   const items = pendingBatch;
   pendingBatch = [];
+  console.log(`[Conector WhatsApp] mandando ${items.length} mensagem(ns) pro service worker`);
   const message: ContentToBackgroundMessage = { type: "new-messages", items };
-  chrome.runtime.sendMessage(message).catch(() => {
+  chrome.runtime.sendMessage(message).catch((e) => {
     // Se falhar (service worker reiniciando), esse lote específico se perde
     // — a próxima mensagem detectada gera um novo lote, não fica preso.
+    console.warn("[Conector WhatsApp] falha ao mandar mensagem pro service worker:", e);
   });
 }
 

@@ -87,16 +87,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "items obrigatório" }, { status: 400 });
   }
 
+  console.log(`[ext-messages] device=${device.id} clientId=${device.clientId} funnelId=${device.funnelId ?? "null"} items=${body.items.length}`);
+
   // Sem funil vinculado ainda (o gestor vincula depois de conectar — ver
   // /api/integrations/whatsapp-extension/link), ignora silenciosamente.
   // Mesmo comportamento do webhook Evolution pra sessão sem funil: nunca
   // grava lead com um funnelId inválido/inexistente.
   if (!device.funnelId) {
+    console.log(`[ext-messages] device=${device.id} ignorado — sem funil vinculado`);
     return NextResponse.json({ ok: true, processed: 0, skipped: body.items.length, reason: "no_funnel_linked" });
   }
 
   const funnel = getFunnelById(device.funnelId);
   if (!funnel) {
+    console.log(`[ext-messages] device=${device.id} ignorado — funnelId=${device.funnelId} não existe mais`);
     return NextResponse.json({ ok: true, processed: 0, skipped: body.items.length, reason: "funnel_not_found" });
   }
   const defaultFunnelId = funnel.id;
@@ -108,7 +112,11 @@ export async function POST(req: NextRequest) {
   let skipped = 0;
 
   for (const item of body.items.slice(0, 50)) {
-    if (!item.phone || !item.body) { skipped++; continue; }
+    if (!item.phone || !item.body) {
+      console.log(`[ext-messages] item pulado — phone=${item.phone || "ausente"} body=${item.body ? "presente" : "ausente"}`);
+      skipped++;
+      continue;
+    }
 
     // Reaproveita lead existente do mesmo telefone em outro funil quando já
     // existe histórico nesta MESMA conexão (mesmo padrão do webhook Evolution)
@@ -169,6 +177,8 @@ export async function POST(req: NextRequest) {
       clientId,
       { connId: device.id, contactName: item.contactName ?? undefined }
     );
+
+    console.log(`[ext-messages] lead ${isNew ? "criado" : "atualizado"} phone=${item.phone} funnelId=${funnelId}`);
 
     maybeGenerateAiReply(device, item, funnelId).catch((e) => {
       console.error("[whatsapp-extension/messages] erro ao gerar resposta da IA:", e);

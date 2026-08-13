@@ -70,8 +70,21 @@ function extractPhone(jid: string): string | null {
   return jid.match(JID_PHONE_RE)?.[1] ?? null;
 }
 
+// Log de diagnóstico — deliberadamente sempre ligado (não é dado sensível,
+// só confirma que este script rodou). content-script.ts (mundo isolado) é
+// injetado separadamente e não prova que ESTE script (mundo principal)
+// também carregou — sem esse log, "conectado" no popup pode enganar: o
+// heartbeat passa pelo outro script, não por este.
+console.log("[Conector WhatsApp] main-world.ts carregado — aguardando wa-js ficar pronto...");
+setTimeout(() => {
+  if (!loader.isFullReady) {
+    console.warn("[Conector WhatsApp] wa-js ainda não ficou pronto depois de 20s — pode ser versão do WhatsApp Web incompatível com @wppconnect/wa-js.");
+  }
+}, 20000);
+
 try {
   loader.onFullReady(() => {
+    console.log("[Conector WhatsApp] wa-js pronto — escutando mensagens novas.");
     try {
       on("chat.new_message", (msg: IncomingMsg) => {
         try {
@@ -95,6 +108,8 @@ try {
           const contactName = typeof msg.notifyName === "string" && msg.notifyName.trim() ? msg.notifyName.trim() : null;
           const ts = typeof msg.t === "number" && msg.t > 0 ? msg.t * 1000 : Date.now();
 
+          console.log(`[Conector WhatsApp] mensagem capturada de ${phone}${isLid ? " (lid)" : ""}`);
+
           postToIsolatedWorld({
             type: "whatsapp-message",
             phone,
@@ -111,10 +126,12 @@ try {
           // uma mensagem malformada não derruba o listener inteiro
         }
       });
-    } catch {
+    } catch (e) {
       // API de evento do wa-js não bateu com o esperado (versão do
-      // WhatsApp Web pode ter mudado internamente) — falha silenciosa, o
-      // resto da extensão (status de conexão) continua normal.
+      // WhatsApp Web pode ter mudado internamente) — o resto da extensão
+      // (status de conexão) continua normal, mas loga pra não ficar
+      // invisível numa investigação futura.
+      console.error("[Conector WhatsApp] erro ao registrar listener de mensagem:", e);
     }
 
     // ── Envio da resposta da IA (única escrita de toda a extensão) ──────────
@@ -137,6 +154,7 @@ try {
         });
     });
   });
-} catch {
-  // wa-js não conseguiu nem inicializar — mesma lógica de degradação graciosa.
+} catch (e) {
+  // wa-js não conseguiu nem inicializar — degrada graciosamente, mas loga.
+  console.error("[Conector WhatsApp] wa-js falhou ao inicializar:", e);
 }
