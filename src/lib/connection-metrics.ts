@@ -10,11 +10,12 @@ import { checkConnectionStatus } from "@/lib/wppconnect-api";
 import { checkConnectionStatus as checkEvolutionConnectionStatus, getInstancePhone } from "@/lib/evolution-api";
 import { getAllConversationsByClientId, getHistory, phoneVariants } from "@/lib/conversations";
 import { getLeads } from "@/lib/leads";
+import { getAllDevices, computeDisplayState } from "@/lib/extension-devices";
 
 export type LiveConnection = {
   id: string;
   phone: string;
-  type: "meta" | "uazapi" | "wppconnect" | "evolution";
+  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension";
   status: string;
   connected: boolean;
   funnelId: string;
@@ -139,6 +140,34 @@ export async function getLiveConnectionsForClient(clientId: string): Promise<Liv
           funnelId: linkedFunnel?.id ?? "",
           funnelName: linkedFunnel?.name ?? "Sem funil",
         }))
+    );
+  }
+
+  // Dispositivo(s) da extensão Chrome vinculados a algum funil deste cliente
+  // — mesma lacuna que existia em /api/crm/conversations/[phone]/route.ts:
+  // sem isso, o seletor "responder pelo número" nunca lista a extensão, e o
+  // fallback de seleção automática (sameFunnel ?? anyConnected ?? [0]) acaba
+  // caindo numa conexão de OUTRO canal (ex: uma sessão Evolution antiga
+  // desconectada), mesmo quando é a extensão que está recebendo mensagem.
+  const extDevices = getAllDevices().filter(
+    (d) => d.status === "active" && d.funnelId && clientFunnelIds.has(d.funnelId)
+  );
+  for (const d of extDevices) {
+    const linkedFunnel = funnels.find((f) => f.id === d.funnelId);
+    const state = computeDisplayState(d);
+    tasks.push(
+      Promise.resolve({
+        id: d.id,
+        // Extensão não tem um número de telefone próprio (usa o WhatsApp Web
+        // já logado no navegador do cliente) — não tem o que mostrar como
+        // "phone" de verdade, mas precisa de um rótulo pro seletor.
+        phone: "Extensão (WhatsApp Web)",
+        type: "extension" as const,
+        status: state,
+        connected: state === "connected",
+        funnelId: linkedFunnel?.id ?? "",
+        funnelName: linkedFunnel?.name ?? "Sem funil",
+      })
     );
   }
 
