@@ -18,8 +18,9 @@ export async function proxy(request: NextRequest) {
   const token = request.cookies.get("tp_session")?.value;
 
   // Páginas estáticas públicas (ex: política de privacidade pra revisão do
-  // Google/Meta) — acessíveis sempre, sem redirecionar mesmo se já logado.
-  if (pathname.startsWith("/privacidade")) {
+  // Google/Meta, página de download da extensão pra mandar link a qualquer
+  // pessoa) — acessíveis sempre, sem redirecionar mesmo se já logado.
+  if (pathname.startsWith("/privacidade") || pathname.startsWith("/extensao-download")) {
     return NextResponse.next();
   }
 
@@ -85,5 +86,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|otf|eot|mp4|mp3|pdf)).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|otf|eot|mp4|mp3|pdf|zip)).*)"],
 };

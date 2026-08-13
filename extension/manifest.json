@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Conector WhatsApp — Tráfego Pago Plataforma",
-  "version": "1.1.0",
-  "description": "Vincula o WhatsApp Web já conectado no seu navegador à sua conta na plataforma, sem acessar suas credenciais do WhatsApp.",
+  "name": "Nexo — Conector WhatsApp",
+  "version": "1.2.0",
+  "description": "Conecta o WhatsApp Web já aberto no seu navegador à sua conta Nexo — cria e atualiza leads no seu CRM automaticamente a partir das conversas, sem precisar de um número dedicado.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
     "https://web.whatsapp.com/*",
@@ -27,7 +27,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Conector WhatsApp",
+    "default_title": "Nexo — Conector WhatsApp",
     "default_icon": { "16": "assets/icon16.png", "48": "assets/icon48.png", "128": "assets/icon128.png" }
   },
   "icons": { "16": "assets/icon16.png", "48": "assets/icon48.png", "128": "assets/icon128.png" },
