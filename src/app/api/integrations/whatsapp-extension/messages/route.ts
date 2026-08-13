@@ -36,7 +36,7 @@ function deviceToken(req: NextRequest): string | null {
  *  tem canal de envio direto: em vez de mandar a resposta na hora, enfileira
  *  em extension-outbox.ts pra content-script.ts buscar por polling e enviar
  *  via wa-js (ver main-world.ts). */
-async function maybeGenerateAiReply(device: ExtensionDevice, item: IncomingItem, funnelId: string) {
+async function maybeGenerateAiReply(device: ExtensionDevice, item: IncomingItem, funnelId: string, historyKey: string) {
   // chatId ausente = extensão numa versão antiga (ainda não manda esse
   // campo) — sem ele não tem como endereçar uma resposta, nem tenta gerar.
   if (!item.chatId) return;
@@ -44,16 +44,16 @@ async function maybeGenerateAiReply(device: ExtensionDevice, item: IncomingItem,
   if (!client) return;
   const agentCfg = getAgentConfigForConnection(client, device.id);
   if (!agentCfg?.enabled) return;
-  if (getLeadByPhone(device.clientId, item.phone, funnelId)?.aiPaused) return;
+  if (getLeadByPhone(device.clientId, historyKey, funnelId)?.aiPaused) return;
 
-  const history = getHistory(item.phone, device.clientId, device.id);
-  const { text } = await runGeminiAgent(item.body, history, device.clientId, item.phone, device.id);
+  const history = getHistory(historyKey, device.clientId, device.id);
+  const { text } = await runGeminiAgent(item.body, history, device.clientId, historyKey, device.id);
   if (!text) return;
 
   // A chamada à IA leva alguns segundos — reconfirma aiPaused depois (mesma
   // proteção contra corrida que o webhook Evolution já tem: um atendente
   // pode ter assumido a conversa manualmente enquanto a IA gerava a resposta).
-  if (getLeadByPhone(device.clientId, item.phone, funnelId)?.aiPaused) return;
+  if (getLeadByPhone(device.clientId, historyKey, funnelId)?.aiPaused) return;
 
   const chunks = agentCfg.splitMessages ? splitMessage(text, agentCfg.maxMessageLength ?? 300) : [text];
   for (const chunk of chunks) {
@@ -119,12 +119,18 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
+    // Chave de identidade/histórico: usa o telefone real quando resolvido
+    // (LID puro nunca bate com a conversa salva pelas outras integrações —
+    // o resto da plataforma, ex: LeadModal.tsx/KanbanBoard.tsx, já lê
+    // histórico e link do WhatsApp preferindo lead.realPhone sobre lead.phone).
+    const historyKey = item.realPhone ?? item.phone;
+
     // Reaproveita lead existente do mesmo telefone em outro funil quando já
     // existe histórico nesta MESMA conexão (mesmo padrão do webhook Evolution)
     // — evita duplicar o lead de alguém que já conversou por outro canal.
-    const leadInDefaultFunnel = getLeadByPhone(clientId, item.phone, defaultFunnelId);
-    const leadElsewhere = leadInDefaultFunnel ? null : getLeadByPhone(clientId, item.phone);
-    const hasHistoryOnThisConn = !!leadElsewhere && getHistory(item.phone, clientId, device.id).length > 0;
+    const leadInDefaultFunnel = getLeadByPhone(clientId, historyKey, defaultFunnelId);
+    const leadElsewhere = leadInDefaultFunnel ? null : getLeadByPhone(clientId, historyKey);
+    const hasHistoryOnThisConn = !!leadElsewhere && getHistory(historyKey, clientId, device.id).length > 0;
     const existingLead = leadInDefaultFunnel ?? (hasHistoryOnThisConn ? leadElsewhere : null);
     const isNew = !existingLead;
     const funnelId = existingLead?.funnelId ?? defaultFunnelId;
@@ -162,7 +168,7 @@ export async function POST(req: NextRequest) {
         }
       : {};
 
-    upsertLeadByPhone(clientId, item.phone, {
+    upsertLeadByPhone(clientId, historyKey, {
       clientId,
       funnelId,
       source: "whatsapp",
@@ -174,15 +180,15 @@ export async function POST(req: NextRequest) {
     });
 
     addMessage(
-      item.phone,
+      historyKey,
       { role: "user", content: item.body, ts: item.ts },
       clientId,
       { connId: device.id, contactName: item.contactName ?? undefined }
     );
 
-    console.log(`[ext-messages] lead ${isNew ? "criado" : "atualizado"} phone=${item.phone} funnelId=${funnelId}`);
+    console.log(`[ext-messages] lead ${isNew ? "criado" : "atualizado"} phone=${historyKey} funnelId=${funnelId}`);
 
-    maybeGenerateAiReply(device, item, funnelId).catch((e) => {
+    maybeGenerateAiReply(device, item, funnelId, historyKey).catch((e) => {
       console.error("[whatsapp-extension/messages] erro ao gerar resposta da IA:", e);
     });
 
