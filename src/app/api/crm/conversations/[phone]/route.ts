@@ -58,39 +58,33 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
     return NextResponse.json({ messages: msgs, connId: explicitConnId });
   }
 
-  // Resolve connId do funil do lead (tentativa primária)
-  let connId: string | undefined;
+  // Resolve connId do funil do lead (tentativa primária) — um funil pode ter
+  // MAIS de um canal vinculado ao mesmo tempo (ex: uma sessão Evolution de
+  // teste antigo + a extensão nova, ambas com funnelId === funnelId). Fixar
+  // por prioridade de tipo (sempre WPPConnect > Evolution > extensão > uazapi)
+  // arrisca escolher um canal DESCONECTADO/sem relação nenhuma com a
+  // mensagem, só porque ele "ganha" da extensão na ordem — em vez disso,
+  // tenta CADA candidato e fica com o primeiro que realmente tem mensagem
+  // pra esse telefone.
   if (funnelId) {
     const wppSession = getWppSessions().find((s) => s.funnelId === funnelId);
-    const evoSession = !wppSession ? getEvolutionSessions().find((s) => s.funnelId === funnelId) : undefined;
+    const evoSession = getEvolutionSessions().find((s) => s.funnelId === funnelId);
     // Dispositivo da extensão Chrome vinculado a este funil — vive num
     // arquivo à parte (extension-devices.json, associado por funnelId), não
     // aparece em wppSession/evoSession/funnel.connections[]. Sem isso, todo
-    // lead vindo da extensão caía sempre no fallback abaixo, nunca no
-    // caminho principal (mesmo quando funcionava, não era o caminho testado
-    // que os outros canais usam).
-    const extDevice = (!wppSession && !evoSession)
-      ? getAllDevices().find((d) => d.funnelId === funnelId && d.status === "active")
-      : undefined;
-    if (wppSession) {
-      connId = wppSession.id;
-    } else if (evoSession) {
-      connId = evoSession.id;
-    } else if (extDevice) {
-      connId = extDevice.id;
-    } else {
-      const funnel = getFunnelById(funnelId);
-      connId = funnel?.connections?.find((c) => c.type === "uazapi")?.id
-        ?? funnel?.connections?.[0]?.id;
-    }
-  }
+    // lead vindo da extensão nunca era sequer tentado aqui.
+    const extDevice = getAllDevices().find((d) => d.funnelId === funnelId && d.status === "active");
+    const funnel = getFunnelById(funnelId);
+    const uazapiConnId = funnel?.connections?.find((c) => c.type === "uazapi")?.id
+      ?? funnel?.connections?.[0]?.id;
 
-  // Tenta com o connId do funil do lead
-  if (connId) {
-    const msgs = getHistory(normalized, clientId, connId);
-    if (msgs.length > 0) {
-      console.log(`[crm-conversations] phone=${normalized} achado via connId do funil (connId=${connId}) — ${msgs.length} msg(ns)`);
-      return NextResponse.json({ messages: msgs, connId });
+    for (const candidate of [wppSession?.id, evoSession?.id, extDevice?.id, uazapiConnId]) {
+      if (!candidate) continue;
+      const msgs = getHistory(normalized, clientId, candidate);
+      if (msgs.length > 0) {
+        console.log(`[crm-conversations] phone=${normalized} achado via connId do funil (connId=${candidate}) — ${msgs.length} msg(ns)`);
+        return NextResponse.json({ messages: msgs, connId: candidate });
+      }
     }
   }
 
