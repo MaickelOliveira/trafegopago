@@ -4,6 +4,7 @@ import { getFunnels } from "@/lib/funnels";
 import { getLeadByPhone } from "@/lib/leads";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
+import { getAllDevices } from "@/lib/extension-devices";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,23 @@ export async function GET(req: NextRequest) {
     if (!connIds.has(s.id)) {
       connIds.add(s.id);
       connections.push({ id: s.id, phone: s.instanceName, type: "evolution" });
+    }
+  }
+
+  // Adiciona dispositivos da extensão Chrome vinculados a funis deste cliente
+  // — sem isso, a conversa até aparece na lista "conversations" (sem filtro
+  // de connId conhecido), mas nunca tem uma ABA pra clicar e selecionar,
+  // porque a UI do Inbox filtra estritamente por connId da aba ativa
+  // (connConversations = conversations.filter(c => c.connId === selectedConn)).
+  // Existia um fallback "histórico" (linha ~52) que cobria isso de forma
+  // genérica com type:"wppconnect" e phone:connId (UUID cru, sem sentido pro
+  // usuário) — isso aqui só dá o rótulo certo antes desse fallback genérico
+  // precisar entrar em ação.
+  const extDevices = getAllDevices().filter(d => d.status === "active" && d.funnelId && clientFunnelIds.has(d.funnelId));
+  for (const d of extDevices) {
+    if (!connIds.has(d.id)) {
+      connIds.add(d.id);
+      connections.push({ id: d.id, phone: "Extensão", type: "extension" });
     }
   }
 
