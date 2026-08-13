@@ -130,7 +130,7 @@ function FollowUpSection({ leadId }: { leadId: string }) {
 type LiveConnection = {
   id: string;
   phone: string;
-  type: "meta" | "uazapi" | "wppconnect" | "evolution";
+  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension";
   status: string;
   connected: boolean;
   funnelId: string;
@@ -142,6 +142,7 @@ const CONN_TYPE_LABEL: Record<LiveConnection["type"], string> = {
   wppconnect: "💬 WPPConnect",
   evolution: "🧬 Evolution API",
   uazapi: "📟 UazAPI",
+  extension: "🧩 Extensão (WhatsApp Web)",
 };
 
 function fmtReminderDate(iso: string) {
@@ -1014,7 +1015,7 @@ export function LeadModal({
                   onChange={(e) => { setSelectedConnId(e.target.value); setManualConnId(true); }}
                   className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-green-400"
                 >
-                  {(["meta", "wppconnect", "evolution", "uazapi"] as const).map((type) => {
+                  {(["meta", "wppconnect", "evolution", "uazapi", "extension"] as const).map((type) => {
                     const group = connections.filter((c) => c.type === type);
                     if (group.length === 0) return null;
                     return (
