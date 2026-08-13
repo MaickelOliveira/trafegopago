@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ExtensionDevice } from "@/lib/extension-devices";
 import { getDeviceByToken } from "@/lib/extension-devices";
-import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
+import { upsertLeadByPhone, getLeadByPhone, normalizePhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { addMessage, getHistory } from "@/lib/conversations";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
@@ -123,7 +123,14 @@ export async function POST(req: NextRequest) {
     // (LID puro nunca bate com a conversa salva pelas outras integrações —
     // o resto da plataforma, ex: LeadModal.tsx/KanbanBoard.tsx, já lê
     // histórico e link do WhatsApp preferindo lead.realPhone sobre lead.phone).
-    const historyKey = item.realPhone ?? item.phone;
+    // ⚠️ normalizePhone AQUI é essencial: upsertLeadByPhone grava
+    // Lead.realPhone já normalizado (tira o "55", corrige o 9º dígito) — sem
+    // normalizar aqui também, addMessage/getHistory gravavam a conversa sob
+    // o valor CRU (ex: "554491472344"), diferente do que ficava no lead
+    // (ex: "44991472344") — duas chaves ligeiramente diferentes pro mesmo
+    // contato, dependendo só de coincidência de phoneVariants pra ainda
+    // achar a conversa certa (às vezes achava a de OUTRO contato por engano).
+    const historyKey = normalizePhone(item.realPhone ?? item.phone);
 
     // Reaproveita lead existente do mesmo telefone em outro funil quando já
     // existe histórico nesta MESMA conexão (mesmo padrão do webhook Evolution)
