@@ -3,6 +3,7 @@ import { getShareLinkByToken, isShareLinkValid } from "@/lib/evolution-share-lin
 import {
   checkConnectionStatus,
   getQrCode,
+  getPairingCode,
   getEvolutionRestartCooldownRemainingMs,
   logoutInstance,
   shouldRestartEvolutionSession,
@@ -30,8 +31,9 @@ export async function POST(
   const evoSession = getEvolutionSessionById(link.evolutionSessionId);
   if (!evoSession) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
 
-  const body = await req.json() as { force?: boolean; webhookUrl?: string; previousQr?: string | null };
+  const body = await req.json() as { force?: boolean; webhookUrl?: string; previousQr?: string | null; phoneNumber?: string };
   const { instanceName } = evoSession;
+  const phoneNumber = body.phoneNumber?.replace(/\D/g, "") || undefined;
 
   const currentStatus = await checkConnectionStatus(instanceName);
   // Trava de segurança: nunca reinicia (nem com force=true) uma instância que
@@ -53,9 +55,24 @@ export async function POST(
   if (restarted) {
     const result = await createOrRestartInstance(instanceName, body.webhookUrl as string).catch(() => null);
     if (result?.apiKey) updateEvolutionSession(link.evolutionSessionId, { instanceApiKey: result.apiKey });
-    if (result?.qrBase64 && result.qrBase64 !== body.previousQr) {
+    // Sem phoneNumber (fluxo QR de sempre, inalterado): o create já devolve o
+    // QR sincronamente na própria resposta — evita uma chamada extra.
+    if (!phoneNumber && result?.qrBase64 && result.qrBase64 !== body.previousQr) {
       return NextResponse.json({ status: "connecting", qr: result.qrBase64, cooldownMs: 0 });
     }
+  }
+
+  // Vínculo por código de telefone em vez de QR — pedido explícito do usuário
+  // (mesmo endpoint /instance/connect, só passando "number"). Sem QR pra
+  // comparar/expirar, então só tenta algumas vezes até vir um código.
+  if (phoneNumber) {
+    let pairingCode: string | null = null;
+    for (let i = 0; i < 10; i++) {
+      pairingCode = await getPairingCode(instanceName, phoneNumber);
+      if (pairingCode) break;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    return NextResponse.json({ status: "connecting", pairingCode, cooldownMs: restarted ? 0 : cooldownMs });
   }
 
   if (!restarted) {

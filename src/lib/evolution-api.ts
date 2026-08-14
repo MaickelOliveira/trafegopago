@@ -174,6 +174,48 @@ export async function getQrCode(instanceName: string): Promise<string | null> {
   }
 }
 
+// Vínculo por código de 8 dígitos (WhatsApp > Aparelhos conectados > Conectar
+// com número de telefone) — mesmo mecanismo nativo do QR, só sem precisar de
+// câmera/leitura de imagem. Baileys/Evolution expõem isso passando "number" pro
+// mesmo endpoint de connect. ⚠️ NÃO TESTADO AO VIVO — nome do campo de retorno
+// (pairingCode) varia entre versões da Evolution; se vier null aqui mas a
+// Evolution respondeu 200, loga o corpo bruto pra achar o nome certo do campo
+// nessa versão específica, em vez de assumir que o recurso não existe.
+export async function getPairingCode(instanceName: string, phoneNumber: string): Promise<string | null> {
+  if (!base()) return null;
+  const digits = phoneNumber.replace(/\D/g, "");
+  if (!digits) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const res = await fetch(
+      `${base()}/instance/connect/${encodeURIComponent(instanceName)}?number=${digits}`,
+      { headers: authHeader(), cache: "no-store", signal: controller.signal },
+    );
+    const bodyText = await res.text().catch(() => "");
+    if (!res.ok) {
+      console.error(`[evolution-api] getPairingCode FALHOU status=${res.status} instance=${instanceName} body=${bodyText.slice(0, 300)}`);
+      return null;
+    }
+    let data: Record<string, unknown> = {};
+    try { data = bodyText ? JSON.parse(bodyText) : {}; } catch { /* corpo não-JSON */ }
+    const code =
+      (data.pairingCode as string | undefined) ??
+      (data.pairing_code as string | undefined) ??
+      ((data.qrcode as Record<string, unknown> | undefined)?.pairingCode as string | undefined) ??
+      null;
+    if (!code) {
+      console.warn(`[evolution-api] getPairingCode: resposta 200 sem campo de código reconhecido instance=${instanceName} body=${bodyText.slice(0, 300)}`);
+    }
+    return code;
+  } catch (e) {
+    console.error(`[evolution-api] getPairingCode FALHOU/TIMEOUT instance=${instanceName}`, e);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Confirmado ao vivo: GET /instance/connectionState/{instance} → { instance: { instanceName, state } }
 // state observado: "connecting". "open"/"close" são os valores documentados
 // pela Evolution/Baileys para conectado/desconectado — normalizados abaixo
