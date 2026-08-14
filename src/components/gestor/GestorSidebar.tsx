@@ -9,7 +9,7 @@ import {
   Megaphone, Users, LayoutDashboard, Palette, Bot,
   FileText, MessageSquare, Send, Link2, Code2, Phone,
   RefreshCw, Settings, LogOut, LayoutGrid, Share2,
-  Smartphone, DollarSign, ChevronLeft, CheckSquare, Home,
+  Smartphone, DollarSign, ChevronLeft, CheckSquare, Home, Puzzle,
 } from "lucide-react";
 
 type AdAccount = { id: string; name: string; platform: string };
@@ -42,6 +42,7 @@ function getActiveKey(pathname: string, clientId: string): string {
   if (pathname.startsWith(`/gestor/${clientId}/checklist`))      return "checklist";
   if (pathname.startsWith(`/gestor/${clientId}/inbox`))          return "inbox";
   if (pathname.startsWith(`/gestor/${clientId}/waba`))           return "waba";
+  if (pathname.startsWith(`/gestor/${clientId}/whatsapp-extensao`)) return "whatsapp-extensao";
   if (pathname.startsWith(`/gestor/${clientId}/webhooks`))       return "webhooks";
   if (pathname.startsWith(`/gestor/${clientId}/utm-builder`))    return "utm-builder";
   if (pathname.startsWith(`/gestor/${clientId}/wa-links`))       return "wa-links";
@@ -169,6 +170,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               {navItem("checklist",      `/gestor/${activeClient.id}/checklist`,           CheckSquare,  "Checklist")}
               {navItem("inbox",          `/gestor/${activeClient.id}/inbox`,               MessageSquare,"Mensagens")}
               {navItem("waba",           `/gestor/${activeClient.id}/waba`,                Send,         "Disparos WA")}
+              {navItem("whatsapp-extensao", `/gestor/${activeClient.id}/whatsapp-extensao`, Puzzle,       "Extensão WA")}
               {navItem("webhooks",       `/gestor/${activeClient.id}/webhooks`,            Link2,        "Webhooks")}
               {navItem("utm-builder",    `/gestor/${activeClient.id}/utm-builder`,         Code2,        "UTM Builder")}
               {navItem("wa-links",       `/gestor/${activeClient.id}/wa-links`,            Phone,        "Rastreio WhatsApp")}

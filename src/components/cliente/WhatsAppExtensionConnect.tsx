@@ -26,10 +26,13 @@ function secondsUntil(iso: string): number {
   return Math.max(0, Math.floor((new Date(iso).getTime() - Date.now()) / 1000));
 }
 
-export function WhatsAppExtensionConnect() {
+// clientId: só passado quando renderizado pelo GESTOR em nome de um cliente
+// (/gestor/[clientId]/whatsapp-extensao) — sem ele, as rotas usam o clientId
+// da própria sessão (fluxo normal do cliente conectando a própria conexão).
+export function WhatsAppExtensionConnect({ clientId }: { clientId?: string } = {}) {
   const [devices, setDevices] = useState<DeviceStatusView[]>([]);
   const [loadingStatus, setLoadingStatus] = useState(true);
-  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(!!clientId);
   const [generating, setGenerating] = useState(false);
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -37,14 +40,15 @@ export function WhatsAppExtensionConnect() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/integrations/whatsapp-extension/status");
+      const qs = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
+      const res = await fetch(`/api/integrations/whatsapp-extension/status${qs}`);
       if (res.ok) {
         const data = await res.json();
         setDevices(data.devices ?? []);
       }
     } catch {}
     setLoadingStatus(false);
-  }, []);
+  }, [clientId]);
 
   useEffect(() => {
     fetchStatus();
@@ -72,6 +76,7 @@ export function WhatsAppExtensionConnect() {
       const res = await fetch("/api/integrations/whatsapp-extension/pairing-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: clientId ? JSON.stringify({ clientId }) : undefined,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao gerar código");

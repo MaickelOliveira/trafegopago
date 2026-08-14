@@ -1,17 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getDevicesForClient, getAllDevices, computeDisplayState } from "@/lib/extension-devices";
 import { getClients, getAllAgentConfigs } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import type { DeviceStatusView } from "@/lib/extension-types";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || (session.role !== "client" && session.role !== "employee" && session.role !== "manager")) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
   if (session.role === "manager") {
+    // Opcional: tela do gestor pra UM cliente específico (/gestor/[clientId]/whatsapp-extensao)
+    // reaproveita esta mesma rota — sem o filtro, devolve todos os clientes
+    // (uso original: painel de overview de dispositivos).
+    const filterClientId = req.nextUrl.searchParams.get("clientId");
+
     const clients = getClients();
     const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
     const funnelNameById = new Map(getFunnels().map((f) => [f.id, f.name]));
@@ -27,7 +32,7 @@ export async function GET() {
       }
     }
 
-    const devices = getAllDevices().filter((d) => d.status === "active");
+    const devices = getAllDevices().filter((d) => d.status === "active" && (!filterClientId || d.clientId === filterClientId));
     const view: DeviceStatusView[] = devices.map((d) => ({
       id: d.id,
       devicePublicId: d.devicePublicId,

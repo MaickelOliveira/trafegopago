@@ -10,15 +10,29 @@ function clientIp(req: NextRequest): string | undefined {
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || (session.role !== "client" && session.role !== "employee") || !session.clientId) {
+  if (!session || (session.role !== "client" && session.role !== "employee" && session.role !== "manager")) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
-  if (session.role === "employee") {
-    const { getEmployeeById } = await import("@/lib/employees");
-    const emp = session.employeeId ? getEmployeeById(session.employeeId) : null;
-    if (!emp || !emp.active || !emp.permissions?.canManageQR) {
-      return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+
+  // Gestor gera o código EM NOME de um cliente específico (ex: pra ajudar
+  // alguém menos técnico a conectar) — mesmo acesso irrestrito a qualquer
+  // organização que ele já tem no resto do painel administrativo (ver
+  // revoke/route.ts). Cliente/funcionário continuam usando a própria sessão.
+  let targetClientId: string;
+  if (session.role === "manager") {
+    const body = await req.json().catch(() => null) as { clientId?: string } | null;
+    if (!body?.clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
+    targetClientId = body.clientId;
+  } else {
+    if (!session.clientId) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    if (session.role === "employee") {
+      const { getEmployeeById } = await import("@/lib/employees");
+      const emp = session.employeeId ? getEmployeeById(session.employeeId) : null;
+      if (!emp || !emp.active || !emp.permissions?.canManageQR) {
+        return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+      }
     }
+    targetClientId = session.clientId;
   }
 
   const ip = clientIp(req);
@@ -29,14 +43,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Muitas tentativas. Aguarde alguns minutos." }, { status: 429 });
   }
 
-  const { code, expiresAt } = createPairingCode(session.clientId, {
-    employeeId: session.employeeId,
+  const { code, expiresAt } = createPairingCode(targetClientId, {
+    employeeId: session.role === "employee" ? session.employeeId : undefined,
     createdIp: ip,
   });
 
   recordAuditEvent({
     event: "pairing_code_created",
-    clientId: session.clientId,
+    clientId: targetClientId,
     ip: truncateIp(ip),
   });
 
