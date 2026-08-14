@@ -57,7 +57,12 @@ async function maybeGenerateAiReply(device: ExtensionDevice, item: IncomingItem,
 
   const chunks = agentCfg.splitMessages ? splitMessage(text, agentCfg.maxMessageLength ?? 300) : [text];
   for (const chunk of chunks) {
-    queueReply(device.id, item.chatId, item.phone, chunk);
+    // historyKey (normalizado), não item.phone (cru) — o ack de entrega grava
+    // addMessage(owned.phone, ...) com o valor que vier daqui; se for o cru,
+    // fica numa chave diferente da que upsertLeadByPhone/addMessage do lado
+    // de ENTRADA já usam pra esse mesmo contato (ver comentário no historyKey
+    // acima), e a mensagem da IA nunca aparece na conversa.
+    queueReply(device.id, item.chatId, historyKey, chunk);
   }
 }
 

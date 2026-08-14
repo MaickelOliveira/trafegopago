@@ -143,6 +143,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   let connType: string = "uazapi";
   let wppSession: ReturnType<typeof getWppSessions>[number] | undefined;
   let evoSession: ReturnType<typeof getEvolutionSessions>[number] | undefined;
+  let extDevice: ReturnType<typeof getAllDevices>[number] | undefined;
   let connId: string | undefined;
 
   if (clientId) {
@@ -155,10 +156,19 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     if (explicitConnId) {
       const wpp = getWppSessions().find((s) => s.id === explicitConnId);
       const evo = !wpp ? getEvolutionSessions().find((s) => s.id === explicitConnId) : undefined;
+      // Dispositivo da extensão Chrome — vive em store separado (extension-devices.json),
+      // nunca aparece em getWppSessions()/getEvolutionSessions()/funnel.connections[].
+      // Sem isso, escolher "Extensão" no seletor do LeadModal caía direto no fallback
+      // abaixo (conexão do funil), que podia pegar uma sessão Evolution/WPPConnect
+      // antiga e desconectada do MESMO funil — o operador via "Falha ao enviar via
+      // Evolution API", um erro sem nenhuma relação com a conexão que ele escolheu.
+      const ext = !wpp && !evo ? getAllDevices().find((d) => d.id === explicitConnId) : undefined;
       if (wpp) {
         wppSession = wpp; connId = wpp.id;
       } else if (evo) {
         evoSession = evo; connId = evo.id;
+      } else if (ext) {
+        extDevice = ext; connId = ext.id;
       } else {
         const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === explicitConnId);
         if (conn) {
@@ -191,6 +201,8 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
         if (wpp) { wppSession = wpp; connId = wpp.id; break; }
         const evo = getEvolutionSessions().find((s) => s.id === conv.connId);
         if (evo) { evoSession = evo; connId = evo.id; break; }
+        const ext = getAllDevices().find((d) => d.id === conv.connId);
+        if (ext) { extDevice = ext; connId = ext.id; break; }
         const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === conv.connId);
         if (conn && ((conn.type === "meta" && conn.metaPhoneNumberId && conn.metaToken) || (conn.type === "uazapi" && conn.uazapiToken))) {
           connId = conn.id;
@@ -217,25 +229,30 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
         if (evoSession) {
           connId = evoSession.id;
         } else {
-          const funnel = getFunnelById(funnelId);
-          // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
-          const conn = funnel?.connections?.find((c) => c.type === "uazapi")
-            ?? funnel?.connections?.[0];
-          if (conn) {
-            connId = conn.id;
-            connType = conn.type ?? "uazapi";
-            if (conn.type === "meta") {
-              metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
-              metaToken = conn.metaToken ?? null;
-            } else {
-              token = conn.uazapiToken ?? null;
+          extDevice = getAllDevices().find(d => d.funnelId === funnelId && d.status === "active");
+          if (extDevice) {
+            connId = extDevice.id;
+          } else {
+            const funnel = getFunnelById(funnelId);
+            // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
+            const conn = funnel?.connections?.find((c) => c.type === "uazapi")
+              ?? funnel?.connections?.[0];
+            if (conn) {
+              connId = conn.id;
+              connType = conn.type ?? "uazapi";
+              if (conn.type === "meta") {
+                metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
+                metaToken = conn.metaToken ?? null;
+              } else {
+                token = conn.uazapiToken ?? null;
+              }
             }
           }
         }
       }
     }
   }
-  if (!wppSession && !evoSession && connType !== "meta" && !token) {
+  if (!wppSession && !evoSession && !extDevice && connType !== "meta" && !token) {
     const config = getConfig();
     token = config.uazapiToken ?? null;
   }
@@ -335,6 +352,17 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
           : "Falha ao enviar via Meta API (token de acesso desta conexão pode estar expirado/inválido)";
       }
     }
+  } else if (extDevice) {
+    // Envio manual pelo operador ainda não é suportado nessa conexão — a
+    // extensão só consegue mandar mensagem através da fila que a resposta
+    // automática da IA usa (extension-outbox.ts + polling do content-script),
+    // não tem canal pra um envio síncrono como este. Sem esse branch, caía
+    // silenciosamente no fallback de token global do UazAPI (ou, antes desse
+    // fix, numa sessão Evolution/WPPConnect antiga do mesmo funil) — o
+    // operador via um erro sem nenhuma relação com a conexão que escolheu.
+    errorMsg = extDevice.status === "active"
+      ? "Envio manual pela extensão ainda não é suportado — só a resposta automática da IA usa essa conexão."
+      : "Extensão desconectada — peça pro cliente reabrir o WhatsApp Web com a extensão instalada.";
   } else if (token) {
     if (imgUrl) {
       ok = await uazapiSendMedia(token, normalized, "image", imgUrl, msgText || undefined);
