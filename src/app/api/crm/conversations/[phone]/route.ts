@@ -14,6 +14,8 @@ import { sendText as evoSendText, sendMedia as evoSendMedia } from "@/lib/evolut
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { getConfig, getClientById } from "@/lib/clients";
 import { getAllDevices } from "@/lib/extension-devices";
+import { getServerWhatsAppSessions } from "@/lib/server-whatsapp-sessions";
+import { sendServerWhatsAppText } from "@/lib/server-whatsapp-api";
 
 type Params = Promise<{ phone: string }>;
 
@@ -143,6 +145,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   let connType: string = "uazapi";
   let wppSession: ReturnType<typeof getWppSessions>[number] | undefined;
   let evoSession: ReturnType<typeof getEvolutionSessions>[number] | undefined;
+  let serverSession: ReturnType<typeof getServerWhatsAppSessions>[number] | undefined;
   let extDevice: ReturnType<typeof getAllDevices>[number] | undefined;
   let connId: string | undefined;
 
@@ -156,17 +159,22 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     if (explicitConnId) {
       const wpp = getWppSessions().find((s) => s.id === explicitConnId);
       const evo = !wpp ? getEvolutionSessions().find((s) => s.id === explicitConnId) : undefined;
+      const server = !wpp && !evo
+        ? getServerWhatsAppSessions().find((s) => s.id === explicitConnId && s.clientId === clientId)
+        : undefined;
       // Dispositivo da extensão Chrome — vive em store separado (extension-devices.json),
       // nunca aparece em getWppSessions()/getEvolutionSessions()/funnel.connections[].
       // Sem isso, escolher "Extensão" no seletor do LeadModal caía direto no fallback
       // abaixo (conexão do funil), que podia pegar uma sessão Evolution/WPPConnect
       // antiga e desconectada do MESMO funil — o operador via "Falha ao enviar via
       // Evolution API", um erro sem nenhuma relação com a conexão que ele escolheu.
-      const ext = !wpp && !evo ? getAllDevices().find((d) => d.id === explicitConnId) : undefined;
+      const ext = !wpp && !evo && !server ? getAllDevices().find((d) => d.id === explicitConnId) : undefined;
       if (wpp) {
         wppSession = wpp; connId = wpp.id;
       } else if (evo) {
         evoSession = evo; connId = evo.id;
+      } else if (server) {
+        serverSession = server; connId = server.id;
       } else if (ext) {
         extDevice = ext; connId = ext.id;
       } else {
@@ -187,7 +195,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     // 1ª tentativa: usa a MESMA conexão da conversa mais recente deste telefone —
     // é a conexão que de fato já trocou mensagens com o lead (histórico e token
     // corretos), evitando enviar/salvar por uma conexão duplicada/desativada.
-    if (!wppSession && !evoSession && !connId) {
+    if (!wppSession && !evoSession && !serverSession && !connId) {
       // Mesma correção do GET acima: compara pelas variantes reais do número
       // (com/sem 9º dígito), não pelos últimos N dígitos.
       const normVariants = new Set(phoneVariants(normalized));
@@ -201,6 +209,8 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
         if (wpp) { wppSession = wpp; connId = wpp.id; break; }
         const evo = getEvolutionSessions().find((s) => s.id === conv.connId);
         if (evo) { evoSession = evo; connId = evo.id; break; }
+        const server = getServerWhatsAppSessions().find((s) => s.id === conv.connId && s.clientId === clientId);
+        if (server) { serverSession = server; connId = server.id; break; }
         const ext = getAllDevices().find((d) => d.id === conv.connId);
         if (ext) { extDevice = ext; connId = ext.id; break; }
         const conn = allFunnels.flatMap((f) => f.connections ?? []).find((c) => c.id === conv.connId);
@@ -219,7 +229,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     }
 
     // 2ª tentativa (fallback original): conexão do funil do lead
-    if (!wppSession && !evoSession && !connId && funnelId) {
+    if (!wppSession && !evoSession && !serverSession && !connId && funnelId) {
       // Verifica WPPConnect e Evolution primeiro (sessões ficam em store separado)
       wppSession = getWppSessions().find(s => s.funnelId === funnelId);
       if (wppSession) {
@@ -229,22 +239,27 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
         if (evoSession) {
           connId = evoSession.id;
         } else {
-          extDevice = getAllDevices().find(d => d.funnelId === funnelId && d.status === "active");
-          if (extDevice) {
-            connId = extDevice.id;
+          serverSession = getServerWhatsAppSessions().find(s => s.funnelId === funnelId && s.clientId === clientId);
+          if (serverSession) {
+            connId = serverSession.id;
           } else {
-            const funnel = getFunnelById(funnelId);
-            // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
-            const conn = funnel?.connections?.find((c) => c.type === "uazapi")
-              ?? funnel?.connections?.[0];
-            if (conn) {
-              connId = conn.id;
-              connType = conn.type ?? "uazapi";
-              if (conn.type === "meta") {
-                metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
-                metaToken = conn.metaToken ?? null;
-              } else {
-                token = conn.uazapiToken ?? null;
+            extDevice = getAllDevices().find(d => d.funnelId === funnelId && d.status === "active");
+            if (extDevice) {
+              connId = extDevice.id;
+            } else {
+              const funnel = getFunnelById(funnelId);
+              // Prefere conexão uazapi (mesma ordem do webhook), fallback para a primeira
+              const conn = funnel?.connections?.find((c) => c.type === "uazapi")
+                ?? funnel?.connections?.[0];
+              if (conn) {
+                connId = conn.id;
+                connType = conn.type ?? "uazapi";
+                if (conn.type === "meta") {
+                  metaPhoneNumberId = conn.metaPhoneNumberId ?? null;
+                  metaToken = conn.metaToken ?? null;
+                } else {
+                  token = conn.uazapiToken ?? null;
+                }
               }
             }
           }
@@ -252,7 +267,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
       }
     }
   }
-  if (!wppSession && !evoSession && !extDevice && connType !== "meta" && !token) {
+  if (!wppSession && !evoSession && !serverSession && !extDevice && connType !== "meta" && !token) {
     const config = getConfig();
     token = config.uazapiToken ?? null;
   }
@@ -264,7 +279,14 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   let errorMsg: string | undefined;
 
   // Envia pela conexão correta
-  if (wppSession) {
+  if (serverSession) {
+    if (imgUrl) {
+      errorMsg = "A conexão 24h no servidor suporta somente mensagens de texto por enquanto.";
+    } else if (msgText) {
+      ok = await sendServerWhatsAppText(serverSession.id, normalized, msgText);
+      if (!ok) errorMsg = "Falha ao enviar pela conexão 24h (sessão desconectada?)";
+    }
+  } else if (wppSession) {
     const lead = clientId ? getLeadByPhone(clientId, normalized) : undefined;
     let isLid = lead?.isLid === true;
 

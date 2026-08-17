@@ -12,6 +12,8 @@ import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect
 import { getEvolutionSessions } from "./evolution-sessions";
 import { sendText as evoSendText, sendMedia as evoSendMedia } from "./evolution-api";
 import { markPhoneSending, markSent as markWppSent } from "./wppconnect-sent";
+import { getServerWhatsAppSessions } from "./server-whatsapp-sessions";
+import { sendServerWhatsAppText } from "./server-whatsapp-api";
 
 export async function sendMessage(
   phone: string,
@@ -32,6 +34,13 @@ export async function sendMessage(
   // enviado hoje" era marcado, mas a mensagem nunca chegava de verdade no
   // grupo configurado.
   if (preferredConnectionId) {
+    const serverSession = getServerWhatsAppSessions().find(
+      (session) => session.id === preferredConnectionId && session.clientId === clientId,
+    );
+    if (serverSession) {
+      return sendServerWhatsAppText(serverSession.id, phone, message);
+    }
+
     // WPPConnect: verifica sessões WPPConnect primeiro (não estão em funnels[].connections)
     const wppSessions = getWppSessions();
     const wppSession = wppSessions.find(s => s.id === preferredConnectionId);
@@ -78,6 +87,12 @@ export async function sendMessage(
       const ok = await sendMessageDirect(phone, message, metaConn.metaPhoneNumberId!, metaConn.metaToken!);
       if (ok) return true;
     }
+  }
+
+  // Sessão persistente mantida pelo processo interno da própria plataforma.
+  for (const session of getServerWhatsAppSessions().filter((item) => item.clientId === clientId)) {
+    const ok = await sendServerWhatsAppText(session.id, phone, message);
+    if (ok) return true;
   }
 
   // Fallback final: UazAPI legado

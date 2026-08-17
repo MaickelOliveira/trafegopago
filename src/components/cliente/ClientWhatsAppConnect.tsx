@@ -166,7 +166,18 @@ export function ClientWhatsAppConnect() {
                             <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Ativo</span>
                           )}
                         </div>
-                        {!conn.connected && (
+                        {!conn.connected && conn.type === "server" && (
+                          <div className="border-t border-slate-50 px-4 pb-4 pt-3">
+                            <p className="mb-3 text-xs text-amber-700">⚠️ A conexão 24h precisa de um novo código no celular.</p>
+                            <a
+                              href="/cliente/whatsapp-extensao"
+                              className="flex w-full items-center justify-center rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-700"
+                            >
+                              Reconectar no servidor
+                            </a>
+                          </div>
+                        )}
+                        {!conn.connected && conn.type !== "server" && (
                           <div className="px-4 pb-4 space-y-3 border-t border-slate-50">
                             <p className="text-xs text-amber-700 pt-3">⚠️ Desconectado. Gere o QR Code e escaneie pelo WhatsApp do celular.</p>
                             <button

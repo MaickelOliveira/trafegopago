@@ -8,6 +8,8 @@ import { addMessage, setAiPaused } from "@/lib/conversations";
 import { markSent } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, updateLead } from "@/lib/leads";
 import { cancelPendingForPhone } from "@/lib/pending-responses";
+import { getServerWhatsAppSessions } from "@/lib/server-whatsapp-sessions";
+import { sendServerWhatsAppText } from "@/lib/server-whatsapp-api";
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +44,13 @@ export async function POST(req: NextRequest) {
   const wppSession = connId
     ? getWppSessions().find((s) => s.id === connId)
     : undefined;
+  const serverSession = connId
+    ? getServerWhatsAppSessions().find((s) => s.id === connId && s.clientId === clientId)
+    : getServerWhatsAppSessions().find((s) => s.clientId === clientId);
 
   console.log(`[inbox/send] phone=${cleanPhone} connId=${connId} clientId=${clientId} conn=${conn?.type} wppSession=${wppSession?.sessionName ?? "none"}`);
 
-  if (!conn && !wppSession) {
+  if (!conn && !wppSession && !serverSession) {
     console.log(`[inbox/send] ERRO: nenhuma conexão encontrada. allConns=${JSON.stringify(allConns.map(c=>c.id))} wppSessions=${JSON.stringify(getWppSessions().map(s=>s.id))}`);
     return NextResponse.json({ error: "Nenhuma conexão encontrada para este cliente" }, { status: 404 });
   }
@@ -55,7 +60,13 @@ export async function POST(req: NextRequest) {
   const ts = Date.now();
 
   // ── WPPConnect ──
-  if (wppSession) {
+  if (serverSession) {
+    if (type !== "text") {
+      return NextResponse.json({ error: "Essa conexão no servidor suporta somente texto por enquanto" }, { status: 400 });
+    }
+    ok = await sendServerWhatsAppText(serverSession.id, cleanPhone, content);
+    if (!ok) errorMsg = "Falha ao enviar pela conexão do servidor (sessão desconectada?)";
+  } else if (wppSession) {
     if (type === "text") {
       const existingLeadForLid = getLeadByPhone(clientId, cleanPhone);
       let isLid = existingLeadForLid?.isLid === true;
@@ -96,7 +107,7 @@ export async function POST(req: NextRequest) {
 
   if (ok) {
     // Salva no histórico como mensagem do assistente
-    const activeConnId = wppSession?.id ?? conn?.id ?? connId ?? "";
+    const activeConnId = serverSession?.id ?? wppSession?.id ?? conn?.id ?? connId ?? "";
     const savedContent = type === "text" ? content : `[${type}]`;
     addMessage(cleanPhone, { role: "assistant", content: savedContent, ts, type: type === "video" ? undefined : type }, clientId, { connId: activeConnId });
     // Pausa a IA nos dois storages

@@ -11,11 +11,13 @@ import { checkConnectionStatus as checkEvolutionConnectionStatus, getInstancePho
 import { getAllConversationsByClientId, getHistory, phoneVariants } from "@/lib/conversations";
 import { getLeads } from "@/lib/leads";
 import { getAllDevices, computeDisplayState } from "@/lib/extension-devices";
+import { getServerWhatsAppSessions } from "@/lib/server-whatsapp-sessions";
+import { getServerWhatsAppStatus } from "@/lib/server-whatsapp-api";
 
 export type LiveConnection = {
   id: string;
   phone: string;
-  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension";
+  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension" | "server";
   status: string;
   connected: boolean;
   funnelId: string;
@@ -140,6 +142,34 @@ export async function getLiveConnectionsForClient(clientId: string): Promise<Liv
           funnelId: linkedFunnel?.id ?? "",
           funnelName: linkedFunnel?.name ?? "Sem funil",
         }))
+    );
+  }
+
+  const serverSessions = getServerWhatsAppSessions().filter(
+    (session) => session.clientId === clientId || clientFunnelIds.has(session.funnelId),
+  );
+  for (const session of serverSessions) {
+    const linkedFunnel = funnels.find((funnel) => funnel.id === session.funnelId);
+    tasks.push(
+      getServerWhatsAppStatus(session.id)
+        .then((status) => ({
+          id: session.id,
+          phone: status.phone ?? session.phone,
+          type: "server" as const,
+          status: status.status,
+          connected: status.status === "connected",
+          funnelId: session.funnelId,
+          funnelName: linkedFunnel?.name ?? "Funil Principal",
+        }))
+        .catch(() => ({
+          id: session.id,
+          phone: session.phone,
+          type: "server" as const,
+          status: "disconnected",
+          connected: false,
+          funnelId: session.funnelId,
+          funnelName: linkedFunnel?.name ?? "Funil Principal",
+        })),
     );
   }
 

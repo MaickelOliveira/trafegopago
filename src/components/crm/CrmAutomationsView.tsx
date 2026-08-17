@@ -10,7 +10,7 @@ import type { WebhookConfig } from "@/lib/webhooks";
 // ── Props ─────────────────────────────────────────────────────────────────────
 type ConnectionInfo = {
   id: string;
-  type: "uazapi" | "meta" | "wppconnect" | "evolution";
+  type: "uazapi" | "meta" | "wppconnect" | "evolution" | "server";
   phone: string;
   funnelId: string;
   funnelName: string;
@@ -275,7 +275,8 @@ function StepEditor({
   const metaConns      = connections.filter((c) => c.type === "meta");
   const wppConns       = connections.filter((c) => c.type === "wppconnect");
   const evoConns       = connections.filter((c) => c.type === "evolution");
-  const allConns       = [...uazapiConns, ...wppConns, ...evoConns, ...metaConns];
+  const serverConns    = connections.filter((c) => c.type === "server");
+  const allConns       = [...serverConns, ...uazapiConns, ...wppConns, ...evoConns, ...metaConns];
 
   // ── Unified send message (UazapiGO text OR Meta template) ─────────────────
   if (step.type === "send_message" || step.type === "send_template") {
@@ -331,9 +332,10 @@ function StepEditor({
                     c.type === "uazapi" ? "bg-emerald-100 text-emerald-700"
                     : c.type === "wppconnect" ? "bg-blue-100 text-blue-700"
                     : c.type === "evolution" ? "bg-teal-100 text-teal-700"
+                    : c.type === "server" ? "bg-violet-100 text-violet-700"
                     : "bg-green-100 text-green-700",
                   )}>
-                    {c.type === "uazapi" ? "UazapiGO" : c.type === "wppconnect" ? "WPPConnect" : c.type === "evolution" ? "Evolution API" : "API Meta"}
+                    {c.type === "uazapi" ? "UazapiGO" : c.type === "wppconnect" ? "WPPConnect" : c.type === "evolution" ? "Evolution API" : c.type === "server" ? "Servidor 24h" : "API Meta"}
                   </span>
                 </button>
               ))}

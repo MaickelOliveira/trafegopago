@@ -7,6 +7,7 @@ import { getTemplates } from "@/lib/waba-templates";
 import { getWebhooks } from "@/lib/webhooks";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
+import { getServerWhatsAppSessions } from "@/lib/server-whatsapp-sessions";
 import { CrmAutomationsView } from "@/components/crm/CrmAutomationsView";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +56,17 @@ export default async function ClienteAutomacoesPage() {
       funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "Evolution API",
     }));
 
-  const connections = [...funnelConnections, ...wppConnections, ...evolutionConnections];
+  const serverConnections = getServerWhatsAppSessions()
+    .filter((s) => s.clientId === clientId || clientFunnelIds.has(s.funnelId))
+    .map((s) => ({
+      id: s.id,
+      type: "server" as const,
+      phone: s.phone,
+      funnelId: s.funnelId,
+      funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "WhatsApp 24h",
+    }));
+
+  const connections = [...funnelConnections, ...wppConnections, ...evolutionConnections, ...serverConnections];
 
   return (
     <CrmAutomationsView

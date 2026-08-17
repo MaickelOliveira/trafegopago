@@ -12,6 +12,7 @@ import { startFollowUpSequence, restartFollowUpSequence } from "@/lib/followups"
 import { upsertPending, getPendingForPhone, getDuePending, markDone, markProcessing, cancelPendingForPhone } from "@/lib/pending-responses";
 import { sendCapiEvent } from "@/lib/meta-capi";
 import { matchClick } from "@/lib/wa-clicks";
+import { getServerWhatsAppSessionById } from "@/lib/server-whatsapp-sessions";
 
 type Body = Record<string, unknown>;
 
@@ -136,6 +137,19 @@ export async function POST(req: NextRequest) {
     let incomingConnectionId: string | null = null;
 
     const funnels = getFunnels();
+
+    // A conexão persistente do próprio servidor vive em um store separado das
+    // conexões legadas do funil. O serviço interno envia somente o ID; cliente
+    // e funil são sempre resolvidos no servidor, sem confiar nesses campos do
+    // payload recebido.
+    if (uazInstanceId) {
+      const serverSession = getServerWhatsAppSessionById(uazInstanceId);
+      if (serverSession) {
+        clientId = serverSession.clientId;
+        funnelIdOverride = serverSession.funnelId;
+        incomingConnectionId = serverSession.id;
+      }
+    }
 
     // Busca por token UUID da instância (mais confiável)
     if (!clientId && uazInstanceToken) {

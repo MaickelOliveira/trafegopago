@@ -30,7 +30,7 @@ type WaConnection = {
   phone?: string;
   name?: string;
   status: string; // "connected" | "connecting" | "disconnected"
-  type: "uazapi" | "meta" | "wppconnect" | "evolution";
+  type: "uazapi" | "meta" | "wppconnect" | "evolution" | "server";
   funnelId: string;
   funnelName: string;
 };
@@ -349,11 +349,12 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     setLoadingWa(true);
     try {
       // Busca funis do cliente + instâncias enriquecidas do WhatsApp Manager + sessões WPPConnect/Evolution
-      const [funnelsRes, managerRes, wppRes, evoRes] = await Promise.all([
+      const [funnelsRes, managerRes, wppRes, evoRes, serverRes] = await Promise.all([
         fetch(`/api/crm/funnels?clientId=${clientId}`),
         fetch("/api/whatsapp/manager"),
         fetch("/api/whatsapp/wppconnect-manager"),
         fetch("/api/whatsapp/evolution-manager"),
+        fetch(`/api/integrations/whatsapp-server?clientId=${encodeURIComponent(clientId)}`),
       ]);
       const funnels: { id: string; name: string; connections?: { id: string; phone?: string; type: string; uazapiToken?: string; metaPhoneNumberId?: string }[] }[] =
         funnelsRes.ok ? await funnelsRes.json() : [];
@@ -366,6 +367,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       // Evolution sessions
       type EvoSess = { id: string; instanceName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
       const evoSessions: EvoSess[] = evoRes.ok ? await evoRes.json() : [];
+      type ServerSess = { id: string; status: string; phone: string; name?: string; funnelId: string; funnelName: string };
+      const serverPayload: { connections?: ServerSess[] } = serverRes.ok ? await serverRes.json() : {};
 
       // Lookup by token or name
       const byToken = new Map(enrichedList.map(e => [e.token, e]));
@@ -429,6 +432,18 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             funnelName: evo.linkedFunnelName ?? "",
           });
         }
+      }
+
+      for (const server of serverPayload.connections ?? []) {
+        conns.push({
+          id: server.id,
+          phone: server.phone,
+          name: server.name ?? "WhatsApp 24h",
+          status: server.status,
+          type: "server",
+          funnelId: server.funnelId,
+          funnelName: server.funnelName,
+        });
       }
 
       setWaConnections(conns);
@@ -536,7 +551,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               const agentName = summary?.name;
               const label = agentName ? `${agentName} (${phone})` : phone;
               const badge = summary?.enabled ? " ✓" : "";
-              const icon = conn.type === "meta" ? "📘" : conn.type === "wppconnect" ? "📱" : conn.type === "evolution" ? "🧬" : "⚡";
+              const icon = conn.type === "meta" ? "📘" : conn.type === "wppconnect" ? "📱" : conn.type === "evolution" ? "🧬" : conn.type === "server" ? "☁️" : "⚡";
               return (
                 <option key={conn.id} value={conn.id}>
                   {icon} {label}{badge}

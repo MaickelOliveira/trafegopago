@@ -170,7 +170,7 @@ export function GestorSidebar({ clients }: { clients: Client[] }) {
               {navItem("checklist",      `/gestor/${activeClient.id}/checklist`,           CheckSquare,  "Checklist")}
               {navItem("inbox",          `/gestor/${activeClient.id}/inbox`,               MessageSquare,"Mensagens")}
               {navItem("waba",           `/gestor/${activeClient.id}/waba`,                Send,         "Disparos WA")}
-              {navItem("whatsapp-extensao", `/gestor/${activeClient.id}/whatsapp-extensao`, Puzzle,       "Extensão WA")}
+              {navItem("whatsapp-extensao", `/gestor/${activeClient.id}/whatsapp-extensao`, Puzzle,       "WhatsApp 24h")}
               {navItem("webhooks",       `/gestor/${activeClient.id}/webhooks`,            Link2,        "Webhooks")}
               {navItem("utm-builder",    `/gestor/${activeClient.id}/utm-builder`,         Code2,        "UTM Builder")}
               {navItem("wa-links",       `/gestor/${activeClient.id}/wa-links`,            Phone,        "Rastreio WhatsApp")}

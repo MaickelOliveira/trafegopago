@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { DeviceStatusView, ExtensionConnectorState } from "@/lib/extension-types";
+import { ServerWhatsAppConnect } from "@/components/cliente/ServerWhatsAppConnect";
 
 const STATE_LABEL: Record<ExtensionConnectorState, string> = {
   connected: "Conectado",
@@ -109,8 +110,11 @@ export function WhatsAppExtensionConnect({ clientId }: { clientId?: string } = {
 
   return (
     <div className="max-w-2xl space-y-5">
+      <ServerWhatsAppConnect clientId={clientId} />
+
+      <div className="border-t border-slate-200 pt-5" />
       <div>
-        <h1 className="text-xl font-semibold text-slate-800">🧩 Conector WhatsApp (extensão do navegador)</h1>
+        <h2 className="text-lg font-semibold text-slate-800">🧩 Alternativa: extensão do navegador</h2>
         <p className="text-sm text-slate-500 mt-1">
           Vincula o WhatsApp Web já aberto no seu Chrome à sua conta na plataforma — sem precisar de um número dedicado.
         </p>

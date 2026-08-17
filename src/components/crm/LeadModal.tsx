@@ -130,7 +130,7 @@ function FollowUpSection({ leadId }: { leadId: string }) {
 type LiveConnection = {
   id: string;
   phone: string;
-  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension";
+  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension" | "server";
   status: string;
   connected: boolean;
   funnelId: string;
@@ -143,6 +143,7 @@ const CONN_TYPE_LABEL: Record<LiveConnection["type"], string> = {
   evolution: "🧬 Evolution API",
   uazapi: "📟 UazAPI",
   extension: "🧩 Extensão (WhatsApp Web)",
+  server: "☁️ WhatsApp 24h (servidor)",
 };
 
 function fmtReminderDate(iso: string) {

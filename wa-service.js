@@ -1,6 +1,6 @@
 /**
  * Serviço WhatsApp multi-instância (porta 3002)
- * Suporta múltiplos números por funil — Baileys (QR) e Meta Cloud API
+ * Suporta múltiplos números por funil — Baileys (QR/código) e Meta Cloud API
  */
 const http = require("http");
 const path = require("path");
@@ -24,6 +24,7 @@ const PLATFORM_WEBHOOK = process.env.PLATFORM_WEBHOOK_URL ||
   `http://${getContainerIP()}:${APP_PORT}/api/whatsapp/webhook`;
 const SESSIONS_DIR = path.join(__dirname, "data", "wa-sessions");
 const FUNNELS_FILE = path.join(__dirname, "data", "funnels.json");
+const SERVER_SESSIONS_FILE = path.join(__dirname, "data", "server-whatsapp-sessions.json");
 
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
@@ -34,13 +35,58 @@ function loadFunnels() {
   try { return JSON.parse(fs.readFileSync(FUNNELS_FILE, "utf-8")); } catch { return []; }
 }
 
+function loadServerSessions() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SERVER_SESSIONS_FILE, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function validConnectionId(value) {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(value);
+}
+
+function readJsonBody(req, maxBytes = 128 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    let settled = false;
+    req.on("data", chunk => {
+      if (settled) return;
+      body += chunk;
+      if (body.length > maxBytes) {
+        settled = true;
+        reject(new Error("Payload muito grande"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      try { resolve(JSON.parse(body || "{}")); }
+      catch { reject(new Error("JSON inválido")); }
+    });
+    req.on("error", error => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+  });
+}
+
 // ── Baileys ────────────────────────────────────────────────────
-async function startBaileys(connectionId, funnelId, clientId) {
-  if (instances.get(connectionId)?.socket) return;
+async function startBaileys(connectionId, funnelId, clientId, pairingPhone) {
+  const current = instances.get(connectionId);
+  if (current?.socket) {
+    if (!pairingPhone) return current;
+    if (current.status === "connected") throw new Error("Este WhatsApp já está conectado");
+    const code = await current.socket.requestPairingCode(pairingPhone);
+    current.pairingCode = code;
+    return current;
+  }
   const sessionDir = path.join(SESSIONS_DIR, connectionId);
   if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
 
-  const inst = { socket: null, qr: null, status: "connecting", phone: null, name: null, funnelId, clientId, type: "baileys" };
+  const inst = { socket: null, qr: null, pairingCode: null, status: "connecting", phone: null, name: null, funnelId, clientId, type: "baileys" };
   instances.set(connectionId, inst);
 
   try {
@@ -66,10 +112,10 @@ async function startBaileys(connectionId, funnelId, clientId) {
 
     sock.ev.on("creds.update", saveCreds);
     sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
-      const i = instances.get(connectionId); if (!i) return;
+      const i = instances.get(connectionId); if (i !== inst) return;
       if (qr) { i.qr = qr; i.status = "connecting"; console.log(`[WA:${connectionId}] QR gerado`); }
       if (connection === "open") {
-        i.status = "connected"; i.qr = null;
+        i.status = "connected"; i.qr = null; i.pairingCode = null;
         i.phone = sock.user?.id?.split(":")[0]?.split("@")[0] ?? null;
         i.name = sock.user?.name ?? null;
         console.log(`[WA:${connectionId}] Conectado: ${i.phone}`);
@@ -80,41 +126,95 @@ async function startBaileys(connectionId, funnelId, clientId) {
         console.log(`[WA:${connectionId}] Desconectado (${code})`);
         i.socket = null; i.phone = null; i.name = null;
         i.status = loggedOut ? "disconnected" : "connecting";
-        if (!loggedOut) setTimeout(() => startBaileys(connectionId, funnelId, clientId), 8000);
+        if (!loggedOut) setTimeout(() => {
+          if (instances.get(connectionId) === inst) {
+            startBaileys(connectionId, funnelId, clientId).catch(error =>
+              console.error(`[WA:${connectionId}] Falha ao reconectar:`, error)
+            );
+          }
+        }, 8000);
       }
     });
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
       if (type !== "notify") return;
       for (const msg of messages) {
         try {
-          const jid = msg.key.remoteJid ?? "";
+          if (instances.get(connectionId) !== inst) continue;
+          const originalJid = msg.key.remoteJid ?? "";
+          const jid = originalJid.endsWith("@lid")
+            ? (msg.key.remoteJidAlt ?? originalJid)
+            : originalJid;
           if (jid.endsWith("@g.us") || jid.endsWith("@broadcast")) continue;
           const phone = jid.replace("@s.whatsapp.net", "").replace(/\D/g, "");
           const fromMe = msg.key.fromMe ?? false;
           const pushName = msg.pushName ?? phone;
-          const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text ||
-                       msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || "";
+          const rootContent = msg.message ?? {};
+          const content = rootContent.ephemeralMessage?.message ||
+                          rootContent.viewOnceMessage?.message ||
+                          rootContent.viewOnceMessageV2?.message ||
+                          rootContent;
+          const text = content.conversation || content.extendedTextMessage?.text ||
+                       content.imageMessage?.caption || content.videoMessage?.caption ||
+                       (content.audioMessage ? "[Áudio recebido]" : "") ||
+                       (content.imageMessage ? "[Imagem recebida]" : "") ||
+                       (content.videoMessage ? "[Vídeo recebido]" : "") ||
+                       (content.documentMessage ? `[Documento recebido: ${content.documentMessage.fileName || "arquivo"}]` : "") ||
+                       (content.stickerMessage ? "[Figurinha recebida]" : "");
           if (!text.trim()) continue;
 
           console.log(`[WA:${connectionId}] ${fromMe ? "→" : "←"} ${phone}: ${text.slice(0, 50)}`);
-          await fetch(PLATFORM_WEBHOOK, {
+          const response = await fetch(PLATFORM_WEBHOOK, {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ phone, message: text, pushName, fromMe, baileysClientId: clientId, funnelId }),
-          }).catch(e => console.error(`[WA:${connectionId}] Webhook erro:`, e));
+            body: JSON.stringify({
+              phone,
+              message: text,
+              pushName,
+              fromMe,
+              instanceId: connectionId,
+              instancePhone: instances.get(connectionId)?.phone,
+              serverClientId: clientId,
+              serverFunnelId: funnelId,
+            }),
+          });
+          if (!response.ok) {
+            console.error(`[WA:${connectionId}] Webhook respondeu HTTP ${response.status}`);
+          }
         } catch (e) { console.error(`[WA:${connectionId}] Erro:`, e); }
       }
     });
+
+    if (pairingPhone) {
+      if (authState.creds.registered) {
+        throw new Error("A sessão existente precisa ser desconectada antes de gerar outro código");
+      }
+      const code = await sock.requestPairingCode(pairingPhone);
+      inst.pairingCode = code;
+      console.log(`[WA:${connectionId}] Código de vinculação gerado`);
+    }
+
+    return inst;
   } catch (e) {
     console.error(`[WA:${connectionId}] Erro ao iniciar:`, e);
     const i = instances.get(connectionId);
-    if (i) { i.status = "disconnected"; i.socket = null; setTimeout(() => startBaileys(connectionId, funnelId, clientId), 15000); }
+    if (i === inst) {
+      i.status = "disconnected";
+      i.socket = null;
+      setTimeout(() => {
+        if (instances.get(connectionId) === inst) {
+          startBaileys(connectionId, funnelId, clientId).catch(error =>
+            console.error(`[WA:${connectionId}] Falha ao reiniciar:`, error)
+          );
+        }
+      }, 15000);
+    }
+    if (pairingPhone) throw e;
   }
 }
 
 async function stopInstance(connectionId) {
-  const inst = instances.get(connectionId); if (!inst) return;
-  if (inst.socket) { try { await inst.socket.logout(); } catch { /**/ } }
-  inst.socket = null; inst.status = "disconnected"; inst.qr = null;
+  const inst = instances.get(connectionId);
+  if (inst?.socket) { try { await inst.socket.logout(); } catch { /**/ } }
+  if (inst) { inst.socket = null; inst.status = "disconnected"; inst.qr = null; inst.pairingCode = null; }
   const sessionDir = path.join(SESSIONS_DIR, connectionId);
   try { fs.rmSync(sessionDir, { recursive: true, force: true }); fs.mkdirSync(sessionDir); } catch { /**/ }
   instances.delete(connectionId);
@@ -140,14 +240,31 @@ async function sendViaMeta(metaPhoneNumberId, metaToken, phone, message) {
 // Reconecta sessões Baileys salvas ao iniciar
 function loadSavedSessions() {
   try {
+    const seen = new Set();
+    for (const session of loadServerSessions()) {
+      if (!validConnectionId(session.id)) continue;
+      const sessionDir = path.join(SESSIONS_DIR, session.id);
+      if (fs.existsSync(path.join(sessionDir, "creds.json"))) {
+        seen.add(session.id);
+        console.log(`[WA] Reconectando sessão do servidor: ${session.id}`);
+        startBaileys(session.id, session.funnelId, session.clientId).catch(e =>
+          console.error(`[WA:${session.id}] Falha ao reconectar:`, e)
+        );
+      }
+    }
+
+    // Compatibilidade com registros antigos que porventura tenham sido salvos
+    // diretamente em funnels.json.
     const funnels = loadFunnels();
     for (const funnel of funnels) {
       for (const conn of (funnel.connections ?? [])) {
-        if (conn.type === "baileys") {
+        if (conn.type === "baileys" && !seen.has(conn.id)) {
           const sessionDir = path.join(SESSIONS_DIR, conn.id);
           if (fs.existsSync(path.join(sessionDir, "creds.json"))) {
             console.log(`[WA] Reconectando: ${conn.id}`);
-            startBaileys(conn.id, funnel.id, funnel.clientId ?? "sem-cliente");
+            startBaileys(conn.id, funnel.id, funnel.clientId ?? "sem-cliente").catch(e =>
+              console.error(`[WA:${conn.id}] Falha ao reconectar:`, e)
+            );
           }
         }
       }
@@ -158,10 +275,11 @@ function loadSavedSessions() {
 // ── HTTP Server ────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+
+  if (process.env.WA_SERVICE_SECRET && req.headers["x-wa-service-secret"] !== process.env.WA_SERVICE_SECRET) {
+    res.writeHead(401); res.end(JSON.stringify({ error: "Não autorizado" })); return;
+  }
 
   const url = new URL(req.url, "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
@@ -182,12 +300,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // POST /pairing-code — cria uma sessão no servidor e devolve o código que
+  // deve ser informado no celular em WhatsApp > Aparelhos conectados.
+  if (req.method === "POST" && parts[0] === "pairing-code") {
+    try {
+      const { connectionId, funnelId, clientId, phone, reset } = await readJsonBody(req);
+      const digits = String(phone ?? "").replace(/\D/g, "");
+      if (!validConnectionId(connectionId) || !funnelId || !clientId || digits.length < 10 || digits.length > 15) {
+        res.writeHead(400); res.end(JSON.stringify({ error: "connectionId, funnelId, clientId e telefone com DDI são obrigatórios" })); return;
+      }
+      if (reset) await stopInstance(connectionId);
+      const inst = await startBaileys(connectionId, funnelId, clientId, digits);
+      if (!inst?.pairingCode) throw new Error("O WhatsApp não devolveu um código de vinculação");
+      res.writeHead(200);
+      res.end(JSON.stringify({ code: inst.pairingCode, status: inst.status }));
+    } catch (e) {
+      res.writeHead(500); res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+    }
+    return;
+  }
+
   // POST /connect — { connectionId, funnelId, clientId, type: "baileys" | "meta", metaPhoneNumberId?, metaToken? }
   if (req.method === "POST" && parts[0] === "connect") {
-    let body = ""; req.on("data", d => body += d);
-    req.on("end", async () => {
-      try {
-        const { connectionId, funnelId, clientId, type, metaPhoneNumberId, metaToken } = JSON.parse(body);
+    try {
+        const { connectionId, funnelId, clientId, type, metaPhoneNumberId, metaToken } = await readJsonBody(req);
+        if (!validConnectionId(connectionId)) {
+          res.writeHead(400); res.end(JSON.stringify({ error: "connectionId inválido" })); return;
+        }
         if (type === "meta") {
           // Meta API: só registra como "connected" se tiver token e phoneNumberId
           if (!metaPhoneNumberId || !metaToken) {
@@ -196,29 +335,27 @@ const server = http.createServer(async (req, res) => {
           instances.set(connectionId, { socket: null, qr: null, status: "connected", phone: metaPhoneNumberId, name: "Meta API", funnelId, clientId, type: "meta", metaPhoneNumberId, metaToken });
           console.log(`[WA:${connectionId}] Meta API configurada`);
         } else {
-          startBaileys(connectionId, funnelId, clientId ?? "sem-cliente");
+          await startBaileys(connectionId, funnelId, clientId ?? "sem-cliente");
         }
         // Aguarda QR
         await new Promise(r => setTimeout(r, 3000));
         const i = instances.get(connectionId);
         res.writeHead(200); res.end(JSON.stringify({ ok: true, status: i?.status, qr: i?.qr ?? null }));
       } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: String(e) })); }
-    });
     return;
   }
 
   // DELETE /disconnect/:connectionId
   if (req.method === "DELETE" && parts[0] === "disconnect" && parts[1]) {
+    if (!validConnectionId(parts[1])) { res.writeHead(400); res.end(JSON.stringify({ error: "connectionId inválido" })); return; }
     await stopInstance(parts[1]);
     res.writeHead(200); res.end(JSON.stringify({ ok: true })); return;
   }
 
   // POST /send — { connectionId?, phone, message, metaPhoneNumberId?, metaToken?, type? }
   if (req.method === "POST" && parts[0] === "send") {
-    let body = ""; req.on("data", d => body += d);
-    req.on("end", async () => {
-      try {
-        const { connectionId, phone, message, metaPhoneNumberId, metaToken, type } = JSON.parse(body);
+    try {
+        const { connectionId, phone, message, metaPhoneNumberId, metaToken, type } = await readJsonBody(req);
         if (type === "meta" || metaPhoneNumberId) {
           await sendViaMeta(metaPhoneNumberId, metaToken, phone, message);
         } else if (connectionId) {
@@ -232,7 +369,6 @@ const server = http.createServer(async (req, res) => {
         }
         res.writeHead(200); res.end(JSON.stringify({ ok: true }));
       } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: String(e) })); }
-    });
     return;
   }
 
@@ -250,7 +386,7 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404); res.end(JSON.stringify({ error: "Not found" }));
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`[WA Service] Porta ${PORT} (0.0.0.0) — multi-instância (Baileys + Meta API)`);
+server.listen(PORT, "127.0.0.1", () => {
+  console.log(`[WA Service] Porta ${PORT} (somente interno) — multi-instância (Baileys + Meta API)`);
   loadSavedSessions();
 });
