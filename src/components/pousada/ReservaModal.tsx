@@ -16,6 +16,15 @@ function sumPessoas(pessoas: PessoaForm[]): number {
   return pessoas.reduce((s, p) => s + (p.gratuito ? 0 : Number(p.valor) || 0), 0);
 }
 
+// Mesma regra de withAutoStatus (dentro do componente), mas usada só pra
+// calcular o status com que o modal abre — nunca sobrescreve pago/parcial/cancelada.
+function resolveStatusInicial(pessoas: PessoaForm[], status: StatusReserva): StatusReserva {
+  const isCortesia = pessoas.length > 0 && sumPessoas(pessoas) === 0;
+  if (isCortesia && status === "pendente") return "cortesia";
+  if (!isCortesia && status === "cortesia") return "pendente";
+  return status;
+}
+
 export function ReservaModal({
   clientId,
   tipos,
@@ -32,6 +41,9 @@ export function ReservaModal({
   onClose: () => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
+  const pessoasIniciais: PessoaForm[] = initial?.pessoas?.length
+    ? initial.pessoas.map((p) => ({ ...p, _expanded: false }))
+    : [emptyPessoa()];
   const [form, setForm] = useState({
     tipo: initial?.tipo ?? defaultTipo ?? tipos[0]?.slug ?? "",
     data: initial?.data ?? today,
@@ -43,13 +55,16 @@ export function ReservaModal({
     telefone: initial?.telefone ?? "",
     cidade: initial?.cidade ?? "",
     observacoes: initial?.observacoes ?? "",
-    status: (initial?.status ?? "pendente") as StatusReserva,
+    // Uma reserva já existente que veio 100% gratuita (ex: importada ou salva
+    // antes dessa regra existir) precisa nascer como "cortesia" já na abertura
+    // do modal — se essa checagem rodasse só dentro de updatePessoa/removePessoa
+    // (ver withAutoStatus abaixo), abrir e salvar sem tocar em nada não corrigia
+    // o status antigo.
+    status: resolveStatusInicial(pessoasIniciais, initial?.status ?? "pendente"),
     valorTotal: initial?.valorTotal?.toString() ?? "0",
     valorPago: initial?.valorPago?.toString() ?? "0",
   });
-  const [pessoas, setPessoas] = useState<PessoaForm[]>(
-    initial?.pessoas?.length ? initial.pessoas.map((p) => ({ ...p, _expanded: false })) : [emptyPessoa()]
-  );
+  const [pessoas, setPessoas] = useState<PessoaForm[]>(pessoasIniciais);
   const [saving, setSaving] = useState(false);
 
   // Seletor visual de quarto/chalé — mesma ideia do mapa de Ocupação, mas
