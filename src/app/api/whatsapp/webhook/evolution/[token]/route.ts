@@ -29,6 +29,7 @@ import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 import { createGuestForm } from "@/lib/guest-forms";
+import { createServicoForm } from "@/lib/servico-forms";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
@@ -88,6 +89,28 @@ function resolveGuestFormMarker(
   const form = createGuestForm({ clientId, clientName, phone, connId: connId ?? null, connType: "evolution" });
   const url = `${baseUrl}/formulario-hospede/${form.id}`;
   return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, url);
+}
+
+/**
+ * Substitui o marcador [FORMULARIO_SERVICO] pelo link da ficha de
+ * participantes (ver função equivalente em webhook/[instanceId]/route.ts).
+ */
+function resolveServicoFormMarker(
+  text: string,
+  clientId: string,
+  clientName: string | undefined,
+  phone: string,
+  connId: string | undefined,
+  baseUrl: string,
+): string {
+  if (!text.includes("[FORMULARIO_SERVICO]")) return text;
+  if (!baseUrl) {
+    console.warn("[servico-forms] appBaseUrl não configurado — não é possível gerar o link do formulário");
+    return text.replace(/\[FORMULARIO_SERVICO\]/g, "").trim();
+  }
+  const form = createServicoForm({ clientId, clientName, phone, connId: connId ?? null, connType: "evolution" });
+  const url = `${baseUrl}/formulario-servico/${form.id}`;
+  return text.replace(/\[FORMULARIO_SERVICO\]/g, url);
 }
 
 // ── Envia mídias marcadas via Evolution ──
@@ -858,7 +881,8 @@ export async function POST(
     // string vazia e o fallback pro texto original vazava o marcador
     // literal pro cliente. Quando não sobra texto, simplesmente não
     // envia bolha de texto nenhuma (mídia/link seguem enviados normalmente).
-    const clean = resolveGuestFormMarker(cleanRaw, clientId, activeClient?.name ?? clientId, phone, connId, guestFormBaseUrl);
+    const cleanGuestForm = resolveGuestFormMarker(cleanRaw, clientId, activeClient?.name ?? clientId, phone, connId, guestFormBaseUrl);
+    const clean = resolveServicoFormMarker(cleanGuestForm, clientId, activeClient?.name ?? clientId, phone, connId, guestFormBaseUrl);
     const names = filterUnsentMedia(clientId, connId, phone, namesRaw);
     if (names.length < namesRaw.length) {
       console.log(`[Evolution sendReply] Mídia(s) já enviada(s) nesta conversa, ignorando repetição: ${JSON.stringify(namesRaw.filter((n) => !names.includes(n)))}`);

@@ -1,4 +1,4 @@
-export type StatusReserva = "pendente" | "parcial" | "pago" | "cancelada";
+export type StatusReserva = "pendente" | "parcial" | "pago" | "cancelada" | "cortesia";
 export type OrigemReserva = "ia" | "manual";
 
 export type Pessoa = {

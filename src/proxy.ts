@@ -36,12 +36,15 @@ export async function proxy(request: NextRequest) {
   // nunca tem sessão logada (é o hóspede da pousada, não um usuário da
   // plataforma). Sem isso, caía no redirect padrão pra /login.
   const isGuestForm = pathname.startsWith("/formulario-hospede");
-  const isPublic = pathname === "/" || pathname.startsWith("/login") || isBriefing || isConectar || isGuestForm;
+  // Mesmo caso do formulário de hóspedes, mas pra participantes de outros
+  // serviços da pousada (Day Use, Almoço, etc.) — ver src/lib/servico-forms.ts.
+  const isServicoForm = pathname.startsWith("/formulario-servico");
+  const isPublic = pathname === "/" || pathname.startsWith("/login") || isBriefing || isConectar || isGuestForm || isServicoForm;
   const isGestor = pathname.startsWith("/gestor");
   const isCliente = pathname.startsWith("/cliente");
 
   if (isPublic) {
-    if (token && !isBriefing && !isConectar && !isGuestForm) {
+    if (token && !isBriefing && !isConectar && !isGuestForm && !isServicoForm) {
       try {
         const { payload } = await jwtVerify(token, getSecret());
         const role = (payload as { role: string }).role;

@@ -41,7 +41,7 @@ REGRAS OBRIGATÓRIAS:
    - "pessoas" = array com TODOS os hóspedes, cada um com "nome" (obrigatório), "cpf" (obrigatório — ficha de hóspede sempre exige CPF de cada pessoa), e opcionalmente "rg", "nascimento" (ISO), "endereco", "cidade", "telefone", "email", "profissao", "idade" — inclua os que o cliente informou, omita os demais, NUNCA invente.
 
    Se a categoria do tipo escolhido for EVENTO (day use, almoço, café da manhã, etc.):
-   - "pessoas" = array com TODOS os participantes, cada um com "nome" (obrigatório), "idade" (número, obrigatório se possível — usado para calcular faixas etárias infantis) e "cidade" se informada. NÃO peça CPF/RG/endereço para eventos.
+   - "pessoas" = array com TODOS os participantes, cada um com "nome" (obrigatório), "idade" (número, obrigatório se possível — usado para calcular faixas etárias infantis), "telefone" e "cidade" se informados. NÃO peça CPF/RG/endereço para eventos.
 
    ⚠️ IMPORTANTE — "pessoas" é sempre a LISTA COMPLETA E ATUAL da reserva, não só as pessoas mencionadas na última mensagem: releia a conversa inteira e junte todo mundo que ainda faz parte da reserva. Se o cliente mandou um grupo de pessoas num dia e depois, em outra mensagem (mesmo dias depois), acrescentou mais gente à MESMA reserva, inclua TODOS — os de antes E os novos — no array. Se o cliente disser explicitamente que alguém foi removido/cancelado/não vai mais, NÃO inclua essa pessoa. Se o cliente corrigir o nome, idade ou valor de alguém já mencionado antes, use o dado mais recente. Nunca devolva só as pessoas da última mensagem quando já havia outras pessoas confirmadas antes na mesma reserva.
 
@@ -51,7 +51,7 @@ REGRAS OBRIGATÓRIAS:
 7. "telefone" = número de telefone/celular que o cliente informou EXPLICITAMENTE na conversa. Se o cliente disser que é o mesmo número do WhatsApp atual, ou não informar nenhum número, OMITA este campo — o sistema preenche automaticamente com o número real do WhatsApp. NUNCA invente ou copie um número de exemplo.
 8. "valorTotal" = soma dos valores de "pessoas" (valor total cobrado pela reserva).
 9. "valorPago" = 0 (reserva recém criada, nada foi pago ainda) — NÃO PREENCHER com outro valor.
-10. "status" = sempre "pendente".
+10. "status" = "cortesia" se TODAS as pessoas da lista forem gratuitas (valor total 0), senão "pendente".
 11. "cidade" = cidade do responsável, se mencionada (principalmente relevante pra tipos EVENTO).
 12. "observacoes" = restrições alimentares, pedidos especiais ou informações extras, se houver.
 
@@ -270,9 +270,13 @@ export async function extractAndWriteToPousada(opts: {
           // total a partir dela, em vez de confiar cegamente na soma que o
           // modelo devolveu separadamente (que pode não bater com a lista).
           const finalPessoas = pessoas.length ? pessoas : existing.pessoas;
+          // pessoas.length garante que sumPessoas(pessoas) é um número válido
+          // (pode ser legitimamente 0 quando todo mundo é gratuito) — por isso
+          // não cai num "||" que trocaria esse 0 por um valorTotal desatualizado.
           const finalValorTotal = pessoas.length
-            ? (sumPessoas(pessoas) || valorTotal || existing.valorTotal)
+            ? sumPessoas(pessoas)
             : (valorTotal || existing.valorTotal);
+          const isCortesia = finalPessoas.length > 0 && finalValorTotal === 0;
           const updated = updateReserva(existing.id, {
             data: dataReserva,
             dataCheckout: (row.dataCheckout as string) ?? existing.dataCheckout,
@@ -284,11 +288,12 @@ export async function extractAndWriteToPousada(opts: {
             valorTotal: finalValorTotal,
             cidade: (row.cidade as string) ?? existing.cidade,
             observacoes: (row.observacoes as string) ?? existing.observacoes,
-            ...(alreadyPaid ? {} : { status: "pendente" as StatusReserva, valorPago: 0, faltaPagar: finalValorTotal }),
+            ...(alreadyPaid ? {} : { status: (isCortesia ? "cortesia" : "pendente") as StatusReserva, valorPago: 0, faltaPagar: finalValorTotal }),
           });
           if (updated) affected.push(updated);
           console.log(`[pousada-extractor] updateReserva (evitou duplicar) OK id=${existing.id} responsável="${responsavel.nome}" pessoas=${finalPessoas.length}`);
         } else {
+          const isCortesia = pessoas.length > 0 && sumPessoas(pessoas) === 0;
           const created = createReserva({
             clientId,
             tipo,
@@ -301,7 +306,7 @@ export async function extractAndWriteToPousada(opts: {
             pessoas,
             valorTotal,
             valorPago: 0,
-            status: "pendente",
+            status: isCortesia ? "cortesia" : "pendente",
             cidade: row.cidade as string | undefined,
             observacoes: row.observacoes as string | undefined,
             origem: "ia",

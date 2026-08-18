@@ -79,10 +79,24 @@ export function ReservaModal({
   const categoria = tipos.find((t) => t.slug === form.tipo)?.categoria ?? "evento";
   const isHospedagem = categoria === "hospedagem";
 
+  // Se todo mundo da reserva estiver marcado como gratuito (total calculado
+  // zero), o status sugerido é "cortesia" em vez de "pendente" — nunca
+  // sobrescreve um status escolhido manualmente (pago/parcial/cancelada).
+  function withAutoStatus(next: PessoaForm[]) {
+    const total = sumPessoas(next);
+    const isCortesia = next.length > 0 && total === 0;
+    setForm((f) => {
+      let status = f.status;
+      if (isCortesia && status === "pendente") status = "cortesia";
+      else if (!isCortesia && status === "cortesia") status = "pendente";
+      return { ...f, valorTotal: String(total), status };
+    });
+  }
+
   function updatePessoa(i: number, patch: Partial<PessoaForm>) {
     setPessoas((prev) => {
       const next = prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
-      setForm((f) => ({ ...f, valorTotal: String(sumPessoas(next)) }));
+      withAutoStatus(next);
       return next;
     });
   }
@@ -94,7 +108,7 @@ export function ReservaModal({
   function removePessoa(i: number) {
     setPessoas((prev) => {
       const next = prev.filter((_, idx) => idx !== i);
-      setForm((f) => ({ ...f, valorTotal: String(sumPessoas(next)) }));
+      withAutoStatus(next);
       return next;
     });
   }
@@ -177,6 +191,7 @@ export function ReservaModal({
                 <option value="pendente">Pendente</option>
                 <option value="parcial">Parcial</option>
                 <option value="pago">Pago</option>
+                <option value="cortesia">Cortesia</option>
                 <option value="cancelada">Cancelada</option>
               </select>
             </div>
@@ -259,13 +274,13 @@ export function ReservaModal({
                         value={p.nome}
                         onChange={(e) => updatePessoa(i, { nome: e.target.value })}
                         placeholder="Nome completo"
-                        className="col-span-5 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className="col-span-4 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.cpf ?? ""}
                         onChange={(e) => updatePessoa(i, { cpf: e.target.value })}
                         placeholder="CPF"
-                        className="col-span-4 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.valor}
@@ -273,6 +288,15 @@ export function ReservaModal({
                         type="number" step="0.01" placeholder="Valor" disabled={!!p.gratuito}
                         className="col-span-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
                       />
+                      <label
+                        className="col-span-2 flex flex-col items-center justify-center gap-0.5"
+                        title="Gratuito — isenta o valor desta pessoa; ela continua contando na quantidade de hóspedes"
+                      >
+                        <input type="checkbox" checked={!!p.gratuito}
+                          onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor })}
+                          className="h-4 w-4 rounded accent-amber-600" />
+                        <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
+                      </label>
                       <div className="col-span-1 flex items-center justify-end gap-1">
                         {pessoas.length > 1 && (
                           <button type="button" onClick={() => removePessoa(i)} className="text-slate-400 hover:text-red-500 text-lg leading-none">×</button>
@@ -297,7 +321,7 @@ export function ReservaModal({
                         value={p.cidade ?? ""}
                         onChange={(e) => updatePessoa(i, { cidade: e.target.value })}
                         placeholder="Cidade"
-                        className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className="col-span-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.valor}
@@ -305,10 +329,14 @@ export function ReservaModal({
                         type="number" step="0.01" placeholder="Valor" disabled={!!p.gratuito}
                         className="col-span-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
                       />
-                      <label className="col-span-1 flex items-center justify-center" title="Gratuito">
+                      <label
+                        className="col-span-2 flex flex-col items-center justify-center gap-0.5"
+                        title="Gratuito — isenta o valor desta pessoa; ela continua contando na quantidade de participantes"
+                      >
                         <input type="checkbox" checked={!!p.gratuito}
                           onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor })}
                           className="h-4 w-4 rounded accent-amber-600" />
+                        <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
                       </label>
                       {pessoas.length > 1 && (
                         <button type="button" onClick={() => removePessoa(i)} className="col-span-12 text-left text-xs text-slate-400 hover:text-red-500">

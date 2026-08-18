@@ -206,6 +206,30 @@ function resolveGuestFormMarker(
 }
 
 /**
+ * Substitui o marcador [FORMULARIO_SERVICO] pelo link da ficha de
+ * participantes (público, um por reserva) — mesma ideia de
+ * resolveGuestFormMarker, mas pro fluxo de Day Use/Almoço/outros serviços
+ * (nome, telefone e idade de cada participante, ver /api/servico-forms/[token]).
+ */
+function resolveServicoFormMarker(
+  text: string,
+  clientId: string,
+  clientName: string | undefined,
+  phone: string,
+  connId: string | undefined,
+  baseUrl: string,
+): string {
+  if (!text.includes("[FORMULARIO_SERVICO]")) return text;
+  if (!baseUrl) {
+    console.warn("[servico-forms] appBaseUrl não configurado — não é possível gerar o link do formulário");
+    return text.replace(/\[FORMULARIO_SERVICO\]/g, "").trim();
+  }
+  const form = createServicoForm({ clientId, clientName, phone, connId: connId ?? null, connType: "uazapi" });
+  const url = `${baseUrl}/formulario-servico/${form.id}`;
+  return text.replace(/\[FORMULARIO_SERVICO\]/g, url);
+}
+
+/**
  * Envia mídias referenciadas pelo agente após enviar o texto principal.
  */
 /** Converte URL local /api/uploads/... em base64 lendo direto do disco */
@@ -269,6 +293,7 @@ import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 import { createGuestForm } from "@/lib/guest-forms";
+import { createServicoForm } from "@/lib/servico-forms";
 
 type Body = Record<string, unknown>;
 
@@ -1003,7 +1028,8 @@ export async function POST(
             if (geminiText) {
               console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
               const { clean: cleanRaw, names: namesRaw, followup } = extractMediaMarkers(geminiText);
-              const clean = resolveGuestFormMarker(cleanRaw, cid, clientName, phone, uazConn?.id, guestFormBaseUrl);
+              const cleanGuestForm = resolveGuestFormMarker(cleanRaw, cid, clientName, phone, uazConn?.id, guestFormBaseUrl);
+              const clean = resolveServicoFormMarker(cleanGuestForm, cid, clientName, phone, uazConn?.id, guestFormBaseUrl);
               const names = filterUnsentMedia(clientId, uazConn?.id, phone, namesRaw);
               console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(namesRaw)} | a enviar (após dedup): ${JSON.stringify(names)} | library size: ${agCfg?.mediaLibrary?.length ?? 0}`);
               // Salva texto limpo (sem marcadores) no histórico. ⚠️ NUNCA cai de
@@ -1116,7 +1142,8 @@ export async function POST(
     if (geminiText) {
       console.log(`[webhook/${instanceId}] Gemini raw (primeiros 300): ${geminiText.slice(0, 300)}`);
       const { clean: cleanRaw, names: namesRaw, followup } = extractMediaMarkers(geminiText);
-      const clean = resolveGuestFormMarker(cleanRaw, cid, getClientById(cid)?.name ?? cid, phone, uazConn?.id, guestFormBaseUrl);
+      const cleanGuestForm = resolveGuestFormMarker(cleanRaw, cid, getClientById(cid)?.name ?? cid, phone, uazConn?.id, guestFormBaseUrl);
+      const clean = resolveServicoFormMarker(cleanGuestForm, cid, getClientById(cid)?.name ?? cid, phone, uazConn?.id, guestFormBaseUrl);
       const names = filterUnsentMedia(clientId, uazConn?.id, phone, namesRaw);
       console.log(`[webhook/${instanceId}] Media markers extraídos: ${JSON.stringify(namesRaw)} | a enviar (após dedup): ${JSON.stringify(names)} | library size: ${agentCfg?.mediaLibrary?.length ?? 0}`);
       // Salva texto limpo (sem marcadores) no histórico. ⚠️ NUNCA cai de volta

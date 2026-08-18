@@ -22,9 +22,10 @@ const STATUS_BADGE: Record<string, string> = {
   parcial: "bg-blue-100 text-blue-700",
   pago: "bg-green-100 text-green-700",
   cancelada: "bg-red-100 text-red-600",
+  cortesia: "bg-emerald-100 text-emerald-700",
 };
 const STATUS_LABEL: Record<string, string> = {
-  pendente: "Pendente", parcial: "Parcial", pago: "Pago", cancelada: "Cancelada",
+  pendente: "Pendente", parcial: "Parcial", pago: "Pago", cancelada: "Cancelada", cortesia: "Cortesia",
 };
 
 function Campo({ label, value }: { label: string; value?: string | number | null }) {
