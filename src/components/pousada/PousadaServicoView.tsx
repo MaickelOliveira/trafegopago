@@ -41,7 +41,7 @@ export function PousadaServicoView({
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [faixas, setFaixas] = useState<FaixaEtariaResumo>({ faixa0a5: 0, faixa6a12: 0 });
-  const [totais, setTotais] = useState({ valorTotal: 0, valorPago: 0, faltaPagar: 0 });
+  const [totais, setTotais] = useState({ valorTotal: 0, valorPago: 0, faltaPagar: 0, totalPessoas: 0 });
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [loading, setLoading] = useState(true);
@@ -59,7 +59,7 @@ export function PousadaServicoView({
     setTipos(Array.isArray(tiposRes) ? tiposRes : []);
     setReservas(relRes.reservas ?? []);
     setFaixas(relRes.faixasEtarias ?? { faixa0a5: 0, faixa6a12: 0 });
-    setTotais(relRes.totais ?? { valorTotal: 0, valorPago: 0, faltaPagar: 0 });
+    setTotais(relRes.totais ?? { valorTotal: 0, valorPago: 0, faltaPagar: 0, totalPessoas: 0 });
     setLoading(false);
   }, [clientId, tipoSlug, from, to]);
 
@@ -110,7 +110,7 @@ export function PousadaServicoView({
         </div>
 
         {/* Resumo */}
-        <div className={clsx("grid gap-4", isHospedagem ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-5")}>
+        <div className={clsx("grid gap-4", isHospedagem ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-6")}>
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-wide text-slate-400">Valor total</p>
             <p className="text-xl font-semibold text-slate-900 mt-1">{fmt(totais.valorTotal)}</p>
@@ -122,6 +122,10 @@ export function PousadaServicoView({
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-wide text-slate-400">Falta pagar</p>
             <p className="text-xl font-semibold text-amber-600 mt-1">{fmt(totais.faltaPagar)}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Total de pessoas</p>
+            <p className="text-xl font-semibold text-slate-900 mt-1">{totais.totalPessoas}</p>
           </div>
           {!isHospedagem && (
             <>
