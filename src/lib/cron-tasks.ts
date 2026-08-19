@@ -125,11 +125,20 @@ async function shouldSendFollowUp(
   }
 }
 
-// Encontra o agentConfig "dono" deste follow-up — pelo stepId configurado,
-// com fallback para qualquer config com followUpEnabled.
-function resolveAgentConfig(allCfgs: AgentConfig[], stepId: string | undefined): AgentConfig | undefined {
-  return allCfgs.find((c) => c.followUpEnabled && c.followUps?.some((s) => s.id === stepId))
-    ?? allCfgs.find((c) => c.followUpEnabled);
+// Encontra o agentConfig "dono" deste follow-up. Prioriza a config da MESMA
+// conexão do item agendado — nunca "empresta" o followUpEnabled de outra
+// conexão do mesmo cliente (um número desativado não deve escapar por
+// carona no toggle ligado de outro número). Também exige que o stepId ainda
+// exista na lista atual de passos: se foi apagado/editado pelo gestor, o
+// item é órfão e não deve mais sair, mesmo com o toggle ligado.
+function resolveAgentConfig(allCfgs: AgentConfig[], stepId: string | undefined, connId: string | undefined): AgentConfig | undefined {
+  const byConn = connId ? allCfgs.find((c) => c.whatsappConnectionId === connId) : undefined;
+  if (byConn) {
+    return byConn.followUpEnabled && byConn.followUps?.some((s) => s.id === stepId) ? byConn : undefined;
+  }
+  // Item legado sem connId gravado — só aceita config habilitada cujo passo
+  // ainda exista (nunca aceita "qualquer uma habilitada" sem essa checagem).
+  return allCfgs.find((c) => c.followUpEnabled && c.followUps?.some((s) => s.id === stepId));
 }
 
 export async function processDueFollowUpsAndBatches(): Promise<{
@@ -143,9 +152,13 @@ export async function processDueFollowUpsAndBatches(): Promise<{
 
   for (const followUp of due) {
     const client = getClientById(followUp.clientId);
-    const agentCfg = client ? resolveAgentConfig(getAllAgentConfigs(client), followUp.stepId) : undefined;
+    const agentCfg = client ? resolveAgentConfig(getAllAgentConfigs(client), followUp.stepId, followUp.connId) : undefined;
 
     if (!agentCfg?.followUpEnabled) {
+      // Órfão (toggle desligado, passo apagado, ou conexão errada) — cancela
+      // de vez em vez de deixar "processing" pra sempre (claimDueFollowUps já
+      // marcou como processing antes desta checagem).
+      cancelFollowUp(followUp.id);
       skipped++;
       continue;
     }

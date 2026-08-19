@@ -222,3 +222,23 @@ export function cancelFollowUpsForPhone(clientId: string, phone: string): void {
   }
   if (changed) save(items);
 }
+
+/** Cancela TODOS os follow-ups pendentes de uma conexão inteira (todos os
+ *  leads), não só de um telefone — usado quando o gestor desativa
+ *  followUpEnabled ou apaga a lista de passos configurados. Sem isso, itens
+ *  já agendados ANTES da mudança continuavam na fila e disparavam mesmo
+ *  com a config atual dizendo que não deveriam mais (relatado: desativa o
+ *  toggle, ou apaga os passos, e o follow-up chega pro lead assim mesmo). */
+export function cancelFollowUpsForConnection(clientId: string, connId?: string | null): void {
+  const items = load();
+  let changed = false;
+  for (const item of items) {
+    if (item.clientId !== clientId) continue;
+    if (connId ? item.connId !== connId : !!item.connId) continue;
+    if (item.status === "pending" || item.status === "processing") {
+      item.status = "cancelled";
+      changed = true;
+    }
+  }
+  if (changed) save(items);
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClientById, upsertClient } from "@/lib/clients";
 import type { AgentConfig } from "@/lib/clients";
+import { cancelFollowUpsForConnection } from "@/lib/followups";
 
 function getConfigForConn(client: ReturnType<typeof getClientById>, connId: string | null): AgentConfig {
   if (connId && client?.agentConfigs) {
@@ -51,6 +52,15 @@ function upsertConfigForConn(
     // Cliente sem nenhuma conexão configurada ainda — só aqui faz sentido
     // salvar no campo legado único.
     upsertClient({ ...client, agentConfig: updated });
+  }
+
+  // Follow-up desligado ou lista de passos esvaziada: cancela tudo que já
+  // estava agendado pra essa conexão — sem isso, itens agendados ANTES da
+  // mudança continuam na fila em data/followups.json e disparam mesmo com a
+  // config atual dizendo que não deveriam (toggle desligado, ou passo
+  // apagado da lista).
+  if (!updated.followUpEnabled || (updated.followUps?.length ?? 0) === 0) {
+    cancelFollowUpsForConnection(client.id, effectiveConnId);
   }
 }
 
