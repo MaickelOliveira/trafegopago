@@ -120,6 +120,36 @@ export function ReservaModal({
     setPessoas((prev) => [...prev, emptyPessoa()]);
   }
 
+  // Quem faz a reserva geralmente também é um dos hóspedes — espelha nome e
+  // CPF do responsável no primeiro hóspede pra não digitar duas vezes. Só em
+  // reserva NOVA (nunca sobrescreve edição de reserva existente) e só
+  // enquanto o hóspede 1 ainda estiver vazio ou acompanhando o responsável —
+  // se o operador já digitou um nome/CPF diferente ali de propósito (é outra
+  // pessoa), para de espelhar.
+  function updateResponsavelNome(value: string) {
+    if (isHospedagem && !initial) {
+      setPessoas((prev) => {
+        if (prev.length === 0) return prev;
+        const first = prev[0];
+        if (first.nome.trim() && first.nome !== form.responsavelNome) return prev;
+        return prev.map((p, idx) => (idx === 0 ? { ...p, nome: value } : p));
+      });
+    }
+    setForm((f) => ({ ...f, responsavelNome: value }));
+  }
+
+  function updateResponsavelCpf(value: string) {
+    if (isHospedagem && !initial) {
+      setPessoas((prev) => {
+        if (prev.length === 0) return prev;
+        const first = prev[0];
+        if ((first.cpf ?? "").trim() && first.cpf !== form.responsavelCpf) return prev;
+        return prev.map((p, idx) => (idx === 0 ? { ...p, cpf: value } : p));
+      });
+    }
+    setForm((f) => ({ ...f, responsavelCpf: value }));
+  }
+
   function removePessoa(i: number) {
     setPessoas((prev) => {
       const next = prev.filter((_, idx) => idx !== i);
@@ -245,14 +275,14 @@ export function ReservaModal({
             )}
             <div className="col-span-2">
               <label className="text-xs font-medium text-slate-600 block mb-1">Responsável (nome completo) *</label>
-              <input value={form.responsavelNome} onChange={(e) => setForm((f) => ({ ...f, responsavelNome: e.target.value }))}
+              <input value={form.responsavelNome} onChange={(e) => updateResponsavelNome(e.target.value)}
                 placeholder="Nome de quem faz a reserva"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
             </div>
             {isHospedagem && (
               <div>
                 <label className="text-xs font-medium text-slate-600 block mb-1">CPF do responsável</label>
-                <input value={form.responsavelCpf} onChange={(e) => setForm((f) => ({ ...f, responsavelCpf: e.target.value }))}
+                <input value={form.responsavelCpf} onChange={(e) => updateResponsavelCpf(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
               </div>
             )}
@@ -324,28 +354,34 @@ export function ReservaModal({
                         value={p.nome}
                         onChange={(e) => updatePessoa(i, { nome: e.target.value })}
                         placeholder="Nome"
+                        className="col-span-5 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                      />
+                      <input
+                        value={p.telefone ?? ""}
+                        onChange={(e) => updatePessoa(i, { telefone: e.target.value })}
+                        placeholder="Telefone"
                         className="col-span-4 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.idade ?? ""}
                         onChange={(e) => updatePessoa(i, { idade: e.target.value ? Number(e.target.value) : undefined })}
                         type="number" min="0" placeholder="Idade"
-                        className="col-span-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.cidade ?? ""}
                         onChange={(e) => updatePessoa(i, { cidade: e.target.value })}
                         placeholder="Cidade"
-                        className="col-span-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className="col-span-5 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.valor}
                         onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
                         type="number" step="0.01" placeholder="Valor" disabled={!!p.gratuito}
-                        className="col-span-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
+                        className="col-span-4 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
                       />
                       <label
-                        className="col-span-2 flex flex-col items-center justify-center gap-0.5"
+                        className="col-span-3 flex flex-col items-center justify-center gap-0.5"
                         title="Gratuito — isenta o valor desta pessoa; ela continua contando na quantidade de participantes"
                       >
                         <input type="checkbox" checked={!!p.gratuito}
