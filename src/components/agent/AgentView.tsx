@@ -763,14 +763,15 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         </label>
         <p className="text-xs text-slate-500">
           Quando ligado, a IA manda a saudação abaixo (sem passar pela IA de verdade — é enviada direto) só na
-          primeira mensagem de cada conversa nova, e já pausa automaticamente essa conversa em seguida. Nenhuma
-          mensagem depois disso recebe resposta automática, até você reativar manualmente.
+          primeira mensagem de cada "dia de conversa" com o cliente. Depois disso fica em silêncio pro resto do
+          dia — quando virar a meia-noite, a próxima mensagem do cliente recebe a saudação de novo, mesmo dias
+          seguidos.
         </p>
         {cfg.greetingOnlyMode && (
           <div className="flex items-start gap-2 rounded-lg bg-sky-100 border border-sky-300 px-3 py-2">
             <span className="text-sky-700 text-sm font-semibold">⚠️ Ativo</span>
             <span className="text-sky-700 text-xs leading-5">
-              A IA não vai atender de verdade nenhuma conversa nesta conexão — só a saudação inicial. Desmarque para voltar ao atendimento normal.
+              A IA não vai atender de verdade nenhuma conversa nesta conexão — só a saudação, uma vez por dia. Desmarque para voltar ao atendimento normal.
             </span>
           </div>
         )}
