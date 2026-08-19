@@ -65,6 +65,26 @@ export async function register() {
       setInterval(tick, 60_000);
     }, 5000);
 
+    // Tick dedicado para disparos em massa (broadcasts.ts/broadcast-items.ts)
+    // — intervalo próprio de 5s, independente do tick de 60s acima, para
+    // conseguir espaçar envios pelo delay configurável na campanha (ex: 10s
+    // entre mensagens) sem competir por tempo com follow-ups/batches/kanban.
+    // Mesmo racional já documentado em crm-automation-jobs.ts para não usar
+    // setTimeout por item: sobrevive a restart do processo.
+    const broadcastTick = async () => {
+      try {
+        const { processDueBroadcastItems } = await import("./lib/broadcast-items");
+        const { processed } = await processDueBroadcastItems();
+        if (processed > 0) console.log(`[cron] broadcasts: processed=${processed}`);
+      } catch (e) {
+        console.error("[cron] Erro no tick de broadcasts:", e);
+      }
+    };
+    setTimeout(() => {
+      broadcastTick();
+      setInterval(broadcastTick, 5_000);
+    }, 5000);
+
   } catch (e) {
     console.error("[cron] Falha ao iniciar agendador:", e);
   }

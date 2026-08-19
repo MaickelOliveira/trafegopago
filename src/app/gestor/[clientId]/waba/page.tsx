@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { getClientById } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getTemplates } from "@/lib/waba-templates";
-import { WabaView } from "@/components/waba/WabaView";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
+import { DisparosWaView } from "@/components/waba/DisparosWaView";
 
 type Props = { params: Promise<{ clientId: string }> };
 
@@ -27,11 +28,14 @@ export default async function WabaPage({ params }: Props) {
       })),
   );
 
+  const evolutionConnections = getEvolutionSessions().filter((s) => s.clientId === clientId);
+
   return (
-    <WabaView
+    <DisparosWaView
       clientId={clientId}
       initialTemplates={templates}
       metaConnections={metaConnections}
+      evolutionConnections={evolutionConnections}
       funnels={funnels}
     />
   );

@@ -3,7 +3,8 @@ import { getSession } from "@/lib/auth";
 import { getClientById } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getTemplates } from "@/lib/waba-templates";
-import { WabaView } from "@/components/waba/WabaView";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
+import { DisparosWaView } from "@/components/waba/DisparosWaView";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +36,14 @@ export default async function ClienteDisparosWaPage() {
       })),
   );
 
+  const evolutionConnections = getEvolutionSessions().filter((s) => s.clientId === clientId);
+
   return (
-    <WabaView
+    <DisparosWaView
       clientId={clientId}
       initialTemplates={templates}
       metaConnections={metaConnections}
+      evolutionConnections={evolutionConnections}
       funnels={funnels}
     />
   );

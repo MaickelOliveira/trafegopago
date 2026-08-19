@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig } from "@/lib/clients";
 import { processDueFollowUpsAndBatches } from "@/lib/cron-tasks";
+import { processDueBroadcastItems } from "@/lib/broadcast-items";
 
 // GET /api/agent/cron?secret=xxx
 // Endpoint HTTP equivalente ao agendador interno (instrumentation.ts, a cada
@@ -15,5 +16,6 @@ export async function GET(req: NextRequest) {
   }
 
   const result = await processDueFollowUpsAndBatches();
-  return NextResponse.json({ ok: true, ...result });
+  const broadcasts = await processDueBroadcastItems();
+  return NextResponse.json({ ok: true, ...result, broadcastsProcessed: broadcasts.processed });
 }
