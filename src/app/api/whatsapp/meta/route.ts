@@ -13,6 +13,7 @@ import { sendTemplate } from "@/lib/waba-templates";
 import { generateSummaryText } from "@/lib/summary-generator";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
+import { processKanbanActions } from "@/lib/kanban-agent";
 import { transcribeMedia, type MediaKind } from "@/lib/media-transcribe";
 import { getAdInfoById } from "@/lib/meta-api";
 import type { GeminiAction } from "@/lib/gemini-agent";
@@ -204,7 +205,13 @@ export async function POST(req: NextRequest) {
         });
 
         // ── Histórico ────────────────────────────────────────────────────
+        const historyForKanbanMeta = getHistory(phone, clientId, connId ?? undefined);
         addMessage(phone, { role: "user", content: text, ts }, clientId, { connId: connId ?? undefined, contactName: pushName !== phone ? pushName : undefined });
+
+        // ── Agente Kanban — roda sempre, independente da IA de atendimento ──
+        if (cid !== "sem-cliente") {
+          processKanbanActions(text, historyForKanbanMeta, cid, phone, connId ?? undefined).catch(() => {});
+        }
 
         // ── Verifica se IA está pausada ──────────────────────────────────
         const currentLead = getLeadByPhone(cid, phone, effectiveFunnelId);

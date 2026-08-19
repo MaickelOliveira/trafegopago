@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ExtensionDevice } from "@/lib/extension-devices";
 import { getDeviceByToken } from "@/lib/extension-devices";
-import { upsertLeadByPhone, getLeadByPhone, normalizePhone } from "@/lib/leads";
+import { upsertLeadByPhone, getLeadByPhone, updateLead, normalizePhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
-import { addMessage, getHistory } from "@/lib/conversations";
+import { addMessage, getHistory, setAiPaused } from "@/lib/conversations";
 import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { splitMessage } from "@/lib/uazapi";
 import { queueReply } from "@/lib/extension-outbox";
+import { consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
+import { processKanbanActions } from "@/lib/kanban-agent";
 
 type IncomingItem = {
   phone: string;
@@ -19,6 +21,7 @@ type IncomingItem = {
   contactName: string | null;
   body: string;
   ts: number;
+  fromMe: boolean;
   adId: string | null;
   adSourceUrl: string | null;
   adTitle: string | null;
@@ -113,6 +116,7 @@ export async function POST(req: NextRequest) {
   const clientId = device.clientId;
   const entradaColumnId = funnel.columns?.[0]?.id ?? "entrada";
   const cfg = getConfig();
+  const client = getClientById(clientId);
 
   let processed = 0;
   let skipped = 0;
@@ -136,6 +140,42 @@ export async function POST(req: NextRequest) {
     // contato, dependendo só de coincidência de phoneVariants pra ainda
     // achar a conversa certa (às vezes achava a de OUTRO contato por engano).
     const historyKey = normalizePhone(item.realPhone ?? item.phone);
+
+    // ── Mensagem enviada pelo próprio gestor, pelo WhatsApp Web (fromMe) ──
+    // Mesmo padrão do webhook uazapi (src/app/api/whatsapp/webhook/[instanceId]/route.ts):
+    // isPhoneSending/consumeSent primeiro (eco da própria resposta da IA, que
+    // main-world.ts também captura como fromMe — não pode pausar a IA por
+    // causa da própria resposta dela), só então trata como resposta manual
+    // real do gestor e pausa a IA pra essa conversa.
+    if (item.fromMe) {
+      const textTrimmed = item.body.trim();
+      if (isPhoneSending(historyKey) || (textTrimmed && consumeSent(historyKey, textTrimmed))) {
+        processed++;
+        continue;
+      }
+
+      addMessage(historyKey, { role: "assistant", content: item.body, ts: item.ts }, clientId, { connId: device.id });
+
+      if (textTrimmed) {
+        const historyFM = getHistory(historyKey, clientId, device.id);
+        const hasUserMsgs = historyFM.some((m) => m.role === "user");
+        if (hasUserMsgs && client) {
+          const agCfg = getAgentConfigForConnection(client, device.id);
+          const resumeKeyword = agCfg?.aiResumeKeyword?.trim();
+          const isPausing = !resumeKeyword || textTrimmed.toLowerCase() !== resumeKeyword.toLowerCase();
+          const existingLeadFM = getLeadByPhone(clientId, historyKey);
+          if (existingLeadFM) {
+            updateLead(existingLeadFM.id, { aiPaused: isPausing });
+          } else {
+            upsertLeadByPhone(clientId, historyKey, { clientId, funnelId: defaultFunnelId, aiPaused: isPausing });
+          }
+          setAiPaused(historyKey, isPausing, clientId, device.id);
+          console.log(`[ext-messages] IA ${isPausing ? "PAUSADA" : "REATIVADA"} phone=${historyKey} (mensagem do gestor via WhatsApp Web)`);
+        }
+      }
+      processed++;
+      continue;
+    }
 
     // Reaproveita lead existente do mesmo telefone em outro funil quando já
     // existe histórico nesta MESMA conexão (mesmo padrão do webhook Evolution)
@@ -199,6 +239,13 @@ export async function POST(req: NextRequest) {
     );
 
     console.log(`[ext-messages] lead ${isNew ? "criado" : "atualizado"} phone=${historyKey} funnelId=${funnelId}`);
+
+    // Agente Kanban — roda sempre, independente da IA de atendimento (fire-and-forget).
+    // Mesmo padrão dos demais webhooks (uazapi/Evolution/WPPConnect): busca o
+    // histórico ANTES da mensagem recém-adicionada, pra não duplicar.
+    const _hExt = getHistory(historyKey, clientId, device.id);
+    const historyForKanban = _hExt.length > 1 ? _hExt.slice(0, -1) : [];
+    processKanbanActions(item.body, historyForKanban, clientId, historyKey, device.id).catch(() => {});
 
     maybeGenerateAiReply(device, item, funnelId, historyKey).catch((e) => {
       console.error("[whatsapp-extension/messages] erro ao gerar resposta da IA:", e);

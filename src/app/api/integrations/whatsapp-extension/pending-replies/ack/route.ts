@@ -3,6 +3,7 @@ import { getDeviceByToken } from "@/lib/extension-devices";
 import { getPendingReplies, markDelivered, markFailed } from "@/lib/extension-outbox";
 import { addMessage } from "@/lib/conversations";
 import { corsJson, corsOptionsResponse } from "@/lib/extension-cors";
+import { markSent } from "@/lib/wppconnect-sent";
 
 function deviceToken(req: NextRequest): string | null {
   const header = req.headers.get("authorization");
@@ -38,6 +39,11 @@ export async function POST(req: NextRequest) {
 
   if (body.ok) {
     markDelivered(owned.id);
+    // Registra o texto enviado ANTES de main-world.ts capturar o eco dessa
+    // mesma mensagem como fromMe=true (ver /api/integrations/whatsapp-extension/messages)
+    // — sem isso, o eco da própria IA seria confundido com resposta manual
+    // do gestor e pausaria a IA por engano.
+    markSent(owned.phone, owned.text);
     addMessage(owned.phone, { role: "assistant", content: owned.text, ts: Date.now() }, device.clientId, { connId: device.id });
   } else {
     markFailed(owned.id, body.error || "Erro desconhecido ao enviar");

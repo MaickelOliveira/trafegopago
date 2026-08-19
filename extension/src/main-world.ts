@@ -151,7 +151,7 @@ try {
         // resolução de LID (getPnLidEntry) é assíncrona.
         (async () => {
         try {
-          if (msg?.id?.fromMe) return; // mensagem enviada por nós, não pelo cliente/lead
+          const fromMe = msg?.id?.fromMe === true;
           const msgId = msg?.id?._serialized;
           if (msgId && alreadyProcessed(msgId)) return; // wa-js re-disparou uma mensagem já vista
           const fromJid = msg.from?._serialized ?? "";
@@ -196,6 +196,7 @@ try {
             contactName,
             body,
             ts,
+            fromMe,
             adId: msg.ctwaContext?.sourceId ?? null,
             adSourceUrl: msg.ctwaContext?.sourceUrl ?? null,
             adTitle: msg.ctwaContext?.title ?? null,

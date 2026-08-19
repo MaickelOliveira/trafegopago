@@ -34,6 +34,7 @@ export type IncomingMessage = {
   contactName: string | null;
   body: string;
   ts: number;
+  fromMe: boolean; // true quando foi o próprio gestor quem enviou (pelo WhatsApp Web), não o contato
   adId: string | null;
   adSourceUrl: string | null;
   adTitle: string | null;
