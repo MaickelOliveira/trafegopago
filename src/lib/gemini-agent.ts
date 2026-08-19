@@ -4,7 +4,8 @@ import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
 import { getSheetHeadersCached, appendRow } from "./google-sheets";
-import { getHistory, getAiContextResetAt } from "./conversations";
+import { getHistory, getAiContextResetAt, setAiPaused } from "./conversations";
+import { getLeadByPhone, updateLead, upsertLeadByPhone } from "./leads";
 import type { ChatMessage } from "./conversations";
 
 export type GeminiAction =
@@ -572,6 +573,32 @@ export async function runGeminiAgent(
   // Seleciona o agentConfig correto para esta conexão
   const agentCfg = getAgentConfigForConnection(client, connectionId);
   if (!agentCfg?.enabled) return { text: "", actions: [] };
+
+  // ── Modo só saudação ──────────────────────────────────────────────────
+  // Confiar numa instrução de prompt tipo "não responda mais nada depois da
+  // saudação" não é confiável — o modelo tende a gerar algum texto mesmo
+  // assim. Aqui a saudação é enviada de forma determinística por código na
+  // primeira mensagem da conversa (sem chamar o Gemini), e a conversa já é
+  // pausada em seguida — usa o MESMO mecanismo (aiPaused) que já é
+  // respeitado em todos os canais, então nenhuma mensagem seguinte gera
+  // resposta automática, garantido pelo código e não pelo comportamento do modelo.
+  if (agentCfg.greetingOnlyMode) {
+    if (history.length > 0) return { text: "", actions: [] };
+    const greeting = agentCfg.greetingOnlyMessage?.trim();
+    if (!greeting) {
+      console.warn(`[gemini-agent] greetingOnlyMode ligado sem greetingOnlyMessage — clientId=${clientId} connId=${connectionId ?? "none"}`);
+      return { text: "", actions: [] };
+    }
+    const existingLead = getLeadByPhone(clientId, phone);
+    if (existingLead) {
+      updateLead(existingLead.id, { aiPaused: true });
+    } else {
+      upsertLeadByPhone(clientId, phone, { clientId, aiPaused: true });
+    }
+    setAiPaused(phone, true, clientId, connectionId ?? null);
+    console.log(`[gemini-agent] greetingOnlyMode — saudação enviada e conversa pausada — clientId=${clientId} phone=${phone}`);
+    return { text: greeting, actions: [] };
+  }
 
   const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
   if (!apiKey) {

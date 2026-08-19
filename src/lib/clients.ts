@@ -85,6 +85,13 @@ export type AgentConfig = {
   aiAutoResumeEnabled?: boolean;
   aiAutoResumeMode?: "duration" | "midnight"; // "duration" = X horas depois de pausar; "midnight" = reativa tudo à meia-noite
   aiAutoResumeHours?: number;          // usado quando aiAutoResumeMode === "duration"
+
+  // ── Modo só saudação ── manda a saudação abaixo (por código, não pela IA —
+  // instruir o modelo a "não responder mais nada" via prompt não é confiável)
+  // na primeira mensagem de cada conversa nova, e já pausa a IA em seguida.
+  // Nenhuma mensagem depois disso recebe resposta automática.
+  greetingOnlyMode?: boolean;
+  greetingOnlyMessage?: string;
 };
 
 export type SheetTabMapping = {

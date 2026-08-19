@@ -73,6 +73,8 @@ type AgentCfg = {
   aiAutoResumeEnabled?: boolean;
   aiAutoResumeMode?: "duration" | "midnight";
   aiAutoResumeHours?: number;
+  greetingOnlyMode?: boolean;
+  greetingOnlyMessage?: string;
 };
 
 type SheetTab = { title: string; sheetId: number };
@@ -743,6 +745,46 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           <p className="text-xs text-slate-400 mt-1.5">
             Quando preenchido, a IA ignora todos os outros números. Deixe vazio para responder normalmente a todos.
           </p>
+        </div>
+      </div>
+
+      {/* Modo só saudação */}
+      <div className={`rounded-2xl border p-5 space-y-3 shadow-sm ${cfg.greetingOnlyMode ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-white"}`}>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!cfg.greetingOnlyMode}
+            onChange={(e) => setCfg((c) => ({ ...c, greetingOnlyMode: e.target.checked }))}
+            className="accent-sky-600"
+          />
+          <span className={`text-xs font-semibold uppercase tracking-wide ${cfg.greetingOnlyMode ? "text-sky-600" : "text-slate-500"}`}>
+            💤 Modo só saudação
+          </span>
+        </label>
+        <p className="text-xs text-slate-500">
+          Quando ligado, a IA manda a saudação abaixo (sem passar pela IA de verdade — é enviada direto) só na
+          primeira mensagem de cada conversa nova, e já pausa automaticamente essa conversa em seguida. Nenhuma
+          mensagem depois disso recebe resposta automática, até você reativar manualmente.
+        </p>
+        {cfg.greetingOnlyMode && (
+          <div className="flex items-start gap-2 rounded-lg bg-sky-100 border border-sky-300 px-3 py-2">
+            <span className="text-sky-700 text-sm font-semibold">⚠️ Ativo</span>
+            <span className="text-sky-700 text-xs leading-5">
+              A IA não vai atender de verdade nenhuma conversa nesta conexão — só a saudação inicial. Desmarque para voltar ao atendimento normal.
+            </span>
+          </div>
+        )}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Mensagem de saudação
+          </label>
+          <textarea
+            rows={4}
+            value={cfg.greetingOnlyMessage ?? ""}
+            onChange={(e) => setCfg((c) => ({ ...c, greetingOnlyMessage: e.target.value }))}
+            placeholder="Ex: Olá! Recebemos sua mensagem, obrigado pelo contato. Em breve nossa equipe vai te responder por aqui. 😊"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition resize-none"
+          />
         </div>
       </div>
 
