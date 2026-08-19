@@ -11,7 +11,11 @@ import { classifyLeadByHistory } from "@/lib/kanban-agent";
 // Classifica todos os leads (com conversa registrada) de UM cliente.
 // Compartilhado entre o modo "um cliente" e o modo "plataforma inteira".
 async function classifyClientLeads(client: Client): Promise<{ processed: number; moved: number; total: number; skipped?: string }> {
-  const geminiApiKey = getGeminiApiKey(client.agentConfig?.geminiApiKey ?? undefined);
+  // client.agentConfig é o campo legado (nível cliente inteiro) — a tela
+  // "Agente IA" salva por conexão em agentConfigs[], então cai aqui como
+  // fallback pra não ignorar a chave configurada quando não há campo legado.
+  const agentCfg = client.agentConfig ?? client.agentConfigs?.[0];
+  const geminiApiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
   if (!geminiApiKey) {
     return { processed: 0, moved: 0, total: 0, skipped: "Gemini API key não configurada" };
   }

@@ -799,7 +799,7 @@ export async function POST(
   if (clientId !== "sem-cliente") {
     const _h = getHistory(phone, clientId, connId);
     const historyForKanban = _h.length > 1 ? _h.slice(0, -1) : [];
-    processKanbanActions(text, historyForKanban, clientId, phone).catch(() => {});
+    processKanbanActions(text, historyForKanban, clientId, phone, connId).catch(() => {});
   }
 
   // ── Follow-ups: agenda quando lead responde, independente de IA ──────

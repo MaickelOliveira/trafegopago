@@ -317,7 +317,7 @@ export async function POST(req: NextRequest) {
     // para não duplicar (runKanbanAgent envia lastMessage separadamente)
     if (cid !== "sem-cliente") {
       const historyForKanban = history.length > 1 ? history.slice(0, -1) : [];
-      processKanbanActions(text, historyForKanban, cid, phone).catch((e) =>
+      processKanbanActions(text, historyForKanban, cid, phone, incomingConnectionId ?? undefined).catch((e) =>
         console.error("[kanban-agent]", e)
       );
     }

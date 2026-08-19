@@ -138,7 +138,7 @@ async function tryChargeMessage(
 
   // Movimenta o Kanban normalmente (mesmo efeito que uma mensagem real do
   // WhatsApp teria) — não bloqueia o restante do fluxo.
-  processKanbanActions(resumoTexto, historyAntes, clientId, phone).catch(() => {});
+  processKanbanActions(resumoTexto, historyAntes, clientId, phone, connId ?? undefined).catch(() => {});
 
   let valorTotal = 0;
   try {

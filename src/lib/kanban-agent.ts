@@ -5,7 +5,7 @@
  */
 
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { getClientById } from "./clients";
+import { getClientById, getAgentConfigForConnection } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
 import { updateLead, getLeadByPhone } from "./leads";
 import { getFunnelById } from "./funnels";
@@ -378,7 +378,8 @@ export async function processKanbanActions(
   lastMessage: string,
   history: ChatMessage[],
   clientId: string,
-  phone: string
+  phone: string,
+  connId?: string | null
 ): Promise<void> {
   const client = getClientById(clientId);
   // Agente desabilitado explicitamente pelo gestor
@@ -387,7 +388,13 @@ export async function processKanbanActions(
     return;
   }
 
-  const geminiApiKey = getGeminiApiKey(client?.agentConfig?.geminiApiKey ?? undefined);
+  // Mesma resolução por conexão que o agente de atendimento usa (ver
+  // runGeminiAgent em gemini-agent.ts) — antes este agente sempre lia o campo
+  // legado client.agentConfig (nível cliente inteiro), que a tela "Agente IA"
+  // não preenche mais (ela salva por conexão em agentConfigs[]), então a
+  // chave configurada por cliente nunca era usada aqui, só a chave geral.
+  const agentCfg = client ? getAgentConfigForConnection(client, connId ?? undefined) : undefined;
+  const geminiApiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
   if (!geminiApiKey) {
     console.error(`[kanban-agent] GEMINI_API_KEY não configurada — client=${clientId}`);
     return;

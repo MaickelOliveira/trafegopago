@@ -972,7 +972,7 @@ export async function POST(
 
     // Agente Kanban — atualiza CRM (fire-and-forget)
     if (cid !== "sem-cliente") {
-      processKanbanActions(text, history, cid, phone).catch(() => {});
+      processKanbanActions(text, history, cid, phone, uazConn?.id).catch(() => {});
     }
 
     // ── Agente IA ─────────────────────────────────────────────────────────
