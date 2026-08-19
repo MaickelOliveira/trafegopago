@@ -120,14 +120,15 @@ export function ReservaModal({
     setPessoas((prev) => [...prev, emptyPessoa()]);
   }
 
-  // Quem faz a reserva geralmente também é um dos hóspedes — espelha nome e
-  // CPF do responsável no primeiro hóspede pra não digitar duas vezes. Só em
-  // reserva NOVA (nunca sobrescreve edição de reserva existente) e só
-  // enquanto o hóspede 1 ainda estiver vazio ou acompanhando o responsável —
-  // se o operador já digitou um nome/CPF diferente ali de propósito (é outra
-  // pessoa), para de espelhar.
+  // Quem faz a reserva geralmente também é um dos hóspedes/participantes —
+  // espelha nome (e CPF, só em Hospedagem) do responsável na primeira pessoa
+  // pra não digitar duas vezes. Vale pros dois tipos (Hospedagem e Evento/Day
+  // Use). Só em reserva NOVA (nunca sobrescreve edição de reserva existente)
+  // e só enquanto a pessoa 1 ainda estiver vazia ou acompanhando o
+  // responsável — se o operador já digitou um nome/CPF diferente ali de
+  // propósito (é outra pessoa), para de espelhar.
   function updateResponsavelNome(value: string) {
-    if (isHospedagem && !initial) {
+    if (!initial) {
       setPessoas((prev) => {
         if (prev.length === 0) return prev;
         const first = prev[0];
