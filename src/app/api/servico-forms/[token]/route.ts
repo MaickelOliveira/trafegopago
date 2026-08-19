@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServicoFormByToken, submitServicoForm, type ServicoFormPessoa } from "@/lib/servico-forms";
-import { getConfig } from "@/lib/clients";
+import { getClientById, getConfig, getAgentConfigForConnection, type Client } from "@/lib/clients";
+import { getGeminiApiKey } from "@/lib/whatsapp-send";
+import { addMessage, getHistory, type ChatMessage } from "@/lib/conversations";
+import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
+import { processKanbanActions } from "@/lib/kanban-agent";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: Params }) {
 
   return NextResponse.json({
     clientName: form.clientName ?? null,
+    tipoLabel: form.tipoLabel ?? null,
     status: form.status,
     pessoas: form.pessoas ?? null,
   });
@@ -36,11 +41,36 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   const updated = submitServicoForm(token, pessoas);
   if (!updated) return NextResponse.json({ error: "Formulário não encontrado" }, { status: 404 });
 
-  // Retoma a conversa chamando o próprio webhook da conexão, como se fosse
-  // uma mensagem normal do cliente — a IA calcula o valor/Pix normalmente
-  // pelo fluxo conversacional já existente de Day Use/Almoço/eventos (este
-  // formulário não carrega preço, diferente do de hóspedes de hospedagem).
   const resumoTexto = formatPessoasParaConversa(pessoas);
+
+  // Grava a mensagem do cliente (dados do formulário) no histórico ANTES de
+  // extrair — a extração lê o histórico completo pra montar a reserva.
+  const historyAntes = getHistory(form.phone, form.clientId, form.connId ?? undefined);
+  addMessage(form.phone, { role: "user", content: resumoTexto, ts: Date.now() }, form.clientId, { connId: form.connId ?? undefined });
+  const historyDepois = getHistory(form.phone, form.clientId, form.connId ?? undefined);
+
+  // Movimenta o Kanban normalmente (mesmo efeito que uma mensagem real do
+  // WhatsApp teria) — não bloqueia o restante do fluxo.
+  processKanbanActions(resumoTexto, historyAntes, form.clientId, form.phone, form.connId ?? undefined).catch(() => {});
+
+  // ── Extração determinística da reserva (preferida) ───────────────────────
+  // Diferente do formulário de hóspedes de Hospedagem (que também cobra o Pix
+  // deterministicamente), aqui não há preço fixo pra calcular — mas a reserva
+  // em si PRECISA ser escrita sem depender da IA conversacional notar a
+  // mensagem reinjetada e agir sozinha: isso já falhou na prática (dois
+  // preenchimentos que não geraram reserva nenhuma, sem nenhum registro).
+  // Com o tipo do serviço já conhecido (escolhido ao gerar o link, ou o único
+  // tipo "evento" configurado), a extração fica determinística — não depende
+  // da IA adivinhar qual serviço bate com o assunto da conversa.
+  try {
+    await tryCreateReserva(form.clientId, form, historyDepois);
+  } catch (e) {
+    console.error("[servico-forms] erro ao extrair reserva:", e instanceof Error ? e.message : e);
+  }
+
+  // ── Fluxo conversacional — retoma a conversa pra IA responder naturalmente
+  // ao cliente (valor, Pix, próximos passos), como se fosse uma mensagem
+  // normal chegando pelo WhatsApp.
   const appBaseUrl = getConfig().appBaseUrl?.replace(/\/$/, "");
   if (appBaseUrl && form.connId) {
     const { url, body } = buildResumePayload(appBaseUrl, form.connId, form.connType, form.phone, resumoTexto);
@@ -54,6 +84,48 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   }
 
   return NextResponse.json({ ok: true });
+}
+
+async function tryCreateReserva(
+  clientId: string,
+  form: { connId?: string | null; tipoSlug?: string; phone: string },
+  messages: ChatMessage[],
+): Promise<void> {
+  const client: Client | undefined = getClientById(clientId);
+  if (!client?.enabledSystems?.includes("pousada") || !client.pousadaTipos?.length) {
+    console.log(`[servico-forms] tryCreateReserva: pousada não habilitada/sem tipos — clientId=${clientId}`);
+    return;
+  }
+
+  const agentCfg = getAgentConfigForConnection(client, form.connId ?? undefined);
+  const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
+  if (!apiKey) {
+    console.log(`[servico-forms] tryCreateReserva: sem apiKey Gemini — clientId=${clientId} connId=${form.connId}`);
+    return;
+  }
+
+  // Com tipo escolhido ao gerar o link, restringe a extração a esse único
+  // tipo — elimina qualquer ambiguidade. Sem tipo (ex: link gerado pela IA
+  // via marcador, hoje sem seleção de serviço), cai pra todos os tipos
+  // "evento" configurados, mesma lista que o restante do sistema já usa.
+  const tiposParaExtracao = form.tipoSlug
+    ? client.pousadaTipos.filter((t) => t.slug === form.tipoSlug)
+    : client.pousadaTipos.filter((t) => (t.categoria ?? "evento") !== "hospedagem");
+  if (!tiposParaExtracao.length) {
+    console.log(`[servico-forms] tryCreateReserva: nenhum tipo elegível — clientId=${clientId} tipoSlug=${form.tipoSlug}`);
+    return;
+  }
+
+  const affected = await extractAndWriteToPousada({
+    apiKey,
+    clientId,
+    tipos: tiposParaExtracao,
+    totalQuartos: client.pousadaTotalQuartos ?? 0,
+    messages,
+    phone: form.phone,
+    motivo: "DADOS RECEBIDOS: formulário de serviços preenchido",
+  });
+  console.log(`[servico-forms] tryCreateReserva OK — clientId=${clientId} reservasAfetadas=${affected.length}`);
 }
 
 function buildResumePayload(

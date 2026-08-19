@@ -12,10 +12,11 @@ export const dynamic = "force-dynamic";
 // está pausada e o atendente está conduzindo a reserva de Day Use/Almoço/
 // outro serviço na mão.
 export async function POST(req: NextRequest) {
-  const { phone, clientId, connId } = (await req.json()) as {
+  const { phone, clientId, connId, tipoSlug } = (await req.json()) as {
     phone?: string;
     clientId?: string;
     connId?: string | null;
+    tipoSlug?: string;
   };
 
   if (!phone || !clientId) {
@@ -76,12 +77,15 @@ export async function POST(req: NextRequest) {
   }
 
   const client = getClientById(clientId);
+  const tipoInfo = tipoSlug ? client?.pousadaTipos?.find((t) => t.slug === tipoSlug) : undefined;
   const form = createServicoForm({
     clientId,
     clientName: client?.name,
     phone: cleanPhone,
     connId: resolvedConnId,
     connType,
+    tipoSlug: tipoInfo?.slug,
+    tipoLabel: tipoInfo?.label,
   });
 
   return NextResponse.json({ ok: true, url: `${appBaseUrl}/formulario-servico/${form.id}` });

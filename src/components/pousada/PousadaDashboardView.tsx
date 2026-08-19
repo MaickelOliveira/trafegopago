@@ -99,6 +99,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   const [guestFormCopied, setGuestFormCopied] = useState(false);
   const [servicoFormPicker, setServicoFormPicker] = useState(false);
   const [servicoFormPhone, setServicoFormPhone] = useState("");
+  const [servicoFormTipo, setServicoFormTipo] = useState("");
   const [servicoFormGenerating, setServicoFormGenerating] = useState(false);
   const [servicoFormUrl, setServicoFormUrl] = useState<string | null>(null);
   const [servicoFormError, setServicoFormError] = useState<string | null>(null);
@@ -222,7 +223,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   // (nome, telefone, idade) de Day Use/Almoço/outros serviços cadastrados.
   async function gerarServicoFormLink() {
     const digits = servicoFormPhone.replace(/\D/g, "");
-    if (!digits) return;
+    if (!digits || !servicoFormTipo) return;
     setServicoFormGenerating(true);
     setServicoFormError(null);
     setServicoFormUrl(null);
@@ -230,7 +231,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
       const res = await fetch("/api/whatsapp/inbox/servico-form-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: digits, clientId }),
+        body: JSON.stringify({ phone: digits, clientId, tipoSlug: servicoFormTipo }),
       });
       const data = await res.json().catch(() => ({ ok: false }));
       if (!res.ok || !data.ok) {
@@ -248,6 +249,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   function fecharServicoFormPicker() {
     setServicoFormPicker(false);
     setServicoFormPhone("");
+    setServicoFormTipo("");
     setServicoFormUrl(null);
     setServicoFormError(null);
     setServicoFormCopied(false);
@@ -556,6 +558,17 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
 
             {!servicoFormUrl ? (
               <>
+                <label className="text-xs font-medium text-slate-600 block mb-1">Serviço</label>
+                <select
+                  value={servicoFormTipo}
+                  onChange={(e) => setServicoFormTipo(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 bg-white mb-3"
+                >
+                  <option value="">Selecione o serviço...</option>
+                  {tipos.filter((t) => (t.categoria ?? "evento") !== "hospedagem").map((t) => (
+                    <option key={t.slug} value={t.slug}>{t.label}</option>
+                  ))}
+                </select>
                 <label className="text-xs font-medium text-slate-600 block mb-1">Telefone do cliente (WhatsApp)</label>
                 <input
                   value={servicoFormPhone}
@@ -566,7 +579,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
                 {servicoFormError && <p className="text-xs text-red-600 mb-3">{servicoFormError}</p>}
                 <button
                   onClick={gerarServicoFormLink}
-                  disabled={servicoFormGenerating || !servicoFormPhone.replace(/\D/g, "")}
+                  disabled={servicoFormGenerating || !servicoFormPhone.replace(/\D/g, "") || !servicoFormTipo}
                   className="w-full rounded-lg bg-amber-600 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
                 >
                   {servicoFormGenerating ? "Gerando..." : "Gerar link"}

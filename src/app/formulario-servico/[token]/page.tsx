@@ -28,12 +28,14 @@ export default function ServicoFormPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [tipoLabel, setTipoLabel] = useState("");
 
   useEffect(() => {
     fetch(`/api/servico-forms/${token}`)
       .then((r) => r.ok ? r.json() : Promise.reject(r))
       .then((data) => {
         setClientName(data.clientName ?? "");
+        setTipoLabel(data.tipoLabel ?? "");
         if (data.status === "submitted") setSubmitted(true);
       })
       .catch(() => setError("Não foi possível carregar este formulário. Verifique se o link está correto."))
@@ -123,6 +125,9 @@ export default function ServicoFormPage() {
         <div className="text-center space-y-1">
           <p className="text-3xl">🌿</p>
           <h1 className="text-xl font-semibold text-slate-900">{clientName || "Ficha de Participantes"}</h1>
+          {tipoLabel && (
+            <p className="text-sm font-medium text-emerald-700">{tipoLabel}</p>
+          )}
           <p className="text-sm text-slate-500">
             Preencha nome, telefone e idade de cada pessoa que vai participar para confirmarmos sua reserva.
           </p>

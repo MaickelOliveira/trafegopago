@@ -27,6 +27,12 @@ export type ServicoForm = {
   phone: string; // telefone do contato no WhatsApp (dígitos)
   connId?: string | null;
   connType?: ServicoFormConnType | null;
+  // Serviço (slug de client.pousadaTipos) escolhido ao gerar o link — sem
+  // isso, a extração da reserva ficava dependendo da IA conversacional
+  // adivinhar o tipo certo pelo contexto, e podia simplesmente não escrever
+  // reserva nenhuma. Com o tipo fixado aqui, a extração fica determinística.
+  tipoSlug?: string;
+  tipoLabel?: string;
   status: ServicoFormStatus;
   pessoas?: ServicoFormPessoa[];
   createdAt: string;
