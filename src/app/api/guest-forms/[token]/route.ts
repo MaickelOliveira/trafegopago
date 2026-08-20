@@ -4,7 +4,7 @@ import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/cli
 import { getGeminiApiKey, sendMessage } from "@/lib/whatsapp-send";
 import { addMessage, getHistory } from "@/lib/conversations";
 import { getLeadByPhone } from "@/lib/leads";
-import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
+import { extractAndWriteToPousada, alertManagerFormNotProcessed } from "@/lib/pousada-extractor";
 import { processKanbanActions } from "@/lib/kanban-agent";
 
 export const dynamic = "force-dynamic";
@@ -112,17 +112,7 @@ async function tryChargeMessage(
     return false;
   }
 
-  // Lead pausado (atendente já assumiu manualmente) — não manda cobrança
-  // automática por cima, deixa o humano conduzir. Não conta como "não
-  // conseguiu enviar" pro efeito de fallback: aqui a decisão certa É não
-  // mandar nada automaticamente, então retorna true pra NÃO cair no fluxo
-  // antigo (que tentaria acionar a IA, também indevido nesse caso).
   const lead = getLeadByPhone(clientId, phone);
-  if (lead?.aiPaused) {
-    console.log(`[guest-forms] tryChargeMessage: lead com IA pausada — pulando cobrança automática — clientId=${clientId} phone=${phone}`);
-    return true;
-  }
-
   const agentCfg = getAgentConfigForConnection(client, connId);
   const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
   if (!apiKey) {
@@ -158,11 +148,29 @@ async function tryChargeMessage(
   }
 
   if (!valorTotal) {
-    // Não conseguiu determinar o valor — melhor deixar a IA conversacional
-    // tentar (ela pode reler a conversa e achar o valor já dito antes) do que
-    // mandar uma cobrança sem número nenhum.
-    console.warn(`[guest-forms] valorTotal não encontrado — caindo no fluxo antigo (IA) — clientId=${clientId} phone=${phone}`);
+    // Não conseguiu determinar o valor (extração falhou ou não achou nada
+    // reconhecível — ex: conversa longa/negociada manualmente pelo atendente,
+    // com valores fora da tabela padrão). Em vez de só cair silenciosamente
+    // no fluxo antigo da IA — que JÁ falhou nesse mesmo cenário na prática
+    // (formulário preenchido, nada virou reserva, ninguém percebeu até o
+    // hóspede reclamar) — avisa o gestor diretamente pra verificar na mão.
+    console.warn(`[guest-forms] valorTotal não encontrado — alertando gestor e caindo no fluxo antigo (IA) — clientId=${clientId} phone=${phone}`);
+    await alertManagerFormNotProcessed(client, connId, phone).catch((e) =>
+      console.error("[guest-forms] erro ao alertar gestor sobre falha na extração:", e)
+    );
     return false;
+  }
+
+  // IA pausada (atendente já assumiu a conversa manualmente): a reserva já
+  // foi gravada acima (extractAndWriteToPousada roda sempre, pause ou não —
+  // gravar dado é diferente de "a IA atender") — só não manda a cobrança
+  // automática por cima do que o humano está conduzindo. Isso já causou
+  // reserva perdida na prática (Vitalli, 20/08/2026): o pause vindo de uma
+  // resposta manual ANTES do formulário chegar fazia a extração inteira ser
+  // pulada, não só o envio da cobrança.
+  if (lead?.aiPaused) {
+    console.log(`[guest-forms] tryChargeMessage: lead com IA pausada — reserva já gravada, pulando cobrança automática — clientId=${clientId} phone=${phone}`);
+    return true;
   }
 
   const entrada = Math.round(valorTotal * 0.5 * 100) / 100;

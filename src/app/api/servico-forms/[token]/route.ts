@@ -3,7 +3,7 @@ import { getServicoFormByToken, submitServicoForm, type ServicoFormPessoa } from
 import { getClientById, getConfig, getAgentConfigForConnection, type Client } from "@/lib/clients";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { addMessage, getHistory, type ChatMessage } from "@/lib/conversations";
-import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
+import { extractAndWriteToPousada, alertManagerFormNotProcessed } from "@/lib/pousada-extractor";
 import { processKanbanActions } from "@/lib/kanban-agent";
 
 export const dynamic = "force-dynamic";
@@ -116,16 +116,32 @@ async function tryCreateReserva(
     return;
   }
 
-  const affected = await extractAndWriteToPousada({
-    apiKey,
-    clientId,
-    tipos: tiposParaExtracao,
-    totalQuartos: client.pousadaTotalQuartos ?? 0,
-    messages,
-    phone: form.phone,
-    motivo: "DADOS RECEBIDOS: formulário de serviços preenchido",
-  });
-  console.log(`[servico-forms] tryCreateReserva OK — clientId=${clientId} reservasAfetadas=${affected.length}`);
+  let affectedCount = 0;
+  try {
+    const affected = await extractAndWriteToPousada({
+      apiKey,
+      clientId,
+      tipos: tiposParaExtracao,
+      totalQuartos: client.pousadaTotalQuartos ?? 0,
+      messages,
+      phone: form.phone,
+      motivo: "DADOS RECEBIDOS: formulário de serviços preenchido",
+    });
+    affectedCount = affected.length;
+    console.log(`[servico-forms] tryCreateReserva OK — clientId=${clientId} reservasAfetadas=${affectedCount}`);
+  } catch (e) {
+    console.error("[servico-forms] erro ao extrair reserva:", e instanceof Error ? e.message : e);
+  }
+
+  if (affectedCount === 0) {
+    // Mesma rede de segurança do formulário de hóspedes: extração falhou ou
+    // rodou sem achar/gerar nenhuma reserva reconhecível — avisa o gestor em
+    // vez de deixar isso passar em silêncio.
+    console.warn(`[servico-forms] tryCreateReserva não gerou nenhuma reserva — alertando gestor — clientId=${clientId}`);
+    await alertManagerFormNotProcessed(client, form.connId, form.phone).catch((e) =>
+      console.error("[servico-forms] erro ao alertar gestor sobre falha na extração:", e)
+    );
+  }
 }
 
 function buildResumePayload(

@@ -2,6 +2,35 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ChatMessage } from "./conversations";
 import type { PousadaTipo, Pessoa, Reserva, StatusReserva } from "./pousada-types";
 import { createReserva, updateReserva, findReservaByPhone, atribuirQuartoLivre } from "./pousada";
+import { getAgentConfigForConnection, type Client } from "./clients";
+import { sendMessage } from "./whatsapp-send";
+
+/** Avisa o gestor (mesmos destinatários do enviar_resumo — agentCfg.avisos ou
+ *  summaryPhone legado) quando um formulário (hóspedes ou serviços) foi
+ *  preenchido mas a extração automática não conseguiu gerar/reconhecer
+ *  nenhuma reserva — sem isso, essa falha só era percebida quando o hóspede
+ *  reclamava de nada ter acontecido (já aconteceu na prática, Vitalli). */
+export async function alertManagerFormNotProcessed(
+  client: Client,
+  connId: string | null | undefined,
+  guestPhone: string,
+): Promise<void> {
+  const agentCfg = getAgentConfigForConnection(client, connId);
+  const recipients = agentCfg?.avisos?.length
+    ? agentCfg.avisos
+    : agentCfg?.summaryPhone
+      ? [{ id: "legacy", label: "Gestor", value: agentCfg.summaryPhone, type: "phone" as const }]
+      : [];
+  if (recipients.length === 0) return;
+
+  const waLink = `https://wa.me/${guestPhone.replace(/\D/g, "")}`;
+  const msg =
+    `⚠️ *Formulário preenchido, mas não deu pra criar a reserva automaticamente*\n\n` +
+    `📞 *Contato:* ${waLink}\n\n` +
+    `Os dados do formulário estão salvos, só não geraram reserva sozinhos (provavelmente a conversa tem negociação/detalhes que a extração automática não reconheceu). Verifique manualmente em Pousada → Reservas.`;
+
+  await Promise.all(recipients.map((r) => sendMessage(r.value, msg, client.id, connId ?? undefined)));
+}
 
 function parseMoney(val: string | number | undefined): number {
   if (typeof val === "number") return val;
