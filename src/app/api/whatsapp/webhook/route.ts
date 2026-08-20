@@ -7,7 +7,7 @@ import { sendMessage as sendMessageUnified } from "@/lib/whatsapp-send";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
 import { processKanbanActions } from "@/lib/kanban-agent";
-import { runGeminiAgent } from "@/lib/gemini-agent";
+import { runGeminiAgent, isGreetingOnlyActive } from "@/lib/gemini-agent";
 import { startFollowUpSequence, restartFollowUpSequence } from "@/lib/followups";
 import { upsertPending, getPendingForPhone, getDuePending, markDone, markProcessing, cancelPendingForPhone } from "@/lib/pending-responses";
 import { sendCapiEvent } from "@/lib/meta-capi";
@@ -322,9 +322,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verifica se IA está pausada para esta conversa específica
+    // Verifica se IA está pausada para esta conversa específica — a saudação
+    // determinística (modo só saudação) ignora esse bloqueio, já que não é
+    // a IA "atendendo" de verdade por cima de um humano.
     const currentLead = getLeadByPhone(cid, phone);
-    if (currentLead?.aiPaused) {
+    if (currentLead?.aiPaused && !isGreetingOnlyActive(cid, incomingConnectionId)) {
       return NextResponse.json({ ok: true });
     }
 
@@ -373,7 +375,8 @@ export async function POST(req: NextRequest) {
             console.log(`[webhook] Gemini respondeu (${geminiText?.length ?? 0} chars): ${geminiText?.slice(0, 80)}`);
             // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
             // enquanto o Gemini processava — não envia a resposta da IA por cima.
-            if (getLeadByPhone(_cid, _phone)?.aiPaused) {
+            // Saudação determinística ignora esse bloqueio (ver isGreetingOnlyActive).
+            if (getLeadByPhone(_cid, _phone)?.aiPaused && !isGreetingOnlyActive(_cid, _connectionId)) {
               console.log(`[webhook] IA pausada durante processamento — descartando resposta para ${_phone}`);
               return;
             }
@@ -409,7 +412,8 @@ export async function POST(req: NextRequest) {
 
     // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
     // enquanto o Gemini processava — não envia a resposta da IA por cima.
-    if (cid !== "sem-cliente" && getLeadByPhone(cid, phone)?.aiPaused) {
+    // Saudação determinística ignora esse bloqueio (ver isGreetingOnlyActive).
+    if (cid !== "sem-cliente" && getLeadByPhone(cid, phone)?.aiPaused && !isGreetingOnlyActive(cid, connectionId)) {
       return NextResponse.json({ ok: true });
     }
 

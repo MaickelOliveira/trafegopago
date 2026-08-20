@@ -9,7 +9,7 @@ import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused, sanitizeContactName, updateLastMessage, ensureBrCountryCode } from "@/lib/conversations";
 import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
-import { runGeminiAgent } from "@/lib/gemini-agent";
+import { runGeminiAgent, isGreetingOnlyActive } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import { sendText as wppSendText, sendMedia as wppSendMedia, sendMediaFromBase64, resolveContactPhone, getContactName, startTyping, stopTyping, markUnseen } from "@/lib/wppconnect-api";
 import { setCachedQr } from "@/lib/wppconnect-qr";
@@ -818,9 +818,9 @@ export async function POST(
     console.log(`[WPP-DIAG] ❌ follow-up NÃO agendado — clientId=sem-cliente`);
   }
 
-  // ── Verifica IA ──
+  // ── Verifica IA ── (saudação determinística ignora o pause — ver isGreetingOnlyActive)
   const currentLead = getLeadByPhone(clientId, phone, funnelId);
-  if (currentLead?.aiPaused) {
+  if (currentLead?.aiPaused && !isGreetingOnlyActive(clientId, connId)) {
     console.log(`[WPPConnect IA] phone=${phone} clientId=${clientId} — IA pausada (aiPaused=true)`);
     return NextResponse.json({ ok: true });
   }
@@ -980,7 +980,8 @@ export async function POST(
           console.log(`[WPPConnect IA batch] runGeminiAgent concluído — phone=${_phone} geminiTextLen=${geminiText?.length ?? 0} reply="${(geminiText ?? "").slice(0, 100)}"`);
           // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
           // enquanto o Gemini processava — não envia a resposta da IA por cima.
-          if (getLeadByPhone(_clientId, _phone, funnelId)?.aiPaused) {
+          // Saudação determinística ignora esse bloqueio (ver isGreetingOnlyActive).
+          if (getLeadByPhone(_clientId, _phone, funnelId)?.aiPaused && !isGreetingOnlyActive(_clientId, connId)) {
             console.log(`[WPPConnect IA batch] IA pausada durante processamento — descartando resposta para ${_phone}`);
             clearInterval(typingInterval);
             stopTyping(sessionSnap, tokenSnap, _phone).catch(() => {});
@@ -1047,7 +1048,8 @@ export async function POST(
     console.log(`[WPPConnect IA] runGeminiAgent concluído — phone=${phone} geminiTextLen=${geminiText?.length ?? 0} actions=${actions.length} reply="${(geminiText ?? "").slice(0, 100)}"`);
     // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
     // enquanto o Gemini processava — não envia a resposta da IA por cima.
-    if (getLeadByPhone(clientId, phone, funnelId)?.aiPaused) {
+    // Saudação determinística ignora esse bloqueio (ver isGreetingOnlyActive).
+    if (getLeadByPhone(clientId, phone, funnelId)?.aiPaused && !isGreetingOnlyActive(clientId, connId)) {
       console.log(`[WPPConnect IA] IA pausada durante processamento imediato — descartando resposta para ${phone}`);
       clearInterval(typingInterval);
       stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});

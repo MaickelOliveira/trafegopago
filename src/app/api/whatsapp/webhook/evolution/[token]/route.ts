@@ -9,7 +9,7 @@ import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused, sanitizeContactName, updateLastMessage, ensureBrCountryCode } from "@/lib/conversations";
 import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/wppconnect-sent";
 import { splitMessage } from "@/lib/uazapi";
-import { runGeminiAgent } from "@/lib/gemini-agent";
+import { runGeminiAgent, isGreetingOnlyActive } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import {
   sendText as evoSendText,
@@ -813,9 +813,9 @@ export async function POST(
     }
   }
 
-  // ── Verifica IA ──
+  // ── Verifica IA ── (saudação determinística ignora o pause — ver isGreetingOnlyActive)
   const currentLead = getLeadByPhone(clientId, phone, funnelId);
-  if (currentLead?.aiPaused) {
+  if (currentLead?.aiPaused && !isGreetingOnlyActive(clientId, connId)) {
     console.log(`[Evolution IA] phone=${phone} clientId=${clientId} — IA pausada (aiPaused=true)`);
     return NextResponse.json({ ok: true });
   }
@@ -928,7 +928,7 @@ export async function POST(
       runGeminiAgent(combined, h, _clientId, _phone, connId)
         .then(async ({ text: geminiText, actions }) => {
           markDone(batch.id);
-          if (getLeadByPhone(_clientId, _phone, funnelId)?.aiPaused) {
+          if (getLeadByPhone(_clientId, _phone, funnelId)?.aiPaused && !isGreetingOnlyActive(_clientId, connId)) {
             console.log(`[Evolution IA batch] IA pausada durante processamento — descartando resposta para ${_phone}`);
             clearInterval(typingInterval);
             stopTyping(instanceSnap, apiKeySnap, _phone).catch(() => {});
@@ -990,7 +990,7 @@ export async function POST(
   cancelPendingForPhone(clientId, phone);
   try {
     const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId);
-    if (getLeadByPhone(clientId, phone, funnelId)?.aiPaused) {
+    if (getLeadByPhone(clientId, phone, funnelId)?.aiPaused && !isGreetingOnlyActive(clientId, connId)) {
       console.log(`[Evolution IA] IA pausada durante processamento imediato — descartando resposta para ${phone}`);
       clearInterval(typingInterval);
       stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});

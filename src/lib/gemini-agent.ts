@@ -558,6 +558,20 @@ ${resumoRule}`
   return `${base}${mediaPart}${kbPart}${sheetPart}${resumoPart}`;
 }
 
+/** A saudação determinística (modo só saudação) não é "a IA atendendo" — é só
+ *  um script fixo — então não deve ficar refém do aiPaused de cada lead
+ *  (que existe pra impedir a IA de responder por cima de um atendente
+ *  humano numa conversa de verdade). Cada webhook chama isso ANTES de
+ *  decidir se aplica o bloqueio de aiPaused, tanto na checagem antecipada
+ *  (antes de chamar runGeminiAgent) quanto na rechecagem depois que a
+ *  resposta volta. */
+export function isGreetingOnlyActive(clientId: string, connectionId?: string | null): boolean {
+  const client = getClientById(clientId);
+  if (!client) return false;
+  const agentCfg = getAgentConfigForConnection(client, connectionId);
+  return !!agentCfg?.enabled && !!agentCfg?.greetingOnlyMode;
+}
+
 export async function runGeminiAgent(
   userMessage: string,
   history: ChatMessage[],
