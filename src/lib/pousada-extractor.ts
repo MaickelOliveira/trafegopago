@@ -135,8 +135,14 @@ export async function extractAndWriteToPousada(opts: {
   // conhecidos, em vez de não criar nada — data cai no fallback de "hoje" já
   // existente abaixo, sinalizando visualmente que precisa de correção manual.
   knownPessoas?: Pessoa[];
+  // Data informada diretamente pelo cliente (ex: campo de data no formulário
+  // de hóspedes/serviços) — diferente de knownPessoas (só usada no fallback),
+  // esta SEMPRE tem prioridade sobre o que a IA extrai da conversa: é o
+  // próprio cliente dizendo a data, mais confiável que a IA tentar adivinhar
+  // (que podia nem achar data nenhuma em texto, ex: combinada só por áudio).
+  knownData?: string; // ISO date
 }): Promise<Reserva[]> {
-  const { apiKey, clientId, tipos, totalQuartos = 0, messages, phone, motivo, knownPessoas } = opts;
+  const { apiKey, clientId, tipos, totalQuartos = 0, messages, phone, motivo, knownPessoas, knownData } = opts;
   // Reservas criadas/atualizadas nesta chamada — devolvidas pro chamador poder
   // ler valorTotal/tipo direto (ex: montar a mensagem de cobrança
   // deterministicamente após o formulário de hóspedes, sem depender da IA
@@ -304,7 +310,7 @@ export async function extractAndWriteToPousada(opts: {
         // "data" resolvida (com fallback pra hoje) — usada tanto pra localizar
         // uma reserva existente quanto pra criar/atualizar, garantindo que os
         // dois usem exatamente a mesma referência.
-        const dataReserva = (row.data as string | undefined) ?? new Date().toISOString().slice(0, 10);
+        const dataReserva = knownData ?? (row.data as string | undefined) ?? new Date().toISOString().slice(0, 10);
 
         // Evita duplicar quando o agente confirma "dados recebidos" mais de
         // uma vez pra MESMA reserva (mesmo telefone, tipo E data). Se o

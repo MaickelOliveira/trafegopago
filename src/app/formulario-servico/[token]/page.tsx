@@ -24,6 +24,7 @@ export default function ServicoFormPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
+  const [dataServico, setDataServico] = useState("");
   const [participantes, setParticipantes] = useState<Participante[]>([emptyParticipante()]);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -55,6 +56,10 @@ export default function ServicoFormPage() {
   }
 
   async function handleSubmit() {
+    if (!dataServico) {
+      setSubmitError("Informe a data antes de enviar.");
+      return;
+    }
     const missing = participantes.some((p) => !p.nome.trim() || !p.telefone.trim() || !p.idade.trim());
     if (missing) {
       setSubmitError("Preencha nome, telefone e idade de cada participante antes de enviar.");
@@ -71,7 +76,7 @@ export default function ServicoFormPage() {
       const res = await fetch(`/api/servico-forms/${token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pessoas }),
+        body: JSON.stringify({ pessoas, data: dataServico }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -131,6 +136,18 @@ export default function ServicoFormPage() {
           <p className="text-sm text-slate-500">
             Preencha nome, telefone e idade de cada pessoa que vai participar para confirmarmos sua reserva.
           </p>
+        </div>
+
+        <div className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+          <label className="text-xs font-medium text-slate-600 block mb-1">
+            Data *
+          </label>
+          <input
+            type="date"
+            value={dataServico}
+            onChange={(e) => setDataServico(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-400"
+          />
         </div>
 
         <div className="space-y-4">

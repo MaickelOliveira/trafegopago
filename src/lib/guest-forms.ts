@@ -35,6 +35,10 @@ export type GuestForm = {
   connType?: GuestFormConnType | null;
   status: GuestFormStatus;
   pessoas?: GuestFormPessoa[];
+  // Data de check-in informada pelo próprio hóspede no formulário — fonte de
+  // verdade preferida sobre o que a IA tentaria adivinhar da conversa (que
+  // podia nem ter uma data em texto, ex: combinada só por áudio/ligação).
+  dataReserva?: string; // ISO date
   createdAt: string;
   submittedAt?: string;
 };
@@ -73,7 +77,7 @@ export function getGuestFormByToken(token: string): GuestForm | undefined {
   return load().find((f) => f.id === token);
 }
 
-export function submitGuestForm(token: string, pessoas: GuestFormPessoa[]): GuestForm | null {
+export function submitGuestForm(token: string, pessoas: GuestFormPessoa[], dataReserva?: string): GuestForm | null {
   const forms = load();
   const idx = forms.findIndex((f) => f.id === token);
   if (idx === -1) return null;
@@ -81,6 +85,7 @@ export function submitGuestForm(token: string, pessoas: GuestFormPessoa[]): Gues
     ...forms[idx],
     status: "submitted",
     pessoas,
+    dataReserva,
     submittedAt: new Date().toISOString(),
   };
   save(forms);

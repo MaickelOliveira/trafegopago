@@ -32,17 +32,20 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   const form = getServicoFormByToken(token);
   if (!form) return NextResponse.json({ error: "Formulário não encontrado" }, { status: 404 });
 
-  const { pessoas } = await req.json() as { pessoas?: ServicoFormPessoa[] };
+  const { pessoas, data } = await req.json() as { pessoas?: ServicoFormPessoa[]; data?: string };
   const isComplete = (p: ServicoFormPessoa) =>
     !!p.nome?.trim() && !!p.telefone?.trim() && typeof p.idade === "number" && !isNaN(p.idade);
   if (!Array.isArray(pessoas) || pessoas.length === 0 || pessoas.some((p) => !isComplete(p))) {
     return NextResponse.json({ error: "Preencha nome, telefone e idade de cada participante" }, { status: 400 });
   }
+  if (!data?.trim()) {
+    return NextResponse.json({ error: "Informe a data" }, { status: 400 });
+  }
 
-  const updated = submitServicoForm(token, pessoas);
+  const updated = submitServicoForm(token, pessoas, data);
   if (!updated) return NextResponse.json({ error: "Formulário não encontrado" }, { status: 404 });
 
-  const resumoTexto = formatPessoasParaConversa(pessoas);
+  const resumoTexto = formatPessoasParaConversa(pessoas, data);
 
   // Grava a mensagem do cliente (dados do formulário) no histórico ANTES de
   // extrair — a extração lê o histórico completo pra montar a reserva.
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   // tipo "evento" configurado), a extração fica determinística — não depende
   // da IA adivinhar qual serviço bate com o assunto da conversa.
   try {
-    await tryCreateReserva(form.clientId, form, historyDepois, pessoas);
+    await tryCreateReserva(form.clientId, form, historyDepois, pessoas, data);
   } catch (e) {
     console.error("[servico-forms] erro ao extrair reserva:", e instanceof Error ? e.message : e);
   }
@@ -92,6 +95,7 @@ async function tryCreateReserva(
   form: { connId?: string | null; tipoSlug?: string; phone: string },
   messages: ChatMessage[],
   pessoasFormulario: ServicoFormPessoa[],
+  dataFormulario: string,
 ): Promise<void> {
   const client: Client | undefined = getClientById(clientId);
   if (!client?.enabledSystems?.includes("pousada") || !client.pousadaTipos?.length) {
@@ -141,6 +145,7 @@ async function tryCreateReserva(
       phone: form.phone,
       motivo: "DADOS RECEBIDOS: formulário de serviços preenchido",
       knownPessoas,
+      knownData: dataFormulario,
     });
     affectedCount = affected.length;
     console.log(`[servico-forms] tryCreateReserva OK — clientId=${clientId} reservasAfetadas=${affectedCount}`);
@@ -187,7 +192,7 @@ function buildResumePayload(
   };
 }
 
-function formatPessoasParaConversa(pessoas: ServicoFormPessoa[]): string {
+function formatPessoasParaConversa(pessoas: ServicoFormPessoa[], data: string): string {
   const blocos = pessoas.map((p, i) =>
     [
       `${i + 1}. Nome completo: ${p.nome}`,
@@ -195,5 +200,6 @@ function formatPessoasParaConversa(pessoas: ServicoFormPessoa[]): string {
       `Idade: ${p.idade}`,
     ].join("\n")
   );
-  return `Preenchi o formulário de participantes com os seguintes dados:\n\n${blocos.join("\n\n")}`;
+  const dataFormatada = new Date(data + "T12:00:00").toLocaleDateString("pt-BR");
+  return `Preenchi o formulário de participantes com os seguintes dados:\n\nData: ${dataFormatada}\n\n${blocos.join("\n\n")}`;
 }

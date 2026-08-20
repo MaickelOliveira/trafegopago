@@ -35,6 +35,9 @@ export type ServicoForm = {
   tipoLabel?: string;
   status: ServicoFormStatus;
   pessoas?: ServicoFormPessoa[];
+  // Data do serviço informada pelo próprio participante no formulário — fonte
+  // de verdade preferida sobre o que a IA tentaria adivinhar da conversa.
+  dataReserva?: string; // ISO date
   createdAt: string;
   submittedAt?: string;
 };
@@ -73,7 +76,7 @@ export function getServicoFormByToken(token: string): ServicoForm | undefined {
   return load().find((f) => f.id === token);
 }
 
-export function submitServicoForm(token: string, pessoas: ServicoFormPessoa[]): ServicoForm | null {
+export function submitServicoForm(token: string, pessoas: ServicoFormPessoa[], dataReserva?: string): ServicoForm | null {
   const forms = load();
   const idx = forms.findIndex((f) => f.id === token);
   if (idx === -1) return null;
@@ -81,6 +84,7 @@ export function submitServicoForm(token: string, pessoas: ServicoFormPessoa[]): 
     ...forms[idx],
     status: "submitted",
     pessoas,
+    dataReserva,
     submittedAt: new Date().toISOString(),
   };
   save(forms);

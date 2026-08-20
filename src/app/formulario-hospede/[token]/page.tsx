@@ -37,6 +37,7 @@ export default function GuestFormPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
+  const [dataCheckin, setDataCheckin] = useState("");
   const [hospedes, setHospedes] = useState<Hospede[]>([emptyHospede()]);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -66,6 +67,10 @@ export default function GuestFormPage() {
   }
 
   async function handleSubmit() {
+    if (!dataCheckin) {
+      setSubmitError("Informe a data de check-in antes de enviar.");
+      return;
+    }
     const requiredKeys = FIELDS.filter((f) => f.required).map((f) => f.key);
     const missing = hospedes.some((h) => requiredKeys.some((k) => !h[k]?.trim()));
     if (missing) {
@@ -78,7 +83,7 @@ export default function GuestFormPage() {
       const res = await fetch(`/api/guest-forms/${token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pessoas: hospedes }),
+        body: JSON.stringify({ pessoas: hospedes, data: dataCheckin }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -135,6 +140,18 @@ export default function GuestFormPage() {
           <p className="text-sm text-slate-500">
             Preencha os dados de cada pessoa que vai se hospedar para confirmarmos sua reserva.
           </p>
+        </div>
+
+        <div className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+          <label className="text-xs font-medium text-slate-600 block mb-1">
+            Data de check-in *
+          </label>
+          <input
+            type="date"
+            value={dataCheckin}
+            onChange={(e) => setDataCheckin(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-400"
+          />
         </div>
 
         <div className="space-y-4">

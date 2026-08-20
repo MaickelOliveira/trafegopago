@@ -32,17 +32,20 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   const form = getGuestFormByToken(token);
   if (!form) return NextResponse.json({ error: "Formulário não encontrado" }, { status: 404 });
 
-  const { pessoas } = await req.json() as { pessoas?: GuestFormPessoa[] };
+  const { pessoas, data } = await req.json() as { pessoas?: GuestFormPessoa[]; data?: string };
   const REQUIRED_FIELDS: (keyof GuestFormPessoa)[] = ["nome", "nascimento", "cpf", "rg", "endereco", "cidadeEstado", "telefone", "email"];
   const isComplete = (p: GuestFormPessoa) => REQUIRED_FIELDS.every((k) => p[k]?.trim());
   if (!Array.isArray(pessoas) || pessoas.length === 0 || pessoas.some((p) => !isComplete(p))) {
     return NextResponse.json({ error: "Preencha todos os campos de cada hóspede" }, { status: 400 });
   }
+  if (!data?.trim()) {
+    return NextResponse.json({ error: "Informe a data de check-in" }, { status: 400 });
+  }
 
-  const updated = submitGuestForm(token, pessoas);
+  const updated = submitGuestForm(token, pessoas, data);
   if (!updated) return NextResponse.json({ error: "Formulário não encontrado" }, { status: 404 });
 
-  const resumoTexto = formatPessoasParaConversa(pessoas);
+  const resumoTexto = formatPessoasParaConversa(pessoas, data);
 
   // ── Cobrança determinística (preferida) ──────────────────────────────────
   // Em vez de depender da IA conversacional acertar "confirmar dados + repetir
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   // no fallback abaixo. Trata como "não conseguiu" e sempre tenta o fallback.
   let sentDeterministically = false;
   try {
-    sentDeterministically = await tryChargeMessage(form.clientId, form.phone, form.connId ?? null, resumoTexto, pessoas);
+    sentDeterministically = await tryChargeMessage(form.clientId, form.phone, form.connId ?? null, resumoTexto, pessoas, data);
   } catch (e) {
     console.error("[guest-forms] tryChargeMessage lançou exceção — caindo no fluxo antigo:", e instanceof Error ? e.stack ?? e.message : e);
   }
@@ -95,6 +98,7 @@ async function tryChargeMessage(
   connId: string | null,
   resumoTexto: string,
   pessoasFormulario: GuestFormPessoa[],
+  dataFormulario: string,
 ): Promise<boolean> {
   console.log(`[guest-forms] tryChargeMessage iniciando — clientId=${clientId} phone=${phone} connId=${connId}`);
 
@@ -162,6 +166,7 @@ async function tryChargeMessage(
       phone,
       motivo: "DADOS RECEBIDOS: formulário de hóspedes preenchido",
       knownPessoas,
+      knownData: dataFormulario,
     });
     const reserva = affected.find((r) => r.tipo === tipoHospedagem.slug) ?? affected[0];
     valorTotal = reserva?.valorTotal ?? 0;
@@ -249,7 +254,7 @@ function buildResumePayload(
   };
 }
 
-function formatPessoasParaConversa(pessoas: GuestFormPessoa[]): string {
+function formatPessoasParaConversa(pessoas: GuestFormPessoa[], data: string): string {
   const blocos = pessoas.map((p, i) => {
     const linhas = [
       `${i + 1}. Nome completo: ${p.nome}`,
@@ -263,5 +268,6 @@ function formatPessoasParaConversa(pessoas: GuestFormPessoa[]): string {
     ].filter(Boolean);
     return linhas.join("\n");
   });
-  return `Preenchi o formulário de hóspedes da hospedagem com os seguintes dados:\n\n${blocos.join("\n\n")}`;
+  const dataFormatada = new Date(data + "T12:00:00").toLocaleDateString("pt-BR");
+  return `Preenchi o formulário de hóspedes da hospedagem com os seguintes dados:\n\nData de check-in: ${dataFormatada}\n\n${blocos.join("\n\n")}`;
 }
