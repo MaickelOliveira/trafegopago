@@ -584,8 +584,17 @@ export async function runGeminiAgent(
   // mensagem), fica em silêncio — garantido por código, não pelo
   // comportamento do modelo.
   if (agentCfg.greetingOnlyMode) {
-    const lastMsg = history[history.length - 1];
-    const isNewDay = !lastMsg || new Date(lastMsg.ts).toDateString() !== new Date().toDateString();
+    // `history` já inclui a(s) mensagem(ns) atual(is) do cliente — todo
+    // webhook salva a mensagem recebida ANTES de chamar runGeminiAgent, e
+    // pode ser mais de uma se chegaram em rajada dentro da janela de espera.
+    // Por isso não dá pra olhar história[length-1]: seria sempre "hoje" (a
+    // própria mensagem que disparou esta chamada), fazendo isNewDay nunca
+    // ser true pra quem já tem histórico — a saudação nunca saía, nem no
+    // primeiro contato do dia. Em vez disso, busca a ÚLTIMA resposta do
+    // agente (role "assistant"), que reflete quando alguém daqui respondeu
+    // por último, ignorando quantas mensagens do cliente acabaram de entrar.
+    const lastAssistantMsg = [...history].reverse().find((m) => m.role === "assistant");
+    const isNewDay = !lastAssistantMsg || new Date(lastAssistantMsg.ts).toDateString() !== new Date().toDateString();
     if (!isNewDay) return { text: "", actions: [] };
     const greeting = agentCfg.greetingOnlyMessage?.trim();
     if (!greeting) {

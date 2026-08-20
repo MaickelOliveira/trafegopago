@@ -66,6 +66,8 @@ export async function GET(req: NextRequest) {
             maxMessageLength: cfg.maxMessageLength,
             messageWaitSeconds: cfg.messageWaitSeconds,
             geminiKey: resolveGeminiKeyWithSource(cfg.geminiApiKey),
+            greetingOnlyMode: cfg.greetingOnlyMode ?? false,
+            greetingOnlyMessage: cfg.greetingOnlyMessage ?? null,
           }
         : null,
     };
@@ -85,6 +87,8 @@ export async function GET(req: NextRequest) {
     aiAutoResumeEnabled: cfg.aiAutoResumeEnabled,
     aiAutoResumeMode: cfg.aiAutoResumeMode,
     aiAutoResumeHours: cfg.aiAutoResumeHours,
+    greetingOnlyMode: cfg.greetingOnlyMode ?? false,
+    greetingOnlyMessage: cfg.greetingOnlyMessage ?? null,
   }));
 
   // Leads pausados deste cliente e há quanto tempo — útil pra diagnosticar
