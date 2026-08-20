@@ -125,8 +125,18 @@ export async function extractAndWriteToPousada(opts: {
   messages: ChatMessage[];
   phone: string;
   motivo?: string;
+  // Lista de pessoas já validada e estruturada (ex: formulário de hóspedes/
+  // serviços preenchido pelo cliente) — quando informada, é usada como fonte
+  // de verdade pra hóspedes/participantes em vez de deixar a IA re-derivar
+  // isso da conversa (que já falhou em negociações longas/manuais). Também
+  // vira o gatilho de um fallback: se a IA não conseguir extrair NADA da
+  // conversa (data/valor/tipo — comum quando o atendente negocia fora da
+  // tabela padrão), ainda assim cria/atualiza a reserva só com esses dados
+  // conhecidos, em vez de não criar nada — data cai no fallback de "hoje" já
+  // existente abaixo, sinalizando visualmente que precisa de correção manual.
+  knownPessoas?: Pessoa[];
 }): Promise<Reserva[]> {
-  const { apiKey, clientId, tipos, totalQuartos = 0, messages, phone, motivo } = opts;
+  const { apiKey, clientId, tipos, totalQuartos = 0, messages, phone, motivo, knownPessoas } = opts;
   // Reservas criadas/atualizadas nesta chamada — devolvidas pro chamador poder
   // ler valorTotal/tipo direto (ex: montar a mensagem de cobrança
   // deterministicamente após o formulário de hóspedes, sem depender da IA
@@ -176,23 +186,44 @@ export async function extractAndWriteToPousada(opts: {
       console.warn(`[pousada-extractor] Gemini model=${modelId} falhou:`, e instanceof Error ? e.message : e);
     }
   }
+
+  let rows: Array<Record<string, unknown>> = [];
   if (!text) {
-    console.warn("[pousada-extractor] Todos os modelos Gemini falharam — abortando");
-    return affected;
+    console.warn("[pousada-extractor] Todos os modelos Gemini falharam");
+  } else {
+    const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        rows = parsed;
+      } else {
+        console.log("[pousada-extractor] Nenhum dado para registrar");
+      }
+    } catch {
+      console.warn("[pousada-extractor] JSON inválido:", jsonStr.slice(0, 200));
+    }
   }
 
-  const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  let rows: Array<Record<string, unknown>>;
-  try {
-    rows = JSON.parse(jsonStr);
-    if (!Array.isArray(rows) || rows.length === 0) {
-      console.log("[pousada-extractor] Nenhum dado para registrar");
-      return affected;
-    }
-  } catch {
-    console.warn("[pousada-extractor] JSON inválido:", jsonStr.slice(0, 200));
-    return affected;
+  // Fallback: a IA não conseguiu extrair NADA da conversa (chamada falhou,
+  // JSON inválido, ou ela decidiu que não havia reserva reconhecível — comum
+  // em negociações manuais fora da tabela padrão, como já aconteceu na
+  // prática). Se o chamador passou dados já validados de um formulário
+  // (knownPessoas), ainda assim cria/atualiza a reserva só com eles, em vez
+  // de não criar nada — "data" cai no fallback de hoje já existente mais
+  // abaixo, sinalizando visualmente que precisa de correção manual.
+  if (rows.length === 0 && !isPagamento && knownPessoas?.length && tipos[0]) {
+    console.warn(`[pousada-extractor] extração vazia — usando fallback com dados conhecidos do formulário (knownPessoas=${knownPessoas.length})`);
+    rows = [{
+      tipo: tipos[0].slug,
+      pessoas: knownPessoas,
+      valorTotal: sumPessoas(knownPessoas),
+      responsavel: { nome: knownPessoas[0]?.nome ?? "Não informado", cpf: knownPessoas[0]?.cpf },
+      telefone: knownPessoas[0]?.telefone ?? phone,
+      observacoes: "⚠️ Criada automaticamente a partir do formulário — a IA não conseguiu determinar data/valor pela conversa (provavelmente negociação fora do padrão). Confirme e ajuste a data de check-in e o valor.",
+    }];
   }
+
+  if (rows.length === 0) return affected;
 
   const tipoSlugs = new Set(tipos.map((t) => t.slug));
 
@@ -251,6 +282,13 @@ export async function extractAndWriteToPousada(opts: {
       }
     } else {
       try {
+        // ⚠️ knownPessoas só é usado no fallback (linha já embutida no row
+        // sintético acima) — aqui, quando a IA RETORNOU dados de verdade,
+        // continua confiando no que ela extraiu (inclui valor/gratuito por
+        // pessoa já calculado pelas regras de preço, ex: criança de colo
+        // gratuita — sobrescrever isso com knownPessoas.valor=0 quebraria
+        // esse cálculo). knownPessoas garante estrutura só quando a IA não
+        // achou nada pra extrair.
         const pessoas = (Array.isArray(row.pessoas) ? row.pessoas : []) as Pessoa[];
 
         // Telefone: se o número extraído não aparece literalmente na conversa

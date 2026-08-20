@@ -6,6 +6,7 @@ import { addMessage, getHistory } from "@/lib/conversations";
 import { getLeadByPhone } from "@/lib/leads";
 import { extractAndWriteToPousada, alertManagerFormNotProcessed } from "@/lib/pousada-extractor";
 import { processKanbanActions } from "@/lib/kanban-agent";
+import type { Pessoa } from "@/lib/pousada-types";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   // no fallback abaixo. Trata como "não conseguiu" e sempre tenta o fallback.
   let sentDeterministically = false;
   try {
-    sentDeterministically = await tryChargeMessage(form.clientId, form.phone, form.connId ?? null, resumoTexto);
+    sentDeterministically = await tryChargeMessage(form.clientId, form.phone, form.connId ?? null, resumoTexto, pessoas);
   } catch (e) {
     console.error("[guest-forms] tryChargeMessage lançou exceção — caindo no fluxo antigo:", e instanceof Error ? e.stack ?? e.message : e);
   }
@@ -93,6 +94,7 @@ async function tryChargeMessage(
   phone: string,
   connId: string | null,
   resumoTexto: string,
+  pessoasFormulario: GuestFormPessoa[],
 ): Promise<boolean> {
   console.log(`[guest-forms] tryChargeMessage iniciando — clientId=${clientId} phone=${phone} connId=${connId}`);
 
@@ -130,16 +132,36 @@ async function tryChargeMessage(
   // WhatsApp teria) — não bloqueia o restante do fluxo.
   processKanbanActions(resumoTexto, historyAntes, clientId, phone, connId ?? undefined).catch(() => {});
 
+  // Mapeia os dados já validados do formulário (nome/CPF/RG/etc obrigatórios)
+  // pro formato de Pessoa da Pousada — vira o fallback determinístico dentro
+  // de extractAndWriteToPousada quando a IA não conseguir extrair nada da
+  // conversa (ex: negociação manual fora da tabela padrão). valor:0 porque o
+  // formulário não coleta preço por hóspede — só a IA sabe calcular isso a
+  // partir da conversa; no fallback, fica "a confirmar" (sinalizado na
+  // observação da reserva criada).
+  const knownPessoas: Pessoa[] = pessoasFormulario.map((p) => ({
+    nome: p.nome,
+    nascimento: p.nascimento,
+    cpf: p.cpf,
+    rg: p.rg,
+    endereco: p.endereco,
+    cidade: p.cidadeEstado,
+    telefone: p.telefone,
+    email: p.email,
+    valor: 0,
+  }));
+
   let valorTotal = 0;
   try {
     const affected = await extractAndWriteToPousada({
       apiKey,
       clientId,
-      tipos: client.pousadaTipos,
+      tipos: [tipoHospedagem],
       totalQuartos: client.pousadaTotalQuartos ?? 0,
       messages: historyDepois,
       phone,
       motivo: "DADOS RECEBIDOS: formulário de hóspedes preenchido",
+      knownPessoas,
     });
     const reserva = affected.find((r) => r.tipo === tipoHospedagem.slug) ?? affected[0];
     valorTotal = reserva?.valorTotal ?? 0;

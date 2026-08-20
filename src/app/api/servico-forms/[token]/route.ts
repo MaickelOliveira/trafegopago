@@ -5,6 +5,7 @@ import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { addMessage, getHistory, type ChatMessage } from "@/lib/conversations";
 import { extractAndWriteToPousada, alertManagerFormNotProcessed } from "@/lib/pousada-extractor";
 import { processKanbanActions } from "@/lib/kanban-agent";
+import type { Pessoa } from "@/lib/pousada-types";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
   // tipo "evento" configurado), a extração fica determinística — não depende
   // da IA adivinhar qual serviço bate com o assunto da conversa.
   try {
-    await tryCreateReserva(form.clientId, form, historyDepois);
+    await tryCreateReserva(form.clientId, form, historyDepois, pessoas);
   } catch (e) {
     console.error("[servico-forms] erro ao extrair reserva:", e instanceof Error ? e.message : e);
   }
@@ -90,6 +91,7 @@ async function tryCreateReserva(
   clientId: string,
   form: { connId?: string | null; tipoSlug?: string; phone: string },
   messages: ChatMessage[],
+  pessoasFormulario: ServicoFormPessoa[],
 ): Promise<void> {
   const client: Client | undefined = getClientById(clientId);
   if (!client?.enabledSystems?.includes("pousada") || !client.pousadaTipos?.length) {
@@ -116,6 +118,18 @@ async function tryCreateReserva(
     return;
   }
 
+  // Dados já validados do formulário (nome/telefone/idade obrigatórios) —
+  // vira o fallback determinístico dentro de extractAndWriteToPousada quando
+  // a IA não conseguir extrair nada da conversa. valor:0 porque o formulário
+  // não coleta preço (varia por faixa etária/serviço, só a IA calcula isso a
+  // partir da conversa); no fallback fica "a confirmar".
+  const knownPessoas: Pessoa[] = pessoasFormulario.map((p) => ({
+    nome: p.nome,
+    idade: p.idade,
+    telefone: p.telefone,
+    valor: 0,
+  }));
+
   let affectedCount = 0;
   try {
     const affected = await extractAndWriteToPousada({
@@ -126,6 +140,7 @@ async function tryCreateReserva(
       messages,
       phone: form.phone,
       motivo: "DADOS RECEBIDOS: formulário de serviços preenchido",
+      knownPessoas,
     });
     affectedCount = affected.length;
     console.log(`[servico-forms] tryCreateReserva OK — clientId=${clientId} reservasAfetadas=${affectedCount}`);
