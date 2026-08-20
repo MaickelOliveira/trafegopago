@@ -155,16 +155,16 @@ export function PousadaReservaDetailView({
             <button onClick={() => setEditando(true)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-amber-700 hover:bg-amber-50">
               Editar
             </button>
-            {role === "manager" && (
-              reserva.arquivada ? (
+            {reserva.arquivada ? (
+              role === "manager" && (
                 <button onClick={restaurar} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-green-700 hover:bg-green-50">
                   Restaurar
                 </button>
-              ) : (
-                <button onClick={excluir} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-400 hover:text-red-500 hover:bg-red-50">
-                  Excluir
-                </button>
               )
+            ) : (
+              <button onClick={excluir} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-400 hover:text-red-500 hover:bg-red-50">
+                Excluir
+              </button>
             )}
           </div>
         </div>
