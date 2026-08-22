@@ -72,6 +72,9 @@ export function PousadaServicoView({
     return r.responsavel.nome.toLowerCase().includes(s) || r.pessoas.some((p) => p.nome.toLowerCase().includes(s));
   });
 
+  const totalCompareceram = reservas.reduce((s, r) => s + r.pessoas.filter((p) => p.compareceu).length, 0);
+  const totalNaoCompareceram = totais.totalPessoas - totalCompareceram;
+
   const tipoInfo = tipos.find((t) => t.slug === tipoSlug);
   const isHospedagem = (tipoInfo?.categoria ?? "evento") === "hospedagem";
   const base = role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada";
@@ -145,6 +148,14 @@ export function PousadaServicoView({
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-wide text-slate-400">Total de pessoas</p>
             <p className="text-xl font-semibold text-slate-900 mt-1">{totais.totalPessoas}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Compareceram</p>
+            <p className="text-xl font-semibold text-green-600 mt-1">{totalCompareceram}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Não compareceram</p>
+            <p className="text-xl font-semibold text-red-500 mt-1">{totalNaoCompareceram}</p>
           </div>
           {!isHospedagem && (
             <>
