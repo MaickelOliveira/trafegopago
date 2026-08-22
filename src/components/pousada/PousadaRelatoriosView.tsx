@@ -88,6 +88,16 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
   }
   const gruposOrdenados = tipos.filter((t) => gruposPorTipo.has(t.slug));
 
+  // Presença agregada de todas as pessoas do período filtrado (todos os tipos).
+  let totalCompareceram = 0;
+  let totalNaoCompareceram = 0;
+  for (const r of reservas) {
+    for (const p of r.pessoas) {
+      if (p.compareceu) totalCompareceram++;
+      else totalNaoCompareceram++;
+    }
+  }
+
   function tipoLabel(slug: string) {
     return tipos.find((t) => t.slug === slug)?.label ?? slug;
   }
@@ -169,6 +179,14 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs text-slate-400">Crianças 6-12 anos</p>
                 <p className="text-2xl font-semibold text-slate-900">{faixasEtarias.faixa6a12}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs text-slate-400">Compareceram</p>
+                <p className="text-2xl font-semibold text-green-600">{totalCompareceram}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs text-slate-400">Não compareceram</p>
+                <p className="text-2xl font-semibold text-red-500">{totalNaoCompareceram}</p>
               </div>
             </div>
 
