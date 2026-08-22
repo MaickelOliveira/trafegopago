@@ -91,10 +91,12 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
   // Presença agregada de todas as pessoas do período filtrado (todos os tipos).
   let totalCompareceram = 0;
   let totalNaoCompareceram = 0;
+  let valorCompareceram = 0;
+  let valorNaoCompareceram = 0;
   for (const r of reservas) {
     for (const p of r.pessoas) {
-      if (p.compareceu) totalCompareceram++;
-      else totalNaoCompareceram++;
+      if (p.compareceu) { totalCompareceram++; valorCompareceram += p.valor; }
+      else { totalNaoCompareceram++; valorNaoCompareceram += p.valor; }
     }
   }
 
@@ -187,6 +189,14 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="text-xs text-slate-400">Não compareceram</p>
                 <p className="text-2xl font-semibold text-red-500">{totalNaoCompareceram}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs text-slate-400">Valor de quem compareceu</p>
+                <p className="text-2xl font-semibold text-green-600">{fmt(valorCompareceram)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs text-slate-400">Valor de quem não compareceu</p>
+                <p className="text-2xl font-semibold text-red-500">{fmt(valorNaoCompareceram)}</p>
               </div>
             </div>
 
