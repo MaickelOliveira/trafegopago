@@ -231,7 +231,12 @@ export function ReservaModal({
               <label className="text-xs font-medium text-slate-600 block mb-1">Status</label>
               <select
                 value={form.status}
-                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as StatusReserva }))}
+                onChange={(e) => {
+                  const status = e.target.value as StatusReserva;
+                  // Marcar como "Pago" preenche o Valor pago com o Valor total
+                  // automaticamente, pra não deixar Falta pagar desatualizado.
+                  setForm((f) => ({ ...f, status, valorPago: status === "pago" ? f.valorTotal : f.valorPago }));
+                }}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 bg-white"
               >
                 <option value="pendente">Pendente</option>
