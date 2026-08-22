@@ -320,13 +320,13 @@ export function ReservaModal({
                         value={p.nome}
                         onChange={(e) => updatePessoa(i, { nome: e.target.value })}
                         placeholder="Nome completo"
-                        className="col-span-4 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.cpf ?? ""}
                         onChange={(e) => updatePessoa(i, { cpf: e.target.value })}
                         placeholder="CPF"
-                        className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className="col-span-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.valor}
@@ -342,6 +342,15 @@ export function ReservaModal({
                           onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor })}
                           className="h-4 w-4 rounded accent-amber-600" />
                         <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
+                      </label>
+                      <label
+                        className="col-span-2 flex flex-col items-center justify-center gap-0.5"
+                        title="Marcar presença — confirma que este hóspede compareceu"
+                      >
+                        <input type="checkbox" checked={!!p.compareceu}
+                          onChange={(e) => updatePessoa(i, { compareceu: e.target.checked })}
+                          className="h-4 w-4 rounded accent-amber-600" />
+                        <span className="text-[9px] leading-none text-slate-500">Compareceu</span>
                       </label>
                       <div className="col-span-1 flex items-center justify-end gap-1">
                         {pessoas.length > 1 && (
@@ -373,13 +382,13 @@ export function ReservaModal({
                         value={p.cidade ?? ""}
                         onChange={(e) => updatePessoa(i, { cidade: e.target.value })}
                         placeholder="Cidade"
-                        className="col-span-5 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className="col-span-4 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
                       <input
                         value={p.valor}
                         onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
                         type="number" step="0.01" placeholder="Valor" disabled={!!p.gratuito}
-                        className="col-span-4 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
+                        className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
                       />
                       <label
                         className="col-span-3 flex flex-col items-center justify-center gap-0.5"
@@ -389,6 +398,15 @@ export function ReservaModal({
                           onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor })}
                           className="h-4 w-4 rounded accent-amber-600" />
                         <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
+                      </label>
+                      <label
+                        className="col-span-2 flex flex-col items-center justify-center gap-0.5"
+                        title="Marcar presença — confirma que este participante compareceu"
+                      >
+                        <input type="checkbox" checked={!!p.compareceu}
+                          onChange={(e) => updatePessoa(i, { compareceu: e.target.checked })}
+                          className="h-4 w-4 rounded accent-amber-600" />
+                        <span className="text-[9px] leading-none text-slate-500">Compareceu</span>
                       </label>
                       {pessoas.length > 1 && (
                         <button type="button" onClick={() => removePessoa(i)} className="col-span-12 text-left text-xs text-slate-400 hover:text-red-500">

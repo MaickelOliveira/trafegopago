@@ -19,8 +19,20 @@ function save(data: Reserva[]) {
   writeFileSync(FILE, JSON.stringify(data, null, 2));
 }
 
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+// faltaPagar nunca deve ser confiado como veio salvo — sempre derivado de
+// valorTotal/valorPago na leitura, mesmo princípio de calcularFaixasEtarias
+// (nunca armazenado), pra dados antigos/dessincronizados se autocorrigirem
+// sem precisar de migração.
+function withFaltaPagarCorrigida(r: Reserva): Reserva {
+  return { ...r, faltaPagar: Math.max(round2(r.valorTotal - r.valorPago), 0) };
+}
+
 export function getReservas(clientId: string): Reserva[] {
-  return load().filter((r) => r.clientId === clientId);
+  return load().filter((r) => r.clientId === clientId).map(withFaltaPagarCorrigida);
 }
 
 export function getReservasFiltradas(
@@ -47,13 +59,16 @@ export function getUpcomingReservas(clientId: string, days = 30): Reserva[] {
 }
 
 export function getReservaById(id: string): Reserva | undefined {
-  return load().find((r) => r.id === id);
+  const r = load().find((r) => r.id === id);
+  return r ? withFaltaPagarCorrigida(r) : undefined;
 }
 
 export function createReserva(data: Omit<Reserva, "id" | "createdAt" | "updatedAt" | "faltaPagar"> & { faltaPagar?: number }): Reserva {
   const all = load();
   const now = new Date().toISOString();
-  const faltaPagar = data.faltaPagar ?? Math.max(data.valorTotal - data.valorPago, 0);
+  // faltaPagar sempre derivado server-side — ignora qualquer valor explícito
+  // do caller, pra nunca deixar o arquivo salvar um valor incoerente.
+  const faltaPagar = Math.max(round2(data.valorTotal - data.valorPago), 0);
   const r: Reserva = { ...data, faltaPagar, id: randomUUID(), createdAt: now, updatedAt: now };
   all.push(r);
   save(all);
@@ -64,9 +79,14 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
   const all = load();
   const idx = all.findIndex((r) => r.id === id);
   if (idx < 0) return null;
-  all[idx] = { ...all[idx], ...patch, updatedAt: new Date().toISOString() };
+  const merged = { ...all[idx], ...patch, updatedAt: new Date().toISOString() };
+  // Recalcula faltaPagar a partir do valorTotal/valorPago finais em vez de
+  // aceitar o que veio no patch — evita que uma edição parcial (ex: só
+  // valorPago) deixe faltaPagar dessincronizado no arquivo.
+  merged.faltaPagar = Math.max(round2(merged.valorTotal - merged.valorPago), 0);
+  all[idx] = merged;
   save(all);
-  return all[idx];
+  return merged;
 }
 
 // "Excluir" arquiva em vez de apagar de verdade — os dados continuam contando
@@ -170,7 +190,7 @@ export function atribuirQuartoLivre(
 }
 
 export function calcularTotais(reservas: Reserva[]) {
-  return reservas.reduce(
+  const acc = reservas.reduce(
     (acc, r) => ({
       valorTotal: acc.valorTotal + r.valorTotal,
       valorPago: acc.valorPago + r.valorPago,
@@ -179,4 +199,10 @@ export function calcularTotais(reservas: Reserva[]) {
     }),
     { valorTotal: 0, valorPago: 0, faltaPagar: 0, totalPessoas: 0 }
   );
+  return {
+    valorTotal: round2(acc.valorTotal),
+    valorPago: round2(acc.valorPago),
+    faltaPagar: round2(acc.faltaPagar),
+    totalPessoas: acc.totalPessoas,
+  };
 }

@@ -14,6 +14,7 @@ export type Pessoa = {
   profissao?: string;
   valor: number;
   gratuito?: boolean;
+  compareceu?: boolean;
 };
 
 export type Reserva = {

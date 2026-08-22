@@ -44,6 +44,7 @@ export function PousadaServicoView({
   const [totais, setTotais] = useState({ valorTotal: 0, valorPago: 0, faltaPagar: 0, totalPessoas: 0 });
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [busca, setBusca] = useState("");
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<"new" | null>(null);
 
@@ -64,6 +65,12 @@ export function PousadaServicoView({
   }, [clientId, tipoSlug, from, to]);
 
   useEffect(() => { load(); }, [load]);
+
+  const reservasFiltradas = reservas.filter((r) => {
+    if (!busca.trim()) return true;
+    const s = busca.trim().toLowerCase();
+    return r.responsavel.nome.toLowerCase().includes(s) || r.pessoas.some((p) => p.nome.toLowerCase().includes(s));
+  });
 
   const tipoInfo = tipos.find((t) => t.slug === tipoSlug);
   const isHospedagem = (tipoInfo?.categoria ?? "evento") === "hospedagem";
@@ -106,7 +113,19 @@ export function PousadaServicoView({
               Limpar filtro
             </button>
           )}
-          <span className="ml-auto text-sm text-slate-400">{reservas.length} reserva{reservas.length === 1 ? "" : "s"}</span>
+          <div className="ml-auto">
+            <label className="text-xs font-medium text-slate-600 block mb-1">Buscar por nome</label>
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Responsável ou participante..."
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 w-56"
+            />
+          </div>
+          <span className="text-sm text-slate-400 self-end pb-2.5">
+            {reservasFiltradas.length} reserva{reservasFiltradas.length === 1 ? "" : "s"}
+          </span>
         </div>
 
         {/* Resumo */}
@@ -145,11 +164,11 @@ export function PousadaServicoView({
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           {loading ? (
             <p className="p-5 text-sm text-slate-400">Carregando...</p>
-          ) : reservas.length === 0 ? (
+          ) : reservasFiltradas.length === 0 ? (
             <p className="p-5 text-sm text-slate-400">Nenhuma reserva encontrada.</p>
           ) : (
             <div className="divide-y divide-slate-50">
-              {reservas.map((r) => (
+              {reservasFiltradas.map((r) => (
                 <div
                   key={r.id}
                   onClick={() => router.push(`${base}/reservas/${r.id}`)}

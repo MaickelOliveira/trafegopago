@@ -104,6 +104,18 @@ export function PousadaReservaDetailView({
     if (res.ok) setReserva(await res.json());
   }
 
+  async function toggleCompareceu(index: number, compareceu: boolean) {
+    if (!reserva) return;
+    const pessoas = reserva.pessoas.map((p, i) => (i === index ? { ...p, compareceu } : p));
+    setReserva({ ...reserva, pessoas }); // otimista
+    const res = await fetch(`/api/pousada/reservas/${reserva.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pessoas }),
+    });
+    if (res.ok) setReserva(await res.json());
+  }
+
   if (loading) {
     return (
       <div>
@@ -218,9 +230,20 @@ export function PousadaReservaDetailView({
             <div className="divide-y divide-slate-50">
               {reserva.pessoas.map((p, i) => (
                 <div key={i} className="px-5 py-4">
-                  <p className="text-sm font-medium text-slate-800">
-                    {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
-                  </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-slate-800">
+                      {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
+                    </p>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500 shrink-0 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!p.compareceu}
+                        onChange={(e) => toggleCompareceu(i, e.target.checked)}
+                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-400"
+                      />
+                      Compareceu
+                    </label>
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
                     <Campo label="Idade" value={p.idade} />
                     <Campo label="CPF" value={p.cpf} />
