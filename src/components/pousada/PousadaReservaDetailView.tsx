@@ -141,14 +141,19 @@ export function PousadaReservaDetailView({
     <div>
       <PousadaSubNav clientId={clientId} role={role} />
       <div className="p-6 md:p-10 space-y-8 max-w-3xl mx-auto">
-        <Link href={dashboardHref} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
-          ← Voltar ao dashboard
-        </Link>
+        <div className="flex flex-col gap-1">
+          <Link href={dashboardHref} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
+            ← Voltar ao dashboard
+          </Link>
+          <Link href={`${dashboardHref}/servico/${reserva.tipo}`} className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
+            ← Voltar para {tipoInfo?.label ?? reserva.tipo}
+          </Link>
+        </div>
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-400 flex items-center gap-1.5">
-              {isHospedagem ? "🛏️" : "🎉"} {tipoInfo?.label ?? reserva.tipo}
+              {tipoInfo?.label ?? reserva.tipo}
             </p>
             <h1 className="text-2xl font-semibold text-slate-900 mt-1">{reserva.responsavel.nome}</h1>
           </div>

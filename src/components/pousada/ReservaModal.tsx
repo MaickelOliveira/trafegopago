@@ -210,7 +210,7 @@ export function ReservaModal({
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <h2 className="font-semibold text-slate-900 flex items-center gap-2">
-            {isHospedagem ? "🛏️" : "🎉"} {initial ? "Editar" : "Nova"} reserva
+            {initial ? "Editar" : "Nova"} reserva
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>

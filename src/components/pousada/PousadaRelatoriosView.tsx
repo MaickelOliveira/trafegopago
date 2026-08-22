@@ -88,6 +88,8 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
   }
   const gruposOrdenados = tipos.filter((t) => gruposPorTipo.has(t.slug));
 
+  const totalAdultos = Math.max(totais.totalPessoas - faixasEtarias.faixa0a5 - faixasEtarias.faixa6a12, 0);
+
   // Presença agregada de todas as pessoas do período filtrado (todos os tipos).
   let totalCompareceram = 0;
   let totalNaoCompareceram = 0;
@@ -153,50 +155,71 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
               </p>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Reservas no período</p>
-                <p className="text-2xl font-semibold text-slate-900">{reservas.length}</p>
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Financeiro</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Reservas no período</p>
+                    <p className="text-2xl font-semibold text-slate-900">{reservas.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Valor total</p>
+                    <p className="text-2xl font-semibold text-slate-900">{fmt(totais.valorTotal)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Valor pago</p>
+                    <p className="text-2xl font-semibold text-green-600">{fmt(totais.valorPago)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Falta pagar</p>
+                    <p className="text-2xl font-semibold text-amber-600">{fmt(totais.faltaPagar)}</p>
+                  </div>
+                </div>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Valor total</p>
-                <p className="text-2xl font-semibold text-slate-900">{fmt(totais.valorTotal)}</p>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Pessoas</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Total de pessoas</p>
+                    <p className="text-2xl font-semibold text-slate-900">{totais.totalPessoas}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Adultos</p>
+                    <p className="text-2xl font-semibold text-slate-900">{totalAdultos}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Crianças 0-5 anos</p>
+                    <p className="text-2xl font-semibold text-slate-900">{faixasEtarias.faixa0a5}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Crianças 6-12 anos</p>
+                    <p className="text-2xl font-semibold text-slate-900">{faixasEtarias.faixa6a12}</p>
+                  </div>
+                </div>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Valor pago</p>
-                <p className="text-2xl font-semibold text-green-600">{fmt(totais.valorPago)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Falta pagar</p>
-                <p className="text-2xl font-semibold text-amber-600">{fmt(totais.faltaPagar)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Total de pessoas</p>
-                <p className="text-2xl font-semibold text-slate-900">{totais.totalPessoas}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Crianças 0-5 anos</p>
-                <p className="text-2xl font-semibold text-slate-900">{faixasEtarias.faixa0a5}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Crianças 6-12 anos</p>
-                <p className="text-2xl font-semibold text-slate-900">{faixasEtarias.faixa6a12}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Compareceram</p>
-                <p className="text-2xl font-semibold text-green-600">{totalCompareceram}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Não compareceram</p>
-                <p className="text-2xl font-semibold text-red-500">{totalNaoCompareceram}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Valor de quem compareceu</p>
-                <p className="text-2xl font-semibold text-green-600">{fmt(valorCompareceram)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs text-slate-400">Valor de quem não compareceu</p>
-                <p className="text-2xl font-semibold text-red-500">{fmt(valorNaoCompareceram)}</p>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Presença</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Compareceram</p>
+                    <p className="text-2xl font-semibold text-green-600">{totalCompareceram}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Não compareceram</p>
+                    <p className="text-2xl font-semibold text-red-500">{totalNaoCompareceram}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Valor de quem compareceu</p>
+                    <p className="text-2xl font-semibold text-green-600">{fmt(valorCompareceram)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-400">Valor de quem não compareceu</p>
+                    <p className="text-2xl font-semibold text-red-500">{fmt(valorNaoCompareceram)}</p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -216,7 +239,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
               return (
                 <div key={t.slug} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
                   <p className="text-sm font-medium text-slate-700 px-4 pt-4 pb-2">
-                    {hospedagem ? "🛏️" : "🎉"} {t.label} ({rows.length})
+                    {t.label} ({rows.length})
                   </p>
                   <div className="overflow-x-auto px-4 pb-4">
                     <table className="border-collapse text-xs">

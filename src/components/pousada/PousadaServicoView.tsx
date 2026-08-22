@@ -86,7 +86,7 @@ export function PousadaServicoView({
 
         <div className="flex items-center justify-between flex-wrap gap-3">
           <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2">
-            {isHospedagem ? "🛏️" : "🎉"} {tipoInfo?.label ?? tipoSlug}
+            {tipoInfo?.label ?? tipoSlug}
           </h1>
           <button
             onClick={() => setModal("new")}
@@ -129,7 +129,7 @@ export function PousadaServicoView({
         </div>
 
         {/* Resumo */}
-        <div className={clsx("grid gap-4", isHospedagem ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-6")}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-wide text-slate-400">Valor total</p>
             <p className="text-xl font-semibold text-slate-900 mt-1">{fmt(totais.valorTotal)}</p>
@@ -148,6 +148,12 @@ export function PousadaServicoView({
           </div>
           {!isHospedagem && (
             <>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Adultos</p>
+                <p className="text-xl font-semibold text-slate-900 mt-1">
+                  {Math.max(totais.totalPessoas - faixas.faixa0a5 - faixas.faixa6a12, 0)}
+                </p>
+              </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <p className="text-xs uppercase tracking-wide text-slate-400">Crianças 0-5</p>
                 <p className="text-xl font-semibold text-slate-900 mt-1">{faixas.faixa0a5}</p>

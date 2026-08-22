@@ -157,10 +157,6 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
     return upcoming.filter((r) => r.tipo === slug);
   }
 
-  function categoriaDoTipo(slug: string): CategoriaTipo {
-    return tipos.find((t) => t.slug === slug)?.categoria ?? "evento";
-  }
-
   async function saveTipos() {
     const res = await fetch("/api/pousada/tipos", {
       method: "PUT",
@@ -460,7 +456,6 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {tipos.map((t) => {
             const lista = reservasDoTipo(t.slug);
-            const categoria = categoriaDoTipo(t.slug);
             return (
               <Link
                 key={t.slug}
@@ -468,7 +463,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
                 className="rounded-2xl border border-slate-200 bg-white p-5 flex items-center justify-between hover:border-amber-300 hover:bg-amber-50/40 transition"
               >
                 <span className="font-medium text-slate-800 flex items-center gap-2">
-                  {categoria === "hospedagem" ? "🛏️" : "🎉"} {t.label}
+                  {t.label}
                 </span>
                 <span className="flex items-center gap-2 text-sm text-slate-400">
                   {lista.length} no período
