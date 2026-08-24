@@ -10,6 +10,8 @@ import { getLeadByPhone, updateLead } from "@/lib/leads";
 import { cancelPendingForPhone } from "@/lib/pending-responses";
 import { getServerWhatsAppSessions } from "@/lib/server-whatsapp-sessions";
 import { sendServerWhatsAppText } from "@/lib/server-whatsapp-api";
+import { getDeviceById } from "@/lib/extension-devices";
+import { queueReply } from "@/lib/extension-outbox";
 
 export const dynamic = "force-dynamic";
 
@@ -47,10 +49,15 @@ export async function POST(req: NextRequest) {
   const serverSession = connId
     ? getServerWhatsAppSessions().find((s) => s.id === connId && s.clientId === clientId)
     : getServerWhatsAppSessions().find((s) => s.clientId === clientId);
+  // ── Extensão Chrome: dispositivo vive em store separado (extension-devices.json),
+  // não em funnels[].connections nem nas outras sessões acima — mesmo ponto cego
+  // já corrigido em connection-metrics.ts / inbox/conversations/route.ts.
+  const extDeviceRaw = connId ? getDeviceById(connId) : undefined;
+  const extDevice = extDeviceRaw?.clientId === clientId ? extDeviceRaw : undefined;
 
-  console.log(`[inbox/send] phone=${cleanPhone} connId=${connId} clientId=${clientId} conn=${conn?.type} wppSession=${wppSession?.sessionName ?? "none"}`);
+  console.log(`[inbox/send] phone=${cleanPhone} connId=${connId} clientId=${clientId} conn=${conn?.type} wppSession=${wppSession?.sessionName ?? "none"} extDevice=${extDevice?.id ?? "none"}`);
 
-  if (!conn && !wppSession && !serverSession) {
+  if (!conn && !wppSession && !serverSession && !extDevice) {
     console.log(`[inbox/send] ERRO: nenhuma conexão encontrada. allConns=${JSON.stringify(allConns.map(c=>c.id))} wppSessions=${JSON.stringify(getWppSessions().map(s=>s.id))}`);
     return NextResponse.json({ error: "Nenhuma conexão encontrada para este cliente" }, { status: 404 });
   }
@@ -86,6 +93,23 @@ export async function POST(req: NextRequest) {
     } else {
       return NextResponse.json({ error: "Tipo de mídia não suportado via WPPConnect ainda" }, { status: 400 });
     }
+  } else if (extDevice) {
+    if (type !== "text") {
+      return NextResponse.json({ error: "Essa conexão (extensão do WhatsApp Web) suporta somente texto por enquanto" }, { status: 400 });
+    }
+    // Não há chatId persistido pra esse contato fora do fluxo de resposta
+    // automática (maybeGenerateAiReply em whatsapp-extension/messages/route.ts
+    // usa item.chatId, vindo da própria mensagem recebida) — construir "@c.us"
+    // cobre o caso comum. Contato puro LID pode precisar de endereçamento
+    // diferente, mesmo problema do isLid tratado acima pro WPPConnect.
+    // markSent ANTES de enfileirar, mesmo padrão da branch wppSession acima —
+    // sem isso, quando a extensão entrega essa mensagem via wa-js e o
+    // WhatsApp Web ecoa como fromMe, whatsapp-extension/messages/route.ts
+    // não reconhece o eco (isPhoneSending/consumeSent) e grava a mensagem
+    // duplicada no histórico + pausa a IA de novo.
+    markSent(cleanPhone, content);
+    queueReply(extDevice.id, `${cleanPhone}@c.us`, cleanPhone, content);
+    ok = true; // enfileirado — a extensão entrega por polling (~5s, ver extension/src/content-script.ts), sem confirmação síncrona aqui
   } else if (conn?.type === "meta" && conn.metaPhoneNumberId && conn.metaToken) {
     if (type === "text") {
       ok = await sendMessageDirect(cleanPhone, content, conn.metaPhoneNumberId, conn.metaToken);
@@ -107,7 +131,7 @@ export async function POST(req: NextRequest) {
 
   if (ok) {
     // Salva no histórico como mensagem do assistente
-    const activeConnId = serverSession?.id ?? wppSession?.id ?? conn?.id ?? connId ?? "";
+    const activeConnId = serverSession?.id ?? wppSession?.id ?? extDevice?.id ?? conn?.id ?? connId ?? "";
     const savedContent = type === "text" ? content : `[${type}]`;
     addMessage(cleanPhone, { role: "assistant", content: savedContent, ts, type: type === "video" ? undefined : type }, clientId, { connId: activeConnId });
     // Pausa a IA nos dois storages
