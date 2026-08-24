@@ -4,6 +4,8 @@ import { sendText, sendMedia } from "@/lib/uazapi";
 import { sendMessageDirect } from "@/lib/whatsapp-send";
 import { sendText as wppSendText } from "@/lib/wppconnect-api";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { sendText as evoSendText } from "@/lib/evolution-api";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { addMessage, setAiPaused } from "@/lib/conversations";
 import { markSent } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, updateLead } from "@/lib/leads";
@@ -54,10 +56,16 @@ export async function POST(req: NextRequest) {
   // já corrigido em connection-metrics.ts / inbox/conversations/route.ts.
   const extDeviceRaw = connId ? getDeviceById(connId) : undefined;
   const extDevice = extDeviceRaw?.clientId === clientId ? extDeviceRaw : undefined;
+  // ── Evolution API: instâncias também vivem em store separado
+  // (evolution-sessions.json), não em funnels[].connections — mesmo padrão
+  // do WPPConnect acima. Sem isso, um cliente conectado só via Evolution
+  // (sem nenhuma connection dentro do funil) nunca achava conexão nenhuma.
+  const evoSessionRaw = connId ? getEvolutionSessions().find((s) => s.id === connId) : undefined;
+  const evoSession = evoSessionRaw && (evoSessionRaw.clientId === null || evoSessionRaw.clientId === clientId) ? evoSessionRaw : undefined;
 
-  console.log(`[inbox/send] phone=${cleanPhone} connId=${connId} clientId=${clientId} conn=${conn?.type} wppSession=${wppSession?.sessionName ?? "none"} extDevice=${extDevice?.id ?? "none"}`);
+  console.log(`[inbox/send] phone=${cleanPhone} connId=${connId} clientId=${clientId} conn=${conn?.type} wppSession=${wppSession?.sessionName ?? "none"} extDevice=${extDevice?.id ?? "none"} evoSession=${evoSession?.instanceName ?? "none"}`);
 
-  if (!conn && !wppSession && !serverSession && !extDevice) {
+  if (!conn && !wppSession && !serverSession && !extDevice && !evoSession) {
     console.log(`[inbox/send] ERRO: nenhuma conexão encontrada. allConns=${JSON.stringify(allConns.map(c=>c.id))} wppSessions=${JSON.stringify(getWppSessions().map(s=>s.id))}`);
     return NextResponse.json({ error: "Nenhuma conexão encontrada para este cliente" }, { status: 404 });
   }
@@ -92,6 +100,24 @@ export async function POST(req: NextRequest) {
       if (!ok) errorMsg = "Falha ao enviar via WPPConnect (sessão desconectada — escaneie o QR Code novamente)";
     } else {
       return NextResponse.json({ error: "Tipo de mídia não suportado via WPPConnect ainda" }, { status: 400 });
+    }
+  } else if (evoSession) {
+    if (type === "text") {
+      const existingLeadForLid = getLeadByPhone(clientId, cleanPhone);
+      let isLid = existingLeadForLid?.isLid === true;
+      ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, cleanPhone, content, isLid);
+      // Fallback: se falhou e ainda não tentamos com isLid, tenta com isLid:true
+      if (!ok && !isLid) {
+        console.log(`[inbox/send] Retrying Evolution with isLid=true phone=${cleanPhone}`);
+        ok = await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, cleanPhone, content, true);
+        if (ok && existingLeadForLid) {
+          updateLead(existingLeadForLid.id, { isLid: true });
+          isLid = true;
+        }
+      }
+      if (!ok) errorMsg = "Falha ao enviar via Evolution API (instância desconectada?)";
+    } else {
+      return NextResponse.json({ error: "Tipo de mídia não suportado via Evolution ainda" }, { status: 400 });
     }
   } else if (extDevice) {
     if (type !== "text") {
@@ -131,7 +157,7 @@ export async function POST(req: NextRequest) {
 
   if (ok) {
     // Salva no histórico como mensagem do assistente
-    const activeConnId = serverSession?.id ?? wppSession?.id ?? extDevice?.id ?? conn?.id ?? connId ?? "";
+    const activeConnId = serverSession?.id ?? wppSession?.id ?? evoSession?.id ?? extDevice?.id ?? conn?.id ?? connId ?? "";
     const savedContent = type === "text" ? content : `[${type}]`;
     addMessage(cleanPhone, { role: "assistant", content: savedContent, ts, type: type === "video" ? undefined : type }, clientId, { connId: activeConnId });
     // Pausa a IA nos dois storages
