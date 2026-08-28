@@ -505,10 +505,14 @@ export async function startTyping(instanceName: string, instanceApiKey: string, 
   if (!base()) return;
   try {
     const number = normalizeBrPhone(phone);
+    // "delay" é obrigatório no schema de presença da Evolution (chat.schema.ts,
+    // presenceSchema: required ['number', 'presence', 'delay']) — sem ele a
+    // chamada falha validação com "instance requires property 'delay'" a cada
+    // mensagem processada. 0 = aplica a presença imediatamente, sem atraso.
     await fetch(`${base()}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },
-      body: JSON.stringify({ number, presence: "composing" }),
+      body: JSON.stringify({ number, presence: "composing", delay: 0 }),
     });
   } catch { /* ignora — não-crítico */ }
 }
@@ -520,7 +524,7 @@ export async function stopTyping(instanceName: string, instanceApiKey: string, p
     await fetch(`${base()}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },
-      body: JSON.stringify({ number, presence: "paused" }),
+      body: JSON.stringify({ number, presence: "paused", delay: 0 }),
     });
   } catch { /* ignora — não-crítico */ }
 }
