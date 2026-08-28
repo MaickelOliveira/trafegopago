@@ -15,6 +15,7 @@ import { getConfig } from "./clients";
 import { getFunnels } from "./funnels";
 import { sendText } from "./uazapi";
 import { sendTemplate } from "./waba-templates";
+import { addMessage } from "./conversations";
 
 interface MetaOverride {
   /** Nome do template aprovado (sobrescreve config.masterMetaTemplateBriefing) */
@@ -76,6 +77,10 @@ export async function sendMasterNotification(
     }
     const ok = await sendText(found.uazapiToken, masterPhone, message);
     if (!ok) console.warn("[master] sendText UazAPI falhou para o número master.");
+    // Registra no histórico pra aparecer no Inbox da plataforma — sendText
+    // aqui é a função "crua" do provider (uazapi.ts), que não loga sozinha,
+    // diferente da facade em whatsapp.ts usada pelo restante do sistema.
+    if (ok) addMessage(masterPhone, { role: "assistant", content: message, ts: Date.now() }, null);
     return ok;
   }
 
@@ -112,6 +117,10 @@ export async function sendMasterNotification(
 
     if (!result.success) {
       console.warn("[master] sendTemplate Meta falhou:", result.error);
+    } else {
+      // Loga o "message" descritivo passado pelo chamador — o conteúdo real
+      // enviado é o template fixo, mas isso já dá contexto legível no Inbox.
+      addMessage(masterPhone, { role: "assistant", content: message, ts: Date.now() }, null);
     }
     return result.success;
   }
