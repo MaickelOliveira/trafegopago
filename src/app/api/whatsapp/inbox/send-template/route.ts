@@ -4,6 +4,7 @@ import { addMessage, setAiPaused, getAllConversationsByClientId, getHistory, pho
 import { getLeadByPhone, updateLead } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { cancelFollowUpsForPhone } from "@/lib/followups";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,10 @@ export async function POST(req: NextRequest) {
   setAiPaused(cleanPhone, true, clientId, activeConnId ?? null);
   const existingLead = getLeadByPhone(clientId, cleanPhone);
   if (existingLead) updateLead(existingLead.id, { aiPaused: true });
+  // Cancela follow-ups automáticos já agendados — sem isso, um follow-up
+  // agendado antes do gestor assumir dispara depois e reativa a IA sozinho
+  // (ver mesmo comentário em /api/whatsapp/inbox/send/route.ts).
+  cancelFollowUpsForPhone(clientId, cleanPhone);
 
   return NextResponse.json({ ok: true });
 }

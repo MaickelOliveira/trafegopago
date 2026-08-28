@@ -21,6 +21,7 @@ import { upsertLeadByPhone, getLeadByPhone, updateLead, markLeadNeedsAttention }
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { sendText, sendMedia, splitMessage } from "@/lib/uazapi";
 import { consumeSent, isPhoneSending } from "@/lib/wppconnect-sent";
+import { cancelPendingForPhone } from "@/lib/pending-responses";
 import { downloadAndDecryptMedia, transcribeMedia, saveDecryptedMedia } from "@/lib/media-transcribe";
 import type { AgentMedia, AgentConfig } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
@@ -281,6 +282,7 @@ async function sendMarkedMedia(
 import {
   startFollowUpSequence,
   restartFollowUpSequence,
+  cancelFollowUpsForPhone,
 } from "@/lib/followups";
 import {
   upsertPending,
@@ -932,6 +934,19 @@ export async function POST(
           upsertLeadByPhone(cid, phone, { funnelId, aiPaused: isPausing });
         }
         setAiPaused(phone, isPausing, cid);
+        // Ao pausar, cancela follow-ups automáticos pendentes — senão um
+        // follow-up já agendado antes dessa pausa dispara depois e reativa a
+        // IA sozinho (ver mesmo fix em /api/whatsapp/inbox/send/route.ts).
+        if (isPausing) {
+          cancelFollowUpsForPhone(cid, phone);
+          // Cancela também qualquer resposta da IA já em andamento (batch de
+          // messageWaitSeconds) — sem isso, uma resposta que já estava sendo
+          // gerada no momento em que o gestor respondeu pelo próprio celular
+          // ainda dispara logo depois, por cima da mensagem dele (mesmo fix
+          // já existente em /api/whatsapp/inbox/send/route.ts, faltava aqui
+          // no caminho "fromMe").
+          cancelPendingForPhone(cid, phone);
+        }
         console.log(`[webhook/${instanceId}] IA ${isPausing ? "PAUSADA" : "REATIVADA"} para phone=${phone} (mensagem do gestor via WhatsApp)`);
       }
       return NextResponse.json({ ok: true });
@@ -947,8 +962,20 @@ export async function POST(
       }
     }
 
+    // Verifica se IA está pausada para esta conversa — calculado ANTES dos
+    // follow-ups de propósito: com um humano já respondendo manualmente, não
+    // faz sentido (re)agendar um follow-up automático, que mais tarde reativa
+    // a IA sozinho e derruba a pausa (ver cron-tasks.ts, "reativa a IA... para
+    // que responda quando o lead reagir"). Sem essa ordem, a pausa feita pelo
+    // gestor sobrevive só até a PRÓXIMA mensagem do cliente, que rearmava um
+    // novo follow-up mesmo com a conversa pausada.
+    const currentLead = getLeadByPhone(cid, phone);
+    const convPaused = getAiPaused(phone, cid, uazConn?.id);
+    const aiIsPaused = !!currentLead?.aiPaused || convPaused;
+    console.log(`[webhook/${instanceId}] aiPaused check → lead.aiPaused=${currentLead?.aiPaused ?? "null"} conv.aiPaused=${convPaused} phone=${phone} cid=${cid}`);
+
     // ── Follow-ups ───────────────────────────────────────────────────────
-    if (cid !== "sem-cliente") {
+    if (cid !== "sem-cliente" && !aiIsPaused) {
       const agentCfg = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
       if (agentCfg?.followUpEnabled && (agentCfg.followUps?.length ?? 0) > 0) {
         if (isNew) {
@@ -961,11 +988,7 @@ export async function POST(
 
     const history = getHistory(phone, cid);
 
-    // Verifica se IA está pausada para esta conversa
-    const currentLead = getLeadByPhone(cid, phone);
-    const convPaused = getAiPaused(phone);
-    console.log(`[webhook/${instanceId}] aiPaused check → lead.aiPaused=${currentLead?.aiPaused ?? "null"} conv.aiPaused=${convPaused} phone=${phone} cid=${cid}`);
-    if (currentLead?.aiPaused || convPaused) {
+    if (aiIsPaused) {
       console.log(`[webhook/${instanceId}] IA PAUSADA — ignorando mensagem de phone=${phone}`);
       return NextResponse.json({ ok: true });
     }
@@ -1019,7 +1042,7 @@ export async function POST(
             // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
             // enquanto o Gemini processava — não envia a resposta da IA por cima.
             const freshLead = getLeadByPhone(cid, phone);
-            if (freshLead?.aiPaused || getAiPaused(phone)) {
+            if (freshLead?.aiPaused || getAiPaused(phone, cid, connId)) {
               console.log(`[webhook/${instanceId}] IA pausada durante processamento — descartando resposta para ${phone}`);
               return;
             }
@@ -1134,7 +1157,7 @@ export async function POST(
 
     // Re-checa aiPaused: o gestor pode ter assumido a conversa manualmente
     // enquanto o Gemini processava — não envia a resposta da IA por cima.
-    if (getLeadByPhone(cid, phone)?.aiPaused || getAiPaused(phone)) {
+    if (getLeadByPhone(cid, phone)?.aiPaused || getAiPaused(phone, cid, connId)) {
       console.log(`[webhook/${instanceId}] IA pausada durante processamento imediato — descartando resposta para ${phone}`);
       return NextResponse.json({ ok: true });
     }

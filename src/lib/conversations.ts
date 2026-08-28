@@ -274,8 +274,14 @@ export function setAiPaused(phone: string, paused: boolean, clientId?: string | 
   if (changed) save(all);
 }
 
-export function getAiPaused(phone: string, clientId?: string | null): boolean {
+export function getAiPaused(phone: string, clientId?: string | null, connId?: string | null): boolean {
   const all = load();
+  // Chave isolada por conexão primeiro (mesmo padrão de setAiPaused/getHistory)
+  // — sem isso, uma conversa que só existe nesse formato nunca é vista aqui,
+  // mesmo com o aiPaused corretamente marcado nela.
+  if (clientId && connId) {
+    if (phoneVariants(phone).some((v) => all[`${clientId}:${connId}:${v}`]?.aiPaused === true)) return true;
+  }
   if (clientId) {
     if (clientPhoneVariants(phone, clientId).some((v) => all[v]?.aiPaused === true)) return true;
   }

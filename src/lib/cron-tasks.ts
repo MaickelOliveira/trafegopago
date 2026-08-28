@@ -8,10 +8,10 @@ import { getDuePending, markProcessing, markDone } from "./pending-responses";
 import { getClientById, getAllAgentConfigs, type AgentConfig } from "./clients";
 import { sendMessage, getGeminiApiKey } from "./whatsapp-send";
 import { runGeminiAgent, generateFollowUpAI } from "./gemini-agent";
-import { addMessage, getHistory, setAiPaused, type ChatMessage } from "./conversations";
+import { addMessage, getHistory, type ChatMessage } from "./conversations";
 import { runScheduledDailyAutomations, processDueCrmAutomationJobs } from "./crm-automations";
 import { runDailySummaries, reativarIaAutomaticamente } from "./agent-schedules";
-import { getLeadByPhone, updateLead } from "./leads";
+import { getLeadByPhone } from "./leads";
 import { getFunnels, getFunnelById } from "./funnels";
 import { getTemplateById, sendTemplate } from "./waba-templates";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -251,11 +251,15 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       if (sendResult.ok) {
         // Registra no histórico para aparecer no inbox da plataforma
         addMessage(followUp.phone, { role: "assistant", content: msgToSend, ts: Date.now() }, followUp.clientId, { connId: followUp.connId });
-        // Reativa a IA (caso estivesse pausada) para que responda quando o lead reagir
-        if (lead?.aiPaused) {
-          setAiPaused(followUp.phone, false, followUp.clientId);
-          updateLead(lead.id, { aiPaused: false });
-        }
+        // NÃO reativa a IA aqui mesmo que o lead esteja com aiPaused=true.
+        // Antes reativava ("para que responda quando o lead reagir"), mas isso
+        // derrubava silenciosamente uma pausa manual do gestor: ele assume a
+        // conversa, um follow-up já agendado antes disso ainda dispara depois
+        // (follow-up roda independente de IA, de propósito — ver webhooks), e
+        // a IA voltava a responder por cima do atendimento humano sem avisar
+        // ninguém. Reativação deve vir só de ação explícita: palavra-chave de
+        // retomada do lead, toggle manual no inbox, ou reativarIaAutomaticamente
+        // (agent-schedules.ts, opt-in por cliente com prazo configurado).
         // wamid guardado para casar com o status assíncrono (sent/delivered/read/failed)
         // que a Meta manda depois via webhook — a API pode aceitar o envio aqui e
         // falhar a entrega de verdade só mais tarde, fora dessa resposta síncrona.

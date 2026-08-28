@@ -784,6 +784,13 @@ export async function POST(
       setAiPaused(phone, isPausing, clientId);
       const freshLead = getLeadByPhone(clientId, phone, funnelId);
       if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
+      if (isPausing) {
+        // Cancela resposta da IA já em andamento (batch de messageWaitSeconds)
+        // — sem isso, uma resposta que já estava sendo gerada no momento em
+        // que o operador respondeu pelo próprio celular ainda dispara logo
+        // depois, por cima da mensagem dele.
+        cancelPendingForPhone(clientId, phone);
+      }
       // Operador assumiu o atendimento → reinicia sequência de follow-up
       if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
         restartFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId);

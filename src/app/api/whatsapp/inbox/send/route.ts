@@ -10,6 +10,7 @@ import { addMessage, setAiPaused } from "@/lib/conversations";
 import { markSent } from "@/lib/wppconnect-sent";
 import { getLeadByPhone, updateLead } from "@/lib/leads";
 import { cancelPendingForPhone } from "@/lib/pending-responses";
+import { cancelFollowUpsForPhone } from "@/lib/followups";
 import { getServerWhatsAppSessions } from "@/lib/server-whatsapp-sessions";
 import { sendServerWhatsAppText } from "@/lib/server-whatsapp-api";
 import { getDeviceById } from "@/lib/extension-devices";
@@ -169,6 +170,12 @@ export async function POST(req: NextRequest) {
     // sem isso, um batch em "pending" no momento do envio manual do gestor ainda
     // dispararia e mandaria a resposta da IA por cima da mensagem dele.
     cancelPendingForPhone(clientId, cleanPhone);
+    // Cancela também follow-ups automáticos já agendados pra esse telefone —
+    // sem isso, um follow-up agendado ANTES do gestor assumir dispara depois
+    // e reativa a IA sozinho (cron-tasks.ts reativa aiPaused=false ao enviar
+    // follow-up "para que a IA responda quando o lead reagir"), derrubando a
+    // pausa manual do gestor sem ele saber.
+    cancelFollowUpsForPhone(clientId, cleanPhone);
   }
 
   return NextResponse.json({ ok, error: ok ? undefined : errorMsg });
