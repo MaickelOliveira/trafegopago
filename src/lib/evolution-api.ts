@@ -507,12 +507,16 @@ export async function startTyping(instanceName: string, instanceApiKey: string, 
     const number = normalizeBrPhone(phone);
     // "delay" é obrigatório no schema de presença da Evolution (chat.schema.ts,
     // presenceSchema: required ['number', 'presence', 'delay']) — sem ele a
-    // chamada falha validação com "instance requires property 'delay'" a cada
-    // mensagem processada. 0 = aplica a presença imediatamente, sem atraso.
+    // chamada falha validação. E não é só um campo pra existir: é por quantos
+    // ms o WhatsApp mantém "digitando..." antes de reverter sozinho. Quem
+    // chama esta função reforça a presença a cada 3s (setInterval, ver
+    // webhook/evolution/[token]/route.ts) pra manter os pontinhos vivos
+    // durante respostas longas — delay precisa ser MAIOR que esse intervalo,
+    // senão a bolinha aparece e some a cada ciclo (era o bug com delay:0).
     await fetch(`${base()}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },
-      body: JSON.stringify({ number, presence: "composing", delay: 0 }),
+      body: JSON.stringify({ number, presence: "composing", delay: 5000 }),
     });
   } catch { /* ignora — não-crítico */ }
 }
