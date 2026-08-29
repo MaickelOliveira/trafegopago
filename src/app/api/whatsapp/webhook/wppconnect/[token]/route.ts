@@ -907,14 +907,8 @@ export async function POST(
   const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
   const history = getHistory(phone, clientId, connId);
 
-  // Indica "digitando..." e renova a cada 3s enquanto a IA processa
-  // (WhatsApp expira o indicador após ~5s se não for renovado)
   const sessionSnap = wppSession.sessionName;
   const tokenSnap   = wppSession.sessionToken;
-  startTyping(sessionSnap, tokenSnap, phone).catch(() => {});
-  const typingInterval = setInterval(() => {
-    startTyping(sessionSnap, tokenSnap, phone).catch(() => {});
-  }, 3000);
 
   console.log(`[WPPConnect IA] Chamando runGeminiAgent — phone=${phone} clientId=${clientId} waitSeconds=${waitSeconds} historyLen=${history.length} text="${text.slice(0, 80)}"`);
 
@@ -922,9 +916,14 @@ export async function POST(
   const isLidPhone =
     String(body.chatId ?? "").endsWith("@lid") ||
     String(body.from ?? "").endsWith("@lid");
+  // "Digitando..." só aparece agora, uma única vez, bem perto do envio de
+  // verdade — não durante toda a espera do batching/geração (que pode levar
+  // vários segundos e antes disso era renovado a cada 3s via setInterval,
+  // causando os pontinhos aparecerem/sumirem várias vezes até a resposta sair).
   async function sendReply(reply: string) {
-    clearInterval(typingInterval);
-    stopTyping(wppSession!.sessionName, wppSession!.sessionToken, phone).catch(() => {});
+    startTyping(sessionSnap, tokenSnap, phone).catch(() => {});
+    await new Promise<void>((r) => setTimeout(r, 3000));
+    stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
     // Extrai marcadores [MIDIA:nome] e [FOLLOWUP:texto] do texto antes de enviar
     const { clean, names: namesRaw, followup } = extractMediaMarkers(reply);
     // Remove mídias já enviadas antes nesta conversa — o modelo às vezes repete
@@ -990,7 +989,6 @@ export async function POST(
           // Saudação determinística ignora esse bloqueio (ver isGreetingOnlyActive).
           if (getLeadByPhone(_clientId, _phone, funnelId)?.aiPaused && !isGreetingOnlyActive(_clientId, connId)) {
             console.log(`[WPPConnect IA batch] IA pausada durante processamento — descartando resposta para ${_phone}`);
-            clearInterval(typingInterval);
             stopTyping(sessionSnap, tokenSnap, _phone).catch(() => {});
             return;
           }
@@ -1040,7 +1038,6 @@ export async function POST(
         .catch((e) => {
           console.error("[WPPConnect webhook] Erro no batch:", e);
           markDone(batch.id);
-          clearInterval(typingInterval);
           stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
         });
     }, waitSeconds * 1000);
@@ -1058,14 +1055,12 @@ export async function POST(
     // Saudação determinística ignora esse bloqueio (ver isGreetingOnlyActive).
     if (getLeadByPhone(clientId, phone, funnelId)?.aiPaused && !isGreetingOnlyActive(clientId, connId)) {
       console.log(`[WPPConnect IA] IA pausada durante processamento imediato — descartando resposta para ${phone}`);
-      clearInterval(typingInterval);
       stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
       return;
     }
     if (geminiText) {
       await sendReply(geminiText);
     } else {
-      clearInterval(typingInterval);
       stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
     }
     if (actions.length && activeClient && agentCfg) {
@@ -1111,7 +1106,6 @@ export async function POST(
     }
   } catch (e) {
     console.error("[WPPConnect webhook] Erro no Gemini:", e);
-    clearInterval(typingInterval);
     stopTyping(sessionSnap, tokenSnap, phone).catch(() => {});
   }
 

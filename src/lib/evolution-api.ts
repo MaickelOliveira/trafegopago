@@ -507,12 +507,13 @@ export async function startTyping(instanceName: string, instanceApiKey: string, 
     const number = normalizeBrPhone(phone);
     // "delay" é obrigatório no schema de presença da Evolution (chat.schema.ts,
     // presenceSchema: required ['number', 'presence', 'delay']) — sem ele a
-    // chamada falha validação. E não é só um campo pra existir: é por quantos
-    // ms o WhatsApp mantém "digitando..." antes de reverter sozinho. Quem
-    // chama esta função reforça a presença a cada 3s (setInterval, ver
-    // webhook/evolution/[token]/route.ts) pra manter os pontinhos vivos
-    // durante respostas longas — delay precisa ser MAIOR que esse intervalo,
-    // senão a bolinha aparece e some a cada ciclo (era o bug com delay:0).
+    // chamada falha validação. É por quantos ms o WhatsApp mantém
+    // "digitando..." antes de reverter sozinho. Quem chama esta função dispara
+    // só UMA vez, bem perto do envio (ver sendReply em webhook/evolution/
+    // [token]/route.ts) — nunca em loop/setInterval: reforçar a presença
+    // periodicamente fazia os pontinhos aparecerem/sumirem várias vezes
+    // durante a espera. 5000 dá folga confortável pra cobrir a pausa fixa de
+    // ~3s antes do envio de verdade.
     await fetch(`${base()}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },

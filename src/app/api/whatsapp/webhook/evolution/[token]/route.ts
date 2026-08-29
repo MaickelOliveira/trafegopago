@@ -871,15 +871,16 @@ export async function POST(
 
   const instanceSnap = evoSession.instanceName;
   const apiKeySnap = evoSession.instanceApiKey;
-  startTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
-  const typingInterval = setInterval(() => {
-    startTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
-  }, 3000);
 
   console.log(`[Evolution IA] Chamando runGeminiAgent — phone=${phone} clientId=${clientId} waitSeconds=${waitSeconds} historyLen=${history.length}`);
 
+  // "Digitando..." só aparece agora, uma única vez, bem perto do envio de
+  // verdade — não durante toda a espera do batching/geração (que pode levar
+  // vários segundos e antes disso era reforçado a cada 3s via setInterval,
+  // causando os pontinhos aparecerem/sumirem várias vezes até a resposta sair).
   async function sendReply(reply: string) {
-    clearInterval(typingInterval);
+    startTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
+    await new Promise<void>((r) => setTimeout(r, 3000));
     stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
     const { clean: cleanRaw, names: namesRaw, followup } = extractMediaMarkers(reply);
     // ⚠️ NUNCA cair de volta pro texto bruto ("clean || reply") — se a
@@ -937,7 +938,6 @@ export async function POST(
           markDone(batch.id);
           if (getLeadByPhone(_clientId, _phone, funnelId)?.aiPaused && !isGreetingOnlyActive(_clientId, connId)) {
             console.log(`[Evolution IA batch] IA pausada durante processamento — descartando resposta para ${_phone}`);
-            clearInterval(typingInterval);
             stopTyping(instanceSnap, apiKeySnap, _phone).catch(() => {});
             return;
           }
@@ -985,7 +985,6 @@ export async function POST(
         .catch((e) => {
           console.error("[Evolution webhook] Erro no batch:", e);
           markDone(batch.id);
-          clearInterval(typingInterval);
           stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
         });
     }, waitSeconds * 1000);
@@ -999,14 +998,12 @@ export async function POST(
     const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId);
     if (getLeadByPhone(clientId, phone, funnelId)?.aiPaused && !isGreetingOnlyActive(clientId, connId)) {
       console.log(`[Evolution IA] IA pausada durante processamento imediato — descartando resposta para ${phone}`);
-      clearInterval(typingInterval);
       stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
       return NextResponse.json({ ok: true });
     }
     if (geminiText) {
       await sendReply(geminiText);
     } else {
-      clearInterval(typingInterval);
       stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
     }
     if (actions.length && activeClient && agentCfg) {
@@ -1050,7 +1047,6 @@ export async function POST(
     }
   } catch (e) {
     console.error("[Evolution webhook] Erro no Gemini:", e);
-    clearInterval(typingInterval);
     stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
   }
 
