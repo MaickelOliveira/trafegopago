@@ -44,6 +44,15 @@ export function dateISOBrasilia(ms: number): string {
   return `${p.year}-${p.month}-${p.day}`;
 }
 
+const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/** Dia da semana atual em Brasília — 0=domingo...6=sábado (mesma convenção de
+ *  Date.getDay()), mas calculado no fuso certo em vez do fuso do processo. */
+export function currentWeekdayBrasilia(): number {
+  const short = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }).format(new Date());
+  return WEEKDAY_INDEX[short] ?? new Date().getDay();
+}
+
 /** Início do dia atual em Brasília (00:00), como timestamp UTC em ms —
  *  usado pra comparar "pausado antes de hoje" (reativação por reset à
  *  meia-noite) sem depender do fuso do processo Node. */

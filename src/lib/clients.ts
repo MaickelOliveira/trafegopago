@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import path from "path";
 import type { PousadaTipo } from "./pousada-types";
+import { currentHHMMBrasilia, currentWeekdayBrasilia } from "./timezone";
 
 export type AdAccount = {
   id: string;
@@ -92,6 +93,16 @@ export type AgentConfig = {
   // Nenhuma mensagem depois disso recebe resposta automática.
   greetingOnlyMode?: boolean;
   greetingOnlyMessage?: string;
+
+  // ── Horário de atendimento ── fora dos dias/horário marcados, a IA fica em
+  // silêncio (mesmo comportamento de enabled=false) — a mensagem continua
+  // sendo salva e aparece no Inbox normalmente, só não recebe resposta
+  // automática. Desligado (ou sem os campos abaixo) = sem restrição, IA ativa
+  // 24h, comportamento idêntico ao de antes desta feature existir.
+  businessHoursEnabled?: boolean;
+  businessHoursStart?: string;   // "HH:MM"
+  businessHoursEnd?: string;     // "HH:MM"
+  businessHoursDays?: number[];  // 0=domingo...6=sábado
 };
 
 export type SheetTabMapping = {
@@ -204,6 +215,21 @@ export function getAgentConfigForConnection(
     }
   }
   return client.agentConfig;
+}
+
+/** Verifica se agora (horário de Brasília) está dentro do horário de
+ *  atendimento configurado. Sem restrição configurada = sempre true (IA ativa
+ *  24h, comportamento de antes desta feature existir). */
+export function isWithinBusinessHours(cfg?: AgentConfig): boolean {
+  if (!cfg?.businessHoursEnabled) return true;
+  const days = cfg.businessHoursDays ?? [];
+  if (days.length === 0) return false; // ligado sem nenhum dia marcado = fechado o tempo todo
+  if (!days.includes(currentWeekdayBrasilia())) return false;
+  const hhmm = currentHHMMBrasilia();
+  const start = cfg.businessHoursStart ?? "00:00";
+  const end = cfg.businessHoursEnd ?? "23:59";
+  if (start <= end) return hhmm >= start && hhmm <= end;
+  return hhmm >= start || hhmm <= end; // faixa que cruza a meia-noite (ex: 22:00–06:00)
 }
 
 /** Salva o AgentConfig para uma conexão específica (espelha getAgentConfigForConnection).

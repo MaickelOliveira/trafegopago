@@ -75,6 +75,10 @@ type AgentCfg = {
   aiAutoResumeHours?: number;
   greetingOnlyMode?: boolean;
   greetingOnlyMessage?: string;
+  businessHoursEnabled?: boolean;
+  businessHoursStart?: string;
+  businessHoursEnd?: string;
+  businessHoursDays?: number[];
 };
 
 type SheetTab = { title: string; sheetId: number };
@@ -492,6 +496,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   async function save() {
+    if (cfg.businessHoursEnabled && (cfg.businessHoursDays ?? []).length === 0) {
+      setMsg("✗ Selecione pelo menos um dia da semana no horário de atendimento.");
+      return;
+    }
     setSaving(true);
     setMsg("");
     const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
@@ -1574,6 +1582,82 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             ) : (
               <p className="text-xs text-slate-400">Toda vez que o relógio virar meia-noite, qualquer lead que ainda estiver com a IA pausada de um dia anterior volta a ser atendido pela IA normalmente.</p>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Horário de atendimento */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
+        <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">🕐 Horário de atendimento</p>
+        <Toggle
+          label="Restringir a IA a um horário de atendimento"
+          sub="Fora dos dias/horário marcados, a IA fica em silêncio — a mensagem continua chegando no Inbox normalmente, só não recebe resposta automática. Desligado = IA ativa 24h todo dia, como hoje."
+          checked={cfg.businessHoursEnabled ?? false}
+          onChange={(v) => setCfg((c) => {
+            if (v && (!c.businessHoursDays || c.businessHoursDays.length === 0)) {
+              return {
+                ...c,
+                businessHoursEnabled: v,
+                businessHoursDays: [1, 2, 3, 4, 5],
+                businessHoursStart: c.businessHoursStart ?? "08:00",
+                businessHoursEnd: c.businessHoursEnd ?? "18:00",
+              };
+            }
+            return { ...c, businessHoursEnabled: v };
+          })}
+        />
+        {cfg.businessHoursEnabled && (
+          <div className="space-y-3 pl-1">
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Dias da semana</label>
+              <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((label, idx) => {
+                  const active = (cfg.businessHoursDays ?? []).includes(idx);
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setCfg((c) => {
+                        const days = c.businessHoursDays ?? [];
+                        const next = active ? days.filter((d) => d !== idx) : [...days, idx].sort((a, b) => a - b);
+                        return { ...c, businessHoursDays: next };
+                      })}
+                      className={clsx(
+                        "w-11 rounded-lg border px-2 py-2 text-xs font-medium transition",
+                        active ? "border-amber-400 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {(cfg.businessHoursDays ?? []).length === 0 && (
+                <p className="text-xs text-red-500 mt-1.5">Selecione pelo menos um dia — sem nenhum dia marcado, a IA fica sempre em silêncio.</p>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Início</label>
+                <input
+                  type="time"
+                  value={cfg.businessHoursStart ?? "08:00"}
+                  onChange={(e) => setCfg((c) => ({ ...c, businessHoursStart: e.target.value }))}
+                  className="mt-1 w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+              <span className="text-slate-300 mt-5">—</span>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Fim</label>
+                <input
+                  type="time"
+                  value={cfg.businessHoursEnd ?? "18:00"}
+                  onChange={(e) => setCfg((c) => ({ ...c, businessHoursEnd: e.target.value }))}
+                  className="mt-1 w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-slate-400">Ex: Seg–Sex, 08:00–18:00 — fora desses dias/horário a IA não responde, mas a conversa continua aparecendo no Inbox normalmente.</p>
           </div>
         )}
       </div>

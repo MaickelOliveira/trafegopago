@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration, type Part } from "@google/generative-ai";
-import { getClientById, getAgentConfigForConnection, type AgentMedia, type KnowledgeBaseDoc, type SheetTabMapping } from "./clients";
+import { getClientById, getAgentConfigForConnection, isWithinBusinessHours, type AgentMedia, type KnowledgeBaseDoc, type SheetTabMapping } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
 import { scheduleFollowUp } from "./followups";
 import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from "./google-calendar";
@@ -585,7 +585,7 @@ export async function runGeminiAgent(
 
   // Seleciona o agentConfig correto para esta conexão
   const agentCfg = getAgentConfigForConnection(client, connectionId);
-  if (!agentCfg?.enabled) return { text: "", actions: [] };
+  if (!agentCfg?.enabled || !isWithinBusinessHours(agentCfg)) return { text: "", actions: [] };
 
   // ── Modo só saudação ──────────────────────────────────────────────────
   // Confiar numa instrução de prompt tipo "não responda mais nada depois da

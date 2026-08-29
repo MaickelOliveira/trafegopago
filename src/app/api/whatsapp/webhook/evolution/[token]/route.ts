@@ -4,7 +4,7 @@ import path from "path";
 import { getEvolutionSessionById } from "@/lib/evolution-sessions";
 import { getFunnels } from "@/lib/funnels";
 import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead, markLeadNeedsAttention, normalizePhone } from "@/lib/leads";
-import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
+import { getConfig, getClientById, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused, sanitizeContactName, updateLastMessage, ensureBrCountryCode } from "@/lib/conversations";
 import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/wppconnect-sent";
@@ -829,7 +829,7 @@ export async function POST(
 
   const activeClient = clientId !== "sem-cliente" ? getClientById(clientId) : null;
   const agentCfg = activeClient ? getAgentConfigForConnection(activeClient, connId) : undefined;
-  const geminiEnabled = agentCfg?.enabled === true;
+  const geminiEnabled = agentCfg?.enabled === true && isWithinBusinessHours(agentCfg);
 
   if (!geminiEnabled || clientId === "sem-cliente") {
     console.log(`[Evolution IA] IA desligada — geminiEnabled=${geminiEnabled} clientId=${clientId}`);

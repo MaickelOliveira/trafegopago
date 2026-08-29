@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
+import { getConfig, getClientById, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
 import { getHistory, addMessage, sanitizeContactName, phoneVariants } from "@/lib/conversations";
 import { generateResponse } from "@/lib/ai-agent";
 import { sendWhatsApp } from "@/lib/whatsapp";
@@ -335,7 +335,7 @@ export async function POST(req: NextRequest) {
     const agentCfg = activeClient
       ? getAgentConfigForConnection(activeClient, incomingConnectionId)
       : undefined;
-    const geminiEnabled = agentCfg?.enabled === true;
+    const geminiEnabled = agentCfg?.enabled === true && isWithinBusinessHours(agentCfg);
     const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
     const connectionId = agentCfg?.whatsappConnectionId ?? incomingConnectionId;
 

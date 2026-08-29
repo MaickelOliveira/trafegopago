@@ -4,7 +4,7 @@ import { getDeviceByToken } from "@/lib/extension-devices";
 import { upsertLeadByPhone, getLeadByPhone, updateLead, normalizePhone } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { addMessage, getHistory, setAiPaused } from "@/lib/conversations";
-import { getConfig, getClientById, getAgentConfigForConnection } from "@/lib/clients";
+import { getConfig, getClientById, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { runGeminiAgent } from "@/lib/gemini-agent";
@@ -46,7 +46,7 @@ async function maybeGenerateAiReply(device: ExtensionDevice, item: IncomingItem,
   const client = getClientById(device.clientId);
   if (!client) return;
   const agentCfg = getAgentConfigForConnection(client, device.id);
-  if (!agentCfg?.enabled) return;
+  if (!agentCfg?.enabled || !isWithinBusinessHours(agentCfg)) return;
   if (getLeadByPhone(device.clientId, historyKey, funnelId)?.aiPaused) return;
 
   const history = getHistory(historyKey, device.clientId, device.id);

@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { getFunnels } from "@/lib/funnels";
-import { getClientById, getConfig, getAgentConfigForConnection } from "@/lib/clients";
+import { getClientById, getConfig, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
 import { getHistory, addMessage, getAiPaused, setAiPaused, sanitizeContactName, ensureBrCountryCode } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone, updateLead, markLeadNeedsAttention } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
@@ -1002,7 +1002,7 @@ export async function POST(
     const activeClient = cid !== "sem-cliente" ? getClientById(cid) : null;
     const connId = uazConn?.id;
     const agentCfg = activeClient ? getAgentConfigForConnection(activeClient, connId) : undefined;
-    const geminiEnabled = agentCfg?.enabled === true;
+    const geminiEnabled = agentCfg?.enabled === true && isWithinBusinessHours(agentCfg);
     const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
 
     // Filtro de número de teste: se configurado, só responde para aquele número

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientById, getAllAgentConfigs, getAgentConfigForConnection, getConfig } from "@/lib/clients";
+import { getClientById, getAllAgentConfigs, getAgentConfigForConnection, getConfig, isWithinBusinessHours } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
@@ -68,6 +68,11 @@ export async function GET(req: NextRequest) {
             geminiKey: resolveGeminiKeyWithSource(cfg.geminiApiKey),
             greetingOnlyMode: cfg.greetingOnlyMode ?? false,
             greetingOnlyMessage: cfg.greetingOnlyMessage ?? null,
+            businessHoursEnabled: cfg.businessHoursEnabled ?? false,
+            businessHoursStart: cfg.businessHoursStart ?? null,
+            businessHoursEnd: cfg.businessHoursEnd ?? null,
+            businessHoursDays: cfg.businessHoursDays ?? null,
+            isWithinBusinessHoursNow: isWithinBusinessHours(cfg),
           }
         : null,
     };
@@ -89,6 +94,11 @@ export async function GET(req: NextRequest) {
     aiAutoResumeHours: cfg.aiAutoResumeHours,
     greetingOnlyMode: cfg.greetingOnlyMode ?? false,
     greetingOnlyMessage: cfg.greetingOnlyMessage ?? null,
+    businessHoursEnabled: cfg.businessHoursEnabled ?? false,
+    businessHoursStart: cfg.businessHoursStart ?? null,
+    businessHoursEnd: cfg.businessHoursEnd ?? null,
+    businessHoursDays: cfg.businessHoursDays ?? null,
+    isWithinBusinessHoursNow: isWithinBusinessHours(cfg),
   }));
 
   // Leads pausados deste cliente e há quanto tempo — útil pra diagnosticar
