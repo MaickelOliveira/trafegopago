@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { clsx } from "clsx";
 import type { Reserva } from "@/lib/pousada-types";
+import { formatDataComDiaSemana } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 
 type Ocupado = { quarto: string; reserva: Reserva };
@@ -200,8 +201,8 @@ export function PousadaOcupacaoView({ clientId, role }: { clientId: string; role
             </div>
             <div className="space-y-1.5 text-sm">
               <p><span className="text-slate-400">Responsável:</span> {selecionado.reserva.responsavel.nome}</p>
-              <p><span className="text-slate-400">Check-in:</span> {new Date(selecionado.reserva.data + "T00:00:00").toLocaleDateString("pt-BR")}</p>
-              <p><span className="text-slate-400">Check-out:</span> {selecionado.reserva.dataCheckout ? new Date(selecionado.reserva.dataCheckout + "T00:00:00").toLocaleDateString("pt-BR") : "—"}</p>
+              <p><span className="text-slate-400">Check-in:</span> {formatDataComDiaSemana(selecionado.reserva.data)}</p>
+              <p><span className="text-slate-400">Check-out:</span> {formatDataComDiaSemana(selecionado.reserva.dataCheckout)}</p>
               <p><span className="text-slate-400">Status:</span> {selecionado.reserva.status}</p>
             </div>
             <div className="mt-3 pt-3 border-t border-slate-100">

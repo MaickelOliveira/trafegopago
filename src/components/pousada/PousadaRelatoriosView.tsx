@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { clsx } from "clsx";
 import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
+import { formatDataComDiaSemana } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 
 function fmt(v: number) {
@@ -289,8 +290,8 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                               <td className={clsx(TD, "whitespace-nowrap")}>{fmtDataHora(r.createdAt)}</td>
                               {hospedagem ? (
                                 <>
-                                  <td className={clsx(TD, "whitespace-nowrap")}>{fmtData(r.data)}</td>
-                                  <td className={clsx(TD, "whitespace-nowrap")}>{fmtData(r.dataCheckout)}</td>
+                                  <td className={clsx(TD, "whitespace-nowrap")}>{formatDataComDiaSemana(r.data)}</td>
+                                  <td className={clsx(TD, "whitespace-nowrap")}>{formatDataComDiaSemana(r.dataCheckout)}</td>
                                   <td className={TD}>{r.responsavel.nome}</td>
                                   <td className={TD}>{r.telefone ?? "—"}</td>
                                   <td className={TD}>{r.pessoas.length}</td>
@@ -303,7 +304,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                                 </>
                               ) : (
                                 <>
-                                  <td className={clsx(TD, "whitespace-nowrap")}>{fmtData(r.data)}</td>
+                                  <td className={clsx(TD, "whitespace-nowrap")}>{formatDataComDiaSemana(r.data)}</td>
                                   <td className={TD}>{r.responsavel.nome}</td>
                                   <td className={clsx(TD, "max-w-xs")}>{pessoasTexto(r)}</td>
                                   <td className={clsx(TD, "text-center")}>{f05}</td>

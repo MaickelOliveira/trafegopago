@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { clsx } from "clsx";
 import type { Reserva, Pessoa, PousadaTipo, StatusReserva } from "@/lib/pousada-types";
+import { formatDataComDiaSemana } from "@/lib/format-date";
 
 type QuartoOcupado = { quarto: string; reserva: Reserva };
 
@@ -510,8 +511,8 @@ export function ReservaModal({
               <button onClick={() => setQuartoPicker(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
             </div>
             <p className="text-xs text-slate-500 mb-3">
-              Disponibilidade para {form.data ? new Date(form.data + "T00:00:00").toLocaleDateString("pt-BR") : "—"}
-              {form.dataCheckout && form.dataCheckout !== form.data ? ` até ${new Date(form.dataCheckout + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}
+              Disponibilidade para {formatDataComDiaSemana(form.data)}
+              {form.dataCheckout && form.dataCheckout !== form.data ? ` até ${formatDataComDiaSemana(form.dataCheckout)}` : ""}
             </p>
 
             {quartoPicker.loading ? (

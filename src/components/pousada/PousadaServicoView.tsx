@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clsx } from "clsx";
 import type { Reserva, PousadaTipo, FaixaEtariaResumo } from "@/lib/pousada-types";
+import { formatDataComDiaSemana } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 import { ReservaModal } from "./ReservaModal";
 
@@ -191,9 +192,9 @@ export function PousadaServicoView({
                   onClick={() => router.push(`${base}/reservas/${r.id}`)}
                   className="px-5 py-4 flex flex-wrap items-center gap-x-4 gap-y-2 cursor-pointer hover:bg-slate-50"
                 >
-                  <div className="w-36 shrink-0">
+                  <div className="w-44 shrink-0">
                     <p className="text-sm text-slate-700">
-                      {isHospedagem && r.dataCheckout ? `${fmtData(r.data)} → ${fmtData(r.dataCheckout)}` : fmtData(r.data)}
+                      {isHospedagem && r.dataCheckout ? `${formatDataComDiaSemana(r.data)} → ${formatDataComDiaSemana(r.dataCheckout)}` : formatDataComDiaSemana(r.data)}
                     </p>
                     <p className="text-xs text-slate-400">Reservado em {fmtData(r.createdAt.slice(0, 10))}</p>
                   </div>

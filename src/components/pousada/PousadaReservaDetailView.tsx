@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clsx } from "clsx";
 import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
+import { formatDataComDiaSemana } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 import { ReservaModal } from "./ReservaModal";
 
@@ -201,13 +202,13 @@ export function PousadaReservaDetailView({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               {isHospedagem ? (
                 <>
-                  <Campo label="Check-in" value={fmtData(reserva.data)} />
-                  <Campo label="Check-out" value={fmtData(reserva.dataCheckout)} />
+                  <Campo label="Check-in" value={formatDataComDiaSemana(reserva.data)} />
+                  <Campo label="Check-out" value={formatDataComDiaSemana(reserva.dataCheckout)} />
                   <Campo label="Quarto/Chalé" value={reserva.quarto} />
                 </>
               ) : (
                 <>
-                  <Campo label="Data" value={fmtData(reserva.data)} />
+                  <Campo label="Data" value={formatDataComDiaSemana(reserva.data)} />
                   <Campo label="Hora" value={reserva.hora} />
                   <Campo label="Cidade" value={reserva.cidade} />
                 </>
