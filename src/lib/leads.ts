@@ -363,6 +363,7 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     status: patch.status ?? "novo",
     notes: patch.notes ?? "",
     ai: patch.ai ?? null,
+    customFields: patch.customFields,
     isLid: patch.isLid,
     realPhone: patch.realPhone,
     createdAt: now,
