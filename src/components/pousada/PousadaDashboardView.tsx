@@ -319,45 +319,47 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
       </div>
 
       {/* Filtro de período */}
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap gap-1.5">
-          {PERIODOS.map((p) => (
-            <button
-              key={p.value}
-              type="button"
-              onClick={() => setPeriodo(p.value)}
-              className={
-                periodo === p.value
-                  ? "rounded-lg px-3 py-2 text-xs font-medium border transition bg-amber-600 border-amber-600 text-white"
-                  : "rounded-lg px-3 py-2 text-xs font-medium border transition border-slate-200 text-slate-600 hover:bg-slate-50"
-              }
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        {periodo === "personalizado" && (
-          <div className="flex items-end gap-2">
-            <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">De</label>
-              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">Até</label>
-              <input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
-            </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap gap-1.5">
+            {PERIODOS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => setPeriodo(p.value)}
+                className={
+                  periodo === p.value
+                    ? "rounded-lg px-3 py-2 text-xs font-medium border transition bg-amber-600 border-amber-600 text-white"
+                    : "rounded-lg px-3 py-2 text-xs font-medium border transition border-slate-200 text-slate-600 hover:bg-slate-50"
+                }
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
-        )}
-        <div className="ml-auto">
+          {periodo === "personalizado" && (
+            <div className="flex items-end gap-2">
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1">De</label>
+                <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1">Até</label>
+                <input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="pt-3 border-t border-slate-100">
           <label className="text-xs font-medium text-slate-600 block mb-1">Buscar por nome</label>
           <input
             type="text"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Responsável ou participante..."
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 w-56"
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 w-full sm:w-72"
           />
         </div>
       </div>
