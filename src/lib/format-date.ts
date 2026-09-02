@@ -7,3 +7,11 @@ export function formatDataComDiaSemana(iso?: string): string {
   if (!iso) return "—";
   return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
 }
+
+/** "Hoje" em AAAA-MM-DD ancorado no fuso de Brasília — nunca usar
+ *  `new Date().toISOString().slice(0, 10)` pra isso, porque converte pra UTC
+ *  antes de fatiar e devolve a data de AMANHÃ entre ~21h e 23h59 no horário
+ *  de Brasília. */
+export function todayBR(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}

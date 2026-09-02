@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Reserva, PousadaTipo, CategoriaTipo } from "@/lib/pousada-types";
 import { ReservaModal } from "./ReservaModal";
 import { PousadaSubNav } from "./PousadaSubNav";
+import { formatDataComDiaSemana } from "@/lib/format-date";
 
 function fmt(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -111,6 +112,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   const [periodo, setPeriodo] = useState<PeriodoFiltro>("mes_atual");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [busca, setBusca] = useState("");
   const [pixChave, setPixChave] = useState("");
   const [pixFavorecido, setPixFavorecido] = useState("");
   const [editingPix, setEditingPix] = useState(false);
@@ -156,6 +158,16 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
   function reservasDoTipo(slug: string) {
     return upcoming.filter((r) => r.tipo === slug);
   }
+
+  const base = role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada";
+  const buscaAtiva = busca.trim().toLowerCase();
+  const encontrados = buscaAtiva
+    ? upcoming.filter(
+        (r) =>
+          r.responsavel.nome.toLowerCase().includes(buscaAtiva) ||
+          r.pessoas.some((p) => p.nome.toLowerCase().includes(buscaAtiva))
+      )
+    : [];
 
   async function saveTipos() {
     const res = await fetch("/api/pousada/tipos", {
@@ -338,6 +350,16 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
             </div>
           </div>
         )}
+        <div className="ml-auto">
+          <label className="text-xs font-medium text-slate-600 block mb-1">Buscar por nome</label>
+          <input
+            type="text"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Responsável ou participante..."
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 w-56"
+          />
+        </div>
       </div>
 
       {/* Resumo */}
@@ -447,33 +469,70 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
         </div>
       )}
 
-      {/* Uma seção por tipo de reserva — clique abre a página do serviço com tudo + filtro de datas */}
-      <div className="space-y-4">
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Por tipo de reserva</h2>
-        {tipos.length === 0 && (
-          <p className="text-sm text-slate-400">Nenhum tipo de reserva configurado ainda — clique em &quot;Tipos de reserva&quot; acima pra adicionar.</p>
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {tipos.map((t) => {
-            const lista = reservasDoTipo(t.slug);
-            return (
-              <Link
-                key={t.slug}
-                href={`${role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada"}/servico/${t.slug}`}
-                className="rounded-2xl border border-slate-200 bg-white p-5 flex items-center justify-between hover:border-amber-300 hover:bg-amber-50/40 transition"
-              >
-                <span className="font-medium text-slate-800 flex items-center gap-2">
-                  {t.label}
-                </span>
-                <span className="flex items-center gap-2 text-sm text-slate-400">
-                  {lista.length} no período
-                  <span className="text-slate-300">→</span>
-                </span>
-              </Link>
-            );
-          })}
+      {/* Resultado da busca por nome — substitui o grid por tipo enquanto ativa,
+          pra achar uma reserva sem precisar saber em qual tipo/evento ela está. */}
+      {buscaAtiva && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">
+            Resultado da busca ({encontrados.length})
+          </h2>
+          {encontrados.length === 0 ? (
+            <p className="text-sm text-slate-400">Nenhuma reserva encontrada com esse nome no período selecionado.</p>
+          ) : (
+            <div className="space-y-2">
+              {encontrados.map((r) => {
+                const tipoInfo = tipos.find((t) => t.slug === r.tipo);
+                return (
+                  <Link
+                    key={r.id}
+                    href={`${base}/servico/${r.tipo}`}
+                    className="rounded-xl border border-slate-200 bg-white p-4 flex items-center justify-between gap-3 hover:border-amber-300 hover:bg-amber-50/40 transition"
+                  >
+                    <div>
+                      <p className="font-medium text-slate-800">{r.responsavel.nome}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {tipoInfo?.label ?? r.tipo} · {formatDataComDiaSemana(r.data)}
+                        {r.telefone ? ` · ${r.telefone}` : ""}
+                      </p>
+                    </div>
+                    <span className="text-slate-300">→</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* Uma seção por tipo de reserva — clique abre a página do serviço com tudo + filtro de datas */}
+      {!buscaAtiva && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Por tipo de reserva</h2>
+          {tipos.length === 0 && (
+            <p className="text-sm text-slate-400">Nenhum tipo de reserva configurado ainda — clique em &quot;Tipos de reserva&quot; acima pra adicionar.</p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {tipos.map((t) => {
+              const lista = reservasDoTipo(t.slug);
+              return (
+                <Link
+                  key={t.slug}
+                  href={`${base}/servico/${t.slug}`}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 flex items-center justify-between hover:border-amber-300 hover:bg-amber-50/40 transition"
+                >
+                  <span className="font-medium text-slate-800 flex items-center gap-2">
+                    {t.label}
+                  </span>
+                  <span className="flex items-center gap-2 text-sm text-slate-400">
+                    {lista.length} no período
+                    <span className="text-slate-300">→</span>
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {modal && (
         <ReservaModal

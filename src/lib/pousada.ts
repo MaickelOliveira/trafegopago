@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import type { Reserva, FaixaEtariaResumo } from "./pousada-types";
+import { todayBR } from "./format-date";
 
 export type { StatusReserva, OrigemReserva, Pessoa, Reserva, PousadaTipo, CategoriaTipo, FaixaEtariaResumo } from "./pousada-types";
 export { TIPOS_PADRAO } from "./pousada-types";
@@ -23,16 +24,26 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-// faltaPagar nunca deve ser confiado como veio salvo — sempre derivado de
-// valorTotal/valorPago na leitura, mesmo princípio de calcularFaixasEtarias
-// (nunca armazenado), pra dados antigos/dessincronizados se autocorrigirem
-// sem precisar de migração.
-function withFaltaPagarCorrigida(r: Reserva): Reserva {
-  return { ...r, faltaPagar: Math.max(round2(r.valorTotal - r.valorPago), 0) };
+// Corrige na leitura, sem precisar de migração: (1) faltaPagar nunca deve ser
+// confiado como veio salvo — sempre derivado de valorTotal/valorPago, mesmo
+// princípio de calcularFaixasEtarias (nunca armazenado); (2) "data"/
+// "dataCheckout" às vezes foram gravadas com mais de 10 caracteres (ex: um
+// sufixo de horário tipo "T00:00:00.000Z" escapando de algum ponto de escrita
+// que não devia gerar isso) — como todo filtro de data no arquivo compara
+// essas strings com >=/<= assumindo "AAAA-MM-DD" puro, uma string mais longa
+// com o mesmo prefixo de 10 caracteres é lexicograficamente MAIOR e faz a
+// reserva sumir de qualquer filtro cujo limite superior seja o próprio dia.
+function normalizarReserva(r: Reserva): Reserva {
+  return {
+    ...r,
+    data: r.data?.slice(0, 10),
+    dataCheckout: r.dataCheckout ? r.dataCheckout.slice(0, 10) : r.dataCheckout,
+    faltaPagar: Math.max(round2(r.valorTotal - r.valorPago), 0),
+  };
 }
 
 export function getReservas(clientId: string): Reserva[] {
-  return load().filter((r) => r.clientId === clientId).map(withFaltaPagarCorrigida);
+  return load().filter((r) => r.clientId === clientId).map(normalizarReserva);
 }
 
 export function getReservasFiltradas(
@@ -51,7 +62,7 @@ export function getReservasFiltradas(
 }
 
 export function getUpcomingReservas(clientId: string, days = 30): Reserva[] {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayBR();
   const limit = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
   return getReservas(clientId)
     .filter((r) => !r.arquivada && r.data >= today && r.data <= limit && r.status !== "cancelada")
@@ -60,7 +71,7 @@ export function getUpcomingReservas(clientId: string, days = 30): Reserva[] {
 
 export function getReservaById(id: string): Reserva | undefined {
   const r = load().find((r) => r.id === id);
-  return r ? withFaltaPagarCorrigida(r) : undefined;
+  return r ? normalizarReserva(r) : undefined;
 }
 
 export function createReserva(data: Omit<Reserva, "id" | "createdAt" | "updatedAt" | "faltaPagar"> & { faltaPagar?: number }): Reserva {

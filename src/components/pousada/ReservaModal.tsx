@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { clsx } from "clsx";
 import type { Reserva, Pessoa, PousadaTipo, StatusReserva } from "@/lib/pousada-types";
-import { formatDataComDiaSemana } from "@/lib/format-date";
+import { formatDataComDiaSemana, todayBR } from "@/lib/format-date";
 
 type QuartoOcupado = { quarto: string; reserva: Reserva };
 
@@ -41,7 +41,7 @@ export function ReservaModal({
   onSave: (r: Reserva) => void;
   onClose: () => void;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayBR();
   const pessoasIniciais: PessoaForm[] = initial?.pessoas?.length
     ? initial.pessoas.map((p) => ({ ...p, _expanded: false }))
     : [emptyPessoa()];

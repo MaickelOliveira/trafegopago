@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { clsx } from "clsx";
 import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
-import { formatDataComDiaSemana } from "@/lib/format-date";
+import { formatDataComDiaSemana, todayBR } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 
 function fmt(v: number) {
@@ -57,7 +57,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [tipo, setTipo] = useState("");
   const [from, setFrom] = useState(firstDayOfMonth());
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(todayBR());
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [totais, setTotais] = useState({ valorTotal: 0, valorPago: 0, faltaPagar: 0, totalPessoas: 0 });
   const [faixasEtarias, setFaixasEtarias] = useState({ faixa0a5: 0, faixa6a12: 0 });

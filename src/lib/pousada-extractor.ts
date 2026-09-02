@@ -4,6 +4,21 @@ import type { PousadaTipo, Pessoa, Reserva, StatusReserva } from "./pousada-type
 import { createReserva, updateReserva, findReservaByPhone, atribuirQuartoLivre } from "./pousada";
 import { getAgentConfigForConnection, type Client } from "./clients";
 import { sendMessage } from "./whatsapp-send";
+import { todayBR } from "./format-date";
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// O Gemini só é *instruído* via prompt a devolver "data"/"dataCheckout" em
+// AAAA-MM-DD — nunca validado em código. Um valor fora desse formato (ex: com
+// sufixo de horário) quebra os filtros de data em pousada.ts (comparação de
+// string >=/<= assume sempre 10 caracteres). Normaliza/valida antes de gravar
+// em vez de confiar cegamente no texto livre do modelo.
+function normalizeDateStr(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (ISO_DATE_RE.test(value)) return value;
+  const sliced = value.slice(0, 10);
+  return ISO_DATE_RE.test(sliced) ? sliced : undefined;
+}
 
 /** Avisa o gestor (mesmos destinatários do enviar_resumo — agentCfg.avisos ou
  *  summaryPhone legado) quando um formulário (hóspedes ou serviços) foi
@@ -47,7 +62,7 @@ function sumPessoas(pessoas: Pessoa[]): number {
 }
 
 function buildInsertPrompt(tiposInfo: string, phone: string, conversation: string): string {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayBR();
   return `Você extrai dados de reservas de uma pousada a partir de conversas de WhatsApp, em formato JSON estruturado.
 
 Data de hoje: ${today}
@@ -309,8 +324,10 @@ export async function extractAndWriteToPousada(opts: {
 
         // "data" resolvida (com fallback pra hoje) — usada tanto pra localizar
         // uma reserva existente quanto pra criar/atualizar, garantindo que os
-        // dois usem exatamente a mesma referência.
-        const dataReserva = knownData ?? (row.data as string | undefined) ?? new Date().toISOString().slice(0, 10);
+        // dois usem exatamente a mesma referência. knownData vem do formulário
+        // público (já um <input type="date">, sempre confiável); o valor da
+        // IA passa por normalizeDateStr antes de ser aceito.
+        const dataReserva = knownData ?? normalizeDateStr(row.data as string | undefined) ?? todayBR();
 
         // Evita duplicar quando o agente confirma "dados recebidos" mais de
         // uma vez pra MESMA reserva (mesmo telefone, tipo E data). Se o
@@ -329,7 +346,7 @@ export async function extractAndWriteToPousada(opts: {
         // cliente configurou o total de quartos/chalés.
         const tipoInfo = tipos.find((t) => t.slug === tipo);
         const isHospedagem = tipoInfo?.categoria === "hospedagem";
-        const dataCheckoutReserva = (row.dataCheckout as string | undefined) ?? existing?.dataCheckout ?? dataReserva;
+        const dataCheckoutReserva = normalizeDateStr(row.dataCheckout as string | undefined) ?? existing?.dataCheckout ?? dataReserva;
         function resolveQuarto(quartoAtual?: string): string | undefined {
           if (quartoAtual) return quartoAtual;
           if (!isHospedagem || totalQuartos <= 0) return quartoAtual;
@@ -352,7 +369,7 @@ export async function extractAndWriteToPousada(opts: {
           const isCortesia = finalPessoas.length > 0 && finalValorTotal === 0;
           const updated = updateReserva(existing.id, {
             data: dataReserva,
-            dataCheckout: (row.dataCheckout as string) ?? existing.dataCheckout,
+            dataCheckout: normalizeDateStr(row.dataCheckout as string | undefined) ?? existing.dataCheckout,
             quarto: resolveQuarto((row.quarto as string) ?? existing.quarto),
             hora: (row.hora as string) ?? existing.hora,
             responsavel,
@@ -371,7 +388,7 @@ export async function extractAndWriteToPousada(opts: {
             clientId,
             tipo,
             data: dataReserva,
-            dataCheckout: row.dataCheckout as string | undefined,
+            dataCheckout: normalizeDateStr(row.dataCheckout as string | undefined),
             quarto: resolveQuarto(row.quarto as string | undefined),
             hora: row.hora as string | undefined,
             responsavel,
