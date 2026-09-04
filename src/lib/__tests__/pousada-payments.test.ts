@@ -4,6 +4,7 @@ import {
   faltaPagarPessoa,
   pessoasComPagamentos,
   somarValorPagoPessoas,
+  statusPagamentoPessoa,
   statusPorPagamentos,
 } from "../pousada-payments";
 
@@ -39,5 +40,12 @@ describe("pagamentos individuais de reservas", () => {
     expect(statusPorPagamentos("parcial", 195, 195)).toBe("pago");
     expect(statusPorPagamentos("pendente", 0, 0)).toBe("cortesia");
     expect(statusPorPagamentos("cancelada", 195, 195)).toBe("cancelada");
+  });
+
+  it("mantém o status de pagamento coerente para cada pessoa", () => {
+    expect(statusPagamentoPessoa({ nome: "Ana", valor: 130, valorPago: 0 })).toBe("pendente");
+    expect(statusPagamentoPessoa({ nome: "Ana", valor: 130, valorPago: 50 })).toBe("parcial");
+    expect(statusPagamentoPessoa({ nome: "Ana", valor: 130, valorPago: 130 })).toBe("pago");
+    expect(statusPagamentoPessoa({ nome: "Ana", valor: 0, gratuito: true })).toBe("cortesia");
   });
 });

@@ -1,5 +1,7 @@
 import type { Pessoa } from "./pousada-types";
 
+export type StatusPagamentoPessoa = "pendente" | "parcial" | "pago" | "cortesia";
+
 function toCents(value: number | undefined): number {
   return Math.max(Math.round((Number(value) || 0) * 100), 0);
 }
@@ -18,6 +20,15 @@ export function valorPagoPessoa(pessoa: Pessoa): number {
 
 export function faltaPagarPessoa(pessoa: Pessoa): number {
   return fromCents(Math.max(toCents(valorPessoa(pessoa)) - toCents(valorPagoPessoa(pessoa)), 0));
+}
+
+export function statusPagamentoPessoa(pessoa: Pessoa): StatusPagamentoPessoa {
+  const valor = valorPessoa(pessoa);
+  const pago = valorPagoPessoa(pessoa);
+  if (pessoa.gratuito || valor <= 0) return "cortesia";
+  if (pago >= valor) return "pago";
+  if (pago > 0) return "parcial";
+  return "pendente";
 }
 
 export function somarValorPessoas(pessoas: Pessoa[]): number {

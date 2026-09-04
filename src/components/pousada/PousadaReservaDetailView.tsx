@@ -8,7 +8,12 @@ import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
 import { formatDataComDiaSemana } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 import { ReservaModal } from "./ReservaModal";
-import { faltaPagarPessoa, valorPagoPessoa } from "@/lib/pousada-payments";
+import {
+  faltaPagarPessoa,
+  statusPagamentoPessoa,
+  valorPagoPessoa,
+  type StatusPagamentoPessoa,
+} from "@/lib/pousada-payments";
 
 function fmt(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -23,15 +28,29 @@ function normalizarBusca(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
-const STATUS_BADGE: Record<string, string> = {
+const STATUS_BADGE: Record<Reserva["status"], string> = {
   pendente: "bg-yellow-100 text-yellow-700",
   parcial: "bg-blue-100 text-blue-700",
   pago: "bg-green-100 text-green-700",
   cancelada: "bg-red-100 text-red-600",
   cortesia: "bg-emerald-100 text-emerald-700",
 };
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<Reserva["status"], string> = {
   pendente: "Pendente", parcial: "Parcial", pago: "Pago", cancelada: "Cancelada", cortesia: "Cortesia",
+};
+
+const PAGAMENTO_PESSOA_LABEL: Record<StatusPagamentoPessoa, string> = {
+  pendente: "Pendente",
+  parcial: "Parcial",
+  pago: "Pago",
+  cortesia: "Cortesia",
+};
+
+const PAGAMENTO_PESSOA_BADGE: Record<StatusPagamentoPessoa, string> = {
+  pendente: "bg-yellow-100 text-yellow-700",
+  parcial: "bg-blue-100 text-blue-700",
+  pago: "bg-green-100 text-green-700",
+  cortesia: "bg-emerald-100 text-emerald-700",
 };
 
 function Campo({ label, value }: { label: string; value?: string | number | null }) {
@@ -65,6 +84,8 @@ export function PousadaReservaDetailView({
   const [loading, setLoading] = useState(true);
   const [editando, setEditando] = useState(false);
   const [buscaPessoa, setBuscaPessoa] = useState("");
+  const [salvandoPagamentoPessoa, setSalvandoPagamentoPessoa] = useState<number | null>(null);
+  const [erroPagamentoPessoa, setErroPagamentoPessoa] = useState<{ index: number; mensagem: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,6 +144,81 @@ export function PousadaReservaDetailView({
       body: JSON.stringify({ pessoas }),
     });
     if (res.ok) setReserva(await res.json());
+  }
+
+  function parseValorInformado(informado: string): number {
+    const limpo = informado.replace(/[^\d,.-]/g, "");
+    return Number(limpo.includes(",") ? limpo.replace(/\./g, "").replace(",", ".") : limpo);
+  }
+
+  async function alterarPagamentoPessoa(index: number, status: StatusPagamentoPessoa) {
+    if (!reserva || salvandoPagamentoPessoa !== null) return;
+    const atual = reserva.pessoas[index];
+    if (!atual || status === statusPagamentoPessoa(atual)) return;
+
+    setErroPagamentoPessoa(null);
+    if (status === "cortesia") {
+      const confirmar = window.confirm(
+        `Marcar ${atual.nome} como cortesia? O valor desta pessoa será zerado.`,
+      );
+      if (!confirmar) return;
+    }
+    let valor = atual.gratuito ? 0 : Number(atual.valor) || 0;
+
+    if (status !== "cortesia" && valor <= 0) {
+      const informado = window.prompt(`Informe o valor cobrado de ${atual.nome}:`, "");
+      if (informado === null) return;
+      valor = parseValorInformado(informado);
+      if (!Number.isFinite(valor) || valor <= 0) {
+        setErroPagamentoPessoa({ index, mensagem: "Informe um valor válido maior que zero." });
+        return;
+      }
+    }
+
+    let proximaPessoa = { ...atual, valor, gratuito: false };
+    if (status === "pendente") {
+      proximaPessoa.valorPago = 0;
+    } else if (status === "pago") {
+      proximaPessoa.valorPago = valor;
+    } else if (status === "parcial") {
+      const informado = window.prompt(
+        `Informe quanto ${atual.nome} já pagou:`,
+        valorPagoPessoa(atual) > 0
+          ? valorPagoPessoa(atual).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : "",
+      );
+      if (informado === null) return;
+      const valorPago = parseValorInformado(informado);
+      if (!Number.isFinite(valorPago) || valorPago <= 0 || valorPago >= valor) {
+        setErroPagamentoPessoa({ index, mensagem: "O pagamento parcial deve ser maior que zero e menor que o valor da pessoa." });
+        return;
+      }
+      proximaPessoa.valorPago = valorPago;
+    } else {
+      proximaPessoa = { ...atual, valor: 0, valorPago: 0, gratuito: true };
+    }
+
+    const pessoas = reserva.pessoas.map((pessoa, pessoaIndex) => pessoaIndex === index ? proximaPessoa : pessoa);
+    setSalvandoPagamentoPessoa(index);
+    try {
+      const res = await fetch(`/api/pousada/reservas/${reserva.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pessoas,
+          status: reserva.status === "cortesia" && status !== "cortesia" ? "pendente" : reserva.status,
+        }),
+      });
+      if (!res.ok) {
+        setErroPagamentoPessoa({ index, mensagem: "Não foi possível atualizar. Tente novamente." });
+        return;
+      }
+      setReserva(await res.json());
+    } catch {
+      setErroPagamentoPessoa({ index, mensagem: "Não foi possível atualizar. Verifique sua conexão." });
+    } finally {
+      setSalvandoPagamentoPessoa(null);
+    }
   }
 
   if (loading) {
@@ -289,20 +385,41 @@ export function PousadaReservaDetailView({
             <div className="divide-y divide-slate-50">
               {reserva.pessoas.map((p, i) => (
                 <div key={i} className={clsx("px-5 py-4", !indicesVisiveis.has(i) && "hidden print:block")}>
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start justify-between gap-3">
                     <p className="text-sm font-medium text-slate-800">
                       {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
                     </p>
-                    <label className="flex items-center gap-1.5 text-xs text-slate-500 shrink-0 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!p.compareceu}
-                        onChange={(e) => toggleCompareceu(i, e.target.checked)}
-                        className="rounded border-slate-300 text-amber-600 focus:ring-amber-400"
-                      />
-                      Compareceu
-                    </label>
+                    <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
+                      <label className="sr-only" htmlFor={`pagamento-pessoa-${i}`}>Pagamento de {p.nome}</label>
+                      <select
+                        id={`pagamento-pessoa-${i}`}
+                        value={statusPagamentoPessoa(p)}
+                        disabled={salvandoPagamentoPessoa !== null || reserva.arquivada}
+                        onChange={(e) => void alterarPagamentoPessoa(i, e.target.value as StatusPagamentoPessoa)}
+                        className={clsx(
+                          "cursor-pointer rounded-full border-0 px-2.5 py-1 text-xs font-medium outline-none ring-1 ring-inset ring-black/5 disabled:cursor-wait disabled:opacity-60",
+                          PAGAMENTO_PESSOA_BADGE[statusPagamentoPessoa(p)],
+                        )}
+                        title={`Alterar pagamento de ${p.nome}`}
+                      >
+                        {(Object.keys(PAGAMENTO_PESSOA_LABEL) as StatusPagamentoPessoa[]).map((status) => (
+                          <option key={status} value={status}>{PAGAMENTO_PESSOA_LABEL[status]}</option>
+                        ))}
+                      </select>
+                      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+                        <input
+                          type="checkbox"
+                          checked={!!p.compareceu}
+                          onChange={(e) => toggleCompareceu(i, e.target.checked)}
+                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-400"
+                        />
+                        Compareceu
+                      </label>
+                    </div>
                   </div>
+                  {erroPagamentoPessoa?.index === i && (
+                    <p className="mt-2 text-xs text-red-600 print:hidden">{erroPagamentoPessoa.mensagem}</p>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
                     <Campo label="Idade" value={p.idade} />
                     <Campo label="CPF" value={p.cpf} />
