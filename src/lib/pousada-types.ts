@@ -13,6 +13,7 @@ export type Pessoa = {
   email?: string;
   profissao?: string;
   valor: number;
+  valorPago?: number; // pagamento atribuído a esta pessoa; saldo é derivado de valor - valorPago
   gratuito?: boolean;
   compareceu?: boolean;
 };

@@ -8,6 +8,7 @@ import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
 import { formatDataComDiaSemana } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 import { ReservaModal } from "./ReservaModal";
+import { faltaPagarPessoa, valorPagoPessoa } from "@/lib/pousada-payments";
 
 function fmt(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -16,6 +17,10 @@ function fmt(v: number) {
 function fmtData(iso?: string) {
   if (!iso) return "—";
   return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR");
+}
+
+function normalizarBusca(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -59,6 +64,7 @@ export function PousadaReservaDetailView({
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [loading, setLoading] = useState(true);
   const [editando, setEditando] = useState(false);
+  const [buscaPessoa, setBuscaPessoa] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +78,8 @@ export function PousadaReservaDetailView({
     setLoading(false);
   }, [clientId, reservaId]);
 
+  // Carrega a reserva ao abrir ou navegar para outro registro.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   // Título da aba/impressão — sem isso, o navegador imprime o título fixo da
@@ -137,6 +145,23 @@ export function PousadaReservaDetailView({
 
   const tipoInfo = tipos.find((t) => t.slug === reserva.tipo);
   const isHospedagem = (tipoInfo?.categoria ?? "evento") === "hospedagem";
+  const termoPessoa = normalizarBusca(buscaPessoa);
+  const indicesVisiveis = new Set(
+    reserva.pessoas
+      .map((pessoa, index) => ({
+        index,
+        texto: normalizarBusca([
+          pessoa.nome,
+          pessoa.telefone,
+          pessoa.cidade,
+          pessoa.cpf,
+          pessoa.rg,
+          pessoa.email,
+        ].filter(Boolean).join(" ")),
+      }))
+      .filter(({ texto }) => !termoPessoa || texto.includes(termoPessoa))
+      .map(({ index }) => index),
+  );
 
   return (
     <div>
@@ -230,12 +255,40 @@ export function PousadaReservaDetailView({
 
           {/* Todas as pessoas */}
           <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-            <p className="text-sm font-semibold text-slate-700 px-5 pt-5 pb-3">
-              {isHospedagem ? "Hóspedes" : "Participantes"} ({reserva.pessoas.length})
-            </p>
+            <div className="px-5 pt-5 pb-3">
+              <p className="text-sm font-semibold text-slate-700">
+                {isHospedagem ? "Hóspedes" : "Participantes"} ({reserva.pessoas.length})
+              </p>
+              <div className="mt-3 print:hidden">
+                <label htmlFor="busca-pessoa" className="mb-1 block text-xs font-medium text-slate-500">
+                  Pesquisar pessoa na reserva
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">🔎</span>
+                  <input
+                    id="busca-pessoa"
+                    type="search"
+                    value={buscaPessoa}
+                    onChange={(e) => setBuscaPessoa(e.target.value)}
+                    placeholder="Nome, telefone, cidade, CPF ou e-mail..."
+                    className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-amber-400"
+                  />
+                </div>
+                {termoPessoa && (
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    {indicesVisiveis.size} de {reserva.pessoas.length} pessoa{reserva.pessoas.length === 1 ? "" : "s"}
+                  </p>
+                )}
+              </div>
+            </div>
+            {termoPessoa && indicesVisiveis.size === 0 && (
+              <p className="border-t border-slate-100 px-5 py-8 text-center text-sm text-slate-400 print:hidden">
+                Nenhuma pessoa encontrada nesta reserva.
+              </p>
+            )}
             <div className="divide-y divide-slate-50">
               {reserva.pessoas.map((p, i) => (
-                <div key={i} className="px-5 py-4">
+                <div key={i} className={clsx("px-5 py-4", !indicesVisiveis.has(i) && "hidden print:block")}>
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium text-slate-800">
                       {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
@@ -261,6 +314,8 @@ export function PousadaReservaDetailView({
                     <Campo label="E-mail" value={p.email} />
                     <Campo label="Endereço" value={p.endereco} />
                     <Campo label="Valor" value={fmt(p.valor)} />
+                    <Campo label="Valor pago" value={fmt(valorPagoPessoa(p))} />
+                    <Campo label="Falta pagar" value={fmt(faltaPagarPessoa(p))} />
                   </div>
                 </div>
               ))}

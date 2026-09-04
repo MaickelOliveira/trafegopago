@@ -3,6 +3,15 @@ import path from "path";
 import { randomUUID } from "crypto";
 import type { Reserva, FaixaEtariaResumo } from "./pousada-types";
 import { todayBR } from "./format-date";
+import {
+  distribuirPagamentoPelasPessoas,
+  normalizarPagamentosIndividuais,
+  pessoasComPagamentos,
+  somarValorPagoPessoas,
+  somarValorPessoas,
+  statusPorPagamentos,
+  temPagamentosIndividuais,
+} from "./pousada-payments";
 
 export type { StatusReserva, OrigemReserva, Pessoa, Reserva, PousadaTipo, CategoriaTipo, FaixaEtariaResumo } from "./pousada-types";
 export { TIPOS_PADRAO } from "./pousada-types";
@@ -34,11 +43,19 @@ function round2(v: number): number {
 // com o mesmo prefixo de 10 caracteres é lexicograficamente MAIOR e faz a
 // reserva sumir de qualquer filtro cujo limite superior seja o próprio dia.
 function normalizarReserva(r: Reserva): Reserva {
+  const pessoas = pessoasComPagamentos(r.pessoas ?? [], r.valorPago);
+  const totalPessoas = somarValorPessoas(pessoas);
+  const valorPago = totalPessoas > 0
+    ? somarValorPagoPessoas(pessoas)
+    : Math.min(round2(r.valorPago), round2(r.valorTotal));
   return {
     ...r,
+    pessoas,
     data: r.data?.slice(0, 10),
     dataCheckout: r.dataCheckout ? r.dataCheckout.slice(0, 10) : r.dataCheckout,
-    faltaPagar: Math.max(round2(r.valorTotal - r.valorPago), 0),
+    valorPago,
+    faltaPagar: Math.max(round2(r.valorTotal - valorPago), 0),
+    status: statusPorPagamentos(r.status, r.valorTotal, valorPago),
   };
 }
 
@@ -77,10 +94,19 @@ export function getReservaById(id: string): Reserva | undefined {
 export function createReserva(data: Omit<Reserva, "id" | "createdAt" | "updatedAt" | "faltaPagar"> & { faltaPagar?: number }): Reserva {
   const all = load();
   const now = new Date().toISOString();
+  const pessoas = pessoasComPagamentos(data.pessoas ?? [], data.valorPago);
+  const totalPessoas = somarValorPessoas(pessoas);
+  const usarTotalPessoas = pessoas.some((p) => p.valor > 0) || (pessoas.length > 0 && pessoas.every((p) => p.gratuito));
+  const valorTotal = usarTotalPessoas ? totalPessoas : round2(data.valorTotal);
+  const valorPago = Math.min(
+    totalPessoas > 0 ? somarValorPagoPessoas(pessoas) : round2(data.valorPago),
+    valorTotal,
+  );
   // faltaPagar sempre derivado server-side — ignora qualquer valor explícito
   // do caller, pra nunca deixar o arquivo salvar um valor incoerente.
-  const faltaPagar = Math.max(round2(data.valorTotal - data.valorPago), 0);
-  const r: Reserva = { ...data, faltaPagar, id: randomUUID(), createdAt: now, updatedAt: now };
+  const faltaPagar = Math.max(round2(valorTotal - valorPago), 0);
+  const status = statusPorPagamentos(data.status, valorTotal, valorPago);
+  const r: Reserva = { ...data, pessoas, valorTotal, valorPago, faltaPagar, status, id: randomUUID(), createdAt: now, updatedAt: now };
   all.push(r);
   save(all);
   return r;
@@ -90,7 +116,35 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
   const all = load();
   const idx = all.findIndex((r) => r.id === id);
   if (idx < 0) return null;
-  const merged = { ...all[idx], ...patch, updatedAt: new Date().toISOString() };
+  const current = normalizarReserva(all[idx]);
+  let pessoas = current.pessoas;
+
+  if (patch.pessoas) {
+    pessoas = temPagamentosIndividuais(patch.pessoas)
+      ? normalizarPagamentosIndividuais(patch.pessoas)
+      : distribuirPagamentoPelasPessoas(patch.pessoas, patch.valorPago ?? current.valorPago);
+  } else if (patch.valorPago !== undefined) {
+    pessoas = distribuirPagamentoPelasPessoas(current.pessoas, patch.valorPago);
+  }
+
+  const totalPessoas = somarValorPessoas(pessoas);
+  const usarTotalPessoas = !!patch.pessoas
+    && (pessoas.some((p) => p.valor > 0) || (pessoas.length > 0 && pessoas.every((p) => p.gratuito)));
+  const valorTotal = usarTotalPessoas ? totalPessoas : round2(patch.valorTotal ?? current.valorTotal);
+  const valorPago = Math.min(
+    totalPessoas > 0 ? somarValorPagoPessoas(pessoas) : round2(patch.valorPago ?? current.valorPago),
+    valorTotal,
+  );
+  const status = statusPorPagamentos(patch.status ?? current.status, valorTotal, valorPago);
+  const merged = {
+    ...all[idx],
+    ...patch,
+    pessoas,
+    valorTotal,
+    valorPago,
+    status,
+    updatedAt: new Date().toISOString(),
+  };
   // Recalcula faltaPagar a partir do valorTotal/valorPago finais em vez de
   // aceitar o que veio no patch — evita que uma edição parcial (ex: só
   // valorPago) deixe faltaPagar dessincronizado no arquivo.

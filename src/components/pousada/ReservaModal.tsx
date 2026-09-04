@@ -4,13 +4,20 @@ import { useState } from "react";
 import { clsx } from "clsx";
 import type { Reserva, Pessoa, PousadaTipo, StatusReserva } from "@/lib/pousada-types";
 import { formatDataComDiaSemana, todayBR } from "@/lib/format-date";
+import {
+  distribuirPagamentoPelasPessoas,
+  faltaPagarPessoa,
+  normalizarPagamentosIndividuais,
+  somarValorPagoPessoas,
+  statusPorPagamentos,
+} from "@/lib/pousada-payments";
 
 type QuartoOcupado = { quarto: string; reserva: Reserva };
 
 type PessoaForm = Pessoa & { _expanded?: boolean };
 
 function emptyPessoa(): PessoaForm {
-  return { nome: "", idade: undefined, valor: 0, gratuito: false, _expanded: false };
+  return { nome: "", idade: undefined, valor: 0, valorPago: 0, gratuito: false, _expanded: false };
 }
 
 function sumPessoas(pessoas: PessoaForm[]): number {
@@ -20,10 +27,10 @@ function sumPessoas(pessoas: PessoaForm[]): number {
 // Mesma regra de withAutoStatus (dentro do componente), mas usada só pra
 // calcular o status com que o modal abre — nunca sobrescreve pago/parcial/cancelada.
 function resolveStatusInicial(pessoas: PessoaForm[], status: StatusReserva): StatusReserva {
-  const isCortesia = pessoas.length > 0 && sumPessoas(pessoas) === 0;
-  if (isCortesia && status === "pendente") return "cortesia";
-  if (!isCortesia && status === "cortesia") return "pendente";
-  return status;
+  const total = sumPessoas(pessoas);
+  const pago = somarValorPagoPessoas(pessoas);
+  const base = total > 0 && status === "cortesia" ? "pendente" : status;
+  return statusPorPagamentos(base, total, pago);
 }
 
 export function ReservaModal({
@@ -98,21 +105,21 @@ export function ReservaModal({
   // Se todo mundo da reserva estiver marcado como gratuito (total calculado
   // zero), o status sugerido é "cortesia" em vez de "pendente" — nunca
   // sobrescreve um status escolhido manualmente (pago/parcial/cancelada).
-  function withAutoStatus(next: PessoaForm[]) {
+  function syncTotalsAndStatus(next: PessoaForm[]) {
     const total = sumPessoas(next);
-    const isCortesia = next.length > 0 && total === 0;
+    const pago = somarValorPagoPessoas(next);
     setForm((f) => {
-      let status = f.status;
-      if (isCortesia && status === "pendente") status = "cortesia";
-      else if (!isCortesia && status === "cortesia") status = "pendente";
-      return { ...f, valorTotal: String(total), status };
+      const base = total > 0 && f.status === "cortesia" ? "pendente" : f.status;
+      const status = statusPorPagamentos(base, total, pago);
+      return { ...f, valorTotal: String(total), valorPago: String(pago), status };
     });
   }
 
   function updatePessoa(i: number, patch: Partial<PessoaForm>) {
     setPessoas((prev) => {
-      const next = prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
-      withAutoStatus(next);
+      const changed = prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
+      const next = normalizarPagamentosIndividuais(changed) as PessoaForm[];
+      syncTotalsAndStatus(next);
       return next;
     });
   }
@@ -155,9 +162,30 @@ export function ReservaModal({
   function removePessoa(i: number) {
     setPessoas((prev) => {
       const next = prev.filter((_, idx) => idx !== i);
-      withAutoStatus(next);
+      syncTotalsAndStatus(next);
       return next;
     });
+  }
+
+  function updateValorPagoTotal(value: string) {
+    const requested = Math.max(Number(value) || 0, 0);
+    setPessoas((prev) => {
+      const next = distribuirPagamentoPelasPessoas(prev, requested) as PessoaForm[];
+      syncTotalsAndStatus(next);
+      return next;
+    });
+  }
+
+  function updateStatus(status: StatusReserva) {
+    if (status === "pago") {
+      setPessoas((prev) => {
+        const next = distribuirPagamentoPelasPessoas(prev, sumPessoas(prev)) as PessoaForm[];
+        syncTotalsAndStatus(next);
+        return next;
+      });
+      return;
+    }
+    setForm((f) => ({ ...f, status }));
   }
 
   const valorTotalNum = Number(form.valorTotal) || 0;
@@ -187,7 +215,10 @@ export function ReservaModal({
         faltaPagar,
         pessoas: pessoas
           .filter((p) => p.nome.trim().length > 0)
-          .map(({ _expanded, ...p }) => p),
+          .map(({ _expanded, ...p }) => {
+            void _expanded;
+            return p;
+          }),
       };
       const url = initial ? `/api/pousada/reservas/${initial.id}` : "/api/pousada/reservas";
       const method = initial ? "PUT" : "POST";
@@ -236,7 +267,7 @@ export function ReservaModal({
                   const status = e.target.value as StatusReserva;
                   // Marcar como "Pago" preenche o Valor pago com o Valor total
                   // automaticamente, pra não deixar Falta pagar desatualizado.
-                  setForm((f) => ({ ...f, status, valorPago: status === "pago" ? f.valorTotal : f.valorPago }));
+                  updateStatus(status);
                 }}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 bg-white"
               >
@@ -338,6 +369,7 @@ export function ReservaModal({
                         value={p.valor}
                         onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
                         type="number" step="0.01" placeholder="Valor" disabled={!!p.gratuito}
+                        aria-label={`Valor de ${p.nome || `hóspede ${i + 1}`}`}
                         className="col-span-2 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
                       />
                       <label
@@ -345,7 +377,7 @@ export function ReservaModal({
                         title="Gratuito — isenta o valor desta pessoa; ela continua contando na quantidade de hóspedes"
                       >
                         <input type="checkbox" checked={!!p.gratuito}
-                          onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor })}
+                          onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor, valorPago: e.target.checked ? 0 : p.valorPago })}
                           className="h-4 w-4 rounded accent-amber-600" />
                         <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
                       </label>
@@ -394,6 +426,7 @@ export function ReservaModal({
                         value={p.valor}
                         onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
                         type="number" step="0.01" placeholder="Valor" disabled={!!p.gratuito}
+                        aria-label={`Valor de ${p.nome || `participante ${i + 1}`}`}
                         className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
                       />
                       <label
@@ -401,7 +434,7 @@ export function ReservaModal({
                         title="Gratuito — isenta o valor desta pessoa; ela continua contando na quantidade de participantes"
                       >
                         <input type="checkbox" checked={!!p.gratuito}
-                          onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor })}
+                          onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor, valorPago: e.target.checked ? 0 : p.valorPago })}
                           className="h-4 w-4 rounded accent-amber-600" />
                         <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
                       </label>
@@ -421,6 +454,28 @@ export function ReservaModal({
                       )}
                     </div>
                   )}
+
+                  <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Valor pago</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={p.valor}
+                        step="0.01"
+                        value={p.valorPago ?? 0}
+                        disabled={!!p.gratuito}
+                        onChange={(e) => updatePessoa(i, { valorPago: Number(e.target.value) || 0 })}
+                        className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
+                      />
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">Falta pagar</p>
+                      <div className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5 text-sm font-medium text-amber-700">
+                        {faltaPagarPessoa(p).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </div>
+                    </div>
+                  </div>
 
                   {isHospedagem && (
                     <>
@@ -460,13 +515,12 @@ export function ReservaModal({
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">Valor total (R$)</label>
-              <input value={form.valorTotal} onChange={(e) => setForm((f) => ({ ...f, valorTotal: e.target.value }))}
-                type="number" step="0.01"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+              <input value={form.valorTotal} readOnly type="number" step="0.01"
+                className="w-full rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-600 outline-none" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">Valor pago (R$)</label>
-              <input value={form.valorPago} onChange={(e) => setForm((f) => ({ ...f, valorPago: e.target.value }))}
+              <label className="text-xs font-medium text-slate-600 block mb-1">Valor pago total (R$)</label>
+              <input value={form.valorPago} onChange={(e) => updateValorPagoTotal(e.target.value)}
                 type="number" step="0.01"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400" />
             </div>
