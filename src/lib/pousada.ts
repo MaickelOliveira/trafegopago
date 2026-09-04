@@ -12,8 +12,19 @@ import {
   statusPorPagamentos,
   temPagamentosIndividuais,
 } from "./pousada-payments";
+import { normalizarConsumoPessoa, preservarConsumoExistente } from "./pousada-consumo";
 
-export type { StatusReserva, OrigemReserva, Pessoa, Reserva, PousadaTipo, CategoriaTipo, FaixaEtariaResumo } from "./pousada-types";
+export type {
+  StatusReserva,
+  OrigemReserva,
+  Pessoa,
+  Reserva,
+  PousadaTipo,
+  CategoriaTipo,
+  FaixaEtariaResumo,
+  ItemConsumoHospede,
+  LocalItemConsumo,
+} from "./pousada-types";
 export { TIPOS_PADRAO } from "./pousada-types";
 
 const FILE = path.join(process.cwd(), "data", "pousada-reservas.json");
@@ -43,7 +54,7 @@ function round2(v: number): number {
 // com o mesmo prefixo de 10 caracteres é lexicograficamente MAIOR e faz a
 // reserva sumir de qualquer filtro cujo limite superior seja o próprio dia.
 function normalizarReserva(r: Reserva): Reserva {
-  const pessoas = pessoasComPagamentos(r.pessoas ?? [], r.valorPago);
+  const pessoas = pessoasComPagamentos(r.pessoas ?? [], r.valorPago).map(normalizarConsumoPessoa);
   const totalPessoas = somarValorPessoas(pessoas);
   const valorPago = totalPessoas > 0
     ? somarValorPagoPessoas(pessoas)
@@ -94,7 +105,7 @@ export function getReservaById(id: string): Reserva | undefined {
 export function createReserva(data: Omit<Reserva, "id" | "createdAt" | "updatedAt" | "faltaPagar"> & { faltaPagar?: number }): Reserva {
   const all = load();
   const now = new Date().toISOString();
-  const pessoas = pessoasComPagamentos(data.pessoas ?? [], data.valorPago);
+  const pessoas = pessoasComPagamentos(data.pessoas ?? [], data.valorPago).map(normalizarConsumoPessoa);
   const totalPessoas = somarValorPessoas(pessoas);
   const usarTotalPessoas = pessoas.some((p) => p.valor > 0) || (pessoas.length > 0 && pessoas.every((p) => p.gratuito));
   const valorTotal = usarTotalPessoas ? totalPessoas : round2(data.valorTotal);
@@ -120,11 +131,13 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
   let pessoas = current.pessoas;
 
   if (patch.pessoas) {
-    pessoas = temPagamentosIndividuais(patch.pessoas)
-      ? normalizarPagamentosIndividuais(patch.pessoas)
-      : distribuirPagamentoPelasPessoas(patch.pessoas, patch.valorPago ?? current.valorPago);
+    const pessoasComConsumo = preservarConsumoExistente(patch.pessoas, current.pessoas);
+    pessoas = (temPagamentosIndividuais(pessoasComConsumo)
+      ? normalizarPagamentosIndividuais(pessoasComConsumo)
+      : distribuirPagamentoPelasPessoas(pessoasComConsumo, patch.valorPago ?? current.valorPago))
+      .map(normalizarConsumoPessoa);
   } else if (patch.valorPago !== undefined) {
-    pessoas = distribuirPagamentoPelasPessoas(current.pessoas, patch.valorPago);
+    pessoas = distribuirPagamentoPelasPessoas(current.pessoas, patch.valorPago).map(normalizarConsumoPessoa);
   }
 
   const totalPessoas = somarValorPessoas(pessoas);

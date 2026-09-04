@@ -1,6 +1,17 @@
 export type StatusReserva = "pendente" | "parcial" | "pago" | "cancelada" | "cortesia";
 export type OrigemReserva = "ia" | "manual";
 
+export type LocalItemConsumo = "frigobar" | "quarto";
+
+export type ItemConsumoHospede = {
+  id: string;
+  nome: string;
+  local: LocalItemConsumo;
+  quantidadeColocada: number;
+  quantidadeConsumida: number;
+  valorUnitario: number;
+};
+
 export type Pessoa = {
   nome: string;
   idade?: number;
@@ -16,6 +27,9 @@ export type Pessoa = {
   valorPago?: number; // pagamento atribuído a esta pessoa; saldo é derivado de valor - valorPago
   gratuito?: boolean;
   compareceu?: boolean;
+  itensConsumo?: ItemConsumoHospede[];
+  consumoConferido?: boolean;
+  consumoConferidoEm?: string; // ISO datetime da última conferência finalizada
 };
 
 export type Reserva = {

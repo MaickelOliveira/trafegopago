@@ -8,12 +8,14 @@ import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
 import { formatDataComDiaSemana } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 import { ReservaModal } from "./ReservaModal";
+import { ConsumoHospedePanel } from "./ConsumoHospedePanel";
 import {
   faltaPagarPessoa,
   statusPagamentoPessoa,
   valorPagoPessoa,
   type StatusPagamentoPessoa,
 } from "@/lib/pousada-payments";
+import { totalConsumoHospede, totalConsumoPessoas } from "@/lib/pousada-consumo";
 
 function fmt(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -86,6 +88,7 @@ export function PousadaReservaDetailView({
   const [buscaPessoa, setBuscaPessoa] = useState("");
   const [salvandoPagamentoPessoa, setSalvandoPagamentoPessoa] = useState<number | null>(null);
   const [erroPagamentoPessoa, setErroPagamentoPessoa] = useState<{ index: number; mensagem: string } | null>(null);
+  const [hospedeConsumoAberto, setHospedeConsumoAberto] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,6 +224,20 @@ export function PousadaReservaDetailView({
     }
   }
 
+  async function salvarConsumoHospede(index: number, pessoaAtualizada: Reserva["pessoas"][number]) {
+    if (!reserva) return null;
+    const pessoas = reserva.pessoas.map((pessoa, pessoaIndex) => pessoaIndex === index ? pessoaAtualizada : pessoa);
+    const res = await fetch(`/api/pousada/reservas/${reserva.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pessoas }),
+    });
+    if (!res.ok) return null;
+    const atualizada = await res.json() as Reserva;
+    setReserva(atualizada);
+    return atualizada.pessoas[index] ?? null;
+  }
+
   if (loading) {
     return (
       <div>
@@ -241,6 +258,8 @@ export function PousadaReservaDetailView({
 
   const tipoInfo = tipos.find((t) => t.slug === reserva.tipo);
   const isHospedagem = (tipoInfo?.categoria ?? "evento") === "hospedagem";
+  const totalConsumoReserva = isHospedagem ? totalConsumoPessoas(reserva.pessoas) : 0;
+  const totalConferidos = isHospedagem ? reserva.pessoas.filter((pessoa) => pessoa.consumoConferido).length : 0;
   const termoPessoa = normalizarBusca(buscaPessoa);
   const indicesVisiveis = new Set(
     reserva.pessoas
@@ -340,6 +359,8 @@ export function PousadaReservaDetailView({
               <Campo label="Valor total" value={fmt(reserva.valorTotal)} />
               <Campo label="Valor pago" value={fmt(reserva.valorPago)} />
               <Campo label="Falta pagar" value={fmt(reserva.faltaPagar)} />
+              {isHospedagem && <Campo label="Consumo apurado" value={fmt(totalConsumoReserva)} />}
+              {isHospedagem && <Campo label="Consumos conferidos" value={`${totalConferidos} de ${reserva.pessoas.length}`} />}
             </div>
             {reserva.observacoes && (
               <div className="mt-4 pt-4 border-t border-slate-100">
@@ -383,59 +404,87 @@ export function PousadaReservaDetailView({
               </p>
             )}
             <div className="divide-y divide-slate-50">
-              {reserva.pessoas.map((p, i) => (
-                <div key={i} className={clsx("px-5 py-4", !indicesVisiveis.has(i) && "hidden print:block")}>
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-medium text-slate-800">
-                      {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
-                    </p>
-                    <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
-                      <label className="sr-only" htmlFor={`pagamento-pessoa-${i}`}>Pagamento de {p.nome}</label>
-                      <select
-                        id={`pagamento-pessoa-${i}`}
-                        value={statusPagamentoPessoa(p)}
-                        disabled={salvandoPagamentoPessoa !== null || reserva.arquivada}
-                        onChange={(e) => void alterarPagamentoPessoa(i, e.target.value as StatusPagamentoPessoa)}
-                        className={clsx(
-                          "cursor-pointer rounded-full border-0 px-2.5 py-1 text-xs font-medium outline-none ring-1 ring-inset ring-black/5 disabled:cursor-wait disabled:opacity-60",
-                          PAGAMENTO_PESSOA_BADGE[statusPagamentoPessoa(p)],
-                        )}
-                        title={`Alterar pagamento de ${p.nome}`}
-                      >
-                        {(Object.keys(PAGAMENTO_PESSOA_LABEL) as StatusPagamentoPessoa[]).map((status) => (
-                          <option key={status} value={status}>{PAGAMENTO_PESSOA_LABEL[status]}</option>
-                        ))}
-                      </select>
-                      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
-                        <input
-                          type="checkbox"
-                          checked={!!p.compareceu}
-                          onChange={(e) => toggleCompareceu(i, e.target.checked)}
-                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-400"
-                        />
-                        Compareceu
-                      </label>
+              {reserva.pessoas.map((p, i) => {
+                const consumoAberto = isHospedagem && hospedeConsumoAberto === i;
+                const quantidadeItens = p.itensConsumo?.length ?? 0;
+                const totalConsumido = totalConsumoHospede(p);
+                return (
+                  <div key={i} className={clsx("px-5 py-4", !indicesVisiveis.has(i) && "hidden print:block")}>
+                    <div className="flex items-start justify-between gap-3">
+                      {isHospedagem ? (
+                        <button
+                          type="button"
+                          onClick={() => setHospedeConsumoAberto((atual) => atual === i ? null : i)}
+                          className="min-w-0 flex-1 text-left print:pointer-events-none"
+                          aria-expanded={consumoAberto}
+                        >
+                          <span className="block text-sm font-medium text-slate-800">
+                            {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
+                          </span>
+                          <span className="mt-1 block text-xs text-teal-700 print:hidden">
+                            🧾 {quantidadeItens} item{quantidadeItens === 1 ? "" : "s"} · {fmt(totalConsumido)} consumido · {consumoAberto ? "Fechar" : "Abrir controle"} {consumoAberto ? "▲" : "▼"}
+                          </span>
+                        </button>
+                      ) : (
+                        <p className="text-sm font-medium text-slate-800">
+                          {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
+                        <label className="sr-only" htmlFor={`pagamento-pessoa-${i}`}>Pagamento de {p.nome}</label>
+                        <select
+                          id={`pagamento-pessoa-${i}`}
+                          value={statusPagamentoPessoa(p)}
+                          disabled={salvandoPagamentoPessoa !== null || reserva.arquivada}
+                          onChange={(e) => void alterarPagamentoPessoa(i, e.target.value as StatusPagamentoPessoa)}
+                          className={clsx(
+                            "cursor-pointer rounded-full border-0 px-2.5 py-1 text-xs font-medium outline-none ring-1 ring-inset ring-black/5 disabled:cursor-wait disabled:opacity-60",
+                            PAGAMENTO_PESSOA_BADGE[statusPagamentoPessoa(p)],
+                          )}
+                          title={`Alterar pagamento de ${p.nome}`}
+                        >
+                          {(Object.keys(PAGAMENTO_PESSOA_LABEL) as StatusPagamentoPessoa[]).map((status) => (
+                            <option key={status} value={status}>{PAGAMENTO_PESSOA_LABEL[status]}</option>
+                          ))}
+                        </select>
+                        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+                          <input
+                            type="checkbox"
+                            checked={!!p.compareceu}
+                            onChange={(e) => toggleCompareceu(i, e.target.checked)}
+                            className="rounded border-slate-300 text-amber-600 focus:ring-amber-400"
+                          />
+                          Compareceu
+                        </label>
+                      </div>
                     </div>
+                    {erroPagamentoPessoa?.index === i && (
+                      <p className="mt-2 text-xs text-red-600 print:hidden">{erroPagamentoPessoa.mensagem}</p>
+                    )}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+                      <Campo label="Idade" value={p.idade} />
+                      <Campo label="CPF" value={p.cpf} />
+                      <Campo label="RG" value={p.rg} />
+                      <Campo label="Nascimento" value={fmtData(p.nascimento)} />
+                      <Campo label="Profissão" value={p.profissao} />
+                      <Campo label="Cidade" value={p.cidade} />
+                      <Campo label="Telefone" value={p.telefone} />
+                      <Campo label="E-mail" value={p.email} />
+                      <Campo label="Endereço" value={p.endereco} />
+                      <Campo label="Valor" value={fmt(p.valor)} />
+                      <Campo label="Valor pago" value={fmt(valorPagoPessoa(p))} />
+                      <Campo label="Falta pagar" value={fmt(faltaPagarPessoa(p))} />
+                    </div>
+                    {consumoAberto && (
+                      <ConsumoHospedePanel
+                        pessoa={p}
+                        disabled={!!reserva.arquivada}
+                        onSave={(pessoaAtualizada) => salvarConsumoHospede(i, pessoaAtualizada)}
+                      />
+                    )}
                   </div>
-                  {erroPagamentoPessoa?.index === i && (
-                    <p className="mt-2 text-xs text-red-600 print:hidden">{erroPagamentoPessoa.mensagem}</p>
-                  )}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
-                    <Campo label="Idade" value={p.idade} />
-                    <Campo label="CPF" value={p.cpf} />
-                    <Campo label="RG" value={p.rg} />
-                    <Campo label="Nascimento" value={fmtData(p.nascimento)} />
-                    <Campo label="Profissão" value={p.profissao} />
-                    <Campo label="Cidade" value={p.cidade} />
-                    <Campo label="Telefone" value={p.telefone} />
-                    <Campo label="E-mail" value={p.email} />
-                    <Campo label="Endereço" value={p.endereco} />
-                    <Campo label="Valor" value={fmt(p.valor)} />
-                    <Campo label="Valor pago" value={fmt(valorPagoPessoa(p))} />
-                    <Campo label="Falta pagar" value={fmt(faltaPagarPessoa(p))} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
