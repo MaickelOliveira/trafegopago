@@ -6,6 +6,7 @@ import type { Reserva, Pessoa, PousadaTipo, StatusReserva } from "@/lib/pousada-
 import { formatDataComDiaSemana, todayBR } from "@/lib/format-date";
 import {
   distribuirPagamentoPelasPessoas,
+  distribuirValorTotalPelasPessoas,
   faltaPagarPessoa,
   normalizarPagamentosIndividuais,
   somarValorPagoPessoas,
@@ -181,6 +182,15 @@ export function ReservaModal({
   }
 
   function updateValorTotalGeral(value: string) {
+    if (!isHospedagem) {
+      const total = Math.max(Number(value) || 0, 0);
+      setPessoas((prev) => {
+        const next = distribuirValorTotalPelasPessoas(prev, total) as PessoaForm[];
+        syncTotalsAndStatus(next);
+        return next;
+      });
+      return;
+    }
     setForm((f) => {
       const total = Math.max(Number(value) || 0, 0);
       const pago = Math.min(Math.max(Number(f.valorPago) || 0, 0), total);
@@ -456,7 +466,7 @@ export function ReservaModal({
                       <input
                         value={p.valor}
                         onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
-                        type="number" step="0.01" placeholder="Valor" disabled={!!p.gratuito}
+                        type="number" step="0.01" placeholder="Valor individual" disabled={!!p.gratuito}
                         aria-label={`Valor de ${p.nome || `participante ${i + 1}`}`}
                         className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
                       />
@@ -545,11 +555,11 @@ export function ReservaModal({
           </div>
 
           {/* Valores */}
-          {isHospedagem && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              O financeiro abaixo é o total geral da hospedagem de todo o grupo/família.
-            </p>
-          )}
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {isHospedagem
+              ? "O financeiro abaixo é o total geral da hospedagem de todo o grupo/família."
+              : "Você pode alterar o total ou o valor de uma pessoa. Ao mudar o total, a diferença é distribuída entre os participantes pagantes."}
+          </p>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">
@@ -557,17 +567,11 @@ export function ReservaModal({
               </label>
               <input
                 value={form.valorTotal}
-                readOnly={!isHospedagem}
                 onChange={(e) => updateValorTotalGeral(e.target.value)}
                 type="number"
                 min="0"
                 step="0.01"
-                className={clsx(
-                  "w-full rounded-lg px-3 py-2 text-sm outline-none",
-                  isHospedagem
-                    ? "border border-slate-200 focus:border-amber-400"
-                    : "border border-slate-100 bg-slate-50 text-slate-600",
-                )}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400"
               />
             </div>
             <div>

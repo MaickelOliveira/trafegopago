@@ -78,6 +78,53 @@ export function distribuirPagamentoPelasPessoas(pessoas: Pessoa[], valorPagoTota
   return normalized.map((pessoa, index) => ({ ...pessoa, valorPago: fromCents(shares[index].cents) }));
 }
 
+/** Altera o valor total de um evento sem deixar a soma individual divergente.
+ * Pessoas gratuitas continuam gratuitas; o novo total é dividido
+ * proporcionalmente entre as demais (ou igualmente quando ainda não havia
+ * valores), preservando pagamentos já realizados até o novo limite. */
+export function distribuirValorTotalPelasPessoas(pessoas: Pessoa[], valorTotal: number): Pessoa[] {
+  const normalized = normalizarPagamentosIndividuais(pessoas);
+  const target = toCents(valorTotal);
+  const elegiveis = normalized
+    .map((pessoa, index) => ({ pessoa, index }))
+    .filter(({ pessoa }) => !pessoa.gratuito);
+
+  if (elegiveis.length === 0) {
+    if (target === 0 || normalized.length === 0) {
+      return normalized.map((pessoa) => ({ ...pessoa, valor: 0, valorPago: 0 }));
+    }
+    // Se todos estavam como cortesia e o operador informou um total positivo,
+    // todas as pessoas passam a participar da divisão desse novo valor.
+    elegiveis.push(...normalized.map((pessoa, index) => ({ pessoa: { ...pessoa, gratuito: false }, index })));
+  }
+
+  const totalAtual = elegiveis.reduce((total, { pessoa }) => total + toCents(pessoa.valor), 0);
+  const parcelas = elegiveis.map(({ pessoa, index }) => {
+    const peso = totalAtual > 0 ? toCents(pessoa.valor) / totalAtual : 1 / elegiveis.length;
+    const bruto = target * peso;
+    return { index, cents: Math.floor(bruto), fraction: bruto - Math.floor(bruto) };
+  });
+  let restante = target - parcelas.reduce((total, parcela) => total + parcela.cents, 0);
+
+  for (const parcela of [...parcelas].sort((a, b) => b.fraction - a.fraction || a.index - b.index)) {
+    if (restante <= 0) break;
+    parcelas.find((item) => item.index === parcela.index)!.cents += 1;
+    restante -= 1;
+  }
+
+  const valorPorIndice = new Map(parcelas.map((parcela) => [parcela.index, parcela.cents]));
+  return normalized.map((pessoa, index) => {
+    const novoValor = valorPorIndice.get(index);
+    if (novoValor === undefined) return { ...pessoa, valor: 0, valorPago: 0 };
+    return {
+      ...pessoa,
+      gratuito: false,
+      valor: fromCents(novoValor),
+      valorPago: fromCents(Math.min(toCents(pessoa.valorPago), novoValor)),
+    };
+  });
+}
+
 /** Reservas antigas têm apenas valorPago no total. Na leitura, distribui
  * esse total entre as pessoas; reservas novas preservam os valores individuais. */
 export function pessoasComPagamentos(

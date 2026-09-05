@@ -154,6 +154,58 @@ export function PousadaReservaDetailView({
     return Number(limpo.includes(",") ? limpo.replace(/\./g, "").replace(",", ".") : limpo);
   }
 
+  async function alterarValorPessoa(index: number) {
+    if (!reserva || salvandoPagamentoPessoa !== null || reserva.arquivada) return;
+    const atual = reserva.pessoas[index];
+    if (!atual) return;
+
+    const informado = window.prompt(
+      `Informe o novo valor cobrado de ${atual.nome}:`,
+      (Number(atual.valor) || 0).toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
+    );
+    if (informado === null) return;
+
+    const valor = parseValorInformado(informado);
+    if (!Number.isFinite(valor) || valor <= 0) {
+      setErroPagamentoPessoa({ index, mensagem: "Informe um valor válido maior que zero. Para zerar, selecione Cortesia." });
+      return;
+    }
+
+    const pessoas = reserva.pessoas.map((pessoa, pessoaIndex) => pessoaIndex === index
+      ? {
+          ...pessoa,
+          valor,
+          valorPago: Math.min(valorPagoPessoa(pessoa), valor),
+          gratuito: false,
+        }
+      : pessoa);
+
+    setErroPagamentoPessoa(null);
+    setSalvandoPagamentoPessoa(index);
+    try {
+      const res = await fetch(`/api/pousada/reservas/${reserva.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pessoas,
+          status: reserva.status === "cortesia" ? "pendente" : reserva.status,
+        }),
+      });
+      if (!res.ok) {
+        setErroPagamentoPessoa({ index, mensagem: "Não foi possível alterar o valor. Tente novamente." });
+        return;
+      }
+      setReserva(await res.json());
+    } catch {
+      setErroPagamentoPessoa({ index, mensagem: "Não foi possível alterar o valor. Verifique sua conexão." });
+    } finally {
+      setSalvandoPagamentoPessoa(null);
+    }
+  }
+
   async function alterarPagamentoPessoa(index: number, status: StatusPagamentoPessoa) {
     if (!reserva || salvandoPagamentoPessoa !== null) return;
     const atual = reserva.pessoas[index];
@@ -449,6 +501,15 @@ export function PousadaReservaDetailView({
                                 <option key={status} value={status}>{PAGAMENTO_PESSOA_LABEL[status]}</option>
                               ))}
                             </select>
+                            <button
+                              type="button"
+                              disabled={salvandoPagamentoPessoa !== null || reserva.arquivada}
+                              onClick={() => void alterarValorPessoa(i)}
+                              className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              title={`Alterar valor de ${p.nome}`}
+                            >
+                              Alterar valor
+                            </button>
                           </>
                         )}
                         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">

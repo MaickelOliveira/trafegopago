@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   distribuirPagamentoPelasPessoas,
+  distribuirValorTotalPelasPessoas,
   faltaPagarPessoa,
   pessoasComPagamentos,
   somarValorPagoPessoas,
@@ -32,6 +33,18 @@ describe("pagamentos individuais de reservas", () => {
 
     expect(result.map(faltaPagarPessoa)).toEqual([80, 0]);
     expect(somarValorPagoPessoas(result)).toBe(115);
+  });
+
+  it("redistribui a alteração do valor total sem mexer em pessoas gratuitas", () => {
+    const result = distribuirValorTotalPelasPessoas([
+      { nome: "Ana", valor: 130, valorPago: 130 },
+      { nome: "Bruno", valor: 65, valorPago: 20 },
+      { nome: "Criança", valor: 0, valorPago: 0, gratuito: true },
+    ], 234);
+
+    expect(result.map((pessoa) => pessoa.valor)).toEqual([156, 78, 0]);
+    expect(result.map((pessoa) => pessoa.valorPago)).toEqual([130, 20, 0]);
+    expect(result[2].gratuito).toBe(true);
   });
 
   it("mantém o status coerente com os valores", () => {
