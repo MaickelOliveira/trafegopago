@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { clsx } from "clsx";
 import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
 import { formatDataComDiaSemana, todayBR } from "@/lib/format-date";
+import { listarItensConsumidos, totalConsumoPessoas } from "@/lib/pousada-consumo";
 import { PousadaSubNav } from "./PousadaSubNav";
 
 function fmt(v: number) {
@@ -53,6 +54,26 @@ function pessoasTexto(r: Reserva): string {
 const TH = "px-2 py-1.5 border border-slate-200 whitespace-nowrap";
 const TD = "px-2 py-1.5 border border-slate-200 align-top";
 
+function ConsumoReserva({ reserva }: { reserva: Reserva }) {
+  const itens = listarItensConsumidos(reserva.pessoas);
+  if (itens.length === 0) return <span className="text-slate-400">Nenhum consumo</span>;
+
+  return (
+    <div className="min-w-64 space-y-1.5">
+      {itens.map((item, index) => (
+        <div key={`${item.hospede}-${item.item}-${item.local}-${index}`} className="border-b border-slate-100 pb-1 last:border-0 last:pb-0">
+          <span className="font-medium text-slate-700">{item.item}</span>
+          <span className="text-slate-400"> · {item.local === "frigobar" ? "Frigobar" : "Quarto"}</span>
+          <span className="block text-[10px] text-slate-500">Hóspede: {item.hospede}</span>
+          <span className="whitespace-nowrap text-slate-600">
+            {item.quantidade} × {fmt(item.valorUnitario)} = <strong>{fmt(item.subtotal)}</strong>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function PousadaRelatoriosView({ clientId, role }: { clientId: string; role: "manager" | "client" }) {
   const [tipos, setTipos] = useState<PousadaTipo[]>([]);
   const [tipo, setTipo] = useState("");
@@ -76,6 +97,8 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
     setLoading(false);
   }, [clientId, tipo, from, to]);
 
+  // Carrega o relatório ao abrir ou alterar os filtros.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   // Agrupa as reservas por tipo, na mesma ordem de "tipos" — cada grupo vira
@@ -235,6 +258,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
               const totalValorTipo = rows.reduce((s, r) => s + r.valorTotal, 0);
               const totalPagoTipo = rows.reduce((s, r) => s + r.valorPago, 0);
               const totalFaltaTipo = rows.reduce((s, r) => s + r.faltaPagar, 0);
+              const totalConsumoTipo = rows.reduce((s, r) => s + totalConsumoPessoas(r.pessoas), 0);
               const totalF05Tipo = rows.reduce((s, r) => s + faixasDaReserva(r).f05, 0);
               const totalF612Tipo = rows.reduce((s, r) => s + faixasDaReserva(r).f612, 0);
               return (
@@ -256,7 +280,9 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                               <th className={TH}>Telefone</th>
                               <th className={TH}>Qtd. Pessoas</th>
                               <th className={TH}>Quarto/Chalé</th>
-                              <th className={TH}>Valor Total</th>
+                              <th className={TH}>Itens consumidos</th>
+                              <th className={TH}>Total consumo</th>
+                              <th className={TH}>Valor total geral</th>
                               <th className={TH}>Valor Pago</th>
                               <th className={TH}>Falta Pagar</th>
                               <th className={TH}>CPF</th>
@@ -296,6 +322,8 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                                   <td className={TD}>{r.telefone ?? "—"}</td>
                                   <td className={TD}>{r.pessoas.length}</td>
                                   <td className={TD}>{r.quarto ?? "—"}</td>
+                                  <td className={TD}><ConsumoReserva reserva={r} /></td>
+                                  <td className={clsx(TD, "whitespace-nowrap font-medium text-teal-700")}>{fmt(totalConsumoPessoas(r.pessoas))}</td>
                                   <td className={TD}>{fmt(r.valorTotal)}</td>
                                   <td className={TD}>{fmt(r.valorPago)}</td>
                                   <td className={TD}>{fmt(r.faltaPagar)}</td>
@@ -330,6 +358,9 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                               <td className={TD}>{totalPessoasTipo}</td>
                               {/* Quarto/Chalé */}
                               <td className={TD}>—</td>
+                              {/* Detalhamento e total de consumo */}
+                              <td className={TD}>—</td>
+                              <td className={TD}>{fmt(totalConsumoTipo)}</td>
                               <td className={TD}>{fmt(totalValorTipo)}</td>
                               <td className={TD}>{fmt(totalPagoTipo)}</td>
                               <td className={TD}>{fmt(totalFaltaTipo)}</td>

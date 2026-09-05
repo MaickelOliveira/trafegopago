@@ -356,9 +356,9 @@ export function PousadaReservaDetailView({
               <Campo label="Telefone" value={reserva.telefone} />
               {isHospedagem && <Campo label="CPF do responsável" value={reserva.responsavel.cpf} />}
               <Campo label="Quantidade de pessoas" value={reserva.pessoas.length} />
-              <Campo label="Valor total" value={fmt(reserva.valorTotal)} />
-              <Campo label="Valor pago" value={fmt(reserva.valorPago)} />
-              <Campo label="Falta pagar" value={fmt(reserva.faltaPagar)} />
+              <Campo label={isHospedagem ? "Valor total geral" : "Valor total"} value={fmt(reserva.valorTotal)} />
+              <Campo label={isHospedagem ? "Valor pago da hospedagem" : "Valor pago"} value={fmt(reserva.valorPago)} />
+              <Campo label={isHospedagem ? "Falta pagar da hospedagem" : "Falta pagar"} value={fmt(reserva.faltaPagar)} />
               {isHospedagem && <Campo label="Consumo apurado" value={fmt(totalConsumoReserva)} />}
               {isHospedagem && <Campo label="Consumos conferidos" value={`${totalConferidos} de ${reserva.pessoas.length}`} />}
             </div>
@@ -419,7 +419,7 @@ export function PousadaReservaDetailView({
                           aria-expanded={consumoAberto}
                         >
                           <span className="block text-sm font-medium text-slate-800">
-                            {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
+                            {p.nome}
                           </span>
                           <span className="mt-1 block text-xs text-teal-700 print:hidden">
                             🧾 {quantidadeItens} item{quantidadeItens === 1 ? "" : "s"} · {fmt(totalConsumido)} consumido · {consumoAberto ? "Fechar" : "Abrir controle"} {consumoAberto ? "▲" : "▼"}
@@ -431,22 +431,26 @@ export function PousadaReservaDetailView({
                         </p>
                       )}
                       <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
-                        <label className="sr-only" htmlFor={`pagamento-pessoa-${i}`}>Pagamento de {p.nome}</label>
-                        <select
-                          id={`pagamento-pessoa-${i}`}
-                          value={statusPagamentoPessoa(p)}
-                          disabled={salvandoPagamentoPessoa !== null || reserva.arquivada}
-                          onChange={(e) => void alterarPagamentoPessoa(i, e.target.value as StatusPagamentoPessoa)}
-                          className={clsx(
-                            "cursor-pointer rounded-full border-0 px-2.5 py-1 text-xs font-medium outline-none ring-1 ring-inset ring-black/5 disabled:cursor-wait disabled:opacity-60",
-                            PAGAMENTO_PESSOA_BADGE[statusPagamentoPessoa(p)],
-                          )}
-                          title={`Alterar pagamento de ${p.nome}`}
-                        >
-                          {(Object.keys(PAGAMENTO_PESSOA_LABEL) as StatusPagamentoPessoa[]).map((status) => (
-                            <option key={status} value={status}>{PAGAMENTO_PESSOA_LABEL[status]}</option>
-                          ))}
-                        </select>
+                        {!isHospedagem && (
+                          <>
+                            <label className="sr-only" htmlFor={`pagamento-pessoa-${i}`}>Pagamento de {p.nome}</label>
+                            <select
+                              id={`pagamento-pessoa-${i}`}
+                              value={statusPagamentoPessoa(p)}
+                              disabled={salvandoPagamentoPessoa !== null || reserva.arquivada}
+                              onChange={(e) => void alterarPagamentoPessoa(i, e.target.value as StatusPagamentoPessoa)}
+                              className={clsx(
+                                "cursor-pointer rounded-full border-0 px-2.5 py-1 text-xs font-medium outline-none ring-1 ring-inset ring-black/5 disabled:cursor-wait disabled:opacity-60",
+                                PAGAMENTO_PESSOA_BADGE[statusPagamentoPessoa(p)],
+                              )}
+                              title={`Alterar pagamento de ${p.nome}`}
+                            >
+                              {(Object.keys(PAGAMENTO_PESSOA_LABEL) as StatusPagamentoPessoa[]).map((status) => (
+                                <option key={status} value={status}>{PAGAMENTO_PESSOA_LABEL[status]}</option>
+                              ))}
+                            </select>
+                          </>
+                        )}
                         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
                           <input
                             type="checkbox"
@@ -458,7 +462,7 @@ export function PousadaReservaDetailView({
                         </label>
                       </div>
                     </div>
-                    {erroPagamentoPessoa?.index === i && (
+                    {!isHospedagem && erroPagamentoPessoa?.index === i && (
                       <p className="mt-2 text-xs text-red-600 print:hidden">{erroPagamentoPessoa.mensagem}</p>
                     )}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
@@ -471,9 +475,9 @@ export function PousadaReservaDetailView({
                       <Campo label="Telefone" value={p.telefone} />
                       <Campo label="E-mail" value={p.email} />
                       <Campo label="Endereço" value={p.endereco} />
-                      <Campo label="Valor" value={fmt(p.valor)} />
-                      <Campo label="Valor pago" value={fmt(valorPagoPessoa(p))} />
-                      <Campo label="Falta pagar" value={fmt(faltaPagarPessoa(p))} />
+                      {!isHospedagem && <Campo label="Valor" value={fmt(p.valor)} />}
+                      {!isHospedagem && <Campo label="Valor pago" value={fmt(valorPagoPessoa(p))} />}
+                      {!isHospedagem && <Campo label="Falta pagar" value={fmt(faltaPagarPessoa(p))} />}
                     </div>
                     {consumoAberto && (
                       <ConsumoHospedePanel

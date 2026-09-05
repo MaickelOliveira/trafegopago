@@ -9,9 +9,14 @@ import {
 } from "@/lib/pousada-consumo";
 
 const SUGESTOES: Array<{ nome: string; local: LocalItemConsumo }> = [
-  { nome: "Água mineral", local: "frigobar" },
-  { nome: "Refrigerante", local: "frigobar" },
-  { nome: "Cerveja", local: "frigobar" },
+  { nome: "Coca lata", local: "frigobar" },
+  { nome: "Coca lata zero", local: "frigobar" },
+  { nome: "Água sem gás", local: "frigobar" },
+  { nome: "Água com gás", local: "frigobar" },
+  { nome: "Guaraná lata", local: "frigobar" },
+  { nome: "Suco Prats 300 ml", local: "frigobar" },
+  { nome: "Heineken", local: "frigobar" },
+  { nome: "Original", local: "frigobar" },
   { nome: "Chocolate", local: "frigobar" },
   { nome: "Café", local: "quarto" },
 ];

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizarConsumoPessoa,
   normalizarItensConsumo,
+  listarItensConsumidos,
   preservarConsumoExistente,
   quantidadesConsumo,
   totalConsumoHospede,
@@ -38,6 +39,26 @@ describe("controle de consumo da hospedagem", () => {
     expect(quantidadesConsumo(ana)).toEqual({ colocada: 6, consumida: 3 });
     expect(totalConsumoHospede(ana)).toBe(16.5);
     expect(totalConsumoPessoas([ana, { nome: "Bruno", valor: 200 }])).toBe(16.5);
+  });
+
+  it("lista no relatório somente os itens realmente consumidos com seus preços", () => {
+    const linhas = listarItensConsumidos([{
+      nome: "Ana",
+      valor: 0,
+      itensConsumo: [
+        { id: "coca", nome: "Coca lata", local: "frigobar", quantidadeColocada: 4, quantidadeConsumida: 2, valorUnitario: 7.5 },
+        { id: "agua", nome: "Água sem gás", local: "frigobar", quantidadeColocada: 2, quantidadeConsumida: 0, valorUnitario: 5 },
+      ],
+    }]);
+
+    expect(linhas).toEqual([{
+      hospede: "Ana",
+      item: "Coca lata",
+      local: "frigobar",
+      quantidade: 2,
+      valorUnitario: 7.5,
+      subtotal: 15,
+    }]);
   });
 
   it("só mantém a conferência quando existem itens", () => {

@@ -91,6 +91,30 @@ export function totalConsumoPessoas(pessoas: Pessoa[]): number {
   return Math.round(pessoas.reduce((total, pessoa) => total + totalConsumoHospede(pessoa), 0) * 100) / 100;
 }
 
+export type ItemConsumidoReserva = {
+  hospede: string;
+  item: string;
+  local: ItemConsumoHospede["local"];
+  quantidade: number;
+  valorUnitario: number;
+  subtotal: number;
+};
+
+/** Linhas prontas para relatórios: mostra somente o que foi efetivamente
+ * consumido, mantendo o hóspede e o local para facilitar a conferência. */
+export function listarItensConsumidos(pessoas: Pessoa[]): ItemConsumidoReserva[] {
+  return pessoas.flatMap((pessoa) => normalizarItensConsumo(pessoa.itensConsumo)
+    .filter((item) => item.quantidadeConsumida > 0)
+    .map((item) => ({
+      hospede: pessoa.nome,
+      item: item.nome,
+      local: item.local,
+      quantidade: item.quantidadeConsumida,
+      valorUnitario: item.valorUnitario,
+      subtotal: Math.round(item.quantidadeConsumida * item.valorUnitario * 100) / 100,
+    })));
+}
+
 export function quantidadesConsumo(pessoa: Pessoa): { colocada: number; consumida: number } {
   return normalizarItensConsumo(pessoa.itensConsumo).reduce(
     (total, item) => ({

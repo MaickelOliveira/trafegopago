@@ -13,6 +13,7 @@ import {
   temPagamentosIndividuais,
 } from "./pousada-payments";
 import { normalizarConsumoPessoa, preservarConsumoExistente } from "./pousada-consumo";
+import { getClientById } from "./clients";
 
 export type {
   StatusReserva,
@@ -44,6 +45,24 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
+function isHospedagemReserva(clientId: string, tipo: string): boolean {
+  const tipoConfigurado = getClientById(clientId)?.pousadaTipos?.find((item) => item.slug === tipo);
+  if (tipoConfigurado) return tipoConfigurado.categoria === "hospedagem";
+
+  // Compatibilidade com reservas antigas, criadas antes de o tipo passar a
+  // guardar explicitamente sua categoria na configuração do cliente.
+  return /hospedagem|pernoite|di[aá]ria/i.test(tipo);
+}
+
+function semPagamentoIndividual(pessoas: Reserva["pessoas"]): Reserva["pessoas"] {
+  return pessoas.map((pessoa) => ({
+    ...pessoa,
+    valor: 0,
+    valorPago: undefined,
+    gratuito: undefined,
+  }));
+}
+
 // Corrige na leitura, sem precisar de migração: (1) faltaPagar nunca deve ser
 // confiado como veio salvo — sempre derivado de valorTotal/valorPago, mesmo
 // princípio de calcularFaixasEtarias (nunca armazenado); (2) "data"/
@@ -54,19 +73,25 @@ function round2(v: number): number {
 // com o mesmo prefixo de 10 caracteres é lexicograficamente MAIOR e faz a
 // reserva sumir de qualquer filtro cujo limite superior seja o próprio dia.
 function normalizarReserva(r: Reserva): Reserva {
-  const pessoas = pessoasComPagamentos(r.pessoas ?? [], r.valorPago).map(normalizarConsumoPessoa);
+  const hospedagem = isHospedagemReserva(r.clientId, r.tipo);
+  const pessoas = (hospedagem
+    ? semPagamentoIndividual(r.pessoas ?? [])
+    : pessoasComPagamentos(r.pessoas ?? [], r.valorPago))
+    .map(normalizarConsumoPessoa);
   const totalPessoas = somarValorPessoas(pessoas);
-  const valorPago = totalPessoas > 0
+  const valorTotal = Math.max(round2(r.valorTotal), 0);
+  const valorPago = !hospedagem && totalPessoas > 0
     ? somarValorPagoPessoas(pessoas)
-    : Math.min(round2(r.valorPago), round2(r.valorTotal));
+    : Math.min(Math.max(round2(r.valorPago), 0), valorTotal);
   return {
     ...r,
     pessoas,
     data: r.data?.slice(0, 10),
     dataCheckout: r.dataCheckout ? r.dataCheckout.slice(0, 10) : r.dataCheckout,
+    valorTotal,
     valorPago,
-    faltaPagar: Math.max(round2(r.valorTotal - valorPago), 0),
-    status: statusPorPagamentos(r.status, r.valorTotal, valorPago),
+    faltaPagar: Math.max(round2(valorTotal - valorPago), 0),
+    status: statusPorPagamentos(r.status, valorTotal, valorPago),
   };
 }
 
@@ -105,12 +130,18 @@ export function getReservaById(id: string): Reserva | undefined {
 export function createReserva(data: Omit<Reserva, "id" | "createdAt" | "updatedAt" | "faltaPagar"> & { faltaPagar?: number }): Reserva {
   const all = load();
   const now = new Date().toISOString();
-  const pessoas = pessoasComPagamentos(data.pessoas ?? [], data.valorPago).map(normalizarConsumoPessoa);
+  const hospedagem = isHospedagemReserva(data.clientId, data.tipo);
+  const pessoas = (hospedagem
+    ? semPagamentoIndividual(data.pessoas ?? [])
+    : pessoasComPagamentos(data.pessoas ?? [], data.valorPago))
+    .map(normalizarConsumoPessoa);
   const totalPessoas = somarValorPessoas(pessoas);
   const usarTotalPessoas = pessoas.some((p) => p.valor > 0) || (pessoas.length > 0 && pessoas.every((p) => p.gratuito));
-  const valorTotal = usarTotalPessoas ? totalPessoas : round2(data.valorTotal);
+  const valorTotal = hospedagem
+    ? Math.max(round2(data.valorTotal), 0)
+    : (usarTotalPessoas ? totalPessoas : Math.max(round2(data.valorTotal), 0));
   const valorPago = Math.min(
-    totalPessoas > 0 ? somarValorPagoPessoas(pessoas) : round2(data.valorPago),
+    !hospedagem && totalPessoas > 0 ? somarValorPagoPessoas(pessoas) : Math.max(round2(data.valorPago), 0),
     valorTotal,
   );
   // faltaPagar sempre derivado server-side — ignora qualquer valor explícito
@@ -128,24 +159,32 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
   const idx = all.findIndex((r) => r.id === id);
   if (idx < 0) return null;
   const current = normalizarReserva(all[idx]);
+  const tipoFinal = patch.tipo ?? current.tipo;
+  const hospedagem = isHospedagemReserva(current.clientId, tipoFinal);
   let pessoas = current.pessoas;
 
   if (patch.pessoas) {
     const pessoasComConsumo = preservarConsumoExistente(patch.pessoas, current.pessoas);
-    pessoas = (temPagamentosIndividuais(pessoasComConsumo)
-      ? normalizarPagamentosIndividuais(pessoasComConsumo)
-      : distribuirPagamentoPelasPessoas(pessoasComConsumo, patch.valorPago ?? current.valorPago))
+    pessoas = (hospedagem
+      ? semPagamentoIndividual(pessoasComConsumo)
+      : temPagamentosIndividuais(pessoasComConsumo)
+        ? normalizarPagamentosIndividuais(pessoasComConsumo)
+        : distribuirPagamentoPelasPessoas(pessoasComConsumo, patch.valorPago ?? current.valorPago))
       .map(normalizarConsumoPessoa);
-  } else if (patch.valorPago !== undefined) {
+  } else if (!hospedagem && patch.valorPago !== undefined) {
     pessoas = distribuirPagamentoPelasPessoas(current.pessoas, patch.valorPago).map(normalizarConsumoPessoa);
+  } else if (hospedagem) {
+    pessoas = semPagamentoIndividual(current.pessoas).map(normalizarConsumoPessoa);
   }
 
   const totalPessoas = somarValorPessoas(pessoas);
-  const usarTotalPessoas = !!patch.pessoas
+  const usarTotalPessoas = !hospedagem && !!patch.pessoas
     && (pessoas.some((p) => p.valor > 0) || (pessoas.length > 0 && pessoas.every((p) => p.gratuito)));
-  const valorTotal = usarTotalPessoas ? totalPessoas : round2(patch.valorTotal ?? current.valorTotal);
+  const valorTotal = Math.max(usarTotalPessoas ? totalPessoas : round2(patch.valorTotal ?? current.valorTotal), 0);
   const valorPago = Math.min(
-    totalPessoas > 0 ? somarValorPagoPessoas(pessoas) : round2(patch.valorPago ?? current.valorPago),
+    !hospedagem && totalPessoas > 0
+      ? somarValorPagoPessoas(pessoas)
+      : Math.max(round2(patch.valorPago ?? current.valorPago), 0),
     valorTotal,
   );
   const status = statusPorPagamentos(patch.status ?? current.status, valorTotal, valorPago);
