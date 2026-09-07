@@ -15,6 +15,7 @@ import { getLeadByPhone } from "./leads";
 import { getFunnels, getFunnelById } from "./funnels";
 import { getTemplateById, sendTemplate } from "./waba-templates";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { isAgentPhoneIgnored } from "./agent-phone-policy";
 
 const TERMINAL_STATUSES = ["ganho", "perdido"];
 
@@ -166,6 +167,12 @@ export async function processDueFollowUpsAndBatches(): Promise<{
     try {
       // ── 0. Lead em coluna final (ganho/perdido) → cancela todos e pula ───
       const lead = getLeadByPhone(followUp.clientId, followUp.phone);
+      if (isAgentPhoneIgnored(agentCfg, followUp.phone, lead?.realPhone)) {
+        cancelFollowUpsForPhone(followUp.clientId, followUp.phone);
+        console.log(`[cron-tasks] FU ${followUp.id} cancelado: número silenciado no agente`);
+        skipped++;
+        continue;
+      }
       if (lead && TERMINAL_STATUSES.includes(lead.status)) {
         cancelFollowUpsForPhone(followUp.clientId, followUp.phone);
         console.log(`[cron-tasks] FU ${followUp.id} cancelado: lead em coluna final (${lead.status})`);

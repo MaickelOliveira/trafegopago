@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { getLeadByPhone } from "./leads";
+import { getAgentConfigForConnection, getClientById } from "./clients";
+import { isAgentPhoneIgnored } from "./agent-phone-policy";
 
 export type FollowUpType = "followup" | "reminder" | "appointment_reminder";
 export type FollowUpStatus = "pending" | "processing" | "sent" | "cancelled" | "failed";
@@ -137,6 +139,13 @@ export function startFollowUpSequence(
   // Checagem central — vale pra todos os pontos de entrada (webhooks de todos
   // os providers), sem precisar duplicar o check em cada um.
   const lead = getLeadByPhone(clientId, phone);
+  const client = getClientById(clientId);
+  const agentCfg = client ? getAgentConfigForConnection(client, connId) : undefined;
+  if (isAgentPhoneIgnored(agentCfg, phone, lead?.realPhone)) {
+    cancelFollowUpsForPhone(clientId, phone);
+    console.log(`[followups] número silenciado — sequência não agendada clientId=${clientId} phone=${phone}`);
+    return;
+  }
   if (lead?.followUpDisabled) {
     console.log(`[followups] follow-up desativado pra esse lead — clientId=${clientId} phone=${phone}`);
     return;
@@ -180,6 +189,13 @@ export function restartFollowUpSequence(
 ): void {
   if (steps.length === 0) return;
   const lead = getLeadByPhone(clientId, phone);
+  const client = getClientById(clientId);
+  const agentCfg = client ? getAgentConfigForConnection(client, connId) : undefined;
+  if (isAgentPhoneIgnored(agentCfg, phone, lead?.realPhone)) {
+    cancelFollowUpsForPhone(clientId, phone);
+    console.log(`[followups] número silenciado — sequência cancelada clientId=${clientId} phone=${phone}`);
+    return;
+  }
   if (lead?.followUpDisabled) {
     console.log(`[followups] follow-up desativado pra esse lead — clientId=${clientId} phone=${phone}`);
     return;

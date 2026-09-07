@@ -6,6 +6,8 @@ import { createEvent, listFreeSlots, cancelEvent, listEvents, updateEvent } from
 import { getSheetHeadersCached, appendRow } from "./google-sheets";
 import { getHistory, getAiContextResetAt } from "./conversations";
 import type { ChatMessage } from "./conversations";
+import { getLeadByPhone } from "./leads";
+import { isAgentPhoneIgnored } from "./agent-phone-policy";
 
 export type GeminiAction =
   | { type: "agendamento_criado"; eventId: string; link: string; titulo: string; dataHora: string }
@@ -586,6 +588,16 @@ export async function runGeminiAgent(
   // Seleciona o agentConfig correto para esta conexão
   const agentCfg = getAgentConfigForConnection(client, connectionId);
   if (!agentCfg?.enabled || !isWithinBusinessHours(agentCfg)) return { text: "", actions: [] };
+  const realPhone = getLeadByPhone(clientId, phone)?.realPhone;
+  const isCurrentlyIgnored = () => {
+    const currentClient = getClientById(clientId);
+    const currentCfg = currentClient ? getAgentConfigForConnection(currentClient, connectionId) : undefined;
+    return isAgentPhoneIgnored(currentCfg, phone, realPhone);
+  };
+  if (isCurrentlyIgnored()) {
+    console.log(`[gemini-agent] número silenciado — clientId=${clientId} connId=${connectionId ?? "none"} phone=${phone}`);
+    return { text: "", actions: [] };
+  }
 
   // ── Modo só saudação ──────────────────────────────────────────────────
   // Confiar numa instrução de prompt tipo "não responda mais nada depois da
@@ -942,12 +954,14 @@ export async function runGeminiAgent(
 
       // Erro não-recuperável (ex: INVALID_ARGUMENT, API_KEY_INVALID, history inválido)
       console.error(`[gemini-agent] Erro não-recuperável — abortando. modelo=${usedModel} clientId=${clientId}`);
+      if (isCurrentlyIgnored()) return { text: "", actions: [] };
       return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
     }
   } // fim do loop de modelos
 
   if (!succeeded) {
     console.error(`[gemini-agent] Todos os modelos falharam. clientId=${clientId} phone=${phone}`);
+    if (isCurrentlyIgnored()) return { text: "", actions: [] };
     return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
   }
 
@@ -1132,6 +1146,10 @@ export async function runGeminiAgent(
   paras.forEach((p,i) => console.log(`[para ${i}] ${JSON.stringify(p.trim().slice(0,120))}`));
 
   console.log(`[gemini-agent] Resposta finalText.length=${finalText.length} actions=${actions.length}`);
+  if (isCurrentlyIgnored()) {
+    console.log(`[gemini-agent] resposta descartada: número foi silenciado durante o processamento — clientId=${clientId} phone=${phone}`);
+    return { text: "", actions: [] };
+  }
   return { text: finalText, actions };
 }
 

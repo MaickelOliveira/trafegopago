@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { getFunnels } from "@/lib/funnels";
 import { getClientById, getConfig, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
+import { isAgentPhoneIgnored } from "@/lib/agent-phone-policy";
 import { getHistory, addMessage, getAiPaused, setAiPaused, sanitizeContactName, ensureBrCountryCode } from "@/lib/conversations";
 import { upsertLeadByPhone, getLeadByPhone, updateLead, markLeadNeedsAttention } from "@/lib/leads";
 import { runGeminiAgent } from "@/lib/gemini-agent";
@@ -954,7 +955,10 @@ export async function POST(
 
     // ── Envia mídia na primeira interação do lead ─────────────────────────
     if (isNew && cid !== "sem-cliente") {
-      const mediaItems = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id)?.mediaLibrary?.filter((m) => m.sendOnFirstContact) ?? [];
+      const firstContactCfg = getAgentConfigForConnection(getClientById(cid)!, uazConn?.id);
+      const mediaItems = isAgentPhoneIgnored(firstContactCfg, phone)
+        ? []
+        : firstContactCfg?.mediaLibrary?.filter((m) => m.sendOnFirstContact) ?? [];
       for (const media of mediaItems) {
         const payload = resolveMediaPayload(media.url);
         await sendMedia(instanceUazToken, phone, media.type, payload, media.caption, media.filename);

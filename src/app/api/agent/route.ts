@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClientById, upsertClient } from "@/lib/clients";
 import type { AgentConfig } from "@/lib/clients";
-import { cancelFollowUpsForConnection } from "@/lib/followups";
+import { cancelFollowUpsForConnection, cancelFollowUpsForPhone } from "@/lib/followups";
+import { sanitizeAgentPhoneList } from "@/lib/agent-phone-policy";
 
 function getConfigForConn(client: ReturnType<typeof getClientById>, connId: string | null): AgentConfig {
   if (connId && client?.agentConfigs) {
@@ -121,9 +122,15 @@ export async function PUT(req: NextRequest) {
     ...current,
     ...body,
     googleRefreshToken: body.googleRefreshToken ?? current.googleRefreshToken,
+    ignoredPhones: body.ignoredPhones === undefined
+      ? current.ignoredPhones
+      : sanitizeAgentPhoneList(body.ignoredPhones),
   };
 
   upsertConfigForConn(client, connId, updated);
+  for (const phone of updated.ignoredPhones ?? []) {
+    cancelFollowUpsForPhone(client.id, phone);
+  }
   return NextResponse.json({ ok: true });
 }
 

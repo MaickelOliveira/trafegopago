@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { clsx } from "clsx";
 import { useSearchParams } from "next/navigation";
+import { isValidAgentPhone, sanitizeAgentPhoneList, splitAgentPhoneInput } from "@/lib/agent-phone-policy";
 
 type FollowUpStep = {
   id: string;
@@ -62,6 +63,7 @@ type AgentCfg = {
   splitMessageDelaySeconds?: number;
   aiResumeKeyword?: string;
   testPhone?: string;
+  ignoredPhones?: string[];
   spreadsheetId?: string;
   spreadsheetName?: string;
   sheetTabName?: string;
@@ -151,6 +153,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [uploading, setUploading] = useState(false);
   const [calendars, setCalendars] = useState<{ id: string; name: string; primary: boolean }[]>([]);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
+  const [ignoredPhonesDraft, setIgnoredPhonesDraft] = useState("");
 
   // Google Sheets — planilha de hóspedes/reservas
   const [spreadsheets, setSpreadsheets] = useState<{ id: string; name: string }[]>([]);
@@ -266,6 +269,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       d.avisos = [{ id: "legacy", label: "Gestor", value: d.summaryPhone, type: "phone" }];
     }
     setCfg(d);
+    setIgnoredPhonesDraft((d.ignoredPhones ?? []).join("\n"));
     if (!connId && d._agentConfigsSummary) setConfigsSummary(d._agentConfigsSummary);
     if (d.calendarConnected) loadCalendars();
 
@@ -500,10 +504,20 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       setMsg("✗ Selecione pelo menos um dia da semana no horário de atendimento.");
       return;
     }
+    const enteredIgnoredPhones = splitAgentPhoneInput(ignoredPhonesDraft);
+    const invalidIgnoredPhones = enteredIgnoredPhones.filter((phone) => !isValidAgentPhone(phone));
+    if (invalidIgnoredPhones.length > 0) {
+      setMsg(`✗ Confira ${invalidIgnoredPhones.length === 1 ? "o número inválido" : "os números inválidos"}: ${invalidIgnoredPhones.join(", ")}. Use DDI e DDD.`);
+      return;
+    }
+    const normalizedIgnoredPhones = sanitizeAgentPhoneList(enteredIgnoredPhones);
+    const configToSave = { ...cfg, ignoredPhones: normalizedIgnoredPhones };
+    setCfg(configToSave);
+    setIgnoredPhonesDraft(normalizedIgnoredPhones.join("\n"));
     setSaving(true);
     setMsg("");
     const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
-    const body = selectedConnId ? { ...cfg, whatsappConnectionId: selectedConnId } : cfg;
+    const body = selectedConnId ? { ...configToSave, whatsappConnectionId: selectedConnId } : configToSave;
     const res = await fetch(`/api/agent?clientId=${clientId}${connParam}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -752,6 +766,42 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           />
           <p className="text-xs text-slate-400 mt-1.5">
             Quando preenchido, a IA ignora todos os outros números. Deixe vazio para responder normalmente a todos.
+          </p>
+        </div>
+      </div>
+
+      {/* Números que nunca devem receber respostas automáticas */}
+      <div className={`rounded-2xl border p-5 space-y-3 shadow-sm ${(cfg.ignoredPhones?.length ?? 0) > 0 ? "border-rose-300 bg-rose-50" : "border-slate-200 bg-white"}`}>
+        <div className="flex items-center justify-between gap-3">
+          <p className={`text-xs font-semibold uppercase tracking-wide ${(cfg.ignoredPhones?.length ?? 0) > 0 ? "text-rose-600" : "text-slate-500"}`}>
+            🔕 Números silenciados
+          </p>
+          {(cfg.ignoredPhones?.length ?? 0) > 0 && (
+            <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
+              {cfg.ignoredPhones?.length} {(cfg.ignoredPhones?.length ?? 0) === 1 ? "número" : "números"}
+            </span>
+          )}
+        </div>
+        <p className="text-xs leading-5 text-slate-500">
+          A IA ficará totalmente em silêncio para estes contatos: não responderá, não enviará mídia automática e não fará follow-up. As mensagens continuam salvas e visíveis no CRM para atendimento humano.
+        </p>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            Telefones bloqueados para este agente
+          </label>
+          <textarea
+            rows={5}
+            value={ignoredPhonesDraft}
+            onChange={(e) => {
+              const value = e.target.value;
+              setIgnoredPhonesDraft(value);
+              setCfg((current) => ({ ...current, ignoredPhones: splitAgentPhoneInput(value) }));
+            }}
+            placeholder={"Ex:\n5511999999999\n5544999999999"}
+            className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+          />
+          <p className="mt-1.5 text-xs text-slate-400">
+            Informe um número por linha, com DDI e DDD. Também pode separar por vírgula ou ponto e vírgula. Para voltar a responder um contato, apague o número e salve.
           </p>
         </div>
       </div>

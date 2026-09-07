@@ -5,6 +5,7 @@ import { upsertLeadByPhone, getLeadByPhone, markLeadNeedsAttention, toDialablePh
 import { addMessage, getHistory } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection, getConfig, isWithinBusinessHours } from "@/lib/clients";
+import { isAgentPhoneIgnored } from "@/lib/agent-phone-policy";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
 import { startFollowUpSequence, restartFollowUpSequence, getFollowUpByWamid, markFailed } from "@/lib/followups";
 import { sendMessageDirect, getGeminiApiKey, downloadMetaMedia } from "@/lib/whatsapp-send";
@@ -223,7 +224,9 @@ export async function POST(req: NextRequest) {
         // ── Agente config ────────────────────────────────────────────────
         const client = cid !== "sem-cliente" ? getClientById(cid) : null;
         const agentCfg = client && connId ? getAgentConfigForConnection(client, connId) : undefined;
-        const geminiEnabled = agentCfg?.enabled === true && isWithinBusinessHours(agentCfg);
+        const geminiEnabled = agentCfg?.enabled === true
+          && isWithinBusinessHours(agentCfg)
+          && !isAgentPhoneIgnored(agentCfg, phone);
         const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
 
         if (!geminiEnabled) {
@@ -456,4 +459,3 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ ok: true });
 }
-

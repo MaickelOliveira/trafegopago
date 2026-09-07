@@ -68,6 +68,7 @@ export type AgentConfig = {
   splitMessageDelaySeconds?: number; // Intervalo entre cada mensagem dividida (padrão: 1.5s)
   aiResumeKeyword?: string;      // Palavra-chave enviada pelo gestor para reativar a IA (ex: "atendimento finalizado")
   testPhone?: string;            // Número de teste: quando preenchido, a IA responde APENAS este número
+  ignoredPhones?: string[];      // Números que nunca recebem resposta/follow-up automático deste agente
   knowledgeBase?: KnowledgeBaseDoc[]; // Documentos PDF/TXT que a IA pode consultar
   spreadsheetId?: string;        // ID da planilha do Google Sheets vinculada ao agente
   spreadsheetName?: string;      // Nome da planilha (exibição)
