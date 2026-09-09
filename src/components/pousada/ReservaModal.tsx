@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { clsx } from "clsx";
-import type { Reserva, Pessoa, PousadaTipo, StatusReserva } from "@/lib/pousada-types";
+import {
+  tipoUsaValorPorPacote,
+  type Reserva,
+  type Pessoa,
+  type PousadaTipo,
+  type StatusReserva,
+} from "@/lib/pousada-types";
 import { formatDataComDiaSemana, todayBR } from "@/lib/format-date";
 import {
   distribuirPagamentoPelasPessoas,
@@ -62,7 +68,8 @@ export function ReservaModal({
     ? initial.pessoas.map((p) => ({ ...p, _expanded: false }))
     : [emptyPessoa()];
   const tipoInicial = initial?.tipo ?? defaultTipo ?? tipos[0]?.slug ?? "";
-  const hospedagemInicial = tipos.find((t) => t.slug === tipoInicial)?.categoria === "hospedagem";
+  const tipoInicialInfo = tipos.find((t) => t.slug === tipoInicial);
+  const pacoteInicial = tipoUsaValorPorPacote(tipoInicialInfo ?? tipoInicial);
   const [form, setForm] = useState({
     tipo: tipoInicial,
     data: initial?.data ?? today,
@@ -82,7 +89,7 @@ export function ReservaModal({
     status: resolveStatusInicial(
       pessoasIniciais,
       initial?.status ?? "pendente",
-      hospedagemInicial
+      pacoteInicial
         ? { total: initial?.valorTotal ?? 0, pago: initial?.valorPago ?? 0 }
         : undefined,
     ),
@@ -116,8 +123,10 @@ export function ReservaModal({
     setQuartoPicker({ loading: false, total: res.totalQuartos ?? 0, ocupados });
   }
 
-  const categoria = tipos.find((t) => t.slug === form.tipo)?.categoria ?? "evento";
+  const tipoInfo = tipos.find((t) => t.slug === form.tipo);
+  const categoria = tipoInfo?.categoria ?? "evento";
   const isHospedagem = categoria === "hospedagem";
+  const isPacote = tipoUsaValorPorPacote(tipoInfo ?? form.tipo);
 
   // Se todo mundo da reserva estiver marcado como gratuito (total calculado
   // zero), o status sugerido é "cortesia" em vez de "pendente" — nunca
@@ -135,7 +144,7 @@ export function ReservaModal({
   function updatePessoa(i: number, patch: Partial<PessoaForm>) {
     setPessoas((prev) => {
       const changed = prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
-      if (isHospedagem) return changed;
+      if (isPacote) return changed;
       const next = normalizarPagamentosIndividuais(changed) as PessoaForm[];
       syncTotalsAndStatus(next);
       return next;
@@ -180,13 +189,13 @@ export function ReservaModal({
   function removePessoa(i: number) {
     setPessoas((prev) => {
       const next = prev.filter((_, idx) => idx !== i);
-      if (!isHospedagem) syncTotalsAndStatus(next);
+      if (!isPacote) syncTotalsAndStatus(next);
       return next;
     });
   }
 
   function updateValorTotalGeral(value: string) {
-    if (!isHospedagem) {
+    if (!isPacote) {
       const total = Math.max(Number(value) || 0, 0);
       setPessoas((prev) => {
         const next = distribuirValorTotalPelasPessoas(prev, total) as PessoaForm[];
@@ -210,7 +219,7 @@ export function ReservaModal({
 
   function updateValorPagoTotal(value: string) {
     const requested = Math.max(Number(value) || 0, 0);
-    if (isHospedagem) {
+    if (isPacote) {
       setForm((f) => {
         const total = Math.max(Number(f.valorTotal) || 0, 0);
         const pago = Math.min(requested, total);
@@ -227,7 +236,7 @@ export function ReservaModal({
   }
 
   function updateStatus(status: StatusReserva) {
-    if (isHospedagem) {
+    if (isPacote) {
       setForm((f) => ({
         ...f,
         status,
@@ -276,7 +285,7 @@ export function ReservaModal({
           .filter((p) => p.nome.trim().length > 0)
           .map(({ _expanded, ...p }) => {
             void _expanded;
-            return isHospedagem
+            return isPacote
               ? { ...p, valor: 0, valorPago: undefined, gratuito: undefined }
               : p;
           }),
@@ -465,26 +474,36 @@ export function ReservaModal({
                         value={p.cidade ?? ""}
                         onChange={(e) => updatePessoa(i, { cidade: e.target.value })}
                         placeholder="Cidade"
-                        className="col-span-4 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
+                        className={clsx(
+                          "rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400",
+                          isPacote ? "col-span-9" : "col-span-4",
+                        )}
                       />
-                      <input
-                        value={p.valor}
-                        onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
-                        type="number" step="0.01" placeholder="Valor individual" disabled={!!p.gratuito}
-                        aria-label={`Valor de ${p.nome || `participante ${i + 1}`}`}
-                        className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
-                      />
+                      {!isPacote && (
+                        <>
+                          <input
+                            value={p.valor}
+                            onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
+                            type="number" step="0.01" placeholder="Valor individual" disabled={!!p.gratuito}
+                            aria-label={`Valor de ${p.nome || `participante ${i + 1}`}`}
+                            className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
+                          />
+                          <label
+                            className="col-span-3 flex flex-col items-center justify-center gap-0.5"
+                            title="Gratuito — isenta o valor desta pessoa; ela continua contando na quantidade de participantes"
+                          >
+                            <input type="checkbox" checked={!!p.gratuito}
+                              onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor, valorPago: e.target.checked ? 0 : p.valorPago })}
+                              className="h-4 w-4 rounded accent-amber-600" />
+                            <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
+                          </label>
+                        </>
+                      )}
                       <label
-                        className="col-span-3 flex flex-col items-center justify-center gap-0.5"
-                        title="Gratuito — isenta o valor desta pessoa; ela continua contando na quantidade de participantes"
-                      >
-                        <input type="checkbox" checked={!!p.gratuito}
-                          onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor, valorPago: e.target.checked ? 0 : p.valorPago })}
-                          className="h-4 w-4 rounded accent-amber-600" />
-                        <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
-                      </label>
-                      <label
-                        className="col-span-2 flex flex-col items-center justify-center gap-0.5"
+                        className={clsx(
+                          "flex flex-col items-center justify-center gap-0.5",
+                          isPacote ? "col-span-3" : "col-span-2",
+                        )}
                         title="Marcar presença — confirma que este participante compareceu"
                       >
                         <input type="checkbox" checked={!!p.compareceu}
@@ -500,7 +519,7 @@ export function ReservaModal({
                     </div>
                   )}
 
-                  {!isHospedagem && (
+                  {!isPacote && (
                     <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
                       <div>
                         <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Valor pago</label>
@@ -560,14 +579,16 @@ export function ReservaModal({
 
           {/* Valores */}
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            {isHospedagem
-              ? "O financeiro abaixo é o total geral da hospedagem de todo o grupo/família."
+            {isPacote
+              ? isHospedagem
+                ? "O financeiro abaixo é o total geral da hospedagem de todo o grupo/família."
+                : "O financeiro abaixo é o valor total do pacote corporativo para todo o grupo."
               : "Você pode alterar o total ou o valor de uma pessoa. Ao mudar o total, a diferença é distribuída entre os participantes pagantes."}
           </p>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">
-                {isHospedagem ? "Valor total geral (R$)" : "Valor total (R$)"}
+                {isPacote ? "Valor total do pacote (R$)" : "Valor total (R$)"}
               </label>
               <input
                 value={form.valorTotal}
@@ -580,7 +601,7 @@ export function ReservaModal({
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">
-                {isHospedagem ? "Valor pago (R$)" : "Valor pago total (R$)"}
+                {isPacote ? "Valor pago do pacote (R$)" : "Valor pago total (R$)"}
               </label>
               <input value={form.valorPago} onChange={(e) => updateValorPagoTotal(e.target.value)}
                 type="number" min="0" max={valorTotalNum} step="0.01"
@@ -588,7 +609,7 @@ export function ReservaModal({
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600 block mb-1">
-                {isHospedagem ? "Falta pagar (geral)" : "Falta pagar"}
+                {isPacote ? "Falta pagar do pacote" : "Falta pagar"}
               </label>
               <div className="w-full rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">
                 {faltaPagar.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}

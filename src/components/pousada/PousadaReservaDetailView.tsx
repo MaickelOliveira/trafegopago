@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clsx } from "clsx";
-import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
+import { tipoUsaValorPorPacote, type Reserva, type PousadaTipo } from "@/lib/pousada-types";
 import { formatDataComDiaSemana } from "@/lib/format-date";
 import { PousadaSubNav } from "./PousadaSubNav";
 import { ReservaModal } from "./ReservaModal";
@@ -310,6 +310,7 @@ export function PousadaReservaDetailView({
 
   const tipoInfo = tipos.find((t) => t.slug === reserva.tipo);
   const isHospedagem = (tipoInfo?.categoria ?? "evento") === "hospedagem";
+  const isPacote = tipoUsaValorPorPacote(tipoInfo ?? reserva.tipo);
   const totalConsumoReserva = isHospedagem ? totalConsumoPessoas(reserva.pessoas) : 0;
   const totalConferidos = isHospedagem ? reserva.pessoas.filter((pessoa) => pessoa.consumoConferido).length : 0;
   const termoPessoa = normalizarBusca(buscaPessoa);
@@ -408,9 +409,9 @@ export function PousadaReservaDetailView({
               <Campo label="Telefone" value={reserva.telefone} />
               {isHospedagem && <Campo label="CPF do responsável" value={reserva.responsavel.cpf} />}
               <Campo label="Quantidade de pessoas" value={reserva.pessoas.length} />
-              <Campo label={isHospedagem ? "Valor total geral" : "Valor total"} value={fmt(reserva.valorTotal)} />
-              <Campo label={isHospedagem ? "Valor pago da hospedagem" : "Valor pago"} value={fmt(reserva.valorPago)} />
-              <Campo label={isHospedagem ? "Falta pagar da hospedagem" : "Falta pagar"} value={fmt(reserva.faltaPagar)} />
+              <Campo label={isPacote ? "Valor total do pacote" : "Valor total"} value={fmt(reserva.valorTotal)} />
+              <Campo label={isPacote ? "Valor pago do pacote" : "Valor pago"} value={fmt(reserva.valorPago)} />
+              <Campo label={isPacote ? "Falta pagar do pacote" : "Falta pagar"} value={fmt(reserva.faltaPagar)} />
               {isHospedagem && <Campo label="Consumo apurado" value={fmt(totalConsumoReserva)} />}
               {isHospedagem && <Campo label="Consumos conferidos" value={`${totalConferidos} de ${reserva.pessoas.length}`} />}
             </div>
@@ -479,11 +480,11 @@ export function PousadaReservaDetailView({
                         </button>
                       ) : (
                         <p className="text-sm font-medium text-slate-800">
-                          {p.nome} {p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
+                          {p.nome} {!isPacote && p.gratuito && <span className="text-xs font-normal text-green-600">(gratuito)</span>}
                         </p>
                       )}
                       <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
-                        {!isHospedagem && (
+                        {!isPacote && (
                           <>
                             <label className="sr-only" htmlFor={`pagamento-pessoa-${i}`}>Pagamento de {p.nome}</label>
                             <select
@@ -523,7 +524,7 @@ export function PousadaReservaDetailView({
                         </label>
                       </div>
                     </div>
-                    {!isHospedagem && erroPagamentoPessoa?.index === i && (
+                    {!isPacote && erroPagamentoPessoa?.index === i && (
                       <p className="mt-2 text-xs text-red-600 print:hidden">{erroPagamentoPessoa.mensagem}</p>
                     )}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
@@ -536,9 +537,9 @@ export function PousadaReservaDetailView({
                       <Campo label="Telefone" value={p.telefone} />
                       <Campo label="E-mail" value={p.email} />
                       <Campo label="Endereço" value={p.endereco} />
-                      {!isHospedagem && <Campo label="Valor" value={fmt(p.valor)} />}
-                      {!isHospedagem && <Campo label="Valor pago" value={fmt(valorPagoPessoa(p))} />}
-                      {!isHospedagem && <Campo label="Falta pagar" value={fmt(faltaPagarPessoa(p))} />}
+                      {!isPacote && <Campo label="Valor" value={fmt(p.valor)} />}
+                      {!isPacote && <Campo label="Valor pago" value={fmt(valorPagoPessoa(p))} />}
+                      {!isPacote && <Campo label="Falta pagar" value={fmt(faltaPagarPessoa(p))} />}
                     </div>
                     {consumoAberto && (
                       <ConsumoHospedePanel

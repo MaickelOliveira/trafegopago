@@ -1,6 +1,12 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ChatMessage } from "./conversations";
-import type { PousadaTipo, Pessoa, Reserva, StatusReserva } from "./pousada-types";
+import {
+  tipoUsaValorPorPacote,
+  type PousadaTipo,
+  type Pessoa,
+  type Reserva,
+  type StatusReserva,
+} from "./pousada-types";
 import { createReserva, updateReserva, findReservaByPhone, atribuirQuartoLivre } from "./pousada";
 import { getAgentConfigForConnection, type Client } from "./clients";
 import { sendMessage } from "./whatsapp-send";
@@ -89,11 +95,15 @@ REGRAS OBRIGATÓRIAS:
 
    ⚠️ IMPORTANTE — "pessoas" é sempre a LISTA COMPLETA E ATUAL da reserva, não só as pessoas mencionadas na última mensagem: releia a conversa inteira e junte todo mundo que ainda faz parte da reserva. Se o cliente mandou um grupo de pessoas num dia e depois, em outra mensagem (mesmo dias depois), acrescentou mais gente à MESMA reserva, inclua TODOS — os de antes E os novos — no array. Se o cliente disser explicitamente que alguém foi removido/cancelado/não vai mais, NÃO inclua essa pessoa. Se o cliente corrigir o nome, idade ou valor de alguém já mencionado antes, use o dado mais recente. Nunca devolva só as pessoas da última mensagem quando já havia outras pessoas confirmadas antes na mesma reserva.
 
-   Em ambos os casos, cada pessoa em "pessoas" também tem:
+   Se o tipo estiver marcado com cobrança POR PESSOA, cada pessoa também tem:
    - "valor" (número, valor cobrado calculado pelo atendente para aquela pessoa — obrigatório, use 0 se gratuito)
    - "gratuito" (true se a pessoa não paga, ex: criança de colo)
+
+   Se o tipo estiver marcado com cobrança PACOTE (Hospedagem ou Corporativo):
+   - NÃO atribua valor individual nem pagamento individual às pessoas; use "valor": 0 e omita "gratuito".
+   - "valorTotal" é o valor único negociado para o pacote completo, independentemente da quantidade de pessoas.
 7. "telefone" = número de telefone/celular que o cliente informou EXPLICITAMENTE na conversa. Se o cliente disser que é o mesmo número do WhatsApp atual, ou não informar nenhum número, OMITA este campo — o sistema preenche automaticamente com o número real do WhatsApp. NUNCA invente ou copie um número de exemplo.
-8. "valorTotal" = soma dos valores de "pessoas" (valor total cobrado pela reserva).
+8. "valorTotal" = na cobrança POR PESSOA, some os valores de "pessoas"; na cobrança PACOTE, use o valor único negociado para o pacote completo.
 9. "valorPago" = 0 (reserva recém criada, nada foi pago ainda) — NÃO PREENCHER com outro valor.
 10. "status" = "cortesia" se TODAS as pessoas da lista forem gratuitas (valor total 0), senão "pendente".
 11. "cidade" = cidade do responsável, se mencionada (principalmente relevante pra tipos EVENTO).
@@ -183,7 +193,7 @@ export async function extractAndWriteToPousada(opts: {
     .join("\n");
 
   const tiposInfo = tipos
-    .map((t) => `• tipo="${t.slug}" (${t.label}) — categoria: ${t.categoria === "hospedagem" ? "HOSPEDAGEM" : "EVENTO"}`)
+    .map((t) => `• tipo="${t.slug}" (${t.label}) — categoria: ${t.categoria === "hospedagem" ? "HOSPEDAGEM" : "EVENTO"}; cobrança: ${tipoUsaValorPorPacote(t) ? "PACOTE" : "POR PESSOA"}`)
     .join("\n");
 
   const prompt = isPagamento
@@ -303,14 +313,18 @@ export async function extractAndWriteToPousada(opts: {
       }
     } else {
       try {
+        const tipoInfo = tipos.find((t) => t.slug === tipo);
+        const isPacote = tipoUsaValorPorPacote(tipoInfo ?? tipo);
         // ⚠️ knownPessoas só é usado no fallback (linha já embutida no row
         // sintético acima) — aqui, quando a IA RETORNOU dados de verdade,
-        // continua confiando no que ela extraiu (inclui valor/gratuito por
-        // pessoa já calculado pelas regras de preço, ex: criança de colo
-        // gratuita — sobrescrever isso com knownPessoas.valor=0 quebraria
-        // esse cálculo). knownPessoas garante estrutura só quando a IA não
-        // achou nada pra extrair.
-        const pessoas = (Array.isArray(row.pessoas) ? row.pessoas : []) as Pessoa[];
+        // continua confiando na lista extraída. Cobranças por pessoa preservam
+        // valor/gratuidade; Hospedagem e Corporativo limpam esses campos
+        // porque o preço pertence ao pacote. knownPessoas garante estrutura
+        // só quando a IA não achou nada pra extrair.
+        const pessoasExtraidas = (Array.isArray(row.pessoas) ? row.pessoas : []) as Pessoa[];
+        const pessoas = isPacote
+          ? pessoasExtraidas.map((pessoa) => ({ ...pessoa, valor: 0, valorPago: undefined, gratuito: undefined }))
+          : pessoasExtraidas;
 
         // Telefone: se o número extraído não aparece literalmente na conversa
         // (alucinação — ex: cliente disse "é esse mesmo número"), usa o
@@ -344,7 +358,6 @@ export async function extractAndWriteToPousada(opts: {
         // tinham número de quarto (fica "pra equipe decidir depois" no prompt)
         // e por isso nunca apareciam na tela de Ocupação. Só tenta quando o
         // cliente configurou o total de quartos/chalés.
-        const tipoInfo = tipos.find((t) => t.slug === tipo);
         const isHospedagem = tipoInfo?.categoria === "hospedagem";
         const dataCheckoutReserva = normalizeDateStr(row.dataCheckout as string | undefined) ?? existing?.dataCheckout ?? dataReserva;
         function resolveQuarto(quartoAtual?: string): string | undefined {
@@ -363,9 +376,11 @@ export async function extractAndWriteToPousada(opts: {
           // pessoas.length garante que sumPessoas(pessoas) é um número válido
           // (pode ser legitimamente 0 quando todo mundo é gratuito) — por isso
           // não cai num "||" que trocaria esse 0 por um valorTotal desatualizado.
-          const finalValorTotal = pessoas.length
-            ? sumPessoas(pessoas)
-            : (valorTotal || existing.valorTotal);
+          const finalValorTotal = isPacote
+            ? (valorTotal || existing.valorTotal)
+            : pessoas.length
+              ? sumPessoas(pessoas)
+              : (valorTotal || existing.valorTotal);
           const isCortesia = finalPessoas.length > 0 && finalValorTotal === 0;
           const updated = updateReserva(existing.id, {
             data: dataReserva,
@@ -383,7 +398,9 @@ export async function extractAndWriteToPousada(opts: {
           if (updated) affected.push(updated);
           console.log(`[pousada-extractor] updateReserva (evitou duplicar) OK id=${existing.id} responsável="${responsavel.nome}" pessoas=${finalPessoas.length}`);
         } else {
-          const isCortesia = pessoas.length > 0 && sumPessoas(pessoas) === 0;
+          const isCortesia = isPacote
+            ? valorTotal === 0
+            : pessoas.length > 0 && sumPessoas(pessoas) === 0;
           const created = createReserva({
             clientId,
             tipo,

@@ -66,6 +66,30 @@ export type CategoriaTipo = "hospedagem" | "evento";
 
 export type PousadaTipo = { slug: string; label: string; categoria?: CategoriaTipo };
 
+function normalizarIdentificadorTipo(valor: string): string {
+  return valor
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+/**
+ * Hospedagem e serviços corporativos são vendidos pelo valor total do pacote.
+ * A categoria continua separada: um corporativo ainda usa os campos de evento
+ * (nome, telefone, idade e cidade), sem ganhar quarto, check-in ou CPF.
+ */
+export function tipoUsaValorPorPacote(
+  tipo: Pick<PousadaTipo, "slug" | "label" | "categoria"> | string | null | undefined,
+): boolean {
+  if (!tipo) return false;
+  if (typeof tipo !== "string" && tipo.categoria === "hospedagem") return true;
+
+  const identificador = typeof tipo === "string"
+    ? tipo
+    : `${tipo.slug} ${tipo.label}`;
+  return /hospedagem|pernoite|diaria|corporativ/.test(normalizarIdentificadorTipo(identificador));
+}
+
 export type FaixaEtariaResumo = { faixa0a5: number; faixa6a12: number };
 
 export const TIPOS_PADRAO: PousadaTipo[] = [

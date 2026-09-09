@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { clsx } from "clsx";
-import type { Reserva, PousadaTipo } from "@/lib/pousada-types";
+import { tipoUsaValorPorPacote, type Reserva, type PousadaTipo } from "@/lib/pousada-types";
 import { formatDataComDiaSemana, todayBR } from "@/lib/format-date";
 import { listarItensConsumidos, totalConsumoPessoas } from "@/lib/pousada-consumo";
 import { PousadaSubNav } from "./PousadaSubNav";
@@ -41,10 +41,11 @@ function faixasDaReserva(r: Reserva): { f05: number; f612: number } {
 
 // Reconstrói o texto "Nome (XX anos) - R$XX,00, Nome2..." igual a coluna
 // "Pessoas" da planilha antiga.
-function pessoasTexto(r: Reserva): string {
+function pessoasTexto(r: Reserva, mostrarValorIndividual: boolean): string {
   return r.pessoas
     .map((p) => {
       const idadeStr = typeof p.idade === "number" ? ` (${p.idade} anos)` : "";
+      if (!mostrarValorIndividual) return `${p.nome}${idadeStr}`;
       const valorStr = p.gratuito ? "Gratuito" : fmt(p.valor);
       return `${p.nome}${idadeStr} - ${valorStr}`;
     })
@@ -254,6 +255,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
             {gruposOrdenados.map((t) => {
               const rows = gruposPorTipo.get(t.slug)!;
               const hospedagem = t.categoria === "hospedagem";
+              const pacote = tipoUsaValorPorPacote(t);
               const totalPessoasTipo = rows.reduce((s, r) => s + r.pessoas.length, 0);
               const totalValorTipo = rows.reduce((s, r) => s + r.valorTotal, 0);
               const totalPagoTipo = rows.reduce((s, r) => s + r.valorPago, 0);
@@ -334,7 +336,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                                 <>
                                   <td className={clsx(TD, "whitespace-nowrap")}>{formatDataComDiaSemana(r.data)}</td>
                                   <td className={TD}>{r.responsavel.nome}</td>
-                                  <td className={clsx(TD, "max-w-xs")}>{pessoasTexto(r)}</td>
+                                  <td className={clsx(TD, "max-w-xs")}>{pessoasTexto(r, !pacote)}</td>
                                   <td className={clsx(TD, "text-center")}>{f05}</td>
                                   <td className={clsx(TD, "text-center")}>{f612}</td>
                                   <td className={TD}>{r.telefone ?? "—"}</td>

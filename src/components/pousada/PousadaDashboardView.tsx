@@ -392,7 +392,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
           <div>
             <p className="text-sm font-semibold text-amber-900">Tipos de reserva</p>
             <p className="text-xs text-amber-800/70 mt-0.5">
-              &quot;Hospedagem&quot; pede quarto/chalé, check-in/check-out e CPF de cada hóspede. &quot;Evento&quot; (Day Use, Almoço, etc.) pede nome, idade e cidade de cada participante.
+              &quot;Hospedagem&quot; pede quarto/chalé, check-in/check-out e CPF de cada hóspede. &quot;Evento&quot; (Day Use, Almoço, etc.) pede nome, idade e cidade de cada participante. Tipos corporativos e hospedagens usam somente o valor total do pacote, sem valor por pessoa.
             </p>
           </div>
           <div className="space-y-2">
