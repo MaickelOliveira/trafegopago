@@ -4,6 +4,7 @@ import {
   distribuirValorTotalPelasPessoas,
   faltaPagarPessoa,
   pessoasComPagamentos,
+  somarValorPessoas,
   somarValorPagoPessoas,
   statusPagamentoPessoa,
   statusPorPagamentos,
@@ -23,6 +24,15 @@ describe("pagamentos individuais de reservas", () => {
     expect(result[0].valorPago).toBe(65.01);
     expect(result[1].valorPago).toBe(32.5);
     expect(result[2].valorPago).toBe(0);
+  });
+
+  it("soma valores individuais em centavos sem exibir uma sequência de noves", () => {
+    const result = somarValorPessoas(
+      Array.from({ length: 25 }, (_, index) => ({ nome: `Pessoa ${index + 1}`, valor: 0.12 })),
+    );
+
+    expect(result).toBe(3);
+    expect(String(result)).toBe("3");
   });
 
   it("preserva pagamentos individuais e calcula o saldo de cada pessoa", () => {

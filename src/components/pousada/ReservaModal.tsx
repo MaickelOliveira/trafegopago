@@ -9,6 +9,7 @@ import {
   distribuirValorTotalPelasPessoas,
   faltaPagarPessoa,
   normalizarPagamentosIndividuais,
+  somarValorPessoas,
   somarValorPagoPessoas,
   statusPorPagamentos,
 } from "@/lib/pousada-payments";
@@ -22,7 +23,10 @@ function emptyPessoa(): PessoaForm {
 }
 
 function sumPessoas(pessoas: PessoaForm[]): number {
-  return pessoas.reduce((s, p) => s + (p.gratuito ? 0 : Number(p.valor) || 0), 0);
+  // Valores como 25 × R$ 0,12 não podem ser somados diretamente em ponto
+  // flutuante: o resultado vira 2,9999999999999996 e essa sequência aparece
+  // dentro do input. A função compartilhada soma em centavos inteiros.
+  return somarValorPessoas(pessoas);
 }
 
 // Mesma regra de withAutoStatus (dentro do componente), mas usada só pra
