@@ -28,6 +28,27 @@ describe("modelo de cobrança dos tipos de reserva", () => {
     })).toBe(true);
   });
 
+  it("permite substituir os padrões antigos por qualquer cobrança escolhida", () => {
+    expect(tipoUsaValorPorPacote({
+      slug: "hospedagem",
+      label: "Hospedagem",
+      categoria: "hospedagem",
+      cobranca: "individual",
+    })).toBe(false);
+    expect(tipoUsaValorPorPacote({
+      slug: "casamento_fotos",
+      label: "Casamento/Fotos",
+      categoria: "evento",
+      cobranca: "individual",
+    })).toBe(false);
+    expect(normalizarPousadaTipo({
+      slug: "corporativo",
+      label: "Corporativo",
+      categoria: "evento",
+      cobranca: "individual",
+    }).cobranca).toBe("individual");
+  });
+
   it("mantém day use e almoço comum com cobrança por pessoa", () => {
     expect(tipoUsaValorPorPacote({ slug: "day_use", label: "Day use", categoria: "evento" })).toBe(false);
     expect(tipoUsaValorPorPacote({ slug: "almoco", label: "Almoço final de semana", categoria: "evento" })).toBe(false);

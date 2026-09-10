@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
-  tipoExigeValorPorPacote,
   type CobrancaTipo,
   type Reserva,
   type PousadaTipo,
@@ -195,22 +194,15 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
     if (!label) return;
     const slug = slugify(label);
     if (!slug || tiposDraft.some((t) => t.slug === slug)) return;
-    const loteObrigatorio = tipoExigeValorPorPacote({ slug, label, categoria: novoTipoCategoria });
     setTiposDraft((prev) => [...prev, {
       slug,
       label,
       categoria: novoTipoCategoria,
-      cobranca: loteObrigatorio ? "lote" : novoTipoCobranca,
+      cobranca: novoTipoCobranca,
       ativo: true,
     }]);
     setNovoTipoLabel("");
   }
-
-  const novoTipoLoteObrigatorio = tipoExigeValorPorPacote({
-    slug: slugify(novoTipoLabel),
-    label: novoTipoLabel,
-    categoria: novoTipoCategoria,
-  });
 
   // Gera o link do formulário de hóspedes na mão — usado quando a IA está
   // pausada e o atendente está conduzindo a reserva de hospedagem manualmente
@@ -412,7 +404,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
           <div>
             <p className="text-sm font-semibold text-amber-900">Tipos de reserva</p>
             <p className="text-xs text-amber-800/70 mt-0.5">
-              Escolha os dados do serviço e como ele é cobrado. No modo individual, o valor total é dividido entre as pessoas e cada valor pode ser alterado. No modo lote/data fechada existe somente o valor total. Hospedagem, Corporativo e Casamento/Fotos permanecem sempre em lote.
+              Escolha os dados do serviço e como ele é cobrado. No modo individual, cada pessoa pode ter um valor diferente (por exemplo, a tarifa reduzida de crianças). Ao informar o total, a divisão igual é apenas inicial e cada valor continua editável. No modo lote/data fechada existe somente o valor total.
             </p>
           </div>
           <div className="space-y-2">
@@ -428,11 +420,7 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
                   onChange={(e) => setTiposDraft((prev) => prev.map((x, idx) => {
                     if (idx !== i) return x;
                     const categoria = e.target.value as CategoriaTipo;
-                    return {
-                      ...x,
-                      categoria,
-                      cobranca: tipoExigeValorPorPacote({ ...x, categoria }) ? "lote" : x.cobranca,
-                    };
+                    return { ...x, categoria };
                   }))}
                   className="rounded-lg border border-slate-200 px-2 py-2 text-xs outline-none focus:border-amber-400 bg-white"
                 >
@@ -440,13 +428,12 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
                   <option value="hospedagem">Hospedagem (quarto/checkin)</option>
                 </select>
                 <select
-                  value={tipoExigeValorPorPacote(t) ? "lote" : t.cobranca ?? "individual"}
-                  disabled={tipoExigeValorPorPacote(t)}
+                  value={t.cobranca ?? "individual"}
                   onChange={(e) => setTiposDraft((prev) => prev.map((x, idx) => (
                     idx === i ? { ...x, cobranca: e.target.value as CobrancaTipo } : x
                   )))}
-                  title={tipoExigeValorPorPacote(t) ? "Este tipo usa obrigatoriamente cobrança em lote" : "Modelo de cobrança"}
-                  className="rounded-lg border border-slate-200 px-2 py-2 text-xs outline-none focus:border-amber-400 bg-white disabled:bg-slate-100 disabled:text-slate-500"
+                  title="Modelo de cobrança"
+                  className="rounded-lg border border-slate-200 px-2 py-2 text-xs outline-none focus:border-amber-400 bg-white"
                 >
                   <option value="individual">Individual (por pessoa)</option>
                   <option value="lote">Lote / data fechada</option>
@@ -464,21 +451,16 @@ export function PousadaDashboardView({ clientId, role }: { clientId: string; rol
             />
             <select
               value={novoTipoCategoria}
-              onChange={(e) => {
-                const categoria = e.target.value as CategoriaTipo;
-                setNovoTipoCategoria(categoria);
-                if (categoria === "hospedagem") setNovoTipoCobranca("lote");
-              }}
+              onChange={(e) => setNovoTipoCategoria(e.target.value as CategoriaTipo)}
               className="rounded-lg border border-slate-200 px-2 py-2 text-xs outline-none focus:border-amber-400 bg-white"
             >
               <option value="evento">Evento</option>
               <option value="hospedagem">Hospedagem</option>
             </select>
             <select
-              value={novoTipoLoteObrigatorio ? "lote" : novoTipoCobranca}
-              disabled={novoTipoLoteObrigatorio}
+              value={novoTipoCobranca}
               onChange={(e) => setNovoTipoCobranca(e.target.value as CobrancaTipo)}
-              className="rounded-lg border border-slate-200 px-2 py-2 text-xs outline-none focus:border-amber-400 bg-white disabled:bg-slate-100 disabled:text-slate-500"
+              className="rounded-lg border border-slate-200 px-2 py-2 text-xs outline-none focus:border-amber-400 bg-white"
             >
               <option value="individual">Individual (por pessoa)</option>
               <option value="lote">Lote / data fechada</option>

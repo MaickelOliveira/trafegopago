@@ -89,17 +89,14 @@ function normalizarIdentificadorTipo(valor: string): string {
     .toLowerCase();
 }
 
-/**
- * Hospedagem, Corporativo e Casamento/Fotos são sempre cobrados em lote. Nos
- * demais tipos, a configuração explícita prevalece; cadastros antigos ainda
- * sem `cobranca` continuam individuais.
- */
+/** A configuração explícita sempre prevalece. A inferência pelo nome/categoria
+ * existe apenas para cadastros antigos que ainda não possuem `cobranca`. */
 export function tipoUsaValorPorPacote(
   tipo: Pick<PousadaTipo, "slug" | "label" | "categoria" | "cobranca"> | string | null | undefined,
 ): boolean {
   if (!tipo) return false;
-  if (tipoExigeValorPorPacote(tipo)) return true;
-  return typeof tipo !== "string" && tipo.cobranca === "lote";
+  if (typeof tipo !== "string" && tipo.cobranca) return tipo.cobranca === "lote";
+  return tipoExigeValorPorPacote(tipo);
 }
 
 export function tipoExigeValorPorPacote(
@@ -118,9 +115,7 @@ export function normalizarPousadaTipo(tipo: PousadaTipo): PousadaTipo {
   return {
     ...tipo,
     categoria: tipo.categoria ?? "evento",
-    cobranca: tipoExigeValorPorPacote(tipo)
-      ? "lote"
-      : tipo.cobranca ?? "individual",
+    cobranca: tipo.cobranca ?? (tipoExigeValorPorPacote(tipo) ? "lote" : "individual"),
     ativo: tipo.ativo !== false,
   };
 }

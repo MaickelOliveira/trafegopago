@@ -171,10 +171,11 @@ export function ReservaModal({
     setPessoas((prev) => {
       const added = [...prev, emptyPessoa()];
       if (isPacote) return added;
-      const total = Math.max(Number(form.valorTotal) || 0, 0);
-      const next = total > 0
-        ? distribuirValorTotalPelasPessoas(added, total) as PessoaForm[]
-        : added;
+      // Valores já ajustados (adulto, criança, cortesia etc.) são
+      // autoritativos. Adicionar alguém nunca redistribui nem sobrescreve os
+      // preços existentes; a nova pessoa começa em zero para receber o valor
+      // correto manualmente.
+      const next = normalizarPagamentosIndividuais(added) as PessoaForm[];
       syncTotalsAndStatus(next);
       return next;
     });
@@ -231,10 +232,9 @@ export function ReservaModal({
     setPessoas((prev) => {
       const remaining = prev.filter((_, idx) => idx !== i);
       if (isPacote) return remaining;
-      const next = distribuirValorTotalPelasPessoas(
-        remaining,
-        Math.max(Number(form.valorTotal) || 0, 0),
-      ) as PessoaForm[];
+      // Remover alguém também preserva os valores das outras pessoas. O total
+      // da reserva passa a ser a soma dos participantes restantes.
+      const next = normalizarPagamentosIndividuais(remaining) as PessoaForm[];
       syncTotalsAndStatus(next);
       return next;
     });
@@ -549,37 +549,10 @@ export function ReservaModal({
                         value={p.cidade ?? ""}
                         onChange={(e) => updatePessoa(i, { cidade: e.target.value })}
                         placeholder="Cidade"
-                        className={clsx(
-                          "rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400",
-                          isPacote ? "col-span-9" : "col-span-4",
-                        )}
+                        className="col-span-9 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400"
                       />
-                      {!isPacote && (
-                        <>
-                          <input
-                            value={p.valor}
-                            onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
-                            onFocus={(e) => e.currentTarget.select()}
-                            type="number" min="0" step="0.01" inputMode="decimal" placeholder="Valor individual" disabled={!!p.gratuito}
-                            aria-label={`Valor de ${p.nome || `participante ${i + 1}`}`}
-                            className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
-                          />
-                          <label
-                            className="col-span-3 flex flex-col items-center justify-center gap-0.5"
-                            title="Gratuito — isenta o valor desta pessoa; ela continua contando na quantidade de participantes"
-                          >
-                            <input type="checkbox" checked={!!p.gratuito}
-                              onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor, valorPago: e.target.checked ? 0 : p.valorPago })}
-                              className="h-4 w-4 rounded accent-amber-600" />
-                            <span className="text-[9px] leading-none text-slate-500">Gratuito</span>
-                          </label>
-                        </>
-                      )}
                       <label
-                        className={clsx(
-                          "flex flex-col items-center justify-center gap-0.5",
-                          isPacote ? "col-span-3" : "col-span-2",
-                        )}
+                        className="col-span-3 flex flex-col items-center justify-center gap-0.5"
                         title="Marcar presença — confirma que este participante compareceu"
                       >
                         <input type="checkbox" checked={!!p.compareceu}
@@ -596,7 +569,22 @@ export function ReservaModal({
                   )}
 
                   {!isPacote && (
-                    <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
+                    <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2 sm:grid-cols-4">
+                      <div>
+                        <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Valor desta pessoa</label>
+                        <input
+                          value={p.valor}
+                          onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
+                          onFocus={(e) => e.currentTarget.select()}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          disabled={!!p.gratuito}
+                          aria-label={`Valor de ${p.nome || `participante ${i + 1}`}`}
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
+                        />
+                      </div>
                       <div>
                         <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">Valor pago</label>
                         <input
@@ -616,6 +604,15 @@ export function ReservaModal({
                           {faltaPagarPessoa(p).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                         </div>
                       </div>
+                      <label
+                        className="flex flex-col items-center justify-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5"
+                        title="Cortesia — isenta o valor desta pessoa; ela continua contando na quantidade de participantes"
+                      >
+                        <input type="checkbox" checked={!!p.gratuito}
+                          onChange={(e) => updatePessoa(i, { gratuito: e.target.checked, valor: e.target.checked ? 0 : p.valor, valorPago: e.target.checked ? 0 : p.valorPago })}
+                          className="h-4 w-4 rounded accent-amber-600" />
+                        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Cortesia</span>
+                      </label>
                     </div>
                   )}
 
@@ -658,8 +655,8 @@ export function ReservaModal({
             {isPacote
               ? isHospedagem
                 ? "O financeiro abaixo é o total geral da hospedagem de todo o grupo/família."
-                : "O financeiro abaixo é o valor total do lote/data fechada para todo o grupo, sem valor individual."
-              : "Você pode alterar o total ou o valor de uma pessoa. Ao mudar o total, ele é dividido igualmente entre os participantes pagantes."}
+              : "O financeiro abaixo é o valor total do lote/data fechada para todo o grupo, sem valor individual."
+              : "Cada pessoa pode ter um valor diferente — inclusive crianças com tarifa menor. Alterar o total faz apenas uma divisão inicial; depois, ajuste livremente o valor individual de cada participante."}
           </p>
           <div className="grid grid-cols-3 gap-3">
             <div>
