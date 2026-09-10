@@ -74,6 +74,9 @@ describe("pagamentos individuais de reservas", () => {
     expect(statusPorPagamentos("parcial", 195, 195)).toBe("pago");
     expect(statusPorPagamentos("pendente", 0, 0)).toBe("cortesia");
     expect(statusPorPagamentos("cancelada", 195, 195)).toBe("cancelada");
+    expect(statusPorPagamentos("pendente", 0, 0, true)).toBe("pendente");
+    expect(statusPorPagamentos("parcial", 0, 0, true)).toBe("parcial");
+    expect(statusPorPagamentos("pago", 0, 0, true)).toBe("pago");
   });
 
   it("mantém o status de pagamento coerente para cada pessoa", () => {

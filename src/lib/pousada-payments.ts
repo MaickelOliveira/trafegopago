@@ -133,7 +133,9 @@ export function statusPorPagamentos(
   statusAtual: "pendente" | "parcial" | "pago" | "cancelada" | "cortesia",
   valorTotal: number,
   valorPago: number,
+  preservarStatus = false,
 ) {
+  if (preservarStatus) return statusAtual;
   if (statusAtual === "cancelada") return statusAtual;
   if (statusAtual === "cortesia") return statusAtual;
   if (valorTotal <= 0) return "cortesia" as const;

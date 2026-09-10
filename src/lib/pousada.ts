@@ -116,7 +116,12 @@ function normalizarReserva(r: Reserva): Reserva {
     valorTotal,
     valorPago,
     faltaPagar: Math.max(round2(valorTotal - valorPago), 0),
-    status: statusPorPagamentos(r.status, valorTotal, valorPago),
+    status: statusPorPagamentos(
+      r.status,
+      valorTotal,
+      valorPago,
+      r.statusDefinidoManualmente === true,
+    ),
   };
 }
 
@@ -186,7 +191,12 @@ export function createReserva(data: Omit<Reserva, "id" | "createdAt" | "updatedA
   // faltaPagar sempre derivado server-side — ignora qualquer valor explícito
   // do caller, pra nunca deixar o arquivo salvar um valor incoerente.
   const faltaPagar = Math.max(round2(valorTotal - valorPago), 0);
-  const status = statusPorPagamentos(data.status, valorTotal, valorPago);
+  const status = statusPorPagamentos(
+    data.status,
+    valorTotal,
+    valorPago,
+    data.statusDefinidoManualmente === true,
+  );
   const r: Reserva = { ...data, cobranca, pessoas, valorTotal, valorPago, faltaPagar, status, id: randomUUID(), createdAt: now, updatedAt: now };
   all.push(r);
   save(all);
@@ -250,7 +260,15 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
       : Math.max(round2(patch.valorPago ?? current.valorPago), 0),
     valorTotal,
   );
-  const status = statusPorPagamentos(patch.status ?? current.status, valorTotal, valorPago);
+  const statusDefinidoManualmente = patch.statusDefinidoManualmente
+    ?? current.statusDefinidoManualmente
+    ?? false;
+  const status = statusPorPagamentos(
+    patch.status ?? current.status,
+    valorTotal,
+    valorPago,
+    statusDefinidoManualmente,
+  );
   const merged = {
     ...all[idx],
     ...patch,
@@ -259,6 +277,7 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
     valorTotal,
     valorPago,
     status,
+    statusDefinidoManualmente,
     updatedAt: new Date().toISOString(),
   };
   // Recalcula faltaPagar a partir do valorTotal/valorPago finais em vez de

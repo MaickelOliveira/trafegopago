@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { clsx } from "clsx";
 import {
   tipoUsaValorPorPacote,
@@ -88,18 +88,24 @@ export function ReservaModal({
     // do modal — se essa checagem rodasse só dentro de updatePessoa/removePessoa
     // (ver withAutoStatus abaixo), abrir e salvar sem tocar em nada não corrigia
     // o status antigo.
-    status: resolveStatusInicial(
-      pessoasIniciais,
-      initial?.status ?? "pendente",
-      pacoteInicial
-        ? { total: initial?.valorTotal ?? 0, pago: initial?.valorPago ?? 0 }
-        : undefined,
-    ),
+    // Uma reserva nova ainda sem preço não é cortesia: começa pendente e só
+    // vira cortesia quando isso for escolhido ou quando os participantes
+    // forem efetivamente marcados como gratuitos.
+    status: initial
+      ? resolveStatusInicial(
+          pessoasIniciais,
+          initial.status,
+          pacoteInicial
+            ? { total: initial.valorTotal ?? 0, pago: initial.valorPago ?? 0 }
+            : undefined,
+        )
+      : "pendente" as StatusReserva,
     valorTotal: initial?.valorTotal?.toString() ?? "0",
     valorPago: initial?.valorPago?.toString() ?? "0",
   });
   const [pessoas, setPessoas] = useState<PessoaForm[]>(pessoasIniciais);
   const [saving, setSaving] = useState(false);
+  const statusDefinidoManualmente = useRef(initial?.statusDefinidoManualmente === true);
 
   // Seletor visual de quarto/chalé — mesma ideia do mapa de Ocupação, mas
   // restrito ao período [data, dataCheckout] desta reserva, pra saber na hora
@@ -141,7 +147,12 @@ export function ReservaModal({
     const pago = somarValorPagoPessoas(next);
     setForm((f) => {
       const base = total > 0 && f.status === "cortesia" ? "pendente" : f.status;
-      const status = statusPorPagamentos(base, total, pago);
+      const status = statusPorPagamentos(
+        base,
+        total,
+        pago,
+        statusDefinidoManualmente.current,
+      );
       return { ...f, valorTotal: String(total), valorPago: String(pago), status };
     });
   }
@@ -247,7 +258,12 @@ export function ReservaModal({
         ...f,
         valorTotal: value,
         valorPago: String(pago),
-        status: statusPorPagamentos(base, total, pago),
+        status: statusPorPagamentos(
+          base,
+          total,
+          pago,
+          statusDefinidoManualmente.current,
+        ),
       };
     });
   }
@@ -259,7 +275,16 @@ export function ReservaModal({
         const total = Math.max(Number(f.valorTotal) || 0, 0);
         const pago = Math.min(requested, total);
         const base = total > 0 && f.status === "cortesia" ? "pendente" : f.status;
-        return { ...f, valorPago: String(pago), status: statusPorPagamentos(base, total, pago) };
+        return {
+          ...f,
+          valorPago: String(pago),
+          status: statusPorPagamentos(
+            base,
+            total,
+            pago,
+            statusDefinidoManualmente.current,
+          ),
+        };
       });
       return;
     }
@@ -271,6 +296,7 @@ export function ReservaModal({
   }
 
   function updateStatus(status: StatusReserva) {
+    statusDefinidoManualmente.current = true;
     if (isPacote) {
       setForm((f) => ({
         ...f,
@@ -283,7 +309,20 @@ export function ReservaModal({
     if (status === "pago") {
       setPessoas((prev) => {
         const next = distribuirPagamentoPelasPessoas(prev, sumPessoas(prev)) as PessoaForm[];
-        syncTotalsAndStatus(next);
+        setForm((f) => ({
+          ...f,
+          valorTotal: String(somarValorPessoas(next)),
+          valorPago: String(somarValorPagoPessoas(next)),
+          status,
+        }));
+        return next;
+      });
+      return;
+    }
+    if (status === "pendente") {
+      setPessoas((prev) => {
+        const next = distribuirPagamentoPelasPessoas(prev, 0) as PessoaForm[];
+        setForm((f) => ({ ...f, valorPago: "0", status }));
         return next;
       });
       return;
@@ -313,6 +352,7 @@ export function ReservaModal({
         cidade: form.cidade || undefined,
         observacoes: form.observacoes || undefined,
         status: form.status,
+        statusDefinidoManualmente: statusDefinidoManualmente.current,
         valorTotal: valorTotalNum,
         valorPago: valorPagoNum,
         faltaPagar,

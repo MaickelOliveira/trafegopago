@@ -51,6 +51,9 @@ export type Reserva = {
   valorPago: number;
   faltaPagar: number;
   status: StatusReserva;
+  // Quando o operador escolhe o status no formulário, essa escolha prevalece
+  // sobre a sugestão automática baseada nos valores financeiros.
+  statusDefinidoManualmente?: boolean;
   cidade?: string;
   observacoes?: string;
   origem: OrigemReserva;

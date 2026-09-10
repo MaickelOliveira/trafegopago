@@ -50,7 +50,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { tipo, data, dataCheckout, quarto, hora, responsavel, telefone, pessoas, valorTotal, valorPago, status, cidade, observacoes } = body;
+  const {
+    tipo,
+    data,
+    dataCheckout,
+    quarto,
+    hora,
+    responsavel,
+    telefone,
+    pessoas,
+    valorTotal,
+    valorPago,
+    status,
+    statusDefinidoManualmente,
+    cidade,
+    observacoes,
+  } = body;
 
   if (!tipo || !data || !responsavel?.nome || !Array.isArray(pessoas)) {
     return NextResponse.json({ error: "Campos obrigatórios: tipo, data, responsavel.nome, pessoas" }, { status: 400 });
@@ -69,6 +84,7 @@ export async function POST(req: NextRequest) {
     valorTotal: valorTotal ?? 0,
     valorPago: valorPago ?? 0,
     status: status ?? "pendente",
+    statusDefinidoManualmente: statusDefinidoManualmente === true,
     cidade,
     observacoes,
     origem: "manual",
