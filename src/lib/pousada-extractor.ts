@@ -99,7 +99,7 @@ REGRAS OBRIGATÓRIAS:
    - "valor" (número, valor cobrado calculado pelo atendente para aquela pessoa — obrigatório, use 0 se gratuito)
    - "gratuito" (true se a pessoa não paga, ex: criança de colo)
 
-   Se o tipo estiver marcado com cobrança PACOTE (Hospedagem ou Corporativo):
+   Se o tipo estiver marcado com cobrança PACOTE/LOTE ou DATA FECHADA:
    - NÃO atribua valor individual nem pagamento individual às pessoas; use "valor": 0 e omita "gratuito".
    - "valorTotal" é o valor único negociado para o pacote completo, independentemente da quantidade de pessoas.
 7. "telefone" = número de telefone/celular que o cliente informou EXPLICITAMENTE na conversa. Se o cliente disser que é o mesmo número do WhatsApp atual, ou não informar nenhum número, OMITA este campo — o sistema preenche automaticamente com o número real do WhatsApp. NUNCA invente ou copie um número de exemplo.
@@ -318,7 +318,7 @@ export async function extractAndWriteToPousada(opts: {
         // ⚠️ knownPessoas só é usado no fallback (linha já embutida no row
         // sintético acima) — aqui, quando a IA RETORNOU dados de verdade,
         // continua confiando na lista extraída. Cobranças por pessoa preservam
-        // valor/gratuidade; Hospedagem e Corporativo limpam esses campos
+        // valor/gratuidade; serviços por lote/data fechada limpam esses campos
         // porque o preço pertence ao pacote. knownPessoas garante estrutura
         // só quando a IA não achou nada pra extrair.
         const pessoasExtraidas = (Array.isArray(row.pessoas) ? row.pessoas : []) as Pessoa[];

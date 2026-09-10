@@ -94,7 +94,7 @@ export function PousadaReservaDetailView({
     setLoading(true);
     const [reservaRes, tiposRes] = await Promise.all([
       fetch(`/api/pousada/reservas/${reservaId}`).then((r) => (r.ok ? r.json() : null)),
-      fetch(`/api/pousada/tipos?clientId=${clientId}`).then((r) => r.json()),
+      fetch(`/api/pousada/tipos?clientId=${clientId}&incluirInativos=1`).then((r) => r.json()),
     ]);
     setReserva(reservaRes);
     setClientName(reservaRes?.clientName ?? null);
@@ -310,7 +310,9 @@ export function PousadaReservaDetailView({
 
   const tipoInfo = tipos.find((t) => t.slug === reserva.tipo);
   const isHospedagem = (tipoInfo?.categoria ?? "evento") === "hospedagem";
-  const isPacote = tipoUsaValorPorPacote(tipoInfo ?? reserva.tipo);
+  const isPacote = reserva.cobranca
+    ? reserva.cobranca === "lote"
+    : tipoUsaValorPorPacote(tipoInfo ?? reserva.tipo);
   const totalConsumoReserva = isHospedagem ? totalConsumoPessoas(reserva.pessoas) : 0;
   const totalConferidos = isHospedagem ? reserva.pessoas.filter((pessoa) => pessoa.consumoConferido).length : 0;
   const termoPessoa = normalizarBusca(buscaPessoa);

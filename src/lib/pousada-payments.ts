@@ -79,9 +79,9 @@ export function distribuirPagamentoPelasPessoas(pessoas: Pessoa[], valorPagoTota
 }
 
 /** Altera o valor total de um evento sem deixar a soma individual divergente.
- * Pessoas gratuitas continuam gratuitas; o novo total é dividido
- * proporcionalmente entre as demais (ou igualmente quando ainda não havia
- * valores), preservando pagamentos já realizados até o novo limite. */
+ * Pessoas gratuitas continuam gratuitas; o novo total é dividido igualmente
+ * entre as demais. Centavos que não dividem de forma exata são distribuídos
+ * uma vez por pessoa, preservando a soma e os pagamentos até o novo limite. */
 export function distribuirValorTotalPelasPessoas(pessoas: Pessoa[], valorTotal: number): Pessoa[] {
   const normalized = normalizarPagamentosIndividuais(pessoas);
   const target = toCents(valorTotal);
@@ -98,19 +98,12 @@ export function distribuirValorTotalPelasPessoas(pessoas: Pessoa[], valorTotal: 
     elegiveis.push(...normalized.map((pessoa, index) => ({ pessoa: { ...pessoa, gratuito: false }, index })));
   }
 
-  const totalAtual = elegiveis.reduce((total, { pessoa }) => total + toCents(pessoa.valor), 0);
-  const parcelas = elegiveis.map(({ pessoa, index }) => {
-    const peso = totalAtual > 0 ? toCents(pessoa.valor) / totalAtual : 1 / elegiveis.length;
-    const bruto = target * peso;
-    return { index, cents: Math.floor(bruto), fraction: bruto - Math.floor(bruto) };
-  });
-  let restante = target - parcelas.reduce((total, parcela) => total + parcela.cents, 0);
-
-  for (const parcela of [...parcelas].sort((a, b) => b.fraction - a.fraction || a.index - b.index)) {
-    if (restante <= 0) break;
-    parcelas.find((item) => item.index === parcela.index)!.cents += 1;
-    restante -= 1;
-  }
+  const valorBase = Math.floor(target / elegiveis.length);
+  const restante = target - valorBase * elegiveis.length;
+  const parcelas = elegiveis.map(({ index }, ordem) => ({
+    index,
+    cents: valorBase + (ordem < restante ? 1 : 0),
+  }));
 
   const valorPorIndice = new Map(parcelas.map((parcela) => [parcela.index, parcela.cents]));
   return normalized.map((pessoa, index) => {

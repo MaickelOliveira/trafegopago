@@ -1,10 +1,16 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
-import { tipoUsaValorPorPacote, type Reserva, type FaixaEtariaResumo } from "./pousada-types";
+import {
+  tipoUsaValorPorPacote,
+  type CobrancaTipo,
+  type Reserva,
+  type FaixaEtariaResumo,
+} from "./pousada-types";
 import { todayBR } from "./format-date";
 import {
   distribuirPagamentoPelasPessoas,
+  distribuirValorTotalPelasPessoas,
   normalizarPagamentosIndividuais,
   pessoasComPagamentos,
   somarValorPagoPessoas,
@@ -22,6 +28,7 @@ export type {
   Reserva,
   PousadaTipo,
   CategoriaTipo,
+  CobrancaTipo,
   FaixaEtariaResumo,
   ItemConsumoHospede,
   LocalItemConsumo,
@@ -45,13 +52,18 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-function usaValorPorPacoteReserva(clientId: string, tipo: string): boolean {
+function resolverCobrancaReserva(
+  clientId: string,
+  tipo: string,
+  cobrancaSalva?: CobrancaTipo,
+): CobrancaTipo {
+  if (cobrancaSalva === "individual" || cobrancaSalva === "lote") return cobrancaSalva;
   const tipoConfigurado = getClientById(clientId)?.pousadaTipos?.find((item) => item.slug === tipo);
-  if (tipoConfigurado) return tipoUsaValorPorPacote(tipoConfigurado);
+  if (tipoConfigurado) return tipoUsaValorPorPacote(tipoConfigurado) ? "lote" : "individual";
 
   // Compatibilidade com reservas antigas e tipos ainda não presentes na
   // configuração do cliente.
-  return tipoUsaValorPorPacote(tipo);
+  return tipoUsaValorPorPacote(tipo) ? "lote" : "individual";
 }
 
 function semPagamentoPorPessoa(pessoas: Reserva["pessoas"]): Reserva["pessoas"] {
@@ -73,18 +85,31 @@ function semPagamentoPorPessoa(pessoas: Reserva["pessoas"]): Reserva["pessoas"] 
 // com o mesmo prefixo de 10 caracteres é lexicograficamente MAIOR e faz a
 // reserva sumir de qualquer filtro cujo limite superior seja o próprio dia.
 function normalizarReserva(r: Reserva): Reserva {
-  const pacote = usaValorPorPacoteReserva(r.clientId, r.tipo);
-  const pessoas = (pacote
+  const cobranca = resolverCobrancaReserva(r.clientId, r.tipo, r.cobranca);
+  const pacote = cobranca === "lote";
+  const valorTotalSalvo = Math.max(round2(r.valorTotal), 0);
+  let pessoas = (pacote
     ? semPagamentoPorPessoa(r.pessoas ?? [])
     : pessoasComPagamentos(r.pessoas ?? [], r.valorPago))
     .map(normalizarConsumoPessoa);
+  if (
+    !pacote
+    && pessoas.length > 0
+    && valorTotalSalvo > 0
+    && somarValorPessoas(pessoas) === 0
+    && !pessoas.every((pessoa) => pessoa.gratuito)
+  ) {
+    pessoas = distribuirValorTotalPelasPessoas(pessoas, valorTotalSalvo);
+    pessoas = distribuirPagamentoPelasPessoas(pessoas, r.valorPago).map(normalizarConsumoPessoa);
+  }
   const totalPessoas = somarValorPessoas(pessoas);
-  const valorTotal = Math.max(round2(r.valorTotal), 0);
+  const valorTotal = !pacote && totalPessoas > 0 ? totalPessoas : valorTotalSalvo;
   const valorPago = !pacote && totalPessoas > 0
     ? somarValorPagoPessoas(pessoas)
     : Math.min(Math.max(round2(r.valorPago), 0), valorTotal);
   return {
     ...r,
+    cobranca,
     pessoas,
     data: r.data?.slice(0, 10),
     dataCheckout: r.dataCheckout ? r.dataCheckout.slice(0, 10) : r.dataCheckout,
@@ -130,16 +155,30 @@ export function getReservaById(id: string): Reserva | undefined {
 export function createReserva(data: Omit<Reserva, "id" | "createdAt" | "updatedAt" | "faltaPagar"> & { faltaPagar?: number }): Reserva {
   const all = load();
   const now = new Date().toISOString();
-  const pacote = usaValorPorPacoteReserva(data.clientId, data.tipo);
-  const pessoas = (pacote
+  // O modo vem do cadastro do serviço, não do corpo da requisição. Ele é
+  // salvo na reserva para preservar o histórico caso o tipo mude depois.
+  const cobranca = resolverCobrancaReserva(data.clientId, data.tipo);
+  const pacote = cobranca === "lote";
+  const valorTotalInformado = Math.max(round2(data.valorTotal), 0);
+  let pessoas = (pacote
     ? semPagamentoPorPessoa(data.pessoas ?? [])
     : pessoasComPagamentos(data.pessoas ?? [], data.valorPago))
     .map(normalizarConsumoPessoa);
+  if (
+    !pacote
+    && pessoas.length > 0
+    && valorTotalInformado > 0
+    && somarValorPessoas(pessoas) === 0
+    && !pessoas.every((pessoa) => pessoa.gratuito)
+  ) {
+    pessoas = distribuirValorTotalPelasPessoas(pessoas, valorTotalInformado);
+    pessoas = distribuirPagamentoPelasPessoas(pessoas, data.valorPago).map(normalizarConsumoPessoa);
+  }
   const totalPessoas = somarValorPessoas(pessoas);
   const usarTotalPessoas = pessoas.some((p) => p.valor > 0) || (pessoas.length > 0 && pessoas.every((p) => p.gratuito));
   const valorTotal = pacote
-    ? Math.max(round2(data.valorTotal), 0)
-    : (usarTotalPessoas ? totalPessoas : Math.max(round2(data.valorTotal), 0));
+    ? valorTotalInformado
+    : (usarTotalPessoas ? totalPessoas : valorTotalInformado);
   const valorPago = Math.min(
     !pacote && totalPessoas > 0 ? somarValorPagoPessoas(pessoas) : Math.max(round2(data.valorPago), 0),
     valorTotal,
@@ -148,7 +187,7 @@ export function createReserva(data: Omit<Reserva, "id" | "createdAt" | "updatedA
   // do caller, pra nunca deixar o arquivo salvar um valor incoerente.
   const faltaPagar = Math.max(round2(valorTotal - valorPago), 0);
   const status = statusPorPagamentos(data.status, valorTotal, valorPago);
-  const r: Reserva = { ...data, pessoas, valorTotal, valorPago, faltaPagar, status, id: randomUUID(), createdAt: now, updatedAt: now };
+  const r: Reserva = { ...data, cobranca, pessoas, valorTotal, valorPago, faltaPagar, status, id: randomUUID(), createdAt: now, updatedAt: now };
   all.push(r);
   save(all);
   return r;
@@ -160,7 +199,10 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
   if (idx < 0) return null;
   const current = normalizarReserva(all[idx]);
   const tipoFinal = patch.tipo ?? current.tipo;
-  const pacote = usaValorPorPacoteReserva(current.clientId, tipoFinal);
+  const cobranca = patch.tipo !== undefined && patch.tipo !== current.tipo
+    ? resolverCobrancaReserva(current.clientId, tipoFinal)
+    : resolverCobrancaReserva(current.clientId, tipoFinal, current.cobranca);
+  const pacote = cobranca === "lote";
   let pessoas = current.pessoas;
 
   if (patch.pessoas) {
@@ -171,6 +213,27 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
         ? normalizarPagamentosIndividuais(pessoasComConsumo)
         : distribuirPagamentoPelasPessoas(pessoasComConsumo, patch.valorPago ?? current.valorPago))
       .map(normalizarConsumoPessoa);
+    if (
+      !pacote
+      && pessoas.length > 0
+      && somarValorPessoas(pessoas) === 0
+      && !pessoas.every((pessoa) => pessoa.gratuito)
+    ) {
+      pessoas = distribuirValorTotalPelasPessoas(
+        pessoas,
+        patch.valorTotal ?? current.valorTotal,
+      );
+      pessoas = distribuirPagamentoPelasPessoas(
+        pessoas,
+        patch.valorPago ?? current.valorPago,
+      ).map(normalizarConsumoPessoa);
+    }
+  } else if (!pacote && patch.valorTotal !== undefined) {
+    pessoas = distribuirValorTotalPelasPessoas(current.pessoas, patch.valorTotal);
+    pessoas = distribuirPagamentoPelasPessoas(
+      pessoas,
+      patch.valorPago ?? current.valorPago,
+    ).map(normalizarConsumoPessoa);
   } else if (!pacote && patch.valorPago !== undefined) {
     pessoas = distribuirPagamentoPelasPessoas(current.pessoas, patch.valorPago).map(normalizarConsumoPessoa);
   } else if (pacote) {
@@ -191,6 +254,7 @@ export function updateReserva(id: string, patch: Partial<Omit<Reserva, "id" | "c
   const merged = {
     ...all[idx],
     ...patch,
+    cobranca,
     pessoas,
     valorTotal,
     valorPago,

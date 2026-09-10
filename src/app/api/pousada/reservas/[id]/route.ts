@@ -38,7 +38,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   const body = await req.json().catch(() => ({}));
   // clientId/origem/id nunca são editáveis via PUT
-  const { clientId: _clientId, origem: _origem, id: _id, ...patch } = body;
+  const { clientId: _clientId, origem: _origem, id: _id, cobranca: _cobranca, ...patch } = body;
+  void _clientId;
+  void _origem;
+  void _id;
+  void _cobranca;
   const updated = updateReserva(id, patch);
 
   return NextResponse.json(updated);

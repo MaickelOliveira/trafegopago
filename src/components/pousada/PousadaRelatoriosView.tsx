@@ -26,6 +26,12 @@ function firstDayOfMonth(): string {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
 }
 
+function labelDoSlug(slug: string): string {
+  return slug
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letra) => letra.toUpperCase());
+}
+
 // Conta crianças por faixa etária DESTA reserva (não do agregado) — cada
 // linha da tabela-planilha mostra sua própria contagem, igual a planilha
 // antiga tinha por linha.
@@ -88,7 +94,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
   const load = useCallback(async () => {
     setLoading(true);
     const [tiposRes, relRes] = await Promise.all([
-      fetch(`/api/pousada/tipos?clientId=${clientId}`).then((r) => r.json()),
+      fetch(`/api/pousada/tipos?clientId=${clientId}&incluirInativos=1`).then((r) => r.json()),
       fetch(`/api/pousada/reservas?clientId=${clientId}&from=${from}&to=${to}${tipo ? `&tipo=${tipo}` : ""}&incluirArquivadas=1`).then((r) => r.json()),
     ]);
     setTipos(Array.isArray(tiposRes) ? tiposRes : []);
@@ -111,7 +117,22 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
     arr.push(r);
     gruposPorTipo.set(r.tipo, arr);
   }
-  const gruposOrdenados = tipos.filter((t) => gruposPorTipo.has(t.slug));
+  // Tipos desativados continuam vindo da API. Para dados ainda mais antigos,
+  // cujo cadastro do tipo já tenha sido apagado fisicamente, reconstrói uma
+  // identificação mínima a partir da própria reserva para ela nunca sumir.
+  const tiposDisponiveis = [...tipos];
+  for (const [slug, rows] of gruposPorTipo) {
+    if (tiposDisponiveis.some((item) => item.slug === slug)) continue;
+    const exemplo = rows[0];
+    tiposDisponiveis.push({
+      slug,
+      label: labelDoSlug(slug),
+      categoria: exemplo.quarto || exemplo.dataCheckout ? "hospedagem" : "evento",
+      cobranca: exemplo.cobranca ?? (tipoUsaValorPorPacote(slug) ? "lote" : "individual"),
+      ativo: false,
+    });
+  }
+  const gruposOrdenados = tiposDisponiveis.filter((t) => gruposPorTipo.has(t.slug));
 
   const totalAdultos = Math.max(totais.totalPessoas - faixasEtarias.faixa0a5 - faixasEtarias.faixa6a12, 0);
 
@@ -128,7 +149,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
   }
 
   function tipoLabel(slug: string) {
-    return tipos.find((t) => t.slug === slug)?.label ?? slug;
+    return tiposDisponiveis.find((t) => t.slug === slug)?.label ?? labelDoSlug(slug);
   }
 
   return (
@@ -161,7 +182,11 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
             <select value={tipo} onChange={(e) => setTipo(e.target.value)}
               className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 bg-white">
               <option value="">Todos</option>
-              {tipos.map((t) => <option key={t.slug} value={t.slug}>{t.label}</option>)}
+              {tiposDisponiveis.map((t) => (
+                <option key={t.slug} value={t.slug}>
+                  {t.label}{t.ativo === false ? " (excluído)" : ""}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -255,7 +280,6 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
             {gruposOrdenados.map((t) => {
               const rows = gruposPorTipo.get(t.slug)!;
               const hospedagem = t.categoria === "hospedagem";
-              const pacote = tipoUsaValorPorPacote(t);
               const totalPessoasTipo = rows.reduce((s, r) => s + r.pessoas.length, 0);
               const totalValorTipo = rows.reduce((s, r) => s + r.valorTotal, 0);
               const totalPagoTipo = rows.reduce((s, r) => s + r.valorPago, 0);
@@ -336,7 +360,7 @@ export function PousadaRelatoriosView({ clientId, role }: { clientId: string; ro
                                 <>
                                   <td className={clsx(TD, "whitespace-nowrap")}>{formatDataComDiaSemana(r.data)}</td>
                                   <td className={TD}>{r.responsavel.nome}</td>
-                                  <td className={clsx(TD, "max-w-xs")}>{pessoasTexto(r, !pacote)}</td>
+                                  <td className={clsx(TD, "max-w-xs")}>{pessoasTexto(r, r.cobranca !== "lote")}</td>
                                   <td className={clsx(TD, "text-center")}>{f05}</td>
                                   <td className={clsx(TD, "text-center")}>{f612}</td>
                                   <td className={TD}>{r.telefone ?? "—"}</td>

@@ -69,7 +69,9 @@ export function ReservaModal({
     : [emptyPessoa()];
   const tipoInicial = initial?.tipo ?? defaultTipo ?? tipos[0]?.slug ?? "";
   const tipoInicialInfo = tipos.find((t) => t.slug === tipoInicial);
-  const pacoteInicial = tipoUsaValorPorPacote(tipoInicialInfo ?? tipoInicial);
+  const pacoteInicial = initial?.cobranca
+    ? initial.cobranca === "lote"
+    : tipoUsaValorPorPacote(tipoInicialInfo ?? tipoInicial);
   const [form, setForm] = useState({
     tipo: tipoInicial,
     data: initial?.data ?? today,
@@ -126,7 +128,10 @@ export function ReservaModal({
   const tipoInfo = tipos.find((t) => t.slug === form.tipo);
   const categoria = tipoInfo?.categoria ?? "evento";
   const isHospedagem = categoria === "hospedagem";
-  const isPacote = tipoUsaValorPorPacote(tipoInfo ?? form.tipo);
+  const cobrancaSalva = initial?.tipo === form.tipo ? initial.cobranca : undefined;
+  const isPacote = cobrancaSalva
+    ? cobrancaSalva === "lote"
+    : tipoUsaValorPorPacote(tipoInfo ?? form.tipo);
 
   // Se todo mundo da reserva estiver marcado como gratuito (total calculado
   // zero), o status sugerido é "cortesia" em vez de "pendente" — nunca
@@ -152,7 +157,32 @@ export function ReservaModal({
   }
 
   function addPessoa() {
-    setPessoas((prev) => [...prev, emptyPessoa()]);
+    setPessoas((prev) => {
+      const added = [...prev, emptyPessoa()];
+      if (isPacote) return added;
+      const total = Math.max(Number(form.valorTotal) || 0, 0);
+      const next = total > 0
+        ? distribuirValorTotalPelasPessoas(added, total) as PessoaForm[]
+        : added;
+      syncTotalsAndStatus(next);
+      return next;
+    });
+  }
+
+  function updateTipo(tipo: string) {
+    const proximoTipo = tipos.find((item) => item.slug === tipo);
+    const proximoPacote = tipoUsaValorPorPacote(proximoTipo ?? tipo);
+    if (!proximoPacote) {
+      setPessoas((prev) => {
+        const next = distribuirValorTotalPelasPessoas(
+          prev,
+          Math.max(Number(form.valorTotal) || 0, 0),
+        ) as PessoaForm[];
+        syncTotalsAndStatus(next);
+        return next;
+      });
+    }
+    setForm((f) => ({ ...f, tipo }));
   }
 
   // Quem faz a reserva geralmente também é um dos hóspedes/participantes —
@@ -188,8 +218,13 @@ export function ReservaModal({
 
   function removePessoa(i: number) {
     setPessoas((prev) => {
-      const next = prev.filter((_, idx) => idx !== i);
-      if (!isPacote) syncTotalsAndStatus(next);
+      const remaining = prev.filter((_, idx) => idx !== i);
+      if (isPacote) return remaining;
+      const next = distribuirValorTotalPelasPessoas(
+        remaining,
+        Math.max(Number(form.valorTotal) || 0, 0),
+      ) as PessoaForm[];
+      syncTotalsAndStatus(next);
       return next;
     });
   }
@@ -323,7 +358,7 @@ export function ReservaModal({
               <label className="text-xs font-medium text-slate-600 block mb-1">Tipo *</label>
               <select
                 value={form.tipo}
-                onChange={(e) => setForm((f) => ({ ...f, tipo: e.target.value }))}
+                onChange={(e) => updateTipo(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-amber-400 bg-white"
               >
                 {tipos.map((t) => <option key={t.slug} value={t.slug}>{t.label}</option>)}
@@ -484,7 +519,8 @@ export function ReservaModal({
                           <input
                             value={p.valor}
                             onChange={(e) => updatePessoa(i, { valor: Number(e.target.value) || 0 })}
-                            type="number" step="0.01" placeholder="Valor individual" disabled={!!p.gratuito}
+                            onFocus={(e) => e.currentTarget.select()}
+                            type="number" min="0" step="0.01" inputMode="decimal" placeholder="Valor individual" disabled={!!p.gratuito}
                             aria-label={`Valor de ${p.nome || `participante ${i + 1}`}`}
                             className="col-span-3 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-amber-400 disabled:bg-slate-50 disabled:text-slate-400"
                           />
@@ -582,8 +618,8 @@ export function ReservaModal({
             {isPacote
               ? isHospedagem
                 ? "O financeiro abaixo é o total geral da hospedagem de todo o grupo/família."
-                : "O financeiro abaixo é o valor total do pacote corporativo para todo o grupo."
-              : "Você pode alterar o total ou o valor de uma pessoa. Ao mudar o total, a diferença é distribuída entre os participantes pagantes."}
+                : "O financeiro abaixo é o valor total do lote/data fechada para todo o grupo, sem valor individual."
+              : "Você pode alterar o total ou o valor de uma pessoa. Ao mudar o total, ele é dividido igualmente entre os participantes pagantes."}
           </p>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -593,6 +629,7 @@ export function ReservaModal({
               <input
                 value={form.valorTotal}
                 onChange={(e) => updateValorTotalGeral(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
                 type="number"
                 min="0"
                 step="0.01"

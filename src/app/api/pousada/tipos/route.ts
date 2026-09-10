@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClientById, upsertClient } from "@/lib/clients";
-import { TIPOS_PADRAO, type PousadaTipo } from "@/lib/pousada-types";
+import {
+  mesclarTiposComHistorico,
+  normalizarPousadaTipo,
+  TIPOS_PADRAO,
+  type PousadaTipo,
+} from "@/lib/pousada-types";
 
 // GET /api/pousada/tipos?clientId=xxx — lista os tipos de reserva configurados
 export async function GET(req: NextRequest) {
@@ -18,7 +23,12 @@ export async function GET(req: NextRequest) {
   const client = getClientById(clientId);
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
-  return NextResponse.json(client.pousadaTipos?.length ? client.pousadaTipos : TIPOS_PADRAO);
+  const incluirInativos = req.nextUrl.searchParams.get("incluirInativos") === "1";
+  const tipos = (client.pousadaTipos?.length ? client.pousadaTipos : TIPOS_PADRAO)
+    .map(normalizarPousadaTipo)
+    .filter((tipo) => incluirInativos || tipo.ativo !== false);
+
+  return NextResponse.json(tipos);
 }
 
 // PUT /api/pousada/tipos — { clientId, tipos } — gestor ou o próprio cliente podem editar
@@ -32,6 +42,14 @@ export async function PUT(req: NextRequest) {
 
   if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
   if (!Array.isArray(tipos)) return NextResponse.json({ error: "tipos deve ser um array" }, { status: 400 });
+  if (tipos.some((tipo) => (
+    !tipo || typeof tipo.slug !== "string" || !tipo.slug.trim()
+    || typeof tipo.label !== "string" || !tipo.label.trim()
+    || (tipo.categoria !== undefined && !["evento", "hospedagem"].includes(tipo.categoria))
+    || (tipo.cobranca !== undefined && !["individual", "lote"].includes(tipo.cobranca))
+  ))) {
+    return NextResponse.json({ error: "Tipo de reserva inválido" }, { status: 400 });
+  }
 
   if (session.role !== "manager" && session.clientId !== clientId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -40,6 +58,10 @@ export async function PUT(req: NextRequest) {
   const client = getClientById(clientId);
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
-  upsertClient({ ...client, pousadaTipos: tipos });
-  return NextResponse.json({ ok: true, tipos });
+  const tiposAtuais = client.pousadaTipos?.length ? client.pousadaTipos : TIPOS_PADRAO;
+  const tiposComHistorico = mesclarTiposComHistorico(tiposAtuais, tipos);
+  const tiposAtivos = tiposComHistorico.filter((tipo) => tipo.ativo !== false);
+
+  upsertClient({ ...client, pousadaTipos: tiposComHistorico });
+  return NextResponse.json({ ok: true, tipos: tiposAtivos });
 }

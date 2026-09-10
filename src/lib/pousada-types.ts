@@ -36,6 +36,10 @@ export type Reserva = {
   id: string;
   clientId: string;
   tipo: string; // slug — referencia client.pousadaTipos[].slug
+  // Fotografia do modelo de cobrança usado quando a reserva foi criada. Isso
+  // impede que uma alteração posterior no cadastro do serviço mude o
+  // financeiro de reservas antigas.
+  cobranca?: CobrancaTipo;
   data: string; // ISO date — check-in, no caso de hospedagem/pernoite
   dataCheckout?: string; // ISO date — só reservas com pernoite (hospedagem); ausente = evento de um dia só
   quarto?: string; // número/nome do quarto ou chalé (ex: "12"), só hospedagem
@@ -63,8 +67,17 @@ export type Reserva = {
 // precisam nome/idade/cidade de cada participante. Controla qual formulário
 // e quais colunas o dashboard mostra pra cada tipo.
 export type CategoriaTipo = "hospedagem" | "evento";
+export type CobrancaTipo = "individual" | "lote";
 
-export type PousadaTipo = { slug: string; label: string; categoria?: CategoriaTipo };
+export type PousadaTipo = {
+  slug: string;
+  label: string;
+  categoria?: CategoriaTipo;
+  cobranca?: CobrancaTipo;
+  // Tipos removidos da operação permanecem arquivados para que o nome, a
+  // categoria e a cobrança continuem disponíveis nos relatórios históricos.
+  ativo?: boolean;
+};
 
 function normalizarIdentificadorTipo(valor: string): string {
   return valor
@@ -74,11 +87,19 @@ function normalizarIdentificadorTipo(valor: string): string {
 }
 
 /**
- * Hospedagem e serviços corporativos são vendidos pelo valor total do pacote.
- * A categoria continua separada: um corporativo ainda usa os campos de evento
- * (nome, telefone, idade e cidade), sem ganhar quarto, check-in ou CPF.
+ * Hospedagem, Corporativo e Casamento/Fotos são sempre cobrados em lote. Nos
+ * demais tipos, a configuração explícita prevalece; cadastros antigos ainda
+ * sem `cobranca` continuam individuais.
  */
 export function tipoUsaValorPorPacote(
+  tipo: Pick<PousadaTipo, "slug" | "label" | "categoria" | "cobranca"> | string | null | undefined,
+): boolean {
+  if (!tipo) return false;
+  if (tipoExigeValorPorPacote(tipo)) return true;
+  return typeof tipo !== "string" && tipo.cobranca === "lote";
+}
+
+export function tipoExigeValorPorPacote(
   tipo: Pick<PousadaTipo, "slug" | "label" | "categoria"> | string | null | undefined,
 ): boolean {
   if (!tipo) return false;
@@ -87,13 +108,41 @@ export function tipoUsaValorPorPacote(
   const identificador = typeof tipo === "string"
     ? tipo
     : `${tipo.slug} ${tipo.label}`;
-  return /hospedagem|pernoite|diaria|corporativ/.test(normalizarIdentificadorTipo(identificador));
+  return /hospedagem|pernoite|diaria|corporativ|casamento|fotos?/.test(normalizarIdentificadorTipo(identificador));
+}
+
+export function normalizarPousadaTipo(tipo: PousadaTipo): PousadaTipo {
+  return {
+    ...tipo,
+    categoria: tipo.categoria ?? "evento",
+    cobranca: tipoExigeValorPorPacote(tipo)
+      ? "lote"
+      : tipo.cobranca ?? "individual",
+    ativo: tipo.ativo !== false,
+  };
+}
+
+/**
+ * Salva a lista ativa sem apagar os tipos removidos. Os removidos ficam
+ * inativos e podem voltar a aparecer se o mesmo slug for cadastrado de novo.
+ */
+export function mesclarTiposComHistorico(
+  tiposAtuais: PousadaTipo[],
+  tiposAtivos: PousadaTipo[],
+): PousadaTipo[] {
+  const ativosNormalizados = tiposAtivos.map((tipo) => normalizarPousadaTipo({ ...tipo, ativo: true }));
+  const slugsAtivos = new Set(ativosNormalizados.map((tipo) => tipo.slug));
+  const historicos = tiposAtuais
+    .filter((tipo) => !slugsAtivos.has(tipo.slug))
+    .map((tipo) => normalizarPousadaTipo({ ...tipo, ativo: false }));
+
+  return [...ativosNormalizados, ...historicos];
 }
 
 export type FaixaEtariaResumo = { faixa0a5: number; faixa6a12: number };
 
 export const TIPOS_PADRAO: PousadaTipo[] = [
-  { slug: "hospedagem", label: "Hospedagem", categoria: "hospedagem" },
-  { slug: "day_use", label: "Day Use", categoria: "evento" },
-  { slug: "almoco", label: "Almoço", categoria: "evento" },
+  { slug: "hospedagem", label: "Hospedagem", categoria: "hospedagem", cobranca: "lote", ativo: true },
+  { slug: "day_use", label: "Day Use", categoria: "evento", cobranca: "individual", ativo: true },
+  { slug: "almoco", label: "Almoço", categoria: "evento", cobranca: "individual", ativo: true },
 ];
