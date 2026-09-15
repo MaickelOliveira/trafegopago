@@ -53,6 +53,7 @@ export function ReservaModal({
   tipos,
   initial,
   defaultTipo,
+  defaultData,
   onSave,
   onClose,
 }: {
@@ -60,6 +61,7 @@ export function ReservaModal({
   tipos: PousadaTipo[];
   initial?: Reserva | null;
   defaultTipo?: string;
+  defaultData?: string;
   onSave: (r: Reserva) => void;
   onClose: () => void;
 }) {
@@ -74,7 +76,7 @@ export function ReservaModal({
     : tipoUsaValorPorPacote(tipoInicialInfo ?? tipoInicial);
   const [form, setForm] = useState({
     tipo: tipoInicial,
-    data: initial?.data ?? today,
+    data: initial?.data ?? defaultData ?? today,
     dataCheckout: initial?.dataCheckout ?? "",
     quarto: initial?.quarto ?? "",
     hora: initial?.hora ?? "",

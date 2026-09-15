@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
+import { BarChart3, BedDouble, CalendarDays, LayoutDashboard } from "lucide-react";
 
-// Navegação fixa entre as 3 telas do sistema de Pousada — sempre visível, em
+// Navegação fixa entre as telas do sistema de Pousada — sempre visível, em
 // qualquer uma das páginas, pra nunca deixar o gestor/cliente sem saber como
 // voltar pro dashboard a partir de Ocupação ou Relatórios.
 export function PousadaSubNav({ clientId, role }: { clientId: string; role: "manager" | "client" }) {
@@ -12,16 +13,18 @@ export function PousadaSubNav({ clientId, role }: { clientId: string; role: "man
   const base = role === "manager" ? `/gestor/${clientId}/pousada` : "/cliente/pousada";
 
   const items = [
-    { href: base, label: "Dashboard", icon: "🏠", exact: true },
-    { href: `${base}/ocupacao`, label: "Ocupação", icon: "🛏️", exact: false },
-    { href: `${base}/relatorios`, label: "Relatórios", icon: "📊", exact: false },
+    { href: base, label: "Dashboard", icon: LayoutDashboard, exact: true },
+    { href: `${base}/agenda`, label: "Agenda", icon: CalendarDays, exact: false },
+    { href: `${base}/ocupacao`, label: "Ocupação", icon: BedDouble, exact: false },
+    { href: `${base}/relatorios`, label: "Relatórios", icon: BarChart3, exact: false },
   ];
 
   return (
-    <div className="border-b border-slate-200 bg-white">
-      <div className="max-w-5xl mx-auto px-6 md:px-10 flex items-center gap-1">
+    <div className="overflow-x-auto border-b border-slate-200 bg-white">
+      <div className="mx-auto flex min-w-max max-w-7xl items-center gap-1 px-4 sm:px-6 md:px-8">
         {items.map((item) => {
           const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+          const Icon = item.icon;
           return (
             <Link
               key={item.href}
@@ -33,7 +36,7 @@ export function PousadaSubNav({ clientId, role }: { clientId: string; role: "man
                   : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
               )}
             >
-              <span>{item.icon}</span> {item.label}
+              <Icon size={16} /> {item.label}
             </Link>
           );
         })}

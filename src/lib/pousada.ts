@@ -32,6 +32,7 @@ export type {
   FaixaEtariaResumo,
   ItemConsumoHospede,
   LocalItemConsumo,
+  EventoAgendaPousada,
 } from "./pousada-types";
 export { TIPOS_PADRAO } from "./pousada-types";
 

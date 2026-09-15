@@ -82,6 +82,22 @@ export type PousadaTipo = {
   ativo?: boolean;
 };
 
+// Compromisso operacional da pousada que existe independentemente de uma
+// reserva. Ex.: o almoço de Dia das Mães aparece na agenda mesmo antes de
+// haver participantes cadastrados para a data.
+export type EventoAgendaPousada = {
+  id: string;
+  clientId: string;
+  tipo: string; // slug de PousadaTipo; "evento_geral" é o fallback da agenda
+  titulo: string;
+  data: string; // ISO date
+  hora?: string; // HH:MM
+  observacoes?: string;
+  arquivado?: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 function normalizarIdentificadorTipo(valor: string): string {
   return valor
     .normalize("NFD")
