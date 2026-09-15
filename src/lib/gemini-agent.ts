@@ -8,6 +8,7 @@ import { getHistory, getAiContextResetAt } from "./conversations";
 import type { ChatMessage } from "./conversations";
 import { getLeadByPhone } from "./leads";
 import { isAgentPhoneIgnored } from "./agent-phone-policy";
+import { inferInternalEscalationReason, isInternalActionNarration } from "./agent-escalation";
 
 export type GeminiAction =
   | { type: "agendamento_criado"; eventId: string; link: string; titulo: string; dataHora: string }
@@ -1073,6 +1074,22 @@ export async function runGeminiAgent(
   }
   finalText = finalText.replace(TOOL_CALL_BRACKET_MENTION, "");
 
+  // Última rede de segurança: às vezes o modelo entende corretamente que a
+  // conversa precisa de atendimento humano, mas apenas promete ao contato que
+  // vai encaminhar ao financeiro/gestor, sem executar enviar_resumo. Nesse caso
+  // a própria narração comprova a intenção de escalar e deve virar o aviso real.
+  const inferredEscalationReason = inferInternalEscalationReason({
+    responseText: finalText,
+    userMessage,
+    hasRecipients: hasAvisos,
+    alreadyRequested: actions.some((action) => action.type === "resumo_solicitado"),
+  });
+  if (inferredEscalationReason) {
+    const motivo = inferredEscalationReason;
+    console.warn(`[gemini-agent] escalonamento narrado sem tool-call — criando resumo_solicitado motivo="${motivo.slice(0, 160)}"`);
+    actions.push({ type: "resumo_solicitado", motivo, phone });
+  }
+
   // ── Filtros de conteúdo interno ──────────────────────────────────────────
   const KNOWN_TOOL_CALL   = /(enviar_resumo|adicionar_linha_planilha|agendar_compromisso|cancelar_agendamento|reagendar_agendamento|listar_agendamentos|listar_horarios_disponiveis|agendar_followup)\s*[:(]/;
   const NARRATED_MOTIVO_LINE = /^\*?Motivo:\s*.+$/i;
@@ -1080,10 +1097,6 @@ export async function runGeminiAgent(
   // "chamada da ferramenta" (nome) e "chamando (a) ferramenta" (gerúndio) —
   // duas formas que o modelo usa pra narrar a chamada em vez de executá-la.
   const TOOL_CALL_NARRATION  = /chamad[ao]\s+(da\s+)?ferramenta|chamando\s+(a\s+)?ferramenta|function\s*call|tool\s*call/i;
-  // Narração de que já contatou/acionou a equipe internamente — mesmo padrão do
-  // "já registrei os dados" (ver resumoRule acima), mas em texto que já vazou
-  // pra produção antes dessa regra existir — mantido como rede de segurança.
-  const INTERNAL_ACTION_NARRATION = /j[áa]\s+(chamei|contatei|acionei|avisei|notifiquei|registrei|salvei|anotei|gravei)\s+(a\s+|o\s+)?(equipe|time|setor|gestor|atendente|dados|sistema)/i;
   const INTERNAL_SECTION     = /resumo\s+para\s+o\s+gestor|para\s+o\s+gestor|resumo\s+da\s+conversa\s*:/i;
   // Análise de perfil do lead/cliente escrita para o gestor
   const LEAD_PROFILE_LINE = /^O\s+(lead|cliente)\s+é\s+/i;
@@ -1091,6 +1104,7 @@ export async function runGeminiAgent(
   // Detecta se um parágrafo é conteúdo de resumo interno:
   // basta que qualquer linha dele dispare um dos marcadores acima.
   function isInternalParagraph(para: string): boolean {
+    if (isInternalActionNarration(para)) return true;
     return para.split("\n").some((line) => {
       const t = line.trim();
       if (!t) return false;
@@ -1102,7 +1116,7 @@ export async function runGeminiAgent(
         BULLET_MOTIVO_LINE.test(t) ||
         KNOWN_TOOL_CALL.test(t) ||
         TOOL_CALL_NARRATION.test(t) ||
-        INTERNAL_ACTION_NARRATION.test(t) ||
+        isInternalActionNarration(t) ||
         t === "tool_code" || t === "```tool_code" || t === "```"
       );
     });
@@ -1129,7 +1143,7 @@ export async function runGeminiAgent(
       if (BULLET_MOTIVO_LINE.test(t)) return false;
       if (INTERNAL_SECTION.test(t)) return false;
       if (TOOL_CALL_NARRATION.test(t)) return false;
-      if (INTERNAL_ACTION_NARRATION.test(t)) return false;
+      if (isInternalActionNarration(t)) return false;
       if (extractLeadingUpperLabel(t)) return false;
       if (LEAD_PROFILE_LINE.test(t)) return false;
       return true;
