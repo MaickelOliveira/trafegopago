@@ -1038,7 +1038,7 @@ export function KanbanBoard({
     <div className="flex flex-col gap-3">
 
       {/* Stats bar */}
-      <div className="grid grid-cols-4 gap-3 flex-shrink-0">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 flex-shrink-0">
         {[
           { label: "Total de leads", value: String(filtered.length), sub: `${funnels.length} funil${funnels.length !== 1 ? "s" : ""}` },
           { label: "Valor no pipeline", value: fmt(totalValue), sub: "soma dos leads ativos" },

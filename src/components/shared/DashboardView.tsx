@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Wallet, Users, MessageSquare, TrendingUp, Target, Trophy, BarChart3 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   RadialBarChart, RadialBar, XAxis, YAxis, CartesianGrid,
@@ -13,7 +14,7 @@ type AdAccount = { id: string; name: string; platform: string };
 type Client   = { id: string; name: string; color: string; cplTarget: number; funnelType?: string; adAccounts: AdAccount[] };
 type CrmLead  = { id: string; name: string; phone: string; realPhone?: string; status: string; funnelId: string; createdAt: string; updatedAt?: string; value?: number | null };
 
-const PALETTE = ["#818cf8","#34d399","#fb923c","#f472b6","#38bdf8","#a78bfa","#4ade80","#fbbf24","#f87171","#2dd4bf"];
+const PALETTE = ["#afe507","#6db8c8","#e0bd79","#9daebc","#c9e985","#78ba9a","#92a6cd","#c7a591","#d4dbcc","#80b5aa"];
 
 function fmt(v: number)  { return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
 function fmtK(v: number) { return v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(Math.round(v)); }
@@ -38,18 +39,17 @@ const Tip = ({ active, payload, label }: { active?: boolean; payload?: { name: s
 };
 
 // ── KPI Card ─────────────────────────────────────────────────────────────────
-function KPI({ label, value, sub, icon, from, to, trend }: {
+function KPI({ label, value, sub, icon, trend }: {
   label: string; value: string; sub?: string; icon: string;
-  from: string; to: string; trend?: "up" | "down" | "neutral";
+  trend?: "up" | "down" | "neutral";
 }) {
+  const Icon = ({"💸":Wallet,"👁️":Users,"✅":MessageSquare,"📈":TrendingUp,"🎯":Target,"🏆":Trophy,"📊":BarChart3,"💰":Wallet} as Record<string,typeof Wallet>)[icon] ?? TrendingUp;
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${from} ${to} p-5 shadow-lg`}>
-      <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
-      <div className="absolute -right-1 -bottom-6 h-20 w-20 rounded-full bg-white/5" />
+    <div className="nexo-kpi">
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
           <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">{label}</span>
-          <span className="text-2xl">{icon}</span>
+          <Icon size={19} className="nexo-kpi-icon" />
         </div>
         <p className="text-3xl font-black text-white tracking-tight">{value}</p>
         {sub && (
@@ -180,7 +180,7 @@ export function DashboardView({ client }: { client: Client }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 p-6 lg:p-8 space-y-6">
+    <div className="nexo-dashboard min-h-screen bg-slate-950 p-6 lg:p-8 space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -218,21 +218,16 @@ export function DashboardView({ client }: { client: Client }) {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <KPI label="Investimento" value={fmt(totalSpend)} sub={`CPM médio ${fmt(avgCpm)}`} icon="💸"
-          from="from-indigo-600" to="to-violet-700" />
-        <KPI label="Alcance total" value={fmtK(totalReach)} sub={`${fmtK(totalImpressions)} impressões · CTR ${avgCtr.toFixed(2)}%`} icon="👁️"
-          from="from-sky-500" to="to-cyan-600" />
+        <KPI label="Investimento" value={fmt(totalSpend)} sub={`CPM médio ${fmt(avgCpm)}`} icon="💸" />
+        <KPI label="Alcance total" value={fmtK(totalReach)} sub={`${fmtK(totalImpressions)} impressões · CTR ${avgCtr.toFixed(2)}%`} icon="👁️" />
         <KPI label={resultLabel} value={fmtK(resultValue)}
           sub={costPerResult ? `Custo ${fmt(costPerResult)}` : "Sem resultados ainda"} icon="✅"
-          from="from-emerald-500" to="to-teal-600"
           trend={costPerResult && costPerResult <= client.cplTarget ? "up" : costPerResult ? "down" : "neutral"} />
         <KPI label="ROAS" value={overallRoas ? `${overallRoas.toFixed(2)}×` : "—"}
           sub={overallRoas
             ? `${roasSource === "crm" ? "Fatur. CRM" : "Pixel Meta"} · Meta ${roasMeta}× · ${overallRoas >= roasMeta ? "✓ Atingida" : "Abaixo da meta"}`
             : "Registre valor nos leads ganhos"}
           icon={overallRoas && overallRoas >= roasMeta ? "🚀" : "📈"}
-          from={overallRoas && overallRoas >= roasMeta ? "from-green-500" : "from-orange-500"}
-          to={overallRoas && overallRoas >= roasMeta ? "to-emerald-700" : "to-amber-700"}
           trend={overallRoas ? (overallRoas >= roasMeta ? "up" : "down") : "neutral"} />
       </div>
 
@@ -252,8 +247,8 @@ export function DashboardView({ client }: { client: Client }) {
           <AreaChart data={areaData}>
             <defs>
               <linearGradient id="gSpend" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#818cf8" stopOpacity={0.5} />
-                <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
+                <stop offset="0%" stopColor="#afe507" stopOpacity={0.5} />
+                <stop offset="100%" stopColor="#afe507" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gClicks" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#34d399" stopOpacity={0.4} />
@@ -264,7 +259,7 @@ export function DashboardView({ client }: { client: Client }) {
             <XAxis dataKey="dia" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} interval={4} />
             <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
             <Tooltip content={<Tip />} />
-            <Area type="monotone" dataKey="Investido R$" stroke="#818cf8" strokeWidth={2.5} fill="url(#gSpend)" dot={false} activeDot={{ r: 5, fill: "#818cf8", stroke: "#1e1b4b", strokeWidth: 2 }} />
+            <Area type="monotone" dataKey="Investido R$" stroke="#afe507" strokeWidth={2.5} fill="url(#gSpend)" dot={false} activeDot={{ r: 5, fill: "#afe507", stroke: "#1e1b4b", strokeWidth: 2 }} />
             <Area type="monotone" dataKey="Cliques" stroke="#34d399" strokeWidth={2.5} fill="url(#gClicks)" dot={false} activeDot={{ r: 5, fill: "#34d399", stroke: "#022c22", strokeWidth: 2 }} />
           </AreaChart>
         </ResponsiveContainer>
@@ -277,7 +272,7 @@ export function DashboardView({ client }: { client: Client }) {
           <p className="text-xs text-slate-400 mb-4">Queda em cada etapa do funil</p>
           {totalImpressions > 0 ? (() => {
             const steps = [
-              { name: "Impressões", value: totalImpressions, fill: "#818cf8" },
+              { name: "Impressões", value: totalImpressions, fill: "#afe507" },
               { name: "Alcance",    value: totalReach,       fill: "#38bdf8" },
               { name: "Cliques",    value: totalClicks,      fill: "#34d399" },
               ...(totalConversas > 0 ? [{ name: "Conversas", value: totalConversas, fill: "#a78bfa" }] : totalLeads > 0 ? [{ name: "Leads", value: totalLeads, fill: "#fb923c" }] : []),
@@ -469,14 +464,11 @@ export function DashboardView({ client }: { client: Client }) {
 
             {/* CRM KPIs */}
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-              <KPI label="Leads no CRM" value={String(crmTotal)} sub={`${crmEntrada} novos contatos`} icon="🎯"
-                from="from-violet-600" to="to-purple-700" />
-              <KPI label="Ganhos" value={String(crmGanho)} sub={crmValor > 0 ? `Valor: ${fmt(crmValor)}` : "Sem valor estimado"} icon="🏆"
-                from="from-emerald-500" to="to-green-700" trend={crmGanho > 0 ? "up" : "neutral"} />
-              <KPI label="Conversão CRM" value={`${crmConv}%`} sub={`${crmTotal} leads no total`} icon="📊"
-                from="from-sky-500" to="to-blue-700" trend={Number(crmConv) >= 10 ? "up" : "neutral"} />
+              <KPI label="Leads no CRM" value={String(crmTotal)} sub={`${crmEntrada} novos contatos`} icon="🎯" />
+              <KPI label="Ganhos" value={String(crmGanho)} sub={crmValor > 0 ? `Valor: ${fmt(crmValor)}` : "Sem valor estimado"} icon="🏆" trend={crmGanho > 0 ? "up" : "neutral"} />
+              <KPI label="Conversão CRM" value={`${crmConv}%`} sub={`${crmTotal} leads no total`} icon="📊" trend={Number(crmConv) >= 10 ? "up" : "neutral"} />
               <KPI label="Valor pipeline" value={fmt(crmLeads.filter(l => l.status !== "perdido").reduce((s, l) => s + (l.value ?? 0), 0))}
-                sub="Leads ativos" icon="💰" from="from-amber-500" to="to-orange-700" />
+                sub="Leads ativos" icon="💰" />
             </div>
 
             {/* Pipeline + Recentes */}

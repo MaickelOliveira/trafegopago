@@ -1,11 +1,12 @@
-# Contrato visual — Nexo
+# Identidade Nexo — revisão solicitada pelo proprietário
 
-Superfície: gestão de clientes, configuração de cada negócio e conexões gerais da agência.
-Objetivo: localizar o cliente, abrir sua operação ou editar seu cadastro sem navegar por uma lista de credenciais técnicas.
-Ação principal do diretório: Configurar; ação de criação: Novo cliente.
-Hierarquia: navegação persistente, título, resumo real dos cadastros, busca e lista de clientes, ações na própria linha.
-Referência local: versão existente observada em 03/11/2026; clientes em cartões, cadastro e chaves misturados. Mantidos os caminhos de CRM, mensagens, agentes e integrações.
-Direção: ferramenta operacional discreta, navegação grafite, acento verde Nexo, fundo claro, tipografia nítida, detalhes técnicos mínimos. Sem animações contínuas ou imagens decorativas.
-Telas: 1440x900 e 390x844. Menu recolhido em celular; filtros e abas com rolagem própria; formulários em uma coluna.
-Estados: salvamento desabilita o botão e informa progresso; erro mantém os dados; sucesso confirma a gravação; busca vazia oferece limpar filtros; configuração parcial mostra ausência de conexão sem inventar estado conectado; acesso sem permissão retorna à entrada/erro autorizado.
-Restrições: dados de teste apenas; nenhuma chamada real de envio; chaves nunca incluídas nas imagens; navegação por teclado e foco visível; respeitar movimento reduzido.
+Superfície: gestão da agência, clientes, cadastro e integrações, atendimento e entrada.
+Tarefa: localizar um negócio, configurar seus dados ou abrir sua operação com clareza.
+Ação principal: Configurar na linha do cliente; criação: Novo cliente.
+Referência observada: logos originais da Nexo no Drive, pasta 1MKdmLlfse7wX6l1UdrkeLXR0aIgPJixU. Nexo Logo Texto-2.png traz símbolo verde e letras claras sobre preto; Logo Variação 02.png mostra o símbolo com luz verde. O proprietário rejeitou o visual anterior por não refletir a marca.
+Paleta medida: verde-lima #afe507, preto #0f0f0f, branco frio. Usar o arquivo real da logo, sem reconstruir o nome com outra fonte ou o símbolo com um caractere.
+Direção: central de operações escura, superfícies grafite, linhas precisas, verde-lima em ações e seleção, tipografia legível, título curto e dados em primeiro plano. Futurismo no desenho da marca e no contraste; sem animação contínua.
+Hierarquia: navegação com marca original; contexto e título; quatro indicadores reais; diretório com busca e filtros; configuração ou entrada na operação em cada linha.
+Viewports: 1440x900, 390x844. Mobile com menu por botão e foco restrito ao menu aberto; campos e ações com toque confortável.
+Estados: carregamento mantém a estrutura; erro preserva o formulário; vazio permite limpar filtros ou cadastrar; parcial informa conexão pendente; sucesso confirma salvamento; sessão ausente abre a entrada. O tema não muda autorização, fila, conexões ou lógica da IA.
+Evidência: somente contas fictícias no ambiente local, imagens e resultados guardados em docs/audit/visual e evidence.json, ambos fora do GitHub. Validar contraste de texto, teclado, foco, movimento reduzido e conteúdo longo nos dois tamanhos.

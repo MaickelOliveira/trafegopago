@@ -23,7 +23,7 @@ export default async function ClienteLayout({ children }: { children: React.Reac
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="nexo-client-shell min-h-screen">
       <ClientPortalHeader
         clientName={client.name}
         clientColor={client.color}
