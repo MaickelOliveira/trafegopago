@@ -7,6 +7,7 @@ import {
   logoutInstance,
   shouldRestartEvolutionSession,
   createOrRestartInstance,
+  evolutionWebhookForSession,
 } from "@/lib/evolution-api";
 import { getEvolutionSessionById, updateEvolutionSession } from "@/lib/evolution-sessions";
 
@@ -30,17 +31,18 @@ export async function POST(
   // zumbi (DISCONNECTED/UNKNOWN) ou em "Trocar número" explícito — evita
   // derrubar uma conexão que acabou de dar certo bem na hora do polling.
   const currentStatus = await checkConnectionStatus(instanceName);
-  const isIdle = currentStatus === "DISCONNECTED" || currentStatus === "UNKNOWN";
-  if (body.force || isIdle) {
+  if (currentStatus === "UNKNOWN" && body.force !== true) return NextResponse.json({error:"Não foi possível conferir o número. Tente novamente em instantes."},{status:503});
+  const isIdle = currentStatus === "DISCONNECTED";
+  if (body.force === true || isIdle) {
     await logoutInstance(instanceName).catch(() => {});
   }
 
-  const wantsRestart = body.force || isIdle;
-  const restarted = !!body.webhookUrl && wantsRestart && shouldRestartEvolutionSession(instanceName, body.force);
+  const wantsRestart = body.force === true || isIdle;
+  const restarted = wantsRestart && shouldRestartEvolutionSession(instanceName, body.force === true);
   const cooldownMs = !restarted && wantsRestart ? getEvolutionRestartCooldownRemainingMs(instanceName) : 0;
 
   if (restarted) {
-    const result = await createOrRestartInstance(instanceName, body.webhookUrl as string).catch(() => null);
+    const result = await createOrRestartInstance(instanceName, await evolutionWebhookForSession(sessionId)).catch(() => null);
     if (result?.apiKey) (await updateEvolutionSession(sessionId, { instanceApiKey: result.apiKey }));
     // A Evolution devolve o QR direto na resposta do create/restart — só cai no
     // polling abaixo se por algum motivo ele não vier junto.

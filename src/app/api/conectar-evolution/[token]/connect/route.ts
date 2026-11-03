@@ -8,6 +8,7 @@ import {
   logoutInstance,
   shouldRestartEvolutionSession,
   createOrRestartInstance,
+  evolutionWebhookForSession,
 } from "@/lib/evolution-api";
 import { getEvolutionSessionById, updateEvolutionSession } from "@/lib/evolution-sessions";
 
@@ -43,17 +44,18 @@ export async function POST(
   if (currentStatus === "CONNECTED") {
     return NextResponse.json({ status: "connected", qr: null, cooldownMs: 0 });
   }
-  const isIdle = currentStatus === "DISCONNECTED" || currentStatus === "UNKNOWN";
-  if (body.force || isIdle) {
+  if (currentStatus === "UNKNOWN") return NextResponse.json({error:"Não foi possível conferir o número. Tente novamente em instantes."},{status:503});
+  const isIdle = currentStatus === "DISCONNECTED";
+  if (body.force === true || isIdle) {
     await logoutInstance(instanceName).catch(() => {});
   }
 
-  const wantsRestart = body.force || isIdle;
-  const restarted = !!body.webhookUrl && wantsRestart && shouldRestartEvolutionSession(instanceName, body.force);
+  const wantsRestart = body.force === true || isIdle;
+  const restarted = wantsRestart && shouldRestartEvolutionSession(instanceName, body.force === true);
   const cooldownMs = !restarted && wantsRestart ? getEvolutionRestartCooldownRemainingMs(instanceName) : 0;
 
   if (restarted) {
-    const result = await createOrRestartInstance(instanceName, body.webhookUrl as string).catch(() => null);
+    const result = await createOrRestartInstance(instanceName, await evolutionWebhookForSession(evoSession.id)).catch(() => null);
     if (result?.apiKey) (await updateEvolutionSession(link.evolutionSessionId, { instanceApiKey: result.apiKey }));
     // Sem phoneNumber (fluxo QR de sempre, inalterado): o create já devolve o
     // QR sincronamente na própria resposta — evita uma chamada extra.

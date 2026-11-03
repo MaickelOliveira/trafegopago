@@ -18,6 +18,15 @@ export async function isEvolutionConfigured(): Promise<boolean> {
   return !!(await base()) && !!(await adminKey());
 }
 
+/** The recipient of customer events is chosen by the server, never by a QR request. */
+export async function evolutionWebhookForSession(sessionId: string): Promise<string> {
+  const configured = process.env.APP_BASE_URL || (await getConfig()).appBaseUrl;
+  if (!configured) throw new Error("Configure o endereço da plataforma.");
+  const target = new URL(`/api/whatsapp/webhook/evolution/${encodeURIComponent(sessionId)}`, configured);
+  if (target.protocol !== "https:" && process.env.NODE_ENV === "production") throw new Error("O endereço da plataforma deve usar HTTPS.");
+  return target.toString();
+}
+
 // A Evolution aceita a apikey global (admin) em qualquer chamada de gestão de
 // instância. A apikey específica da instância (retornada em "hash" no create)
 // é aceita nas chamadas de envio também — usamos ela quando disponível e caímos
@@ -59,6 +68,7 @@ function normalizeQr(qrcode: Record<string, unknown> | undefined): string | null
 export async function createOrRestartInstance(
   instanceName: string,
   webhookUrl: string,
+  allowRestart = true,
 ): Promise<{ apiKey: string; qrBase64: string | null } | null> {
   if (!(await base())) return null;
   clearCachedQr(instanceName);
@@ -83,8 +93,9 @@ export async function createOrRestartInstance(
       return { apiKey, qrBase64 };
     }
     // Instância já existe (nome em uso) — reinicia em vez de recriar.
-    const body = await res.text().catch(() => "");
-    console.warn(`[evolution-api] create FALHOU status=${res.status} instance=${instanceName} body=${body.slice(0, 300)} — tentando restart`);
+    console.warn(`[evolution-api] Não foi possível criar a instância: status=${res.status}`);
+    // A new registration must never take over or restart an existing number.
+    if (!allowRestart) return null;
     const restarted = await restartInstance(instanceName);
     if (!restarted) return null;
     // Sem "hash" novo disponível aqui — quem chamar deve manter a apiKey já
@@ -138,8 +149,7 @@ export async function setWebhook(instanceName: string, instanceApiKey: string, w
       }),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error(`[evolution-api] setWebhook FALHOU status=${res.status} instance=${instanceName} body=${body.slice(0, 300)}`);
+      console.error(`[evolution-api] setWebhook FALHOU status=${res.status}`);
     }
     return res.ok;
   } catch (e) {

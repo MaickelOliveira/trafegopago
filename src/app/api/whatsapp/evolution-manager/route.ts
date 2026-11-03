@@ -4,16 +4,17 @@ import { getClients, getAllAgentConfigs } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import {
   createOrRestartInstance,
-  logoutInstance,
   checkConnectionStatus,
   isEvolutionConfigured,
   getInstancePhone,
+  evolutionWebhookForSession,
 } from "@/lib/evolution-api";
 import {
   getEvolutionSessions,
   createEvolutionSession,
   updateEvolutionSession,
 } from "@/lib/evolution-sessions";
+import { withDataTransaction } from "@/lib/document-store";
 
 export type EnrichedEvolutionSession = {
   id: string;
@@ -118,23 +119,23 @@ export async function POST(req: NextRequest) {
   }
 
   const { name } = await req.json() as { name: string };
-  if (!name?.trim()) {
+  if (typeof name !== "string" || !name.trim()) {
     return NextResponse.json({ error: "Nome obrigatório" }, { status: 400 });
   }
 
   const instanceName = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
-  const baseUrl = detectBase(req);
+  if (!/[a-z0-9]/.test(instanceName) || instanceName.length > 64) return NextResponse.json({error:"Use um nome de instância com até 64 caracteres."},{status:400});
 
   // Cria o registro local primeiro (precisa do id/UUID pra montar a URL do
   // webhook que é passada na própria chamada de criação da instância).
-  const evoSession = (await createEvolutionSession(instanceName, ""));
+  const evoSession = await withDataTransaction(async () => {
+    if ((await getEvolutionSessions()).some(item => item.instanceName === instanceName)) return null;
+    return createEvolutionSession(instanceName, "");
+  });
+  if (!evoSession) return NextResponse.json({error:"Este nome já está cadastrado. Use a instância existente."},{status:409});
 
-  // Limpa qualquer instância zumbi com esse mesmo nome — mesmo racional do
-  // logoutSession preventivo do WPPConnect antes de criar/reiniciar.
-  await logoutInstance(instanceName).catch(() => {});
-
-  const webhookUrl = `${baseUrl}/api/whatsapp/webhook/evolution/${evoSession.id}`;
-  const result = await createOrRestartInstance(instanceName, webhookUrl);
+  const webhookUrl = await evolutionWebhookForSession(evoSession.id);
+  const result = await createOrRestartInstance(instanceName, webhookUrl, false);
   if (!result) {
     return NextResponse.json(
       { error: "Não foi possível criar a instância. Verifique a URL do servidor e a API key admin." },

@@ -14,6 +14,7 @@ export async function POST(request: NextRequest) {
   }
   const employee = session.role === "employee" ? await getEmployeeById(session.employeeId!) : undefined;
   if (employee && body.action === "delete" && !employee.permissions?.canDeleteLeads) return NextResponse.json({ error: "Sem permissão para apagar contatos." }, { status: 403 });
+  if (employee && body.action === "ai" && !employee.permissions?.canManageLeadMessages) return NextResponse.json({ error: "Sem permissão para alterar o atendimento por IA." }, { status: 403 });
   return withDataTransaction(async () => {
     const leads = await Promise.all([...new Set<string>(body.ids)].map(getLeadById));
     if (leads.some(lead => !lead || session.role !== "manager" && lead.clientId !== session.clientId || employee && !employeeCanAccessFunnel(employee, lead!.funnelId))) {

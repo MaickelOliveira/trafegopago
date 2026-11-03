@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClientById } from "@/lib/clients";
 import { getFunnelForConnection } from "@/lib/lead-context";
-import { getConfig } from "@/lib/clients";
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
-import { getQrCode as getEvoQr, shouldRestartEvolutionSession, createOrRestartInstance } from "@/lib/evolution-api";
+import { getQrCode as getEvoQr, shouldRestartEvolutionSession, createOrRestartInstance, checkConnectionStatus, evolutionWebhookForSession } from "@/lib/evolution-api";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -33,11 +32,12 @@ export async function POST(req: NextRequest) {
   const evoSessions = await getEvolutionSessions();
   const evoSession = evoSessions.find((s) => s.id === connectionId);
   if (evoSession) {
-    const baseUrl = process.env.APP_BASE_URL || (await getConfig()).appBaseUrl;
-    if (!baseUrl) return NextResponse.json({error:"Configure o endereço da plataforma."},{status:422});
-    const webhookUrl = `${baseUrl}/api/whatsapp/webhook/evolution/${evoSession.id}`;
+    const currentStatus = await checkConnectionStatus(evoSession.instanceName);
+    if (currentStatus === "CONNECTED") return NextResponse.json({status:"connected",qr:null});
+    if (currentStatus === "UNKNOWN") return NextResponse.json({error:"Não foi possível conferir o número. Tente novamente em instantes."},{status:503});
+    const webhookUrl = await evolutionWebhookForSession(evoSession.id);
 
-    if (shouldRestartEvolutionSession(evoSession.instanceName)) {
+    if (currentStatus === "DISCONNECTED" && shouldRestartEvolutionSession(evoSession.instanceName)) {
       const result = await createOrRestartInstance(evoSession.instanceName, webhookUrl).catch(() => null);
       if (result?.qrBase64) return NextResponse.json({ qr: result.qrBase64 });
       let qr: string | null = null;
