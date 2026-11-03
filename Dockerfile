@@ -19,6 +19,7 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 ENV TZ=America/Sao_Paulo
 RUN apk add --no-cache postgresql18-client tzdata su-exec ffmpeg
 
@@ -44,6 +45,6 @@ RUN chmod 755 ./docker-entrypoint.sh && chown root:root ./docker-entrypoint.sh
 RUN mkdir -p /app/data /app/private/backups && chown -R nextjs:nodejs /app/data /app/private
 
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
