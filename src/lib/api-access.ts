@@ -37,6 +37,19 @@ export function isPublicApi(pathname: string): boolean {
   return publicPaths.some(pattern => pattern.test(pathname));
 }
 
+/** Explicit tenant surfaces. New APIs are unavailable to non-managers until scoped. */
+export function isTenantApiPath(pathname:string):boolean {
+ return [
+  /^\/api\/cliente\/(?:my-settings|change-request|connection-(?:status|metrics|qr)|checklist(?:\/[^/]+)?|employees(?:\/[^/]+)?)$/,
+  /^\/api\/crm\/(?:connections|funnels(?:\/[^/]+)?|leads(?:\/[^/]+(?:\/(?:analyze|followups))?)?|conversations\/[^/]+|automations(?:\/[^/]+)?|webhooks(?:\/[^/]+)?|import|reset-ai-context|kanban-agent)$/,
+  /^\/api\/(?:quick-replies|creatives|broadcasts)(?:\/[^/]+)?$/,
+  /^\/api\/creatives\/[^/]+\/(?:comment|status)$/,
+  /^\/api\/waba\/(?:connections|send|profile-photo|templates(?:\/[^/]+)?)$/,
+  /^\/api\/whatsapp\/inbox\/(?:conversations|messages|send|send-template|ai-pause|read)$/,
+  /^\/api\/upload$/,
+ ].some(pattern=>pattern.test(pathname));
+}
+
 function denied(status = 403) {
   return NextResponse.json({ error: status === 401 ? "Entre na sua conta para continuar." : "Acesso não permitido." }, { status });
 }
@@ -49,7 +62,8 @@ function requiredEmployeePermission(path: string, method: string): keyof Employe
   if (/^\/api\/creatives/.test(path)) return "canViewCreatives";
   if (/^\/api\/(?:waba|broadcasts)/.test(path)) return "canViewWaba";
   if (/^\/api\/cliente\/connection/.test(path) && method !== "GET") return "canManageQR";
-  if (/^\/api\/(?:whatsapp\/inbox\/(?:send|send-template)|crm\/conversations\/)/.test(path) && method !== "GET") return "canManageLeadMessages";
+  if (/^\/api\/(?:whatsapp\/inbox\/(?:send|send-template|ai-pause)|crm\/conversations\/)/.test(path) && method !== "GET") return "canManageLeadMessages";
+  if ((/^\/api\/crm\/reset-ai-context$/.test(path)||/^\/api\/crm\/leads\/[^/]+\/followups$/.test(path)) && method!=="GET")return "canManageLeadMessages";
   if (/^\/api\/crm\/leads\//.test(path) && method === "DELETE") return "canDeleteLeads";
   return undefined;
 }
@@ -88,6 +102,8 @@ export async function authorizeApi(request: NextRequest): Promise<NextResponse |
   if (managerOnly.test(pathname) || /^\/api\/cliente\/employees/.test(pathname) && session.role === "employee") return denied();
   const employee = session.role === "employee" ? await getEmployeeById(session.employeeId!) : undefined;
   const permission = requiredEmployeePermission(pathname, request.method);
+  if(!isTenantApiPath(pathname))return denied();
+  if(employee && unsafe && /^\/api\/(?:broadcasts(?:\/|$)|waba\/send$)/.test(pathname) && !(employee.permissions?.canManageLeadMessages??DEFAULT_PERMISSIONS.canManageLeadMessages))return denied();
   if (employee && unsafe && (pathname === "/api/crm/kanban-agent" || pathname.startsWith("/api/crm/funnels") || pathname.startsWith("/api/waba/templates"))) return denied();
   if (employee && permission && !(employee.permissions?.[permission] ?? DEFAULT_PERMISSIONS[permission])) return denied();
 

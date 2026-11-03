@@ -19,8 +19,6 @@ type Conversation = {
 type ConversationStore = Record<string, Conversation>;
 
 const FILE = path.join(process.cwd(), "data", "conversations.json");
-const MAX_MESSAGES = 200;
-const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 
 
 async function load(clientId?: string, phone?: string, connId?: string, summary = false, limit?: number): Promise<ConversationStore> {
@@ -55,7 +53,7 @@ export async function getHistory(phone: string, clientId?: string | null, connId
   const all = await load(clientId ?? undefined, phone, connId ?? undefined);
   const key = scopedKeys(all, phone, clientId, connId)[0];
   const conversation = key ? all[key] : undefined;
-  if (!conversation || Date.now() - conversation.lastActivity > MAX_AGE_MS) return [];
+  if (!conversation) return [];
   return conversation.messages;
 }
 
@@ -92,7 +90,6 @@ export async function getAllConversationsByClientId(clientId: string): Promise<A
       conv.clientId === clientId ||
       key.startsWith(prefix) && !conv.clientId;
     if (!belongs) continue;
-    if (Date.now() - conv.lastActivity > MAX_AGE_MS) continue;
     // Remove prefixo clientId: da chave para obter o restante
     let phone = key.startsWith(prefix) ? key.slice(prefix.length) : key;
     // Chaves no formato clientId:connId:phone — remove também o connId do início
@@ -260,9 +257,6 @@ export async function addMessage(
   }
 
   conv.messages.push(msg);
-  if (conv.messages.length > MAX_MESSAGES) {
-    conv.messages = conv.messages.slice(-MAX_MESSAGES);
-  }
   conv.lastActivity = Date.now();
   conv.clientId = clientId;
   if (opts?.connId) conv.connId = opts.connId;

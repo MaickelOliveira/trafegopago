@@ -23,6 +23,9 @@ await request("/api/whatsapp/webhook", 410, null, { method: "POST", headers: { "
 for(const path of ["/api/whatsapp/manager","/api/whatsapp/wppconnect-manager","/api/whatsapp/webhook/wppconnect/old","/api/integrations/whatsapp-extension/messages","/api/integrations/whatsapp-server","/api/conectar/old"])await request(path,410);
 const manager = await login("gestor@example.invalid"), client = await login("audit-a@example.invalid"), employee = await login("atendente@example.invalid");
 await request("/api/gestor/config", 403, client);
+await request("/api/campaigns",410,client);
+await request("/api/not-a-feature",403,client);
+await request("/api/crm/not-a-feature",403,client);
 await request("/api/google-ads/2222222222/campaigns",403,client);
 await request("/api/google-ads/1234567890/campaigns",500,client);
 await request("/api/google-ads/1234567890/campaigns",403,employee);

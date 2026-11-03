@@ -666,7 +666,8 @@ export async function runGeminiAgent(
   // sem apagar a conversa de verdade do histórico exibido no chat/inbox
   // (que continua usando getHistory() sem esse filtro em todo o resto do app).
   const aiResetAt = (await getAiContextResetAt(phone, clientId, connectionId));
-  const history_ = aiResetAt ? history.filter((m) => m.ts > aiResetAt) : history;
+  const aiContextStart=Math.max(aiResetAt,Date.now()-30*24*60*60*1000);
+  const history_=history.filter(message=>message.ts>aiContextStart);
 
   // Converte histórico para formato Gemini
   // A mensagem atual já foi salva em conversations.json antes de chegar aqui —

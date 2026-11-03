@@ -31,4 +31,16 @@ describe("conversation isolation", () => {
     expect((await getHistory(phone, "a", "x"))[0].content).toBe("a:x");
     expect((await getHistory(phone, "a", "y"))[0].content).toBe("channel y");
   });
+  it("preserves the full archive when a conversation exceeds the former 200-message limit",async()=>{
+    const messages=Array.from({length:200},(_,i)=>({role:"user",content:"archive "+i,ts:i}));
+    await writeDocument("conversations.json",{[`a:x:${phone}`]:{clientId:"a",connId:"x",messages,lastActivity:Date.now()}});
+    await addMessage(phone,{role:"assistant",content:"new response",ts:Date.now()},"a",{connId:"x"});
+    const history=await getHistory(phone,"a","x");expect(history).toHaveLength(201);expect(history.slice(0,200)).toEqual(messages);expect(history.at(-1)?.content).toBe("new response");
+  });
+  it("keeps older authorized history visible without exposing it to another client",async()=>{
+    const old=Date.now()-40*24*60*60*1000;
+    await writeDocument("conversations.json",{[`a:x:${phone}`]:{clientId:"a",connId:"x",messages:[{role:"user",content:"historical fixture",ts:old}],lastActivity:old}});
+    expect((await getHistory(phone,"a","x"))[0].content).toBe("historical fixture");expect(await getHistory(phone,"b","x")).toEqual([]);
+  });
+
 });

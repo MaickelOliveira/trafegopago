@@ -8,7 +8,11 @@ try {
   await client.connect();
   await client.query("BEGIN");
   await client.query("SELECT pg_advisory_xact_lock(721461, 1)");
-  await client.query("CREATE TABLE IF NOT EXISTS schema_migrations(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())");
+  // Existing production instances can run with DML-only credentials. Creating a
+  // new schema remains the responsibility of the maintenance account.
+  if (!(await client.query("SELECT to_regclass('public.schema_migrations') AS name")).rows[0].name) {
+    await client.query("CREATE TABLE schema_migrations(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())");
+  }
   const directory = fileURLToPath(new URL("../db/", import.meta.url));
   for (const name of (await readdir(directory)).filter(name => /^\d+.*\.sql$/.test(name)).sort()) {
     if ((await client.query("SELECT 1 FROM schema_migrations WHERE name=$1", [name])).rowCount) continue;
