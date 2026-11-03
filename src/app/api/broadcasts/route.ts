@@ -4,6 +4,7 @@ import { getEvolutionSessions } from "@/lib/evolution-sessions";
 import { getLeads, toDialablePhone } from "@/lib/leads";
 import { createBroadcast, getBroadcasts } from "@/lib/broadcasts";
 import { createBroadcastItems } from "@/lib/broadcast-items";
+import { getEmployeeById, employeeCanAccessFunnel } from "@/lib/employees";
 
 // Piso do delay configurável pela campanha — não pode ser menor que o
 // intervalo do tick que processa a fila (instrumentation.ts, 5s), senão o
@@ -14,12 +15,14 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const clientId = session.role === "client"
+  const clientId = session.role !== "manager"
     ? session.clientId
     : (req.nextUrl.searchParams.get("clientId") ?? undefined);
   if (!clientId) return NextResponse.json({ error: "clientId é obrigatório" }, { status: 400 });
 
-  return NextResponse.json(getBroadcasts(clientId));
+  const employee = session.role === "employee" ? await getEmployeeById(session.employeeId!) : undefined;
+  const connections = employee ? (await getEvolutionSessions()).filter(connection => connection.clientId === clientId && connection.funnelId && employeeCanAccessFunnel(employee,connection.funnelId)).map(connection => connection.id) : null;
+  return NextResponse.json((await getBroadcasts(clientId)).filter(broadcast => !connections || connections.includes(broadcast.connectionId)));
 }
 
 export async function POST(req: NextRequest) {
@@ -47,7 +50,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `delaySeconds precisa ser no mínimo ${MIN_DELAY_SECONDS}s` }, { status: 400 });
   }
 
-  const connection = getEvolutionSessions().find((s) => s.id === connectionId && s.clientId === clientId);
+  const connection = (await getEvolutionSessions()).find((s) => s.id === connectionId && s.clientId === clientId);
   if (!connection) {
     return NextResponse.json({ error: "Conexão Evolution inválida para esse cliente" }, { status: 400 });
   }
@@ -57,7 +60,7 @@ export async function POST(req: NextRequest) {
   const recipients = new Map<string, { phone: string; name?: string; leadId?: string }>();
 
   if (funnelId) {
-    const leads = getLeads(clientId).filter((l) => l.funnelId === funnelId && (!columnId || l.status === columnId));
+    const leads = (await getLeads(clientId)).filter((l) => l.funnelId === funnelId && (!columnId || l.status === columnId));
     for (const l of leads) {
       const rawPhone = l.realPhone ?? l.phone;
       if (!rawPhone) continue;
@@ -81,12 +84,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Nenhum destinatário válido — selecione leads do CRM e/ou informe uma lista de números" }, { status: 400 });
   }
 
-  const campaign = createBroadcast({
+  const campaign = (await createBroadcast({
     clientId, name: name.trim(), message, connectionId, delaySeconds, totalCount: list.length,
-  });
-  createBroadcastItems(campaign.id, clientId, list, campaign.startedAt, delaySeconds);
+  }));
+  (await createBroadcastItems(campaign.id, clientId, list, campaign.startedAt, delaySeconds));
 
-  const alreadyRunning = getBroadcasts(clientId)
+  const alreadyRunning = (await getBroadcasts(clientId))
     .some((b) => b.id !== campaign.id && b.status === "running" && b.connectionId === connectionId);
 
   return NextResponse.json({

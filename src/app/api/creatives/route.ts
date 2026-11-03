@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     clientId = session.clientId!;
   }
 
-  const items = getCreativesByClient(clientId);
+  const items = (await getCreativesByClient(clientId));
   return NextResponse.json(items);
 }
 
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     clientId = session.clientId!;
-    const client = getClientById(clientId);
+    const client = (await getClientById(clientId));
     adAccountId = client?.adAccounts[0]?.id || "";
   }
 
@@ -98,6 +98,6 @@ export async function POST(req: NextRequest) {
     updatedAt: new Date().toISOString(),
   };
 
-  saveCreative(creative);
+  (await saveCreative(creative));
   return NextResponse.json(creative, { status: 201 });
 }

@@ -23,12 +23,12 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
-  const link = getShareLinkByToken(token);
+  const link = (await getShareLinkByToken(token));
   if (!isShareLinkValid(link)) {
     return NextResponse.json({ error: "Link inválido ou já utilizado." }, { status: 410 });
   }
 
-  const evoSession = getEvolutionSessionById(link.evolutionSessionId);
+  const evoSession = (await getEvolutionSessionById(link.evolutionSessionId));
   if (!evoSession) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
 
   const body = await req.json() as { force?: boolean; webhookUrl?: string; previousQr?: string | null; phoneNumber?: string };
@@ -54,7 +54,7 @@ export async function POST(
 
   if (restarted) {
     const result = await createOrRestartInstance(instanceName, body.webhookUrl as string).catch(() => null);
-    if (result?.apiKey) updateEvolutionSession(link.evolutionSessionId, { instanceApiKey: result.apiKey });
+    if (result?.apiKey) (await updateEvolutionSession(link.evolutionSessionId, { instanceApiKey: result.apiKey }));
     // Sem phoneNumber (fluxo QR de sempre, inalterado): o create já devolve o
     // QR sincronamente na própria resposta — evita uma chamada extra.
     if (!phoneNumber && result?.qrBase64 && result.qrBase64 !== body.previousQr) {

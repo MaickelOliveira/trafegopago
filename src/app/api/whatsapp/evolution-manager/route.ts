@@ -42,9 +42,9 @@ export async function GET(req: NextRequest) {
   }
 
   const baseUrl = detectBase(req);
-  let storedSessions = getEvolutionSessions();
-  const funnels = getFunnels();
-  const clients = getClients();
+  let storedSessions = (await getEvolutionSessions());
+  const funnels = (await getFunnels());
+  const clients = (await getClients());
 
   if (session.role !== "manager" && session.clientId) {
     const clientFunnelIds = new Set(
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isEvolutionConfigured()) {
+  if (!(await isEvolutionConfigured())) {
     return NextResponse.json(
       { error: "Evolution API não configurada. Defina o servidor e a API key em Configurações." },
       { status: 400 }
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
 
   // Cria o registro local primeiro (precisa do id/UUID pra montar a URL do
   // webhook que é passada na própria chamada de criação da instância).
-  const evoSession = createEvolutionSession(instanceName, "");
+  const evoSession = (await createEvolutionSession(instanceName, ""));
 
   // Limpa qualquer instância zumbi com esse mesmo nome — mesmo racional do
   // logoutSession preventivo do WPPConnect antes de criar/reiniciar.
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
     );
   }
   if (result.apiKey) {
-    updateEvolutionSession(evoSession.id, { instanceApiKey: result.apiKey });
+    (await updateEvolutionSession(evoSession.id, { instanceApiKey: result.apiKey }));
   }
 
   return NextResponse.json({ id: evoSession.id, instanceName, ok: true });

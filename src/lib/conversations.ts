@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, statSync } from "fs";
+import { readRecordMap, writeRecordMap } from "./record-store";
+import { withDataTransaction } from "./document-store";
 import path from "path";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string; ts: number; type?: "text" | "audio" | "image"; mediaUrl?: string };
@@ -12,6 +13,7 @@ type Conversation = {
   unread?: boolean;
   aiPaused?: boolean;
   aiContextResetAt?: number;
+  _messageCount?: number;
 };
 
 type ConversationStore = Record<string, Conversation>;
@@ -20,94 +22,56 @@ const FILE = path.join(process.cwd(), "data", "conversations.json");
 const MAX_MESSAGES = 200;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 
-// Cache em memória — só relê o disco quando o arquivo muda (mtime)
-let _cache: ConversationStore | null = null;
-let _cacheMtime = 0;
 
-function load(): ConversationStore {
-  try {
-    if (!existsSync(FILE)) return {};
-    const mtime = statSync(FILE).mtimeMs;
-    if (_cache && mtime === _cacheMtime) return _cache;
-    const parsed = JSON.parse(readFileSync(FILE, "utf-8"));
-    _cache = Array.isArray(parsed) ? {} : parsed;
-    _cacheMtime = mtime;
-    return _cache!;
-  } catch {
-    return {};
-  }
+async function load(clientId?: string, phone?: string, connId?: string, summary = false, limit?: number): Promise<ConversationStore> {
+  return readRecordMap<Conversation>("conversations.json", { ...(clientId ? { clientId } : {}), ...(phone ? { phone } : {}), ...(connId ? { connId } : {}) }, { summary, limit });
 }
-
-function save(data: ConversationStore) {
-  writeFileSync(FILE, JSON.stringify(data, null, 2));
-  // Atualiza cache imediatamente para evitar releitura desnecessária
-  _cache = data;
-  try { _cacheMtime = statSync(FILE).mtimeMs; } catch { /* ignore */ }
-}
+const save = (data: ConversationStore) => writeRecordMap("conversations.json", data);
 
 /** Gera variantes prefixadas por clientId para isolamento de histórico entre clientes */
 function clientPhoneVariants(phone: string, clientId: string): string[] {
   return phoneVariants(phone).map((v) => `${clientId}:${v}`);
 }
 
-export function getHistory(phone: string, clientId?: string | null, connId?: string | null): ChatMessage[] {
-  const all = load();
-  // Se connId fornecido, tenta chave isolada por conexão com todas as variantes de telefone
-  // (webhook armazena com +55, lead pode ter sem — ambos devem bater)
-  if (clientId && connId) {
-    for (const v of phoneVariants(phone)) {
-      const connKey = `${clientId}:${connId}:${v}`;
-      const conv = all[connKey];
-      if (conv) {
-        if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
-        return conv.messages;
-      }
-    }
-  }
-  // Se clientId fornecido, tenta chaves prefixadas (clientId:phone)
-  if (clientId) {
-    for (const v of clientPhoneVariants(phone, clientId)) {
-      const conv = all[v];
-      if (conv) {
-        if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
-        return conv.messages;
-      }
-    }
-  }
-  // Fallback: chaves sem prefixo (dados antigos ou sem clientId)
-  for (const v of phoneVariants(phone)) {
-    const conv = all[v];
-    if (conv) {
-      if (clientId && conv.clientId && conv.clientId !== clientId) continue;
-      if (Date.now() - conv.lastActivity > MAX_AGE_MS) return [];
-      return conv.messages;
-    }
-  }
-  return [];
+
+/** Unowned legacy records remain stored, but are never shown to another account. */
+function scopedKeys(all: ConversationStore, phone: string, clientId?: string | null, connId?: string | null): string[] {
+  if (!clientId) return [];
+  const variants = new Set(phoneVariants(phone));
+  const matches = Object.keys(all).filter(key => {
+    const conversation = all[key];
+    if (conversation.clientId && conversation.clientId !== clientId) return false;
+    if (conversation.clientId !== clientId && !key.startsWith(clientId + ":")) return false;
+    if (!variants.has(key.split(":").at(-1)!)) return false;
+    const connection = key.startsWith(clientId + ":") && key.split(":").length >= 3 ? key.split(":").slice(1, -1).join(":") : conversation.connId;
+    return !connId || connection === connId;
+  });
+  if (!connId && new Set(matches.map(key => all[key].connId ?? (key.split(":").length >= 3 ? key.split(":").slice(1,-1).join(":") : ""))).size > 1) return [];
+  return matches.sort((a,b) => Number(b.startsWith(clientId + ":")) - Number(a.startsWith(clientId + ":")) || all[b].lastActivity - all[a].lastActivity);
 }
 
-export function getClientId(phone: string): string | null {
-  const all = load();
-  // 1. Chaves simples (formato antigo)
-  for (const v of phoneVariants(phone)) {
-    if (all[v]?.clientId) return all[v]?.clientId ?? null;
-  }
-  // 2. Chaves prefixadas (formato novo: clientId:phone)
-  const variants = phoneVariants(phone);
-  for (const [key, conv] of Object.entries(all)) {
-    if (!key.includes(":")) continue;
-    const phonePart = key.slice(key.indexOf(":") + 1);
-    if (variants.includes(phonePart) && conv.clientId) return conv.clientId;
-  }
-  return null;
+export async function getHistory(phone: string, clientId?: string | null, connId?: string | null): Promise<ChatMessage[]> {
+  if (!clientId) return [];
+  const all = await load(clientId ?? undefined, phone, connId ?? undefined);
+  const key = scopedKeys(all, phone, clientId, connId)[0];
+  const conversation = key ? all[key] : undefined;
+  if (!conversation || Date.now() - conversation.lastActivity > MAX_AGE_MS) return [];
+  return conversation.messages;
+}
+
+export async function getClientId(phone: string): Promise<string | null> {
+  const all = (await load(undefined, phone));
+  const variants = new Set(phoneVariants(phone));
+  const owners = new Set(Object.entries(all).filter(([key,conv]) => conv.clientId && variants.has(key.split(":").at(-1)!)).map(([,conv]) => conv.clientId));
+  return owners.size === 1 ? [...owners][0] : null;
 }
 
 /** Debug: retorna amostra de chaves brutas de conversations.json para diagnóstico */
-export function debugGetRawKeys(limit = 20): string[] {
-  return Object.keys(load()).slice(0, limit);
+export async function debugGetRawKeys(limit = 20): Promise<string[]> {
+  return Object.keys((await load(undefined, undefined, undefined, true, limit))).slice(0, limit);
 }
 
-export function getAllConversationsByClientId(clientId: string): Array<{
+export async function getAllConversationsByClientId(clientId: string): Promise<Array<{
   phone: string;
   contactName: string | null;
   connId: string | null;
@@ -116,8 +80,8 @@ export function getAllConversationsByClientId(clientId: string): Array<{
   unread: boolean;
   aiPaused: boolean;
   messageCount: number;
-}> {
-  const all = load();
+}>> {
+  const all = (await load(clientId, undefined, undefined, true));
   const result = [];
   const prefix = `${clientId}:`;
   for (const [key, conv] of Object.entries(all)) {
@@ -126,8 +90,7 @@ export function getAllConversationsByClientId(clientId: string): Array<{
     // filtro por connId na camada de API garante a separação entre clientes)
     const belongs =
       conv.clientId === clientId ||
-      key.startsWith(prefix) ||
-      conv.clientId == null;
+      key.startsWith(prefix) && !conv.clientId;
     if (!belongs) continue;
     if (Date.now() - conv.lastActivity > MAX_AGE_MS) continue;
     // Remove prefixo clientId: da chave para obter o restante
@@ -149,7 +112,7 @@ export function getAllConversationsByClientId(clientId: string): Array<{
       lastActivity: conv.lastActivity,
       unread: conv.unread ?? false,
       aiPaused: conv.aiPaused ?? false,
-      messageCount: conv.messages.length,
+      messageCount: conv._messageCount ?? conv.messages.length,
       _isolated: isIsolated,
     });
   }
@@ -174,34 +137,14 @@ export function getAllConversationsByClientId(clientId: string): Array<{
     .sort((a, b) => b.lastActivity - a.lastActivity);
 }
 
-export function markAsRead(phone: string, clientId?: string | null, connId?: string | null) {
-  const all = load();
-  // Tenta chave isolada por conexão com todas as variantes de telefone
-  if (clientId && connId) {
-    for (const v of phoneVariants(phone)) {
-      const connKey = `${clientId}:${connId}:${v}`;
-      if (all[connKey]) {
-        if (all[connKey].unread) { all[connKey].unread = false; save(all); }
-        return;
-      }
+export async function markAsRead(phone: string, clientId?: string | null, connId?: string | null) {
+  await withDataTransaction(async () => {
+    const all = await load(clientId ?? undefined, phone, connId ?? undefined); let changed = false;
+    for (const key of scopedKeys(all, phone, clientId, connId)) {
+      if (all[key].unread) { all[key].unread = false; changed = true; }
     }
-  }
-  // Tenta chave prefixada (clientId:phone)
-  if (clientId) {
-    for (const v of clientPhoneVariants(phone, clientId)) {
-      if (all[v]) {
-        if (all[v].unread) { all[v].unread = false; save(all); }
-        return;
-      }
-    }
-  }
-  // Fallback: chave sem prefixo
-  for (const v of phoneVariants(phone)) {
-    if (all[v]) {
-      if (all[v].unread) { all[v].unread = false; save(all); }
-      return;
-    }
-  }
+    if (changed) await save(all);
+  });
 }
 
 /** Garante o código do país (55) na frente do número — usado só pra montar
@@ -251,41 +194,19 @@ export function phoneVariants(phone: string): string[] {
   return [...new Set([...variants, digits])];
 }
 
-export function setAiPaused(phone: string, paused: boolean, clientId?: string | null, connId?: string | null) {
-  const all = load();
-  let changed = false;
-  // Chave isolada por conexão (mesmo padrão de markAsRead/getHistory)
-  if (clientId && connId) {
-    for (const v of phoneVariants(phone)) {
-      const connKey = `${clientId}:${connId}:${v}`;
-      if (all[connKey] && all[connKey].aiPaused !== paused) { all[connKey].aiPaused = paused; changed = true; }
+export async function setAiPaused(phone: string, paused: boolean, clientId?: string | null, connId?: string | null) {
+  await withDataTransaction(async () => {
+    const all = await load(clientId ?? undefined, phone, connId ?? undefined); let changed = false;
+    for (const key of scopedKeys(all, phone, clientId, connId)) {
+      if (all[key].aiPaused !== paused) { all[key].aiPaused = paused; changed = true; }
     }
-  }
-  // Atualiza chaves prefixadas se clientId fornecido
-  if (clientId) {
-    for (const v of clientPhoneVariants(phone, clientId)) {
-      if (all[v] && all[v].aiPaused !== paused) { all[v].aiPaused = paused; changed = true; }
-    }
-  }
-  // Também atualiza chaves sem prefixo (dados antigos)
-  for (const v of phoneVariants(phone)) {
-    if (all[v] && all[v].aiPaused !== paused) { all[v].aiPaused = paused; changed = true; }
-  }
-  if (changed) save(all);
+    if (changed) await save(all);
+  });
 }
 
-export function getAiPaused(phone: string, clientId?: string | null, connId?: string | null): boolean {
-  const all = load();
-  // Chave isolada por conexão primeiro (mesmo padrão de setAiPaused/getHistory)
-  // — sem isso, uma conversa que só existe nesse formato nunca é vista aqui,
-  // mesmo com o aiPaused corretamente marcado nela.
-  if (clientId && connId) {
-    if (phoneVariants(phone).some((v) => all[`${clientId}:${connId}:${v}`]?.aiPaused === true)) return true;
-  }
-  if (clientId) {
-    if (clientPhoneVariants(phone, clientId).some((v) => all[v]?.aiPaused === true)) return true;
-  }
-  return phoneVariants(phone).some((v) => all[v]?.aiPaused === true);
+export async function getAiPaused(phone: string, clientId?: string | null, connId?: string | null): Promise<boolean> {
+  const all = await load(clientId ?? undefined, phone, connId ?? undefined);
+  return scopedKeys(all, phone, clientId, connId).some(key => all[key].aiPaused === true);
 }
 
 /**
@@ -296,59 +217,29 @@ export function getAiPaused(phone: string, clientId?: string | null, connId?: st
  * runGeminiAgent (gemini-agent.ts) usa pra filtrar o histórico que a IA
  * efetivamente recebe como contexto, sem mexer no que é exibido na tela.
  */
-export function resetAiContext(phone: string, clientId?: string | null, connId?: string | null): number {
-  const all = load();
-  const now = Date.now();
-  let changed = false;
-  if (clientId && connId) {
-    for (const v of phoneVariants(phone)) {
-      const connKey = `${clientId}:${connId}:${v}`;
-      if (all[connKey]) { all[connKey].aiContextResetAt = now; changed = true; }
-    }
-  }
-  if (clientId) {
-    for (const v of clientPhoneVariants(phone, clientId)) {
-      if (all[v]) { all[v].aiContextResetAt = now; changed = true; }
-    }
-  }
-  for (const v of phoneVariants(phone)) {
-    if (all[v] && (!clientId || !all[v].clientId || all[v].clientId === clientId)) {
-      all[v].aiContextResetAt = now;
-      changed = true;
-    }
-  }
-  if (changed) save(all);
-  return now;
+export async function resetAiContext(phone: string, clientId?: string | null, connId?: string | null): Promise<number> {
+  return withDataTransaction(async () => {
+    const all = await load(clientId ?? undefined, phone, connId ?? undefined); const now = Date.now();
+    const keys = scopedKeys(all, phone, clientId, connId);
+    for (const key of keys) all[key].aiContextResetAt = now;
+    if (keys.length) await save(all);
+    return now;
+  });
 }
 
-export function getAiContextResetAt(phone: string, clientId?: string | null, connId?: string | null): number {
-  const all = load();
-  if (clientId && connId) {
-    for (const v of phoneVariants(phone)) {
-      const ts = all[`${clientId}:${connId}:${v}`]?.aiContextResetAt;
-      if (ts) return ts;
-    }
-  }
-  if (clientId) {
-    for (const v of clientPhoneVariants(phone, clientId)) {
-      const ts = all[v]?.aiContextResetAt;
-      if (ts) return ts;
-    }
-  }
-  for (const v of phoneVariants(phone)) {
-    const ts = all[v]?.aiContextResetAt;
-    if (ts) return ts;
-  }
-  return 0;
+export async function getAiContextResetAt(phone: string, clientId?: string | null, connId?: string | null): Promise<number> {
+  const all = await load(clientId ?? undefined, phone, connId ?? undefined);
+  return Math.max(0, ...scopedKeys(all, phone, clientId, connId).map(key => all[key].aiContextResetAt ?? 0));
 }
 
-export function addMessage(
+export async function addMessage(
   phone: string,
   msg: ChatMessage,
   clientId: string | null,
   opts?: { connId?: string; contactName?: string }
 ) {
-  const all = load();
+  return withDataTransaction(async () => {
+  const all = (await load(clientId ?? undefined, phone, opts?.connId));
   const connIdVal = opts?.connId;
   // Chave padrão: inclui connId quando disponível para isolar histórico por conexão
   const defaultKey = clientId
@@ -357,22 +248,8 @@ export function addMessage(
   // Procura chave existente: primeiro isolada por conexão (testando variantes do telefone,
   // pois quem chama pode passar o telefone em formato diferente do usado pelo webhook
   // que originou a conversa), depois com prefixo clientId, depois sem prefixo
-  let existingKey: string | undefined;
-  if (clientId && connIdVal) {
-    existingKey = phoneVariants(phone)
-      .map((v) => `${clientId}:${connIdVal}:${v}`)
-      .find((k) => all[k]);
-  }
-  if (!existingKey && clientId) {
-    existingKey = clientPhoneVariants(phone, clientId).find((v) => all[v]);
-  }
-  if (!existingKey) {
-    // Só reutiliza chave sem prefixo se pertence ao mesmo clientId (evita contaminar)
-    existingKey = phoneVariants(phone).find(
-      (v) => all[v] && (!clientId || !all[v].clientId || all[v].clientId === clientId)
-    );
-  }
-  existingKey = existingKey ?? defaultKey;
+  if (!clientId) throw new Error("Cliente obrigatório para salvar uma conversa.");
+  const existingKey = scopedKeys(all, phone, clientId, connIdVal)[0] ?? defaultKey;
   const conv: Conversation = all[existingKey] ?? { messages: [], clientId, lastActivity: 0 };
 
   // Deduplicação: ignora mensagem idêntica com mesmo role em janela de 10s
@@ -399,7 +276,9 @@ export function addMessage(
   // Marca como não lida quando chega mensagem do contato
   if (msg.role === "user") conv.unread = true;
   all[existingKey] = conv;
-  save(all);
+  (await save(all));
+
+  });
 }
 
 /**
@@ -421,22 +300,12 @@ export function sanitizeContactName(raw: string | null | undefined, phone?: stri
 }
 
 /** Atualiza a última mensagem de uma conversa (ex: substituir [audio] pela transcrição). */
-export function updateLastMessage(phone: string, patch: Partial<ChatMessage>, clientId?: string | null, connId?: string | null) {
-  const all = load();
-  // Mesma ordem de resolução de chave do addMessage: isolada por conexão
-  // primeiro (é onde a conversa realmente fica quando há connId), depois
-  // prefixada por cliente, depois a chave legada sem prefixo.
-  const keys = [
-    ...(clientId && connId ? phoneVariants(phone).map((v) => `${clientId}:${connId}:${v}`) : []),
-    ...(clientId ? clientPhoneVariants(phone, clientId) : []),
-    ...phoneVariants(phone),
-  ];
-  for (const key of keys) {
-    const conv = all[key];
-    if (conv && conv.messages.length > 0) {
-      Object.assign(conv.messages[conv.messages.length - 1], patch);
-      save(all);
-      return;
-    }
-  }
+export async function updateLastMessage(phone: string, patch: Partial<ChatMessage>, clientId?: string | null, connId?: string | null) {
+  await withDataTransaction(async () => {
+    const all = await load(clientId ?? undefined, phone, connId ?? undefined);
+    const key = scopedKeys(all, phone, clientId, connId)[0];
+    if (!key || !all[key].messages.length) return;
+    Object.assign(all[key].messages[all[key].messages.length - 1], patch);
+    await save(all);
+  });
 }

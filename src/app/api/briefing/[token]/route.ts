@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
-  const briefing = getBriefingByToken(token);
+  const briefing = (await getBriefingByToken(token));
 
   if (!briefing) {
     return NextResponse.json({ error: "Briefing não encontrado" }, { status: 404 });
@@ -33,7 +33,7 @@ export async function POST(
 ) {
   try {
     const { token } = await params;
-    const briefing = getBriefingByToken(token);
+    const briefing = (await getBriefingByToken(token));
 
     if (!briefing) {
       return NextResponse.json({ error: "Briefing não encontrado" }, { status: 404 });
@@ -49,7 +49,7 @@ export async function POST(
       return NextResponse.json({ error: "answers inválido" }, { status: 400 });
     }
 
-    const updated = submitBriefing(token, answers);
+    const updated = (await submitBriefing(token, answers));
     if (!updated) {
       return NextResponse.json({ error: "Erro ao salvar briefing" }, { status: 500 });
     }

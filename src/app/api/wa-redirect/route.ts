@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   // Salva o clique com os UTMs (erro não bloqueia o redirect)
   try {
-    recordClick({
+    (await recordClick({
       clientId,
       utmSource:   p.get("src")  || null,
       utmCampaign: p.get("cmp")  || null,
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       utmTerm:     p.get("trm")  || null,
       fbclid:      p.get("fbc")  || null,
       gclid:       p.get("gcd")  || null,
-    });
+    }));
   } catch (err) {
     console.error("[wa-redirect] Falha ao salvar clique:", err);
   }

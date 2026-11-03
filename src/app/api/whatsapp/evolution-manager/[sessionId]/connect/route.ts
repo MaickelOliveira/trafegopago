@@ -20,7 +20,7 @@ export async function POST(
   }
 
   const { sessionId } = await params;
-  const evoSession = getEvolutionSessionById(sessionId);
+  const evoSession = (await getEvolutionSessionById(sessionId));
   if (!evoSession) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
 
   const body = await req.json() as { force?: boolean; webhookUrl?: string; previousQr?: string | null };
@@ -41,7 +41,7 @@ export async function POST(
 
   if (restarted) {
     const result = await createOrRestartInstance(instanceName, body.webhookUrl as string).catch(() => null);
-    if (result?.apiKey) updateEvolutionSession(sessionId, { instanceApiKey: result.apiKey });
+    if (result?.apiKey) (await updateEvolutionSession(sessionId, { instanceApiKey: result.apiKey }));
     // A Evolution devolve o QR direto na resposta do create/restart — só cai no
     // polling abaixo se por algum motivo ele não vier junto.
     if (result?.qrBase64 && result.qrBase64 !== body.previousQr) {

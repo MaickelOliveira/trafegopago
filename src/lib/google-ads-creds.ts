@@ -3,8 +3,8 @@ import type { GoogleAdsCreds } from "./google-ads-api";
 
 /** Resolve as credenciais do Google Ads a partir do AppConfig global.
  *  Retorna null se a conexão ainda não foi configurada/feita. */
-export function getGoogleAdsCreds(): GoogleAdsCreds | null {
-  const config = getConfig();
+export async function getGoogleAdsCreds(): Promise<GoogleAdsCreds | null> {
+  const config = (await getConfig());
   if (!config.googleClientId || !config.googleClientSecret || !config.googleAdsDeveloperToken || !config.googleAdsRefreshToken) {
     return null;
   }

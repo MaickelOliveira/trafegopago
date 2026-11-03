@@ -241,7 +241,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Evolution API</h1>
+          <h2 className="text-2xl font-bold text-slate-900">Evolution API</h2>
           <p className="text-sm text-slate-500 mt-0.5">Gerencie suas instâncias Evolution API</p>
         </div>
         <div className="flex items-center gap-3">
@@ -260,7 +260,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
             ) : (
               <span>🔗</span>
             )}
-            Reconectar Webhooks
+            Atualizar integração
           </button>
           <button
             onClick={() => { setNewName(""); setCreateError(""); setEvoModal({ type: "create", stage: "name" }); }}
@@ -283,7 +283,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
         <span className="text-xl mt-0.5">🧬</span>
         <div className="flex-1 text-sm text-emerald-700">
           <p className="font-semibold mb-0.5">Evolution API Server</p>
-          <p className="text-emerald-600 text-xs">Configure o servidor e a API key admin em Configurações. Suporta rastreio CTWa de anúncios via <code className="font-mono bg-emerald-100 px-1 rounded">contextInfo.externalAdReplyInfo</code>.</p>
+          <p className="text-emerald-600 text-xs">Conecte o número e vincule-o a um cliente e funil. O acesso ao servidor fica em Plataforma e conexões.</p>
         </div>
       </div>
 

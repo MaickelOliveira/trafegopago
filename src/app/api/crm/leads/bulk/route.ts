@@ -1,62 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { deleteLead, updateLead } from "@/lib/leads";
-import { getFunnels } from "@/lib/funnels";
+import { getLeadById, updateLead, deleteLead } from "@/lib/leads";
+import { getFunnelById } from "@/lib/funnels";
+import { getEmployeeById, employeeCanAccessFunnel } from "@/lib/employees";
+import { withDataTransaction } from "@/lib/document-store";
 
-/**
- * POST /api/crm/leads/bulk
- * Body: { action: "delete" | "move" | "ai", ids: string[], colId?: string, aiPaused?: boolean }
- */
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   const session = await getSession();
-  if (!session || (session.role !== "manager" && session.role !== "client" && session.role !== "employee")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  const body = await request.json().catch(() => null);
+  if (!body || !["delete", "move", "migrate", "ai"].includes(body.action) || !Array.isArray(body.ids) || !body.ids.length || body.ids.length > 500 || body.ids.some((id: unknown) => typeof id !== "string")) {
+    return NextResponse.json({ error: "Operação ou lista de contatos inválida." }, { status: 400 });
   }
-
-  const body = await req.json().catch(() => ({}));
-  const { action, ids, colId, funnelId, aiPaused } = body as {
-    action: string;
-    ids: string[];
-    colId?: string;
-    funnelId?: string;
-    aiPaused?: boolean;
-  };
-
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return NextResponse.json({ error: "ids obrigatório" }, { status: 400 });
-  }
-
-  if (action === "delete") {
-    for (const id of ids) {
-      try { deleteLead(id); } catch { /* ignora */ }
+  const employee = session.role === "employee" ? await getEmployeeById(session.employeeId!) : undefined;
+  if (employee && body.action === "delete" && !employee.permissions?.canDeleteLeads) return NextResponse.json({ error: "Sem permissão para apagar contatos." }, { status: 403 });
+  return withDataTransaction(async () => {
+    const leads = await Promise.all([...new Set<string>(body.ids)].map(getLeadById));
+    if (leads.some(lead => !lead || session.role !== "manager" && lead.clientId !== session.clientId || employee && !employeeCanAccessFunnel(employee, lead!.funnelId))) {
+      return NextResponse.json({ error: "Acesso não permitido a um dos contatos." }, { status: 403 });
     }
-    return NextResponse.json({ ok: true, deleted: ids.length });
-  }
-
-  if (action === "move") {
-    if (!colId) return NextResponse.json({ error: "colId obrigatório para mover" }, { status: 400 });
-    for (const id of ids) {
-      try { updateLead(id, { status: colId }); } catch { /* ignora */ }
+    const target = body.action === "migrate" && typeof body.funnelId === "string" ? await getFunnelById(body.funnelId) : undefined;
+    if (body.action === "migrate" && (!target || leads.some(lead => lead!.clientId !== target.clientId) || employee && !employeeCanAccessFunnel(employee, target.id))) return NextResponse.json({ error: "Funil de destino inválido." }, { status: 400 });
+    const columnId = body.colId ?? target?.columns[0]?.id;
+    for (const lead of leads) {
+      const funnel = target ?? await getFunnelById(lead!.funnelId);
+      if (["move", "migrate"].includes(body.action) && (!funnel || !funnel.columns.some(column => column.id === columnId))) return NextResponse.json({ error: "Etapa de destino inválida." }, { status: 400 });
     }
-    return NextResponse.json({ ok: true, moved: ids.length });
-  }
-
-  if (action === "migrate") {
-    if (!funnelId) return NextResponse.json({ error: "funnelId obrigatório para migrar" }, { status: 400 });
-    const targetFunnel = getFunnels().find(f => f.id === funnelId);
-    const targetColId = colId ?? targetFunnel?.columns?.[0]?.id ?? "entrada";
-    for (const id of ids) {
-      try { updateLead(id, { funnelId, status: targetColId }); } catch { /* ignora */ }
+    if (body.action === "ai" && typeof body.aiPaused !== "boolean") return NextResponse.json({ error: "Estado da IA inválido." }, { status: 400 });
+    let count = 0;
+    for (const lead of leads) {
+      if (body.action === "delete") { if (await deleteLead(lead!.id)) count++; }
+      else if (await updateLead(lead!.id, body.action === "ai" ? { aiPaused: body.aiPaused } : { status: columnId, ...(target ? { funnelId: target.id } : {}) })) count++;
     }
-    return NextResponse.json({ ok: true, migrated: ids.length });
-  }
-
-  if (action === "ai") {
-    for (const id of ids) {
-      try { updateLead(id, { aiPaused: !!aiPaused }); } catch { /* ignora */ }
-    }
-    return NextResponse.json({ ok: true, updated: ids.length });
-  }
-
-  return NextResponse.json({ error: "action inválida" }, { status: 400 });
+    const key = body.action === "delete" ? "deleted" : body.action === "move" ? "moved" : body.action === "migrate" ? "migrated" : "updated";
+    return NextResponse.json({ ok: true, [key]: count });
+  });
 }

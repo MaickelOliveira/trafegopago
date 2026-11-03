@@ -1,4 +1,4 @@
-const BASE = "https://graph.facebook.com/v19.0";
+const BASE = "https://graph.facebook.com/v26.0";
 
 async function metaGet(path: string, params: Record<string, string>, token: string) {
   const url = new URL(`${BASE}${path}`);
@@ -225,6 +225,8 @@ export async function getAdSets(
 }
 
 export type MetaCreative = {
+  videoPreviewUrl?: string;
+  igPreviewUrl?: string;
   id: string;
   name: string;
   thumbnailUrl: string | null;

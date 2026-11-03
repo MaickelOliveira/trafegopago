@@ -13,13 +13,13 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
 
   if (session.role === "client") {
-    const client = getClientById(session.clientId!);
+    const client = (await getClientById(session.clientId!));
     if (!client?.adAccounts.some((a) => a.id === accountId && a.platform === "google")) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
     }
   }
 
-  const creds = getGoogleAdsCreds();
+  const creds = (await getGoogleAdsCreds());
   if (!creds) return NextResponse.json({ error: "Google Ads não configurado" }, { status: 500 });
 
   const { searchParams } = new URL(req.url);

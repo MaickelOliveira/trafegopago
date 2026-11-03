@@ -8,12 +8,12 @@ type Props = { params: Promise<{ clientId: string }> };
 
 export default async function WebhooksPage({ params }: Props) {
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) notFound();
 
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  const webhooks = getWebhooks(clientId);
-  const config = getConfig();
+  const funnels = (await getFunnels()).filter((f) => f.clientId === clientId);
+  const webhooks = (await getWebhooks(clientId));
+  const config = (await getConfig());
   const baseUrl = config.appBaseUrl?.replace(/\/$/, "") ?? "";
 
   return (

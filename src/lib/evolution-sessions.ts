@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -14,34 +14,29 @@ export type EvolutionSession = {
 const DIR  = path.join(process.cwd(), "data");
 const FILE = path.join(DIR, "evolution-sessions.json");
 
-function load(): EvolutionSession[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch {
-    return [];
-  }
+async function load(): Promise<EvolutionSession[]> {
+  return (await readDocument<EvolutionSession[]>("evolution-sessions.json", []));
 }
 
-function save(sessions: EvolutionSession[]) {
-  if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(sessions, null, 2));
+async function save(sessions: EvolutionSession[]) {
+  await writeDocument("evolution-sessions.json", sessions);
 }
 
-export function getEvolutionSessions(): EvolutionSession[] {
-  return load();
+export async function getEvolutionSessions(): Promise<EvolutionSession[]> {
+  return (await load());
 }
 
-export function getEvolutionSessionById(id: string): EvolutionSession | undefined {
-  return load().find(s => s.id === id);
+export async function getEvolutionSessionById(id: string): Promise<EvolutionSession | undefined> {
+  return (await load()).find(s => s.id === id);
 }
 
-export function getEvolutionSessionByName(instanceName: string): EvolutionSession | undefined {
-  return load().find(s => s.instanceName === instanceName);
+export async function getEvolutionSessionByName(instanceName: string): Promise<EvolutionSession | undefined> {
+  return (await load()).find(s => s.instanceName === instanceName);
 }
 
-export function createEvolutionSession(instanceName: string, instanceApiKey: string): EvolutionSession {
-  const sessions = load();
+export async function createEvolutionSession(instanceName: string, instanceApiKey: string): Promise<EvolutionSession> {
+  return withDataTransaction(async () => {
+  const sessions = (await load());
   const session: EvolutionSession = {
     id: randomUUID(),
     instanceName,
@@ -51,20 +46,28 @@ export function createEvolutionSession(instanceName: string, instanceApiKey: str
     hasAgent: false,
   };
   sessions.push(session);
-  save(sessions);
+  (await save(sessions));
   return session;
+
+  });
 }
 
-export function updateEvolutionSession(id: string, patch: Partial<EvolutionSession>): void {
-  const sessions = load();
+export async function updateEvolutionSession(id: string, patch: Partial<EvolutionSession>): Promise<void> {
+  return withDataTransaction(async () => {
+  const sessions = (await load());
   const idx = sessions.findIndex(s => s.id === id);
   if (idx >= 0) {
     sessions[idx] = { ...sessions[idx], ...patch };
-    save(sessions);
+    (await save(sessions));
   }
+
+  });
 }
 
-export function deleteEvolutionSessionRecord(id: string): void {
-  const sessions = load().filter(s => s.id !== id);
-  save(sessions);
+export async function deleteEvolutionSessionRecord(id: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const sessions = (await load()).filter(s => s.id !== id);
+  (await save(sessions));
+
+  });
 }

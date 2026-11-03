@@ -49,7 +49,7 @@ async function fetchLiveCampaigns() {
     "insights.date_preset(last_30d){impressions,clicks,spend,actions,action_values,reach,frequency}",
   ].join(",");
 
-  const url = `https://graph.facebook.com/v19.0/${accountId}/campaigns?fields=${encodeURIComponent(fields)}&access_token=${accessToken}`;
+  const url = `https://graph.facebook.com/v26.0/${accountId}/campaigns?fields=${encodeURIComponent(fields)}&access_token=${accessToken}`;
 
   const res = await fetch(url, { next: { revalidate: 300 } });
   if (!res.ok) {

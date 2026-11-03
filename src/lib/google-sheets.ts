@@ -1,18 +1,19 @@
-import { google } from "googleapis";
+import { sheets } from "googleapis/build/src/apis/sheets/index.js";
+import { drive } from "googleapis/build/src/apis/drive/index.js";
 import { getOAuth2Client } from "./google-calendar";
 
 async function getSheetsClient(refreshToken: string) {
-  const oauth2 = getOAuth2Client();
+  const oauth2 = (await getOAuth2Client());
   oauth2.setCredentials({ refresh_token: refreshToken });
-  return google.sheets({ version: "v4", auth: oauth2 });
+  return sheets({ version: "v4", auth: oauth2 });
 }
 
 export { getSheetsClient as getSheetsClientFromToken };
 
 async function getDriveClient(refreshToken: string) {
-  const oauth2 = getOAuth2Client();
+  const oauth2 = (await getOAuth2Client());
   oauth2.setCredentials({ refresh_token: refreshToken });
-  return google.drive({ version: "v3", auth: oauth2 });
+  return drive({ version: "v3", auth: oauth2 });
 }
 
 // Aceita tanto um ID puro quanto uma URL do Google Sheets e retorna o ID.

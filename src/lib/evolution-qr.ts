@@ -2,7 +2,7 @@
 // Esse evento dispara em tempo real a cada regeneração do QR pelo WhatsApp
 // (~15-20s) — usado como fonte primária para evitar o cache server-side do
 // endpoint connect/{instance}, que às vezes trava num QR antigo até um restart.
-// Cache separado do wppconnect-qr.ts para não colidir chaves entre providers.
+// Cache separado do whatsapp-qr-cache.ts para não colidir chaves entre providers.
 
 type CachedQr = { qr: string; urlcode: string; ts: number };
 

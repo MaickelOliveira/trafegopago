@@ -1,19 +1,19 @@
+import { verifyMetaSignature } from "@/lib/webhook-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
 import { getClients } from "@/lib/clients";
-import { upsertLeadByPhone, getLeadByPhone, markLeadNeedsAttention, toDialablePhone } from "@/lib/leads";
-import { addMessage, getHistory } from "@/lib/conversations";
+import { captureWhatsAppLead, hasLeadByPhone, getChatLeadByPhone as getLeadByPhone, markLeadNeedsAttention, toDialablePhone } from "@/lib/leads";
+import { addMessage,getAiPaused, getHistory } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection, getConfig, isWithinBusinessHours } from "@/lib/clients";
 import { isAgentPhoneIgnored } from "@/lib/agent-phone-policy";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
 import { startFollowUpSequence, restartFollowUpSequence, getFollowUpByWamid, markFailed } from "@/lib/followups";
 import { sendMessageDirect, getGeminiApiKey, downloadMetaMedia } from "@/lib/whatsapp-send";
-import { splitMessage } from "@/lib/uazapi";
+import { splitMessage } from "@/lib/message-text";
 import { sendTemplate } from "@/lib/waba-templates";
 import { generateSummaryText } from "@/lib/summary-generator";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
-import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import { transcribeMedia, type MediaKind } from "@/lib/media-transcribe";
 import { getAdInfoById } from "@/lib/meta-api";
@@ -27,20 +27,26 @@ export async function GET(req: NextRequest) {
 
   if (mode === "subscribe") {
     // Aceita qualquer verify_token — cada funil pode ter o seu
-    const funnels = getFunnels();
+    const funnels = (await getFunnels());
     const matched = funnels.some(f =>
       f.connections?.some(c => c.type === "meta" && c.metaVerifyToken === token)
     );
     if (matched && challenge) return new NextResponse(challenge, { status: 200 });
-    // Fallback: aceita "trafegopago" como token padrão
-    if (token === "trafegopago" && challenge) return new NextResponse(challenge, { status: 200 });
+
   }
   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
 // POST — recebe mensagens da Meta
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const raw = await req.text();
+  if (Buffer.byteLength(raw) > 2 * 1024 * 1024) return NextResponse.json({ error: "Payload muito grande." }, { status: 413 });
+  const appSecret = (await getConfig()).metaAppSecret || process.env.META_APP_SECRET;
+  if (!appSecret) return NextResponse.json({ error: "Configure a chave de verificação da Meta." }, { status: 503 });
+  if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"), appSecret)) return NextResponse.json({ error: "Assinatura inválida." }, { status: 403 });
+  let body;
+  try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "JSON inválido." }, { status: 400 }); }
+
 
   const entries = body.entry ?? [];
   for (const entry of entries) {
@@ -50,29 +56,21 @@ export async function POST(req: NextRequest) {
       const phoneNumberId = value?.metadata?.phone_number_id;
 
       // Encontra funil pela phoneNumberId
-      const funnels = getFunnels();
+      const funnels = (await getFunnels());
       let funnelId: string | null = null;
       let clientId: string | null = null;
       let metaToken: string | null = null;
       let connId: string | null = null;
       let entradaColumnId = "entrada";
 
-      for (const f of funnels) {
-        const conn = f.connections?.find(c => c.type === "meta" && c.metaPhoneNumberId === phoneNumberId);
-        if (!conn) continue;
-        funnelId = f.id;
-        metaToken = conn.metaToken ?? null;
-        connId = conn.id;
-        entradaColumnId = f.columns?.[0]?.id ?? "entrada";
-        // Prioriza agentConfig (fonte autoritativa do cliente) sobre funnel.clientId
-        const allClients = getClients();
-        const clientByAgent = allClients.find(c =>
-          c.agentConfig?.whatsappConnectionId === conn.id ||
-          c.agentConfigs?.some(a => a.whatsappConnectionId === conn.id)
-        );
-        clientId = clientByAgent?.id ?? f.clientId ?? null;
-        break;
-      }
+      const matches = funnels.flatMap(funnel => (funnel.connections ?? []).filter(connection => connection.type === "meta" && connection.metaPhoneNumberId === phoneNumberId).map(connection => ({ funnel, connection })));
+      if (matches.length !== 1) continue;
+      const mapped = matches[0];
+      funnelId = mapped.funnel.id;
+      clientId = mapped.funnel.clientId ?? null;
+      connId = mapped.connection.id;
+      metaToken = mapped.connection.metaToken ?? null;
+      entradaColumnId = mapped.funnel.columns?.[0]?.id ?? "entrada";
 
       // ── Status assíncrono de entrega (sent/delivered/read/failed) ────────
       // A Graph API pode aceitar o envio do template (HTTP 200 + wamid) e só
@@ -83,9 +81,9 @@ export async function POST(req: NextRequest) {
         const wamid = status.id;
         const errInfo = status.errors?.[0];
         const errMsg = errInfo ? `${errInfo.code ?? ""} ${errInfo.title ?? errInfo.message ?? ""}`.trim() : "falha de entrega reportada pela Meta";
-        const followUp = wamid ? getFollowUpByWamid(wamid) : undefined;
+        const followUp = wamid ? (await getFollowUpByWamid(wamid)) : undefined;
         if (followUp) {
-          markFailed(followUp.id, errMsg);
+          (await markFailed(followUp.id, errMsg));
           console.error(`[meta] status FAILED wamid=${wamid} followUpId=${followUp.id} erro="${errMsg}"`);
         } else {
           console.error(`[meta] status FAILED wamid=${wamid} (sem follow-up correspondente) erro="${errMsg}"`);
@@ -107,16 +105,16 @@ export async function POST(req: NextRequest) {
           const mediaObj = msg[msg.type as string] as { id?: string; mime_type?: string; caption?: string } | undefined;
           if (mediaObj?.id) {
             const cidForKey = clientId ?? "sem-cliente";
-            const clientForKey = cidForKey !== "sem-cliente" ? getClientById(cidForKey) : null;
+            const clientForKey = cidForKey !== "sem-cliente" ? (await getClientById(cidForKey)) : null;
             const agentCfgForKey = clientForKey && connId ? getAgentConfigForConnection(clientForKey, connId) : undefined;
-            const apiKey = getGeminiApiKey(agentCfgForKey?.geminiApiKey ?? undefined);
+            const apiKey = (await getGeminiApiKey(agentCfgForKey?.geminiApiKey ?? undefined));
             if (apiKey) {
               const buffer = await downloadMetaMedia(mediaObj.id, metaToken);
               if (buffer) {
                 const transcription = await transcribeMedia(buffer, mediaObj.mime_type ?? "application/octet-stream", apiKey, mediaKind);
                 if (transcription) {
                   text = mediaObj.caption ? `${mediaObj.caption}\n${transcription}` : transcription;
-                  console.log(`[meta] Transcrição OK (${mediaKind}): "${transcription.slice(0, 120)}"`);
+                  ;
                 }
               } else {
                 console.error(`[meta] Falha ao baixar mídia (${mediaKind}) id=${mediaObj.id}`);
@@ -135,8 +133,8 @@ export async function POST(req: NextRequest) {
 
         // ── Lead / CRM ────────────────────────────────────────────────────
         const effectiveFunnelId = funnelId ?? "default";
-        const existingLead = getLeadByPhone(cid, phone, effectiveFunnelId);
-        const isNew = !existingLead;
+        const existingLead = (await getLeadByPhone(cid, phone, effectiveFunnelId));
+        const isNew = !existingLead && !await hasLeadByPhone(cid,phone,effectiveFunnelId);
 
         // ── CTWa (Click-to-WhatsApp): a API oficial manda o referral do
         // anúncio direto em msg.referral, num formato documentado e estável —
@@ -165,13 +163,13 @@ export async function POST(req: NextRequest) {
         // {} — senão uma mensagem de follow-up que ainda carrega o mesmo
         // referral sobrescreve Conjunto/Anúncio/Campaign ID (e até o
         // campaignName real da campanha) de volta pro headline.
-        const metaAdsToken = getConfig().metaToken;
+        const metaAdsToken = (await getConfig()).metaToken;
         let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
         const alreadyFullyAttributed = !!ctwaAdId && existingLead?.adId === ctwaAdId && !!existingLead?.campaignId;
         const shouldLookupAd = !!ctwaAdId && !!metaAdsToken && !alreadyFullyAttributed;
         if (shouldLookupAd) {
           adInfo = await getAdInfoById(ctwaAdId!, metaAdsToken).catch(() => null);
-          console.log(`[meta/CTWa] adId=${ctwaAdId} lookup=${adInfo ? `campanha="${adInfo.campaignName}"` : "null (falhou ou sem token)"}`);
+          ;
         }
 
         const adFields = adInfo
@@ -196,18 +194,18 @@ export async function POST(req: NextRequest) {
             }
           : {};
 
-        upsertLeadByPhone(cid, phone, {
+        (await captureWhatsAppLead(cid, phone, {
           clientId: cid,
           funnelId: effectiveFunnelId,
           source: "whatsapp",
           ...(isNew || existingLead?.name === phone ? { name: pushName } : {}),
           ...(isNew ? { status: entradaColumnId } : {}),
           ...adFields,
-        });
+        }));
 
         // ── Histórico ────────────────────────────────────────────────────
-        const historyForKanbanMeta = getHistory(phone, clientId, connId ?? undefined);
-        addMessage(phone, { role: "user", content: text, ts }, clientId, { connId: connId ?? undefined, contactName: pushName !== phone ? pushName : undefined });
+        const historyForKanbanMeta = (await getHistory(phone, clientId, connId ?? undefined));
+        (await addMessage(phone, { role: "user", content: text, ts }, clientId, { connId: connId ?? undefined, contactName: pushName !== phone ? pushName : undefined }));
 
         // ── Agente Kanban — roda sempre, independente da IA de atendimento ──
         if (cid !== "sem-cliente") {
@@ -215,14 +213,14 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Verifica se IA está pausada ──────────────────────────────────
-        const currentLead = getLeadByPhone(cid, phone, effectiveFunnelId);
-        if (currentLead?.aiPaused) {
-          console.log(`[meta] IA pausada para phone=${phone} cid=${cid} — ignorando`);
+        const currentLead = (await getLeadByPhone(cid, phone, effectiveFunnelId));
+        if (currentLead?.aiPaused || await getAiPaused(phone,cid,connId)) {
+          ;
           continue;
         }
 
         // ── Agente config ────────────────────────────────────────────────
-        const client = cid !== "sem-cliente" ? getClientById(cid) : null;
+        const client = cid !== "sem-cliente" ? (await getClientById(cid)) : null;
         const agentCfg = client && connId ? getAgentConfigForConnection(client, connId) : undefined;
         const geminiEnabled = agentCfg?.enabled === true
           && isWithinBusinessHours(agentCfg)
@@ -230,7 +228,7 @@ export async function POST(req: NextRequest) {
         const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
 
         if (!geminiEnabled) {
-          console.log(`[meta] Agente desabilitado para cid=${cid} connId=${connId}`);
+          ;
           continue;
         }
 
@@ -244,10 +242,10 @@ export async function POST(req: NextRequest) {
             phone.endsWith(testNorm.slice(-9)) ||
             coreDigits(phone) === coreDigits(testNorm);
           if (!phoneMatches) {
-            console.log(`[meta] MODO TESTE — ignorando phone=${phone} (permitido: ${testNorm})`);
+            ;
             continue;
           }
-          console.log(`[meta] testPhone match — phone=${phone} ✓`);
+          ;
         }
 
         // ── Mídia no primeiro contato ────────────────────────────────────
@@ -256,7 +254,7 @@ export async function POST(req: NextRequest) {
           for (const media of mediaItems) {
             // Para Meta API só texto por ora (imagens requerem media upload separado)
             if (media.type === "image" && media.url) {
-              await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+              await fetch(`https://graph.facebook.com/v26.0/${phoneNumberId}/messages`, {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${metaToken}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -273,9 +271,9 @@ export async function POST(req: NextRequest) {
         // ── Follow-ups ───────────────────────────────────────────────────
         if (cid !== "sem-cliente" && agentCfg?.followUpEnabled && (agentCfg.followUps?.length ?? 0) > 0) {
           if (isNew) {
-            startFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined);
+            (await startFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined));
           } else {
-            restartFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined);
+            (await restartFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined));
           }
         }
 
@@ -293,7 +291,7 @@ export async function POST(req: NextRequest) {
           for (let i = 0; i < chunks.length; i++) {
             const ok = await sendMessageDirect(phone, chunks[i], phoneNumberId, metaToken);
             if (ok) {
-              addMessage(phone, { role: "assistant", content: chunks[i], ts: Date.now() }, clientId, { connId: connId ?? undefined });
+              (await addMessage(phone, { role: "assistant", content: chunks[i], ts: Date.now() }, clientId, { connId: connId ?? undefined }));
             } else {
               console.error(`[meta] sendMetaReply FALHOU — mensagem NÃO entregue ao WhatsApp. phone=${phone} phoneNumberId=${phoneNumberId}`);
             }
@@ -303,37 +301,26 @@ export async function POST(req: NextRequest) {
 
         // ── processMetaActions: aviso + sheet extractor ─────────────────
         async function processMetaActions(actions: GeminiAction[]) {
-          console.log(`[meta-aviso] DIAG actions=${actions.length} agentCfg=${!!agentCfg} metaToken=${!!metaToken} phoneNumberId=${!!phoneNumberId}`);
+          ;
           if (!actions.length || !agentCfg || !metaToken || !phoneNumberId) {
-            console.log(`[meta-aviso] ABORTADO — falta: actions=${actions.length} agentCfg=${!!agentCfg} metaToken=${!!metaToken} phoneId=${!!phoneNumberId}`);
+            ;
             return;
           }
           const resumoAction = actions.find((a) => a.type === "resumo_solicitado");
-          console.log(`[meta-aviso] resumo_solicitado=${!!resumoAction} motivo="${resumoAction?.motivo ?? "-"}"`);
+          ;
           if (!resumoAction) return;
 
           // Marca o lead como precisando de atenção humana (painel de urgência no portal do cliente)
-          markLeadNeedsAttention(cid, phone, effectiveFunnelId, resumoAction.motivo);
+          (await markLeadNeedsAttention(cid, phone, effectiveFunnelId, resumoAction.motivo));
 
           // Extrator interno (Pousada) e/ou planilha Google Sheets — grava
           // nos dois em paralelo enquanto o sistema da Pousada ainda está em
           // validação, pra não correr risco de perder dado.
-          const clientForExtractor = getClientById(cid);
-          if (clientForExtractor?.enabledSystems?.includes("pousada") && clientForExtractor.pousadaTipos?.length) {
-            const hist = getHistory(phone, clientId, connId ?? undefined);
-            extractAndWriteToPousada({
-              apiKey: agentCfg.geminiApiKey || getGeminiApiKey() || "",
-              clientId: cid,
-              tipos: clientForExtractor.pousadaTipos,
-              messages: hist,
-              phone,
-              motivo: resumoAction.motivo,
-            }).catch((e) => console.error("[meta] pousada-extractor ERRO:", e));
-          }
+          const clientForExtractor = (await getClientById(cid));
           if (agentCfg.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
-            const hist = getHistory(phone, clientId, connId ?? undefined);
+            const hist = (await getHistory(phone, clientId, connId ?? undefined));
             extractAndWriteToSheet({
-              apiKey: agentCfg.geminiApiKey || getGeminiApiKey() || "",
+              apiKey: agentCfg.geminiApiKey || (await getGeminiApiKey()) || "",
               spreadsheetId: agentCfg.spreadsheetId,
               googleRefreshToken: agentCfg.googleRefreshToken,
               sheetMappings: agentCfg.sheetMappings,
@@ -349,15 +336,15 @@ export async function POST(req: NextRequest) {
             : agentCfg.summaryPhone
               ? [{ id: "legacy", label: "Gestor", value: agentCfg.summaryPhone, type: "phone" as const }]
               : [];
-          console.log(`[meta-aviso] destinatários=${recipients.length} templateName="${agentCfg.metaSummaryTemplateName ?? "NÃO CONFIGURADO"}"`);
+          ;
           if (!recipients.length) {
-            console.log(`[meta-aviso] ABORTADO — nenhum destinatário em avisos[]`);
+            ;
             return;
           }
 
           const clientName = client?.name ?? cid;
-          const geminiKey = agentCfg.geminiApiKey || getGeminiApiKey() || "";
-          const summaryText = await generateSummaryText(clientName, agentCfg, phone, resumoAction.motivo, geminiKey);
+          const geminiKey = agentCfg.geminiApiKey || (await getGeminiApiKey()) || "";
+          const summaryText = await generateSummaryText(clientName, agentCfg, phone, resumoAction.motivo, geminiKey, clientId ?? undefined, connId ?? undefined);
 
           // Variáveis do template:
           // {{1}} = número do lead, {{2}} = nome do lead, {{3}} = motivo + resumo
@@ -378,7 +365,7 @@ export async function POST(req: NextRequest) {
             `${summaryText}`;
 
           await Promise.all(
-            recipients
+            (await Promise.all(recipients
               .filter((r) => {
                 if (r.type !== "phone") {
                   console.warn(`[meta-aviso] grupo ignorado (WABA não suporta grupos): ${r.value}`);
@@ -388,7 +375,7 @@ export async function POST(req: NextRequest) {
               })
               .map(async (r) => {
                 if (templateName) {
-                  console.log(`[meta-aviso] sendTemplate → phone=${r.value} template=${templateName} phoneNumberId=${phoneNumberId}`);
+                  ;
                   const result = await sendTemplate(
                     phoneNumberId!,
                     metaToken!,
@@ -404,44 +391,44 @@ export async function POST(req: NextRequest) {
                   if (!result.success) {
                     console.error(`[meta-aviso] sendTemplate FALHOU → ${r.value}:`, result.error);
                   } else {
-                    console.log(`[meta-aviso] sendTemplate OK → ${r.value}`);
+                    ;
                     // Registra na conversa do gestor (r.value), não do lead
-                    addMessage(r.value, { role: "assistant", content: avisoMsg, ts: Date.now() }, clientId, { connId: connId ?? undefined });
+                    (await addMessage(r.value, { role: "assistant", content: avisoMsg, ts: Date.now() }, clientId, { connId: connId ?? undefined }));
                   }
                 } else {
                   // Fallback texto livre (funciona dentro da janela de 24h)
-                  console.log(`[meta-aviso] fallback texto livre → ${r.value} (sem template configurado)`);
+                  ;
                   const fullMsg =
                     `📋 *Resumo — ${clientName}*\n\n` +
                     `📞 wa.me/${var1}\n📝 ${resumoAction.motivo}\n\n${summaryText}`;
                   await sendMessageDirect(r.value, fullMsg, phoneNumberId!, metaToken!);
-                  addMessage(r.value, { role: "assistant", content: avisoMsg, ts: Date.now() }, clientId, { connId: connId ?? undefined });
+                  (await addMessage(r.value, { role: "assistant", content: avisoMsg, ts: Date.now() }, clientId, { connId: connId ?? undefined }));
                 }
-              })
+              })))
           );
         }
 
         // ── Batching (messageWaitSeconds > 0) ────────────────────────────
         if (waitSeconds > 0) {
-          const pending = upsertPending(cid, phone, text, waitSeconds);
+          const pending = (await upsertPending(cid, phone, text, waitSeconds, connId ?? undefined));
           const pendingId = pending.id;
 
-          setTimeout(() => {
-            const batch = getPendingForPhone(cid, phone);
+          setTimeout(async () => {
+            const batch = (await getPendingForPhone(cid, phone, connId ?? undefined));
             if (!batch || batch.id !== pendingId || batch.status !== "pending") return;
-            markProcessing(batch.id);
+            if (!await markProcessing(batch.id)) return;
             const combined = batch.messages.join("\n");
-            const h = getHistory(phone, clientId, connId ?? undefined);
-            console.log(`[meta] Gemini batch phone=${phone} cid=${cid} msgs=${batch.messages.length}`);
+            const h = (await getHistory(phone, clientId, connId ?? undefined));
+            ;
             runGeminiAgent(combined, h, cid, phone, connId ?? undefined)
               .then(async ({ text: reply, actions }) => {
-                markDone(batch.id);
+                (await markDone(batch.id));
                 if (reply) await sendMetaReply(reply);
                 await processMetaActions(actions);
               })
-              .catch((e) => {
+              .catch(async (e) => {
                 console.error(`[meta] Gemini ERRO batch phone=${phone}:`, e);
-                markDone(batch.id);
+                (await markDone(batch.id));
               });
           }, waitSeconds * 1000);
 
@@ -449,8 +436,8 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Resposta imediata ────────────────────────────────────────────
-        console.log(`[meta] Gemini imediato phone=${phone} cid=${cid}`);
-        const history = getHistory(phone, clientId, connId ?? undefined);
+        ;
+        const history = (await getHistory(phone, clientId, connId ?? undefined));
         const { text: reply, actions } = await runGeminiAgent(text, history, cid, phone, connId ?? undefined);
         if (reply) await sendMetaReply(reply);
         await processMetaActions(actions);

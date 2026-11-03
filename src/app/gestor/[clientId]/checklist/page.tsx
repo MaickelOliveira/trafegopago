@@ -8,7 +8,7 @@ export default async function GestorChecklistPage({ params }: { params: Promise<
   if (!session || session.role !== "manager") redirect("/login");
 
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/gestor");
 
   return (

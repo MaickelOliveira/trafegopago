@@ -1,19 +1,10 @@
-import { getClients, getConfig } from "@/lib/clients";
-import { getFunnels } from "@/lib/funnels";
-import { ConfiguracoesView } from "@/components/gestor/ConfiguracoesView";
-
-export default async function ConfiguracoesPage() {
-  const clients = getClients().map(({ passwordHash: _, ...c }) => c);
-  const { appBaseUrl } = getConfig();
-  const funnels = getFunnels();
-  const allConnections = funnels.flatMap((f) =>
-    (f.connections ?? [])
-      .filter(
-        (c) =>
-          (c.type === "uazapi" && c.uazapiToken) ||
-          (c.type === "meta" && c.metaPhoneNumberId && c.metaToken),
-      )
-      .map((c) => ({ id: c.id, phone: c.phone, funnelName: f.name, type: c.type as "uazapi" | "meta" }))
-  );
-  return <ConfiguracoesView clients={clients} appBaseUrl={appBaseUrl} allConnections={allConnections} />;
+import { isDailyBackupConfigured } from "@/lib/backup-status";
+import { getConfig } from "@/lib/clients";
+import { databasePool } from "@/lib/document-store";
+import { PlatformSettingsView } from "@/components/gestor/PlatformSettingsView";
+export default async function PlatformSettingsPage({ searchParams }: { searchParams: Promise<{ backup?: string }> }) {
+  const backupResult = (await searchParams).backup;
+  const config = await getConfig();
+  const backup = await databasePool().query("SELECT completed_at FROM backup_runs WHERE status='completed' ORDER BY day DESC LIMIT 1");
+  return <PlatformSettingsView backupResult={backupResult} meta={!!config.metaToken} google={!!config.googleAdsRefreshToken} whatsapp={!!(config.evolutionServer || process.env.EVOLUTION_SERVER)} ai={!!(config.geminiApiKey || config.anthropicApiKey || process.env.GEMINI_API_KEY)} driveConfigured={isDailyBackupConfigured(config)} latestBackup={backup.rows[0]?.completed_at?.toISOString() ?? null} driveFolderUrl={(config.backupDriveFolderId || process.env.BACKUP_DRIVE_FOLDER_ID) ? `https://drive.google.com/drive/folders/${encodeURIComponent(config.backupDriveFolderId || process.env.BACKUP_DRIVE_FOLDER_ID!)}` : null} />;
 }

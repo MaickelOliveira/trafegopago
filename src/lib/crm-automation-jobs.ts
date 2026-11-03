@@ -1,10 +1,10 @@
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 // Persistência dos passos agendados (com delay) de automações do CRM.
 // Antes eram agendados só com setTimeout em memória — se o servidor reiniciasse
 // antes do timer disparar (qualquer deploy), o passo era perdido silenciosamente,
 // sem nenhum registro. Agora cada passo futuro vira um job em arquivo, reivindicado
 // pelo cron (igual pending-responses.ts / followups.ts) — sobrevive a restarts.
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -24,21 +24,17 @@ export type CrmAutomationJob = {
 
 const FILE = path.join(process.cwd(), "data", "crm-automation-jobs.json");
 
-function load(): CrmAutomationJob[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch {
-    return [];
-  }
+async function load(): Promise<CrmAutomationJob[]> {
+  return (await readDocument<CrmAutomationJob[]>("crm-automation-jobs.json", []));
 }
 
-function save(items: CrmAutomationJob[]) {
-  writeFileSync(FILE, JSON.stringify(items, null, 2));
+async function save(items: CrmAutomationJob[]) {
+  await writeDocument("crm-automation-jobs.json", items);
 }
 
-export function scheduleJob(automationId: string, leadId: string, stepId: string, scheduledAt: string): CrmAutomationJob {
-  const items = load();
+export async function scheduleJob(automationId: string, leadId: string, stepId: string, scheduledAt: string): Promise<CrmAutomationJob> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const job: CrmAutomationJob = {
     id: randomUUID(),
     automationId,
@@ -49,15 +45,18 @@ export function scheduleJob(automationId: string, leadId: string, stepId: string
     createdAt: new Date().toISOString(),
   };
   items.push(job);
-  save(items);
+  (await save(items));
   return job;
+
+  });
 }
 
 /** Reivindica jobs vencidos atomicamente: lê + marca "processing" em um único
  *  write, igual claimDueFollowUps — evita processamento duplicado entre ticks. */
-export function claimDueJobs(): CrmAutomationJob[] {
+export async function claimDueJobs(): Promise<CrmAutomationJob[]> {
+  return withDataTransaction(async () => {
   const now = new Date();
-  const items = load();
+  const items = (await load());
   const claimed: CrmAutomationJob[] = [];
   for (const j of items) {
     if (j.status === "pending" && new Date(j.scheduledAt) <= now) {
@@ -65,29 +64,37 @@ export function claimDueJobs(): CrmAutomationJob[] {
       claimed.push({ ...j });
     }
   }
-  if (claimed.length > 0) save(items);
+  if (claimed.length > 0) (await save(items));
   return claimed;
+
+  });
 }
 
-export function markJobDone(id: string): void {
-  const items = load();
+export async function markJobDone(id: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const idx = items.findIndex((j) => j.id === id);
   if (idx >= 0) {
     items[idx].status = "done";
-    save(items);
+    (await save(items));
   }
+
+  });
 }
 
-export function markJobFailed(id: string, error: string): void {
-  const items = load();
+export async function markJobFailed(id: string, error: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const idx = items.findIndex((j) => j.id === id);
   if (idx >= 0) {
     items[idx].status = "failed";
     items[idx].lastError = error;
-    save(items);
+    (await save(items));
   }
+
+  });
 }
 
-export function getAllJobs(): CrmAutomationJob[] {
-  return load();
+export async function getAllJobs(): Promise<CrmAutomationJob[]> {
+  return (await load());
 }

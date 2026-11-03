@@ -1,3 +1,4 @@
+import { patchClient } from "@/lib/clients";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClients, upsertClient, migrateAgentConfigByOldConnectionId } from "@/lib/clients";
@@ -21,30 +22,27 @@ export async function POST(req: NextRequest) {
   const { sessionId, clientId, linkAgent, reuseConnectionId } = body;
   let { funnelId } = body;
 
-  const evoSession = getEvolutionSessionById(sessionId);
+  const evoSession = (await getEvolutionSessionById(sessionId));
   if (!evoSession) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
 
   if (funnelId?.startsWith("auto:")) {
     const autoClientId = funnelId.slice(5);
-    const newFunnel = createFunnel("Funil Principal");
-    updateFunnel(newFunnel.id, { clientId: autoClientId });
+    const newFunnel = (await createFunnel("Funil Principal"));
+    (await updateFunnel(newFunnel.id, { clientId: autoClientId }));
     funnelId = newFunnel.id;
   }
 
-  updateEvolutionSession(sessionId, {
+  (await updateEvolutionSession(sessionId, {
     funnelId: funnelId ?? null,
     clientId: clientId ?? null,
     hasAgent: linkAgent,
-  });
+  }));
 
-  const clients = getClients();
+  const clients = (await getClients());
 
   for (const client of clients) {
     if (client.agentConfig?.whatsappConnectionId === sessionId && client.id !== clientId) {
-      upsertClient({
-        ...client,
-        agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined },
-      });
+      (await patchClient(client.id, { agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined } }));
     }
   }
 
@@ -58,17 +56,14 @@ export async function POST(req: NextRequest) {
     const client = clients.find(c => c.id === clientId);
     if (client) {
       if (linkAgent && reuseConnectionId) {
-        migratedConfig = migrateAgentConfigByOldConnectionId(clientId, reuseConnectionId, sessionId);
+        migratedConfig = (await migrateAgentConfigByOldConnectionId(clientId, reuseConnectionId, sessionId));
       }
 
-      const freshClient = getClients().find(c => c.id === clientId) ?? client;
-      upsertClient({
-        ...freshClient,
-        agentConfig: {
+      const freshClient = (await getClients()).find(c => c.id === clientId) ?? client;
+      (await patchClient(freshClient.id, { agentConfig: {
           ...(freshClient.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] }),
           whatsappConnectionId: linkAgent ? sessionId : undefined,
-        },
-      });
+        } }));
     }
   }
 

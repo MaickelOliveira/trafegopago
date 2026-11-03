@@ -4,8 +4,8 @@ import { getAdsAuthUrl } from "@/lib/google-ads-auth";
 import { getConfig } from "@/lib/clients";
 
 /** Retorna a URL base pública correta mesmo dentro de Docker/EasyPanel */
-function getPublicBase(req: NextRequest): string {
-  const config = getConfig();
+async function getPublicBase(req: NextRequest): Promise<string> {
+  const config = (await getConfig());
   if (config.appBaseUrl) return config.appBaseUrl.replace(/\/$/, "");
   const proto = req.headers.get("x-forwarded-proto") ?? "https";
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
@@ -22,6 +22,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const baseUrl = getPublicBase(req);
-  return NextResponse.redirect(getAdsAuthUrl(baseUrl));
+  const baseUrl = (await getPublicBase(req));
+  return NextResponse.redirect((await getAdsAuthUrl(baseUrl)));
 }

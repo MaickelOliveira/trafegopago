@@ -1,3 +1,5 @@
+import { getFunnelForConnection } from "@/lib/lead-context";
+import { getEmployeeById, employeeCanAccessFunnel } from "@/lib/employees";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getClientById, getAllAgentConfigs } from "@/lib/clients";
@@ -11,15 +13,21 @@ export default async function ClienteAgenteIaPage() {
   if (!session || (session.role !== "client" && session.role !== "employee")) redirect("/login");
   if (session.role === "employee") {
     const { getEmployeeById } = await import("@/lib/employees");
-    const emp = session.employeeId ? getEmployeeById(session.employeeId) : null;
+    const emp = session.employeeId ? (await getEmployeeById(session.employeeId)) : null;
     if (!emp || !emp.active || !emp.permissions?.canViewAgentIa) redirect("/cliente/crm");
   }
 
   const clientId = session.clientId!;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/login");
 
-  const agentConfigs = getAllAgentConfigs(client);
+  let agentConfigs = getAllAgentConfigs(client);
+  if (session.role === "employee") {
+    const employee = await getEmployeeById(session.employeeId!);
+    const allowed = await Promise.all(agentConfigs.map(async config => { const funnel = config.whatsappConnectionId ? await getFunnelForConnection(clientId, config.whatsappConnectionId) : undefined; return !!employee && !!funnel && employeeCanAccessFunnel(employee, funnel.id); }));
+    agentConfigs = agentConfigs.filter((_, index) => allowed[index]);
+  }
+  agentConfigs = agentConfigs.map(config => ({ enabled: config.enabled, followUpEnabled: config.followUpEnabled, followUps: config.followUps, name: config.name, whatsappConnectionId: config.whatsappConnectionId, aiResumeKeyword: config.aiResumeKeyword, mediaLibrary: config.mediaLibrary, systemPrompt: config.systemPrompt, messageWaitSeconds: config.messageWaitSeconds, maxMessageLength: config.maxMessageLength, splitMessages: config.splitMessages, googleCalendarId: config.googleCalendarId }));
 
   return (
     <div>

@@ -3,7 +3,7 @@ import { getConfig } from "@/lib/clients";
 
 /** Rota temporária de debug — mostra o redirect URI que será enviado ao Google */
 export async function GET(req: NextRequest) {
-  const config = getConfig();
+  const config = (await getConfig());
   const proto = req.headers.get("x-forwarded-proto") ?? "https";
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
   const fromHeaders = host ? `${proto}://${host}` : null;

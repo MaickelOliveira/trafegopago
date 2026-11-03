@@ -14,7 +14,7 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
-  const link = getShareLinkByToken(token);
+  const link = (await getShareLinkByToken(token));
 
   if (!link) {
     return NextResponse.json({ valid: false, error: "Link não encontrado." }, { status: 404 });
@@ -29,7 +29,7 @@ export async function GET(
     return NextResponse.json({ valid: false, error: "Link inválido." }, { status: 410 });
   }
 
-  const evoSession = getEvolutionSessionById(link.evolutionSessionId);
+  const evoSession = (await getEvolutionSessionById(link.evolutionSessionId));
   if (!evoSession) {
     return NextResponse.json({ valid: false, error: "Sessão não encontrada." }, { status: 404 });
   }

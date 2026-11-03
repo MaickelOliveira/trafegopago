@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "accountId obrigatório" }, { status: 400 });
   }
 
-  const creds = getGoogleAdsCreds();
+  const creds = (await getGoogleAdsCreds());
   if (!creds) return NextResponse.json({ error: "Google Ads não configurado" }, { status: 500 });
 
   try {

@@ -1,3 +1,6 @@
+import { fetchPublicResource } from "@/lib/public-download";
+import { registerMediaFile } from "./media-access";
+import { randomUUID } from "node:crypto";
 /**
  * Faz download e descriptografia de mídia do WhatsApp (AES-256-CBC + HKDF),
  * depois transcreve/descreve via Gemini.
@@ -6,7 +9,7 @@
  * para OGG/Opus do que inlineData base64.
  * Para imagem/vídeo/documento usa inlineData base64.
  */
-import { createDecipheriv, hkdfSync } from "crypto";
+import { createDecipheriv, hkdfSync, createHmac, timingSafeEqual } from "crypto";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -18,16 +21,16 @@ function ensureMediaDir() {
   if (!existsSync(MEDIA_DIR)) mkdirSync(MEDIA_DIR, { recursive: true });
 }
 
-export function saveDecryptedMedia(buffer: Buffer, phone: string, ts: number, mimeType: string): string {
+export async function saveDecryptedMedia(buffer: Buffer, _phone: string, _ts: number, mimeType: string, clientId: string, connId?: string): Promise<string> {
   ensureMediaDir();
   const ext = mimeType.includes("mp4") || mimeType.includes("video") ? "mp4"
     : mimeType.includes("webp") ? "webp"
     : mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg"
     : mimeType.includes("png") ? "png"
     : "ogg";
-  const safePhone = phone.replace(/\D/g, "");
-  const filename = `${safePhone}-${ts}.${ext}`;
+  const filename = `${randomUUID()}.${ext}`;
   writeFileSync(path.join(MEDIA_DIR, filename), buffer);
+  await registerMediaFile(`/api/media/${filename}`, clientId, connId);
   return `/api/media/${filename}`;
 }
 
@@ -54,7 +57,7 @@ export async function downloadAndDecryptMedia(
   }
 
   try {
-    const res = await fetch(encryptedUrl, {
+    const res = await fetchPublicResource(encryptedUrl, {
       headers: { "User-Agent": "WhatsApp/2.24.10.0" },
       signal: AbortSignal.timeout(30_000),
     });
@@ -71,7 +74,11 @@ export async function downloadAndDecryptMedia(
     const iv         = derived.subarray(0, 16);
     const cipherKey  = derived.subarray(16, 48);
 
+    if (encryptedData.length < 26) throw new Error("Mídia criptografada inválida.");
     const encContent = encryptedData.subarray(0, encryptedData.length - 10);
+    const macKey = derived.subarray(48, 80);
+    const expectedMac = createHmac("sha256", macKey).update(iv).update(encContent).digest().subarray(0, 10);
+    if (!timingSafeEqual(expectedMac, encryptedData.subarray(-10))) throw new Error("Integridade da mídia inválida.");
     const decipher = createDecipheriv("aes-256-cbc", cipherKey, iv);
     decipher.setAutoPadding(true);
     const decrypted = Buffer.concat([decipher.update(encContent), decipher.final()]);

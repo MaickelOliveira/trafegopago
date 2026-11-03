@@ -18,12 +18,12 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
-  const token = getConfig().metaToken;
+  const token = (await getConfig()).metaToken;
   if (!token) {
     return NextResponse.json({ error: "Token Meta não configurado" }, { status: 400 });
   }
 
-  const base = `https://graph.facebook.com/v19.0`;
+  const base = `https://graph.facebook.com/v26.0`;
   const accountFields = `fields=id,name,account_id&limit=200&access_token=${token}`;
 
   // 1. Contas diretas do usuário

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getLeadById } from "@/lib/leads";
-import { cancelFollowUpsForPhone, getPendingFollowUps } from "@/lib/followups";
+import { cancelFollowUp, getActiveFollowUpsForLead } from "@/lib/followups";
+import { withDataTransaction } from "@/lib/document-store";
 
 // DELETE /api/crm/leads/[id]/followups — cancela todos os follow-ups do lead
 export async function DELETE(
@@ -13,10 +14,10 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const lead = getLeadById(id);
+  const lead = (await getLeadById(id));
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  cancelFollowUpsForPhone(lead.clientId, lead.phone);
+  await withDataTransaction(async()=>{ for(const followUp of await getActiveFollowUpsForLead(lead))await cancelFollowUp(followUp.id); });
   return NextResponse.json({ ok: true });
 }
 
@@ -29,9 +30,9 @@ export async function GET(
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const lead = getLeadById(id);
+  const lead = (await getLeadById(id));
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const pending = getPendingFollowUps(lead.clientId).filter((f) => f.phone === lead.phone);
+  const pending = await getActiveFollowUpsForLead(lead);
   return NextResponse.json(pending);
 }

@@ -1,3 +1,4 @@
+import { patchClient } from "@/lib/clients";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClientById, getClients, type Client } from "@/lib/clients";
@@ -15,12 +16,12 @@ async function classifyClientLeads(client: Client): Promise<{ processed: number;
   // "Agente IA" salva por conexão em agentConfigs[], então cai aqui como
   // fallback pra não ignorar a chave configurada quando não há campo legado.
   const agentCfg = client.agentConfig ?? client.agentConfigs?.[0];
-  const geminiApiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
+  const geminiApiKey = (await getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined));
   if (!geminiApiKey) {
     return { processed: 0, moved: 0, total: 0, skipped: "Gemini API key não configurada" };
   }
 
-  const leads = getLeads(client.id);
+  const leads = (await getLeads(client.id));
   let processed = 0;
   let moved = 0;
 
@@ -29,17 +30,17 @@ async function classifyClientLeads(client: Client): Promise<{ processed: number;
   for (let i = 0; i < leads.length; i += BATCH) {
     const batch = leads.slice(i, i + BATCH);
     await Promise.all(
-      batch.map(async (lead) => {
-        const funnel = getFunnelById(lead.funnelId);
+      (await Promise.all(batch.map(async (lead) => {
+        const funnel = (await getFunnelById(lead.funnelId));
         if (!funnel) return;
 
-        const history = getHistory(lead.realPhone ?? lead.phone, lead.clientId);
+        const history = (await getHistory(lead.realPhone ?? lead.phone, lead.clientId));
         if (history.length === 0) return;
 
         processed++;
         const wasMoved = await classifyLeadByHistory(history, lead, funnel, geminiApiKey, client);
         if (wasMoved) moved++;
-      })
+      })))
     );
   }
 
@@ -61,7 +62,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
   const body = await req.json().catch(() => ({}));
@@ -69,7 +70,7 @@ export async function PATCH(req: NextRequest) {
   const kanbanAgentPrompt: string | undefined =
     typeof body.kanbanAgentPrompt === "string" ? body.kanbanAgentPrompt : client.kanbanAgentPrompt;
 
-  upsertClient({ ...client, kanbanAgentEnabled: enabled, kanbanAgentPrompt });
+  (await patchClient(client.id, { kanbanAgentEnabled: enabled, kanbanAgentPrompt }));
 
   return NextResponse.json({ ok: true, kanbanAgentEnabled: enabled, kanbanAgentPrompt });
 }
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
 
   // Modo plataforma inteira: só managers, e só quando nenhum clientId foi passado
   if (!explicitClientId && session.role === "manager") {
-    const clients = getClients();
+    const clients = (await getClients());
     let processed = 0;
     let moved = 0;
     let total = 0;
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
   const clientId = explicitClientId ?? session.clientId;
   if (!clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
   const result = await classifyClientLeads(client);

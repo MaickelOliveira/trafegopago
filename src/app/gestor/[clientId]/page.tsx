@@ -6,7 +6,7 @@ type Props = { params: Promise<{ clientId: string }> };
 
 export default async function GestorClientPage({ params }: Props) {
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) notFound();
 
   const { passwordHash: _, ...safe } = client;

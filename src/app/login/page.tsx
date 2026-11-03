@@ -44,8 +44,10 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="rounded-2xl bg-white p-8 shadow-sm border border-slate-200">
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">E-mail</label>
+              <label htmlFor="login-email" className="block text-sm font-medium text-slate-700 mb-1.5">E-mail</label>
               <input
+                id="login-email"
+                autoComplete="username"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -56,8 +58,10 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Senha</label>
+              <label htmlFor="login-password" className="block text-sm font-medium text-slate-700 mb-1.5">Senha</label>
               <input
+                id="login-password"
+                autoComplete="current-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -68,7 +72,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">
+              <p role="alert" className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">
                 {error}
               </p>
             )}

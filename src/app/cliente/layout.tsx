@@ -8,7 +8,7 @@ export default async function ClienteLayout({ children }: { children: React.Reac
   const session = await getSession();
   if (!session || (session.role !== "client" && session.role !== "employee")) redirect("/login");
 
-  const client = getClientById(session.clientId!);
+  const client = (await getClientById(session.clientId!));
   if (!client) redirect("/login");
 
   // Para funcionários, carrega as permissões atuais do banco
@@ -16,7 +16,7 @@ export default async function ClienteLayout({ children }: { children: React.Reac
   let permissions = DEFAULT_PERMISSIONS;
   let employeeName: string | undefined;
   if (isEmployee && session.employeeId) {
-    const emp = getEmployeeById(session.employeeId);
+    const emp = (await getEmployeeById(session.employeeId));
     if (!emp || !emp.active) redirect("/login");
     permissions = { ...DEFAULT_PERMISSIONS, ...emp.permissions };
     employeeName = emp.name;

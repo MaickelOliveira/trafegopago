@@ -1,9 +1,10 @@
+import { getFunnels } from "@/lib/funnels";
 import { NextRequest, NextResponse } from "next/server";
 import { getTemplateById, sendTemplate, type WabaTemplate } from "@/lib/waba-templates";
 import { addMessage, setAiPaused, getAllConversationsByClientId, getHistory, phoneVariants } from "@/lib/conversations";
-import { getLeadByPhone, updateLead } from "@/lib/leads";
-import { getFunnelById } from "@/lib/funnels";
-import { getWppSessions } from "@/lib/wppconnect-sessions";
+import { updateLead } from "@/lib/leads";
+import { getLeadForConnection } from "@/lib/lead-context";
+import { cancelPendingForPhone } from "@/lib/pending-responses";
 import { cancelFollowUpsForPhone } from "@/lib/followups";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "templateId, phone e clientId são obrigatórios" }, { status: 400 });
   }
 
-  const tpl = getTemplateById(templateId);
+  const tpl = (await getTemplateById(templateId));
   if (!tpl || tpl.clientId !== clientId) {
     return NextResponse.json({ error: "Template não encontrado" }, { status: 404 });
   }
@@ -52,6 +53,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Template sem número/token configurados" }, { status: 422 });
   }
 
+  const sources = (await getFunnels()).filter(funnel => funnel.clientId === clientId).flatMap(funnel => funnel.connections ?? []).filter(connection => connection.type === "meta" && connection.metaPhoneNumberId === tpl.phoneNumberId && (!connId || connection.id === connId));
+  if (sources.length !== 1) return NextResponse.json({ error: "Selecione a conexão oficial que pertence a este template." }, { status: 422 });
+  const sourceConnectionId = sources[0].id;
+  if(funnelId && !(await getFunnels()).some(funnel=>funnel.id===funnelId&&funnel.connections?.some(connection=>connection.id===sourceConnectionId)))return NextResponse.json({error:"O template pertence a outro funil."},{status:422});
   const digits = phone.replace(/\D/g, "");
   const cleanPhone = digits.startsWith("55") ? digits : "55" + digits;
 
@@ -60,37 +65,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: result.error }, { status: 502 });
   }
 
-  // Resolve connId — replica a mesma ordem de prioridade usada por /api/crm/conversations/[phone]
-  // (GET) para garantir que a mensagem seja salva na mesma chave que o chat irá reler.
-  let activeConnId = connId;
-  if (!activeConnId && funnelId) {
-    const wppSession = getWppSessions().find((s) => s.funnelId === funnelId);
-    const funnelConnId = wppSession?.id
-      ?? getFunnelById(funnelId)?.connections?.find((c) => c.type === "uazapi")?.id
-      ?? getFunnelById(funnelId)?.connections?.[0]?.id;
-    if (funnelConnId && getHistory(cleanPhone, clientId, funnelConnId).length > 0) {
-      activeConnId = funnelConnId;
-    }
-  }
-  if (!activeConnId) {
-    // Compara pelas variantes reais do número (com/sem 9º dígito móvel), não
-    // pelos últimos N dígitos — ver comentário em /api/crm/conversations/[phone].
-    const normVariants = new Set(phoneVariants(cleanPhone));
-    const matched = getAllConversationsByClientId(clientId)
-      .filter((c) => normVariants.has(c.phone.replace(/\D/g, "")))
-      .sort((a, b) => b.lastActivity - a.lastActivity);
-    activeConnId = matched.find((c) => getHistory(c.phone, clientId, c.connId ?? undefined).length > 0)?.connId ?? undefined;
-  }
-
+  const activeConnId = sourceConnectionId;
   const previewText = `📋 ${renderPreview(tpl, components)}`;
-  addMessage(cleanPhone, { role: "assistant", content: previewText, ts: Date.now(), type: "text" }, clientId, activeConnId ? { connId: activeConnId } : undefined);
-  setAiPaused(cleanPhone, true, clientId, activeConnId ?? null);
-  const existingLead = getLeadByPhone(clientId, cleanPhone);
-  if (existingLead) updateLead(existingLead.id, { aiPaused: true });
+  (await addMessage(cleanPhone, { role: "assistant", content: previewText, ts: Date.now(), type: "text" }, clientId, activeConnId ? { connId: activeConnId } : undefined));
+  (await setAiPaused(cleanPhone, true, clientId, activeConnId ?? null));
+  const existingLead = (await getLeadForConnection(clientId, cleanPhone,activeConnId));
+  if (existingLead) (await updateLead(existingLead.id, { aiPaused: true }));
   // Cancela follow-ups automáticos já agendados — sem isso, um follow-up
   // agendado antes do gestor assumir dispara depois e reativa a IA sozinho
   // (ver mesmo comentário em /api/whatsapp/inbox/send/route.ts).
-  cancelFollowUpsForPhone(clientId, cleanPhone);
+  await cancelPendingForPhone(clientId,cleanPhone,activeConnId);
+  (await cancelFollowUpsForPhone(clientId, cleanPhone, activeConnId));
 
   return NextResponse.json({ ok: true });
 }

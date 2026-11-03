@@ -3,15 +3,15 @@
 // pela rota HTTP /api/agent/cron (acionável externamente, ex: EasyPanel).
 // Antes existiam DUAS implementações divergentes que competiam pelos mesmos
 // follow-ups — unificadas aqui para evitar comportamento inconsistente.
-import { claimDueFollowUps, markSent, markFailed, cancelFollowUp, scheduleFollowUp, cancelFollowUpsForPhone, type FollowUp } from "./followups";
+import { claimDueFollowUps, markSent, markFailed, cancelFollowUp, scheduleFollowUp, getFollowUpById, cancelFollowUpsForPhone, type FollowUp } from "./followups";
 import { getDuePending, markProcessing, markDone } from "./pending-responses";
-import { getClientById, getAllAgentConfigs, type AgentConfig } from "./clients";
+import { getClientById, getAllAgentConfigs, getAgentConfigForConnection, type AgentConfig } from "./clients";
 import { sendMessage, getGeminiApiKey } from "./whatsapp-send";
 import { runGeminiAgent, generateFollowUpAI } from "./gemini-agent";
-import { addMessage, getHistory, type ChatMessage } from "./conversations";
+import { addMessage,getAiPaused, getHistory, type ChatMessage } from "./conversations";
 import { runScheduledDailyAutomations, processDueCrmAutomationJobs } from "./crm-automations";
 import { runDailySummaries, reativarIaAutomaticamente } from "./agent-schedules";
-import { getLeadByPhone } from "./leads";
+import { getLeadForConnection,getChatLeadForConnection } from "./lead-context";
 import { getFunnels, getFunnelById } from "./funnels";
 import { getTemplateById, sendTemplate } from "./waba-templates";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -20,9 +20,9 @@ import { isAgentPhoneIgnored } from "./agent-phone-policy";
 const TERMINAL_STATUSES = ["ganho", "perdido"];
 
 /** Monta um texto legível do template (corpo + variáveis substituídas) para exibir no histórico/inbox */
-function renderTemplatePreview(templateId: string | undefined, variables: Record<string, string> | undefined): string {
+async function renderTemplatePreview(templateId: string | undefined, variables: Record<string, string> | undefined): Promise<string> {
   if (!templateId) return "";
-  const template = getTemplateById(templateId);
+  const template = (await getTemplateById(templateId));
   if (!template) return "";
   const body = template.components.find((c) => c.type === "BODY")?.text ?? "";
   if (!variables) return body;
@@ -46,13 +46,13 @@ function interpolateFollowUp(msg: string, lead: { name?: string | null; phone?: 
 // (followUp.connId) e ordena as variáveis numericamente ("1","2",... → {{1}},{{2}}).
 async function sendFollowUpTemplate(followUp: FollowUp): Promise<{ ok: boolean; error?: string; wamid?: string }> {
   if (!followUp.templateId) return { ok: false, error: "followUp sem templateId" };
-  const template = getTemplateById(followUp.templateId);
-  if (!template) {
+  const template = (await getTemplateById(followUp.templateId));
+  if (!template || template.clientId !== followUp.clientId) {
     const error = `template ${followUp.templateId} não encontrado`;
     console.error(`[cron-tasks] FU ${followUp.id}: ${error}`);
     return { ok: false, error };
   }
-  const conn = getFunnels()
+  const conn = (await getFunnels()).filter(funnel => funnel.clientId === followUp.clientId)
     .flatMap((f) => f.connections ?? [])
     .find((c) => c.id === followUp.connId && c.type === "meta");
   if (!conn?.metaPhoneNumberId || !conn?.metaToken) {
@@ -67,7 +67,7 @@ async function sendFollowUpTemplate(followUp: FollowUp): Promise<{ ok: boolean; 
   const components = orderedValues.length > 0
     ? [{ type: "body", parameters: orderedValues.map((v) => ({ type: "text", text: v })) }]
     : undefined;
-  const result = await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, followUp.phone, template.name, template.language, components);
+  const result = await sendTemplate(conn.metaPhoneNumberId, conn.metaToken, (await getLeadForConnection(followUp.clientId, followUp.phone, followUp.connId))?.realPhone || followUp.phone, template.name, template.language, components);
   if (!result.success) {
     console.error(`[cron-tasks] FU ${followUp.id}: sendTemplate falhou — ${result.error}`);
     return { ok: false, error: result.error ?? "sendTemplate falhou sem detalhe" };
@@ -111,18 +111,18 @@ async function shouldSendFollowUp(
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 12_000));
     const result = await Promise.race([model.generateContent(prompt), timeout]);
     if (!result) {
-      console.log("[cron-tasks] shouldSendFollowUp: timeout → enviando por segurança");
-      return true;
+      throw new Error("Análise de contexto indisponível. Follow-up não enviado.");
     }
     const text = (result as Awaited<ReturnType<typeof model.generateContent>>).response.text().trim();
     const jsonMatch = text.match(/\{[\s\S]*?\}/);
-    if (!jsonMatch) return true;
+    if (!jsonMatch) throw new Error("Resposta de contexto inválida.");
     const parsed = JSON.parse(jsonMatch[0]) as { enviar: boolean; motivo?: string };
     console.log(`[cron-tasks] shouldSendFollowUp: enviar=${parsed.enviar} motivo="${parsed.motivo ?? ""}"`);
-    return parsed.enviar !== false;
+    if (typeof parsed.enviar !== "boolean") throw new Error("Resposta de contexto inválida.");
+    return parsed.enviar;
   } catch (e) {
     console.error("[cron-tasks] shouldSendFollowUp erro:", e);
-    return true; // em caso de erro, envia por segurança
+    throw new Error("Não foi possível validar o contexto do follow-up.");
   }
 }
 
@@ -134,12 +134,13 @@ async function shouldSendFollowUp(
 // item é órfão e não deve mais sair, mesmo com o toggle ligado.
 function resolveAgentConfig(allCfgs: AgentConfig[], stepId: string | undefined, connId: string | undefined): AgentConfig | undefined {
   const byConn = connId ? allCfgs.find((c) => c.whatsappConnectionId === connId) : undefined;
-  if (byConn) {
-    return byConn.followUpEnabled && byConn.followUps?.some((s) => s.id === stepId) ? byConn : undefined;
+  if (connId) {
+    return byConn?.followUpEnabled && (!stepId || byConn.followUps?.some((step) => step.id === stepId)) ? byConn : undefined;
   }
   // Item legado sem connId gravado — só aceita config habilitada cujo passo
   // ainda exista (nunca aceita "qualquer uma habilitada" sem essa checagem).
-  return allCfgs.find((c) => c.followUpEnabled && c.followUps?.some((s) => s.id === stepId));
+  const matching = allCfgs.filter((config) => config.followUpEnabled && (!stepId || config.followUps?.some((step) => step.id === stepId)));
+  return matching.length === 1 ? matching[0] : undefined;
 }
 
 export async function processDueFollowUpsAndBatches(): Promise<{
@@ -147,34 +148,35 @@ export async function processDueFollowUpsAndBatches(): Promise<{
   crmJobsProcessed: number; crmJobsFailed: number;
   dailySummariesSent: number; aiAutoResumed: number;
 }> {
-  const due = claimDueFollowUps();
+  const due = (await claimDueFollowUps());
   let processed = 0;
   let skipped = 0;
 
   for (const followUp of due) {
-    const client = getClientById(followUp.clientId);
+    const client = (await getClientById(followUp.clientId));
     const agentCfg = client ? resolveAgentConfig(getAllAgentConfigs(client), followUp.stepId, followUp.connId) : undefined;
 
     if (!agentCfg?.followUpEnabled) {
       // Órfão (toggle desligado, passo apagado, ou conexão errada) — cancela
       // de vez em vez de deixar "processing" pra sempre (claimDueFollowUps já
       // marcou como processing antes desta checagem).
-      cancelFollowUp(followUp.id);
+      (await cancelFollowUp(followUp.id));
       skipped++;
       continue;
     }
 
     try {
       // ── 0. Lead em coluna final (ganho/perdido) → cancela todos e pula ───
-      const lead = getLeadByPhone(followUp.clientId, followUp.phone);
+      const lead = await getLeadForConnection(followUp.clientId, followUp.phone, followUp.connId);
+      if (!lead || lead.followUpDisabled || followUp.leadId && followUp.leadId !== lead.id) { await cancelFollowUp(followUp.id); skipped++; continue; }
       if (isAgentPhoneIgnored(agentCfg, followUp.phone, lead?.realPhone)) {
-        cancelFollowUpsForPhone(followUp.clientId, followUp.phone);
+        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId));
         console.log(`[cron-tasks] FU ${followUp.id} cancelado: número silenciado no agente`);
         skipped++;
         continue;
       }
       if (lead && TERMINAL_STATUSES.includes(lead.status)) {
-        cancelFollowUpsForPhone(followUp.clientId, followUp.phone);
+        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId));
         console.log(`[cron-tasks] FU ${followUp.id} cancelado: lead em coluna final (${lead.status})`);
         skipped++;
         continue;
@@ -182,22 +184,22 @@ export async function processDueFollowUpsAndBatches(): Promise<{
 
       // ── 0.1. Lead em coluna marcada como "bloqueia follow-up" (ex: atendente
       // já está cuidando do caso manualmente) → cancela todos e pula ──────────
-      const followUpFunnel = lead ? getFunnelById(lead.funnelId) : undefined;
+      const followUpFunnel = lead ? (await getFunnelById(lead.funnelId)) : undefined;
       const followUpColumn = followUpFunnel?.columns.find((c) => c.id === lead?.status);
       if (followUpColumn?.blockFollowUps) {
-        cancelFollowUpsForPhone(followUp.clientId, followUp.phone);
+        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId));
         console.log(`[cron-tasks] FU ${followUp.id} cancelado: lead em coluna com follow-up bloqueado (${followUpColumn.label})`);
         skipped++;
         continue;
       }
 
       // ── 1. Checar quem enviou a última mensagem ──────────────────────────
-      const history = getHistory(followUp.phone, followUp.clientId, followUp.connId);
+      const history = (await getHistory(followUp.phone, followUp.clientId, followUp.connId));
       const lastMsg = history[history.length - 1];
 
       if (lastMsg?.role === "user") {
         // Lead já respondeu depois do follow-up ser agendado → descarta
-        markSent(followUp.id);
+        (await cancelFollowUp(followUp.id));
         console.log(`[cron-tasks] FU ${followUp.id} descartado: última mensagem foi do lead`);
         skipped++;
         continue;
@@ -207,9 +209,9 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       // Só se aplica a conexões WPPConnect/UazAPI (texto livre). Na API oficial
       // (Meta) o follow-up já depende de template aprovado — a checagem de
       // "contexto inadequado" não se aplica e só causava cancelamentos indevidos.
-      const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
+      const apiKey = (await getGeminiApiKey(agentCfg.geminiApiKey));
       const systemPrompt = agentCfg.followUpContext?.trim() || (agentCfg.systemPrompt ?? "").slice(0, 800);
-      const followUpConn = getFunnels()
+      const followUpConn = (await getFunnels())
         .flatMap((f) => f.connections ?? [])
         .find((c) => c.id === followUp.connId);
       const isMetaConn = followUpConn?.type === "meta";
@@ -217,7 +219,7 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       if (!isMetaConn && apiKey && history.length > 0) {
         const send = await shouldSendFollowUp(history, systemPrompt, followUp.message, apiKey);
         if (!send) {
-          cancelFollowUp(followUp.id);
+          (await cancelFollowUp(followUp.id));
           console.log(`[cron-tasks] FU ${followUp.id} cancelado pela análise Gemini (contexto inadequado)`);
           skipped++;
           continue;
@@ -236,7 +238,7 @@ export async function processDueFollowUpsAndBatches(): Promise<{
         // followUp.message vem vazio para templates — o conteúdo real está no
         // template aprovado da Meta. Resolve um preview legível só para exibir
         // no histórico/inbox da plataforma (o envio em si usa sendFollowUpTemplate).
-        msgToSend = renderTemplatePreview(followUp.templateId, followUp.templateVariables) || followUp.message;
+        msgToSend = (await renderTemplatePreview(followUp.templateId, followUp.templateVariables)) || followUp.message;
       } else {
         msgToSend = interpolateFollowUp(followUp.message, lead);
       }
@@ -244,6 +246,17 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       // Resolve número real quando o contato é um LID (ID interno do WhatsApp)
       const sendPhone = lead?.realPhone || followUp.phone;
 
+      const freshClient = await getClientById(followUp.clientId);
+      const freshConfig = freshClient ? resolveAgentConfig(getAllAgentConfigs(freshClient), followUp.stepId, followUp.connId) : undefined;
+      const currentItem = await getFollowUpById(followUp.id);
+      const currentLead = await getLeadForConnection(followUp.clientId, followUp.phone, followUp.connId);
+      const currentHistory = await getHistory(followUp.phone, followUp.clientId, followUp.connId);
+      const latest = currentHistory.at(-1);
+      const freshFunnel = currentLead ? await getFunnelById(currentLead.funnelId) : undefined;
+      const blockedColumn = freshFunnel?.columns.find(column => column.id === currentLead?.status)?.blockFollowUps;
+      if (!freshConfig?.followUpEnabled || blockedColumn || isAgentPhoneIgnored(freshConfig, followUp.phone, currentLead?.realPhone) || currentItem?.status !== "processing" || !currentLead || currentLead.followUpDisabled || ["ganho", "perdido"].includes(currentLead.status) || latest?.role === "user" && latest.ts > (lastMsg?.ts ?? 0)) {
+        await cancelFollowUp(followUp.id); skipped++; continue;
+      }
       // ── 4. Enviar (sempre pela MESMA conexão/número da conversa original) ──
       // Template é OBRIGATÓRIO para API oficial Meta fora da janela de 24h —
       // texto livre (mesmo gerado por IA) é rejeitado pela Meta nesse caso.
@@ -257,7 +270,7 @@ export async function processDueFollowUpsAndBatches(): Promise<{
 
       if (sendResult.ok) {
         // Registra no histórico para aparecer no inbox da plataforma
-        addMessage(followUp.phone, { role: "assistant", content: msgToSend, ts: Date.now() }, followUp.clientId, { connId: followUp.connId });
+        (await addMessage(followUp.phone, { role: "assistant", content: msgToSend, ts: Date.now() }, followUp.clientId, { connId: followUp.connId }));
         // NÃO reativa a IA aqui mesmo que o lead esteja com aiPaused=true.
         // Antes reativava ("para que responda quando o lead reagir"), mas isso
         // derrubava silenciosamente uma pausa manual do gestor: ele assume a
@@ -270,12 +283,12 @@ export async function processDueFollowUpsAndBatches(): Promise<{
         // wamid guardado para casar com o status assíncrono (sent/delivered/read/failed)
         // que a Meta manda depois via webhook — a API pode aceitar o envio aqui e
         // falhar a entrega de verdade só mais tarde, fora dessa resposta síncrona.
-        markSent(followUp.id, sendResult.wamid);
+        (await markSent(followUp.id, sendResult.wamid));
       } else {
         // NÃO marca como "sent" — registra "failed" com o motivo real, visível
         // em /api/debug/followups, em vez de mascarar a falha como sucesso.
         console.error(`[cron-tasks] FU ${followUp.id} FALHOU ao enviar — phone=${followUp.phone} messageType=${followUp.messageType ?? "text"} erro="${sendResult.error}"`);
-        markFailed(followUp.id, sendResult.error ?? "falha desconhecida");
+        (await markFailed(followUp.id, sendResult.error ?? "falha desconhecida"));
       }
       processed++;
       console.log(`[cron-tasks] Follow-up ${sendResult.ok ? "enviado" : "FALHOU"}: ${followUp.id} → ${followUp.phone}`);
@@ -283,10 +296,10 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       // ── 5. Agendar próximo step (somente se o envio atual teve sucesso) ────
       const steps = agentCfg.followUps ?? [];
       const nextIdx = (followUp.stepIndex ?? 0) + 1;
-      const nextStep = sendResult.ok ? steps[nextIdx] : undefined;
+      const nextStep = sendResult.ok && followUp.type === "followup" && followUp.stepId ? steps[nextIdx] : undefined;
       if (nextStep) {
         const scheduledAt = new Date(Date.now() + nextStep.delayHours * 3600000).toISOString();
-        scheduleFollowUp({
+        (await scheduleFollowUp({
           clientId: followUp.clientId,
           phone: followUp.phone,
           scheduledAt,
@@ -298,45 +311,48 @@ export async function processDueFollowUpsAndBatches(): Promise<{
           templateId: nextStep.templateId,
           templateVariables: nextStep.templateVariables,
           connId: followUp.connId,
-        });
+          leadId: lead.id,
+          funnelId: lead.funnelId,
+        }));
         console.log(`[cron-tasks] Próximo step ${nextIdx} agendado para ${scheduledAt}`);
       }
     } catch (e) {
       console.error(`[cron-tasks] Erro ao enviar ${followUp.id}:`, e);
-      markFailed(followUp.id, e instanceof Error ? e.message : String(e));
+      (await markFailed(followUp.id, e instanceof Error ? e.message : String(e)));
     }
   }
 
   // ── Processa batches de mensagens vencidos ───────────────────────────────
-  const pendingBatches = getDuePending();
+  const pendingBatches = (await getDuePending());
   let batchesProcessed = 0;
 
   for (const batch of pendingBatches) {
-    const client = getClientById(batch.clientId);
+    const client = (await getClientById(batch.clientId));
     if (!client) continue;
-    const agentCfg = getAllAgentConfigs(client).find((c) => c.enabled);
-    if (!agentCfg) continue;
+    const agentCfg = getAgentConfigForConnection(client, batch.connId);
+    if (!agentCfg?.enabled) continue;
 
     try {
-      markProcessing(batch.id);
+      if (!await markProcessing(batch.id)) continue;
       const combined = batch.messages.join("\n");
-      const history = getHistory(batch.phone);
-      const { text: reply } = await runGeminiAgent(combined, history, batch.clientId, batch.phone, agentCfg.whatsappConnectionId);
-      markDone(batch.id);
+      const history = (await getHistory(batch.phone, batch.clientId, batch.connId));
+      const { text: reply } = await runGeminiAgent(combined, history, batch.clientId, batch.phone, batch.connId ?? agentCfg.whatsappConnectionId);
+      (await markDone(batch.id));
 
-      if (reply) {
-        addMessage(batch.phone, { role: "assistant", content: reply, ts: Date.now() }, batch.clientId);
-        await sendMessage(batch.phone, reply, batch.clientId, agentCfg.whatsappConnectionId);
-        batchesProcessed++;
+      const freshLead = await getChatLeadForConnection(batch.clientId,batch.phone,batch.connId);
+      if (reply && !freshLead?.aiPaused && !await getAiPaused(batch.phone,batch.clientId,batch.connId)) {
+        const sent=await sendMessage(batch.phone,reply,batch.clientId,batch.connId??agentCfg.whatsappConnectionId);
+        if(sent){await addMessage(batch.phone,{role:"assistant",content:reply,ts:Date.now()},batch.clientId,{connId:batch.connId});batchesProcessed++;}
+        else console.error("[cron] O provedor não confirmou a resposta do lote; item encerrado sem repetição automática.");
       }
     } catch (e) {
       console.error(`[cron-tasks] Erro ao processar batch ${batch.id}:`, e);
-      markDone(batch.id);
+      (await markDone(batch.id));
     }
   }
 
   // ── Automações CRM agendadas (scheduled_daily) ───────────────────────────
-  runScheduledDailyAutomations();
+  (await runScheduledDailyAutomations());
 
   // ── Passos de automação CRM com delay já vencidos (persistidos em arquivo —
   // sobrevivem a restart do servidor, diferente do setTimeout puro de antes) ──
@@ -353,7 +369,7 @@ export async function processDueFollowUpsAndBatches(): Promise<{
   // ── Reativação automática da IA (só clientes com aiAutoResumeEnabled) ────
   let aiAutoResumed = 0;
   try {
-    aiAutoResumed = reativarIaAutomaticamente();
+    aiAutoResumed = (await reativarIaAutomaticamente());
   } catch (e) {
     console.error("[cron-tasks] Erro na reativação automática da IA:", e);
   }

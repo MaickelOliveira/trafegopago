@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId") ?? session.clientId;
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  return NextResponse.json(getQuickReplies(clientId));
+  return NextResponse.json((await getQuickReplies(clientId)));
 }
 
 export async function POST(req: NextRequest) {
@@ -32,12 +32,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "shortcut, title, text required" }, { status: 400 });
   }
 
-  const reply = createQuickReply(cid, {
+  const reply = (await createQuickReply(cid, {
     shortcut: body.shortcut.trim().replace(/^\//, ""),
     title: body.title.trim(),
     text: body.text.trim(),
     imageUrl: body.imageUrl?.trim() || undefined,
-  });
+  }));
 
   return NextResponse.json(reply);
 }

@@ -28,7 +28,7 @@ Como você deve agir:
 }
 
 async function buildClientSystemPrompt(client: Client): Promise<string> {
-  const config = getConfig();
+  const config = (await getConfig());
   const today = new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
   const funnelLabel: Record<string, string> = {
@@ -112,7 +112,7 @@ export async function generateResponse(
   history: ChatMessage[],
   clientId: string | null
 ): Promise<string> {
-  const config = getConfig();
+  const config = (await getConfig());
   const apiKey = config.anthropicApiKey;
 
   if (!apiKey) {
@@ -123,7 +123,7 @@ export async function generateResponse(
 
   let systemPrompt: string;
   if (clientId) {
-    const clients = getClients();
+    const clients = (await getClients());
     const client = clients.find((c) => c.id === clientId);
     systemPrompt = client
       ? await buildClientSystemPrompt(client)

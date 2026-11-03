@@ -15,12 +15,12 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
-  const link = getShareLinkByToken(token);
+  const link = (await getShareLinkByToken(token));
   if (!isShareLinkValid(link)) {
     return NextResponse.json({ error: "Link inválido ou já utilizado." }, { status: 410 });
   }
 
-  const evoSession = getEvolutionSessionById(link.evolutionSessionId);
+  const evoSession = (await getEvolutionSessionById(link.evolutionSessionId));
   if (!evoSession) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
 
   const rawStatus = await checkConnectionStatus(evoSession.instanceName);
@@ -34,7 +34,7 @@ export async function GET(
       if (i < 2) await new Promise(r => setTimeout(r, 1000));
     }
   } else {
-    markShareLinkUsed(token);
+    (await markShareLinkUsed(token));
   }
 
   return NextResponse.json({

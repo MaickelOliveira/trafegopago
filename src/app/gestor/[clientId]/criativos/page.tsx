@@ -6,7 +6,7 @@ type Props = { params: Promise<{ clientId: string }> };
 
 export default async function GestorCriativosPage({ params }: Props) {
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) notFound();
 
   const adAccountId = client.adAccounts[0]?.id || "";

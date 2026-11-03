@@ -1,3 +1,5 @@
+import { canReadMedia } from "@/lib/media-access";
+import type { NextRequest } from "next/server";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
@@ -17,9 +19,10 @@ const MIME_MAP: Record<string, string> = {
 };
 
 export async function GET(
-  _req: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ filename: string }> }
 ) {
+  if (!await canReadMedia(request)) return new NextResponse("Not found", { status: 404 });
   const { filename } = await params;
 
   // Sanitização: impede path traversal
@@ -41,7 +44,8 @@ export async function GET(
     headers: {
       "Content-Type": contentType,
       "Content-Length": String(buffer.length),
-      "Cache-Control": "private, max-age=86400",
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

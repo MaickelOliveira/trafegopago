@@ -1,0 +1,24 @@
+import {beforeEach,describe,expect,it,vi} from "vitest";
+import {planProviderRetirement} from "../../../scripts/lib/retire-provider-plan.mjs";
+const state=vi.hoisted(()=>({funnels:[] as {id:string;clientId:string;connections:{id:string;type:string;metaPhoneNumberId?:string;metaToken?:string}[]}[],sessions:[] as {id:string;clientId:string;funnelId:string;instanceName:string;instanceApiKey:string}[],text:vi.fn(),media:vi.fn(),list:vi.fn()}));
+vi.mock("../funnels",()=>({getFunnels:async()=>state.funnels}));
+vi.mock("../evolution-sessions",()=>({getEvolutionSessions:async()=>state.sessions}));
+vi.mock("../evolution-api",()=>({sendText:state.text,sendMedia:state.media,sendList:state.list}));
+vi.mock("../clients",()=>({getConfig:async()=>({}),getClientById:async()=>undefined,getAllAgentConfigs:()=>[]}));
+import {sendMessage,sendInteractiveList} from "../whatsapp-send";
+beforeEach(()=>{vi.restoreAllMocks();state.text.mockReset().mockResolvedValue(true);state.list.mockReset().mockResolvedValue(true);state.funnels=[{id:"f",clientId:"a",connections:[{id:"official",type:"meta",metaPhoneNumberId:"123456",metaToken:"synthetic"},{id:"retired",type:"uazapi"}]}];state.sessions=[{id:"evo",clientId:"a",funnelId:"f",instanceName:"test-instance",instanceApiKey:"synthetic"}];});
+describe("only Evolution and official API",()=>{
+ it("refuses retired, missing and foreign channel IDs without making a network request",async()=>{const fetch=vi.spyOn(globalThis,"fetch");for(const id of ["retired","missing"])expect(await sendMessage("5544999999999","fixture","a",id)).toBe(false);expect(await sendMessage("5544999999999","fixture","b","evo")).toBe(false);expect(fetch).not.toHaveBeenCalled();expect(state.text).not.toHaveBeenCalled();});
+ it("requires an explicit selection when multiple channels belong to the same client",async()=>{expect(await sendMessage("5544999999999","fixture","a")).toBe(false);expect(state.text).not.toHaveBeenCalled();});
+ it("routes an Evolution response to exactly the selected instance and preserves a LID address",async()=>{expect(await sendMessage("123456789012345@lid","fixture","a","evo")).toBe(true);expect(state.text).toHaveBeenCalledOnce();expect(state.text).toHaveBeenCalledWith("test-instance","synthetic","123456789012345@lid","fixture",true,true);});
+ it("does not mark an official API error body as a successful send or fall back to Evolution",async()=>{vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({error:{message:"fixture rejection"}}),{status:200}));expect(await sendMessage("5544999999999","fixture","a","official")).toBe(false);expect(state.text).not.toHaveBeenCalled();});
+ it("builds lists using the selected provider and validates limits before network I/O",async()=>{const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({messages:[{id:"fixture"}]}),{status:200}));const rows=[{id:"one",title:"Opção 1"}];expect(await sendInteractiveList("5544999999999","a","official","Escolha","Ver opções",rows)).toBe(true);expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toMatchObject({type:"interactive",interactive:{type:"list",action:{sections:[{rows}]}}});expect(await sendInteractiveList("5544999999999","a","evo","Escolha","Ver opções",rows)).toBe(true);expect(state.list).toHaveBeenCalledOnce();expect(await sendInteractiveList("5544999999999","a","retired","Escolha","Ver opções",rows)).toBe(false);});
+ it("preserves active Evolution agents, prompts and history while removing retired credentials, and is idempotent",()=>{
+  const history={messages:[{role:"user",content:"fixture"}]};
+  const input={"config.json":{uazapiToken:"retired-secret",wppconnectSecretKey:"retired-secret",evolutionAdminKey:"keep-secret"},"funnels.json":state.funnels,"evolution-sessions.json":state.sessions,"clients.json":{clients:[{id:"a",agentConfigs:[{whatsappConnectionId:"evo",enabled:true,followUpEnabled:true,prompt:"keep prompt"},{whatsappConnectionId:"retired",enabled:true,followUpEnabled:true,prompt:"reusable prompt"}]}]},"wppconnect-sessions.json":[{id:"wpp",sessionToken:"retired-secret"}],"conversations.json":history};
+  const result=planProviderRetirement(input);
+  expect(result.files["config.json"]).toEqual({evolutionAdminKey:"keep-secret"});expect(result.files["wppconnect-sessions.json"]).toEqual([]);
+  expect(result.files["clients.json"].clients[0].agentConfigs).toEqual([{whatsappConnectionId:"evo",enabled:true,followUpEnabled:true,prompt:"keep prompt"},{whatsappConnectionId:"retired",enabled:false,followUpEnabled:false,prompt:"reusable prompt",connectionNeedsSetup:true}]);
+  expect(result.files["conversations.json"]).toEqual(history);expect(JSON.stringify(result.retired)).not.toContain("retired-secret");expect(planProviderRetirement(result.files).changed).toEqual([]);expect(input["config.json"].uazapiToken).toBe("retired-secret");
+ });
+});

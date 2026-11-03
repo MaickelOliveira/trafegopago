@@ -99,7 +99,7 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
       });
   }, [campaigns, search, statusFilter, platformFilter, sortField, sortDir]);
 
-  const SortButton = ({ field, label }: { field: SortField; label: string }) => (
+  const sortButton = (field: SortField, label: string) => (
     <button
       onClick={() => handleSort(field)}
       className="flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900"
@@ -152,15 +152,15 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50 text-left">
-              <th className="px-4 py-3 text-xs"><SortButton field="name" label="Campanha" /></th>
+              <th className="px-4 py-3 text-xs">{sortButton("name", "Campanha")}</th>
               <th className="px-4 py-3 text-xs">Plataforma</th>
               <th className="px-4 py-3 text-xs">Status</th>
-              <th className="px-4 py-3 text-xs"><SortButton field="spend" label="Investido" /></th>
-              <th className="px-4 py-3 text-xs"><SortButton field="impressions" label="Impressões" /></th>
-              <th className="px-4 py-3 text-xs"><SortButton field="ctr" label="CTR" /></th>
-              <th className="px-4 py-3 text-xs"><SortButton field="conversions" label="Conversões" /></th>
-              <th className="px-4 py-3 text-xs"><SortButton field="cpa" label="CPA" /></th>
-              <th className="px-4 py-3 text-xs"><SortButton field="roas" label="ROAS" /></th>
+              <th className="px-4 py-3 text-xs">{sortButton("spend", "Investido")}</th>
+              <th className="px-4 py-3 text-xs">{sortButton("impressions", "Impressões")}</th>
+              <th className="px-4 py-3 text-xs">{sortButton("ctr", "CTR")}</th>
+              <th className="px-4 py-3 text-xs">{sortButton("conversions", "Conversões")}</th>
+              <th className="px-4 py-3 text-xs">{sortButton("cpa", "CPA")}</th>
+              <th className="px-4 py-3 text-xs">{sortButton("roas", "ROAS")}</th>
             </tr>
           </thead>
           <tbody>

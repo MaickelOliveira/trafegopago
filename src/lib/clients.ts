@@ -1,6 +1,5 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
-import type { PousadaTipo } from "./pousada-types";
 import { currentHHMMBrasilia, currentWeekdayBrasilia } from "./timezone";
 
 export type AdAccount = {
@@ -58,7 +57,7 @@ export type AgentConfig = {
   avisos?: AvisoRecipient[];     // Destinatários de avisos (números e grupos WhatsApp)
   metaSummaryTemplateName?: string; // Template Meta aprovado para avisos via API oficial (ex: "aviso2")
   followUps: FollowUpStep[];     // Sequência de follow-ups configurados
-  followUpContext?: string;      // Contexto curto do negócio para a IA decidir se envia follow-up (ex: "pousada, clientes pessoa física, filtrar fornecedores")
+  followUpContext?: string;      // Contexto curto do negócio para a IA decidir se envia follow-up (ex: "atendimento comercial, filtrar fornecedores")
   systemPrompt?: string;         // Instruções do agente para este cliente
   whatsappConnectionId?: string; // ID da conexão WhatsApp que o agente usa
   messageWaitSeconds?: number;   // Segundos de espera para acumular mensagens (0 = desabilitado)
@@ -117,10 +116,12 @@ export type Client = {
   name: string;
   email: string;
   passwordHash: string;
+  sessionVersion?: number;
   logoUrl?: string;
   color: string;
   cplTarget: number;
   funnelType: FunnelType;
+  trackingFunnelId?: string;
   adAccounts: AdAccount[];
   whatsappPhone?: string;
   pixelId?: string;             // ID do pixel Meta (fbq browser + CAPI)
@@ -131,10 +132,6 @@ export type Client = {
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
   kanbanAgentPrompt?: string;   // Prompt configurável que guia quando mover/pular um lead no Kanban
   enabledSystems?: string[];    // Slugs de AVAILABLE_SYSTEMS (src/lib/systems.ts) habilitados pra este cliente
-  pousadaTipos?: PousadaTipo[]; // Tipos de reserva configuráveis do sistema de Pousada (ex: Hospedagem, Day Use, Dia das Mães)
-  pousadaTotalQuartos?: number; // Total de quartos/chalés pro mapa de ocupação do sistema de Pousada
-  pousadaPixChave?: string;     // Chave Pix usada na cobrança automática após o formulário de hóspedes (sistema de Pousada)
-  pousadaPixFavorecido?: string; // Nome do favorecido do Pix (sistema de Pousada)
   metaPageId?: string;          // ID da página do Facebook (para Lead Ads — vincula leads ao cliente certo)
   agentConfig?: AgentConfig;    // Configuração do agente principal (retrocompat)
   agentConfigs?: AgentConfig[]; // Lista de agentes — um por conexão WhatsApp
@@ -142,13 +139,13 @@ export type Client = {
 
 export type AppConfig = {
   manager: { email: string; passwordHash: string };
+  backupDriveFolderId?: string;
+  backupGoogleClientId?: string;
+  backupGoogleClientSecret?: string;
+  backupGoogleRefreshToken?: string;
   metaToken: string;
   metaAppId?: string;
   metaAppSecret?: string;
-  uazapiServer?: string;
-  uazapiToken?: string;          // token de instância (envio)
-  uazapiAdminToken?: string;     // token de admin (criar/gerenciar instâncias)
-  uazapiWebhookForward?: string;
   appBaseUrl?: string;
   anthropicApiKey?: string;
   geminiApiKey?: string;         // Chave global do Gemini (usada quando cliente não tem a própria)
@@ -161,12 +158,8 @@ export type AppConfig = {
   masterPhone?: string;              // Número master: recebe notificações do sistema (com DDI, só dígitos)
   masterConnectionId?: string;       // ID da FunnelConnection usada para enviar mensagens do sistema
   // Campos usados SOMENTE quando a conexão master é Meta (API Oficial)
-  // Para UazAPI, a IA compõe a mensagem livremente
   masterMetaTemplateBriefing?: string;  // Nome do template aprovado para notificação de briefing
   masterMetaLanguage?: string;          // Código de idioma do template (ex: pt_BR)
-  // WPPConnect Server
-  wppconnectServer?: string;            // URL base do servidor WPPConnect (ex: https://wpp.meuservidor.com)
-  wppconnectSecretKey?: string;         // Secret key do servidor WPPConnect
   // Evolution API Server
   evolutionServer?: string;             // URL base do servidor Evolution API (ex: https://evo.meuservidor.com)
   evolutionAdminKey?: string;           // apikey global (admin) — cria/gerencia instâncias
@@ -174,25 +167,17 @@ export type AppConfig = {
 
 const DATA_DIR = path.join(process.cwd(), "data");
 
-function ensureDataDir() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+
+async function readJsonFile<T>(file: string, fallback: T): Promise<T> {
+  return (await readDocument<T>(file, fallback));
 }
 
-function readJsonFile<T>(file: string, fallback: T): T {
-  try {
-    const raw = readFileSync(path.join(DATA_DIR, file), "utf-8");
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
+export async function getClients(): Promise<Client[]> {
+  return (await readJsonFile<{ clients: Client[] }>("clients.json", { clients: [] })).clients;
 }
 
-export function getClients(): Client[] {
-  return readJsonFile<{ clients: Client[] }>("clients.json", { clients: [] }).clients;
-}
-
-export function getClientById(id: string): Client | undefined {
-  return getClients().find((c) => c.id === id);
+export async function getClientById(id: string): Promise<Client | undefined> {
+  return (await getClients()).find((c) => c.id === id);
 }
 
 /** Retorna o AgentConfig correto para uma conexão específica.
@@ -235,21 +220,26 @@ export function isWithinBusinessHours(cfg?: AgentConfig): boolean {
 
 /** Salva o AgentConfig para uma conexão específica (espelha getAgentConfigForConnection).
  *  Com connectionId, faz upsert em agentConfigs[]; sem connectionId, salva no agentConfig padrão. */
-export function upsertAgentConfigForConnection(
+export async function upsertAgentConfigForConnection(
   client: Client,
   connectionId: string | null | undefined,
   updated: AgentConfig
-): void {
+): Promise<void> {
+  return withDataTransaction(async () => {
+  const fresh = await getClientById(client.id);
+  if (!fresh) throw new Error("Cliente não encontrado.");
+  client = fresh;
   if (connectionId) {
     const existing = client.agentConfigs ?? [];
     const idx = existing.findIndex((c) => c.whatsappConnectionId === connectionId);
     const newConfigs = [...existing];
     if (idx >= 0) newConfigs[idx] = updated;
     else newConfigs.push({ ...updated, whatsappConnectionId: connectionId });
-    upsertClient({ ...client, agentConfigs: newConfigs });
+    (await patchClient(client.id, { agentConfigs: newConfigs }));
   } else {
-    upsertClient({ ...client, agentConfig: updated });
+    (await patchClient(client.id, { agentConfig: updated }));
   }
+  });
 }
 
 /**
@@ -261,12 +251,12 @@ export function upsertAgentConfigForConnection(
  * momento) — o gestor escolhe explicitamente (tela de Vincular) qual agente
  * mover pra cá, identificado pelo seu whatsappConnectionId antigo.
  */
-export function migrateAgentConfigByOldConnectionId(
+export async function migrateAgentConfigByOldConnectionId(
   clientId: string,
   oldConnectionId: string,
   newConnectionId: string
-): boolean {
-  const client = getClients().find((c) => c.id === clientId);
+): Promise<boolean> {
+  const client = (await getClients()).find((c) => c.id === clientId);
   if (!client) return false;
 
   const configs = client.agentConfigs ?? [];
@@ -274,12 +264,12 @@ export function migrateAgentConfigByOldConnectionId(
   if (idx >= 0) {
     const newConfigs = [...configs];
     newConfigs[idx] = { ...newConfigs[idx], whatsappConnectionId: newConnectionId };
-    upsertClient({ ...client, agentConfigs: newConfigs });
+    (await patchClient(client.id, { agentConfigs: newConfigs }));
     return true;
   }
 
   if (client.agentConfig?.whatsappConnectionId === oldConnectionId) {
-    upsertClient({ ...client, agentConfig: { ...client.agentConfig, whatsappConnectionId: newConnectionId } });
+    (await patchClient(client.id, { agentConfig: { ...client.agentConfig, whatsappConnectionId: newConnectionId } }));
     return true;
   }
 
@@ -313,28 +303,55 @@ export function getAllAgentConfigs(client: Client): AgentConfig[] {
   });
 }
 
-export function getClientByEmail(email: string): Client | undefined {
-  return getClients().find((c) => c.email.toLowerCase() === email.toLowerCase());
+export async function getClientByEmail(email: string): Promise<Client | undefined> {
+  return (await getClients()).find((c) => c.email.toLowerCase() === email.toLowerCase());
 }
 
-export function saveClients(clients: Client[]) {
-  ensureDataDir();
-  writeFileSync(
-    path.join(DATA_DIR, "clients.json"),
-    JSON.stringify({ clients }, null, 2)
-  );
+export async function saveClients(clients: Client[]) {
+  return withDataTransaction(async () => {
+  await writeDocument("clients.json", { clients });
+
+  });
 }
 
-export function upsertClient(client: Client) {
-  const all = getClients();
+export async function upsertClient(client: Client) {
+  return withDataTransaction(async () => {
+  const all = (await getClients());
   const idx = all.findIndex((c) => c.id === client.id);
   if (idx >= 0) all[idx] = client;
   else all.push(client);
-  saveClients(all);
+  (await saveClients(all));
+
+  });
 }
 
-export function deleteClient(id: string) {
-  saveClients(getClients().filter((c) => c.id !== id));
+export async function patchClient(id: string, patch: Partial<Omit<Client, "id">>): Promise<Client | null> {
+  return withDataTransaction(async () => {
+    const all = await getClients();
+    const index = all.findIndex(client => client.id === id);
+    if (index < 0) return null;
+    const sessionVersion = patch.passwordHash && patch.passwordHash !== all[index].passwordHash ? (all[index].sessionVersion ?? 0) + 1 : (all[index].sessionVersion ?? 0);
+    all[index] = { ...all[index], ...patch, sessionVersion, id };
+    await saveClients(all);
+    return all[index];
+  });
+}
+
+export async function patchAgentConfigForConnection(clientId: string, connectionId: string | null | undefined, patch: Partial<AgentConfig>): Promise<void> {
+  await withDataTransaction(async () => {
+    const client = await getClientById(clientId);
+    if (!client) throw new Error("Cliente não encontrado.");
+    const current = getAgentConfigForConnection(client, connectionId);
+    if (!current) throw new Error("Agente não encontrado para a conexão.");
+    await upsertAgentConfigForConnection(client, connectionId, { ...current, ...patch });
+  });
+}
+
+export async function deleteClient(id: string) {
+  return withDataTransaction(async () => {
+  (await saveClients((await getClients()).filter((c) => c.id !== id)));
+
+  });
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -342,14 +359,16 @@ const DEFAULT_CONFIG: AppConfig = {
   metaToken: "",
 };
 
-export function getConfig(): AppConfig {
-  const cfg = readJsonFile<AppConfig>("config.json", DEFAULT_CONFIG);
+export async function getConfig(): Promise<AppConfig> {
+  const cfg = (await readJsonFile<AppConfig>("config.json", DEFAULT_CONFIG));
   // Garante que manager sempre existe (volume vazio ou config corrompida)
   if (!cfg.manager) cfg.manager = DEFAULT_CONFIG.manager;
   return cfg;
 }
 
-export function saveConfig(config: AppConfig) {
-  ensureDataDir();
-  writeFileSync(path.join(DATA_DIR, "config.json"), JSON.stringify(config, null, 2));
+export async function saveConfig(config: AppConfig) {
+  return withDataTransaction(async () => {
+  await writeDocument("config.json", config);
+
+  });
 }

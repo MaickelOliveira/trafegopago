@@ -8,7 +8,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ clie
   if (!session || session.role !== "manager") redirect("/login");
 
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/gestor");
 
   return (

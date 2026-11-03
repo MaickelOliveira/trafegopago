@@ -1,3 +1,4 @@
+import { verifyAdAssetAccess } from "@/lib/ad-media-access";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getConfig } from "@/lib/clients";
@@ -9,11 +10,12 @@ export async function GET(_req: NextRequest, { params }: Params) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
 
   const { videoId } = await params;
-  const token = getConfig().metaToken;
+  if(session.role!=="manager" && !verifyAdAssetAccess(_req.nextUrl,"video",videoId,session.clientId!)) return NextResponse.json({error:"Acesso não permitido."},{status:403});
+  const token = (await getConfig()).metaToken;
 
   const res = await fetch(
-    `https://graph.facebook.com/v19.0/${videoId}?fields=source,embed_html,thumbnails&access_token=${token}`,
-    { next: { revalidate: 3600 } }
+    `https://graph.facebook.com/v26.0/${videoId}?fields=source,embed_html,thumbnails`,
+    { headers: { Authorization: `Bearer ${token}` }, next: { revalidate: 3600 } }
   );
   const data = await res.json();
 

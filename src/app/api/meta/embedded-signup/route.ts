@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { updateFunnel, getFunnelById } from "@/lib/funnels";
 import type { FunnelConnection } from "@/lib/funnels";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
+const GRAPH = "https://graph.facebook.com/v26.0";
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const verifiedName = phoneData.verified_name ?? "";
 
     // ── 4. Salva a conexão no funil ───────────────────────────────────────
-    const funnel = getFunnelById(funnelId);
+    const funnel = (await getFunnelById(funnelId));
     if (!funnel)
       return NextResponse.json({ error: "Funil não encontrado" }, { status: 404 });
 
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       c => !(c.type === "meta" && c.metaPhoneNumberId === phoneNumberId)
     );
 
-    updateFunnel(funnelId, { connections: [...existingConns, newConn] });
+    (await updateFunnel(funnelId, { connections: [...existingConns, newConn] }));
 
     console.log(`[EmbeddedSignup] Conexão Meta salva: ${displayPhone} (${verifiedName}) → funil ${funnel.name}`);
 

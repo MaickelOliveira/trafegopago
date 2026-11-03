@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "clientId e clientName são obrigatórios" }, { status: 400 });
   }
 
-  const briefing = createBriefing({ clientId, clientName, niche });
+  const briefing = (await createBriefing({ clientId, clientName, niche }));
 
   // Usa headers do proxy reverso (EasyPanel) para montar a URL pública correta
   const proto = req.headers.get("x-forwarded-proto") ?? "https";
@@ -41,6 +41,6 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const briefings = listBriefingsByClient(clientId);
+  const briefings = (await listBriefingsByClient(clientId));
   return NextResponse.json({ briefings });
 }

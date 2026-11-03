@@ -1,26 +1,29 @@
+import { fetchPublicResource } from "@/lib/public-download";
+import { signWebhookUrl } from "./webhook-auth";
+import { signMediaUrl } from "./media-access";
 import { getConfig } from "./clients";
-import { markSent, markPhoneSending } from "./wppconnect-sent";
+import { markSent, markPhoneSending } from "./whatsapp-sent";
 import { getCachedQr, setCachedQr, clearCachedQr } from "./evolution-qr";
 
-function base(): string {
-  const url = process.env.EVOLUTION_SERVER || getConfig().evolutionServer || "";
+async function base(): Promise<string> {
+  const url = process.env.EVOLUTION_SERVER || (await getConfig()).evolutionServer || "";
   return url.replace(/\/$/, "");
 }
 
-function adminKey(): string {
-  return process.env.EVOLUTION_ADMIN_KEY || getConfig().evolutionAdminKey || "";
+async function adminKey(): Promise<string> {
+  return process.env.EVOLUTION_ADMIN_KEY || (await getConfig()).evolutionAdminKey || "";
 }
 
-export function isEvolutionConfigured(): boolean {
-  return !!base() && !!adminKey();
+export async function isEvolutionConfigured(): Promise<boolean> {
+  return !!(await base()) && !!(await adminKey());
 }
 
 // A Evolution aceita a apikey global (admin) em qualquer chamada de gestão de
 // instância. A apikey específica da instância (retornada em "hash" no create)
 // é aceita nas chamadas de envio também — usamos ela quando disponível e caímos
 // para a admin key como fallback (ex: instância criada antes de guardarmos o hash).
-function authHeader(instanceApiKey?: string): Record<string, string> {
-  return { apikey: instanceApiKey || adminKey() };
+async function authHeader(instanceApiKey?: string): Promise<Record<string, string>> {
+  return { apikey: instanceApiKey || (await adminKey()) };
 }
 
 // O create() da Evolution é síncrono e devolve o QR na própria resposta —
@@ -57,14 +60,14 @@ export async function createOrRestartInstance(
   instanceName: string,
   webhookUrl: string,
 ): Promise<{ apiKey: string; qrBase64: string | null } | null> {
-  if (!base()) return null;
+  if (!(await base())) return null;
   clearCachedQr(instanceName);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
   try {
-    const res = await fetch(`${base()}/instance/create`, {
+    const res = await fetch(`${(await base())}/instance/create`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader() },
+      headers: { "Content-Type": "application/json", ...(await authHeader()) },
       body: JSON.stringify({ instanceName, qrcode: true, integration: "WHATSAPP-BAILEYS" }),
       signal: controller.signal,
     });
@@ -76,7 +79,7 @@ export async function createOrRestartInstance(
         const code = (data.qrcode as Record<string, unknown> | undefined)?.code as string | undefined;
         setCachedQr(instanceName, qrBase64, code ?? "");
       }
-      await setWebhook(instanceName, apiKey || adminKey(), webhookUrl);
+      await setWebhook(instanceName, apiKey || (await adminKey()), webhookUrl);
       return { apiKey, qrBase64 };
     }
     // Instância já existe (nome em uso) — reinicia em vez de recriar.
@@ -86,7 +89,7 @@ export async function createOrRestartInstance(
     if (!restarted) return null;
     // Sem "hash" novo disponível aqui — quem chamar deve manter a apiKey já
     // salva na sessão (EvolutionSession.instanceApiKey) nesse caso.
-    await setWebhook(instanceName, adminKey(), webhookUrl);
+    await setWebhook(instanceName, (await adminKey()), webhookUrl);
     const qr = await getQrCode(instanceName);
     return { apiKey: "", qrBase64: qr };
   } catch (e) {
@@ -101,11 +104,11 @@ export async function createOrRestartInstance(
 // (POST /instance/restart/{instance}), usado como fallback quando a instância
 // já existe. Confirmar comportamento real na primeira reconexão de teste.
 export async function restartInstance(instanceName: string): Promise<boolean> {
-  if (!base()) return false;
+  if (!(await base())) return false;
   try {
-    const res = await fetch(`${base()}/instance/restart/${encodeURIComponent(instanceName)}`, {
+    const res = await fetch(`${(await base())}/instance/restart/${encodeURIComponent(instanceName)}`, {
       method: "POST",
-      headers: authHeader(),
+      headers: (await authHeader()),
     });
     return res.ok;
   } catch (e) {
@@ -119,14 +122,14 @@ export async function restartInstance(instanceName: string): Promise<boolean> {
 // não assumir que mídia chega inline em base64 no webhook; o parser da rota de
 // webhook precisa ter um caminho defensivo (buscar mídia por id) além do inline.
 export async function setWebhook(instanceName: string, instanceApiKey: string, webhookUrl: string): Promise<boolean> {
-  if (!base()) return false;
+  if (!(await base())) return false;
   try {
-    const res = await fetch(`${base()}/webhook/set/${encodeURIComponent(instanceName)}`, {
+    const res = await fetch(`${(await base())}/webhook/set/${encodeURIComponent(instanceName)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },
+      headers: { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) },
       body: JSON.stringify({
         webhook: {
-          url: webhookUrl,
+          url: signWebhookUrl(webhookUrl),
           enabled: true,
           webhookByEvents: false,
           webhookBase64: true,
@@ -150,12 +153,12 @@ export async function setWebhook(instanceName: string, instanceApiKey: string, w
 // testado ao vivo nesta rodada de verificação (o QR do teste veio direto do
 // create). Fallback: cache populado pelo create e pelo evento QRCODE_UPDATED.
 export async function getQrCode(instanceName: string): Promise<string | null> {
-  if (!base()) return getCachedQr(instanceName);
+  if (!(await base())) return getCachedQr(instanceName);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8_000);
   try {
-    const res = await fetch(`${base()}/instance/connect/${encodeURIComponent(instanceName)}`, {
-      headers: authHeader(),
+    const res = await fetch(`${(await base())}/instance/connect/${encodeURIComponent(instanceName)}`, {
+      headers: (await authHeader()),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -182,15 +185,15 @@ export async function getQrCode(instanceName: string): Promise<string | null> {
 // Evolution respondeu 200, loga o corpo bruto pra achar o nome certo do campo
 // nessa versão específica, em vez de assumir que o recurso não existe.
 export async function getPairingCode(instanceName: string, phoneNumber: string): Promise<string | null> {
-  if (!base()) return null;
+  if (!(await base())) return null;
   const digits = phoneNumber.replace(/\D/g, "");
   if (!digits) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     const res = await fetch(
-      `${base()}/instance/connect/${encodeURIComponent(instanceName)}?number=${digits}`,
-      { headers: authHeader(), cache: "no-store", signal: controller.signal },
+      `${(await base())}/instance/connect/${encodeURIComponent(instanceName)}?number=${digits}`,
+      { headers: (await authHeader()), cache: "no-store", signal: controller.signal },
     );
     const bodyText = await res.text().catch(() => "");
     if (!res.ok) {
@@ -221,12 +224,12 @@ export async function getPairingCode(instanceName: string, phoneNumber: string):
 // pela Evolution/Baileys para conectado/desconectado — normalizados abaixo
 // para o mesmo vocabulário usado pelo WPPConnect (CONNECTED|QRCODE|DISCONNECTED).
 export async function checkConnectionStatus(instanceName: string): Promise<string> {
-  if (!base()) return "DISCONNECTED";
+  if (!(await base())) return "DISCONNECTED";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    const res = await fetch(`${base()}/instance/connectionState/${encodeURIComponent(instanceName)}`, {
-      headers: authHeader(),
+    const res = await fetch(`${(await base())}/instance/connectionState/${encodeURIComponent(instanceName)}`, {
+      headers: (await authHeader()),
       cache: "no-store",
       signal: controller.signal,
     });
@@ -248,11 +251,11 @@ export async function checkConnectionStatus(instanceName: string): Promise<strin
 // Confirmado ao vivo: DELETE /instance/logout/{instance}
 export async function logoutInstance(instanceName: string): Promise<void> {
   clearCachedQr(instanceName);
-  if (!base()) return;
+  if (!(await base())) return;
   try {
-    await fetch(`${base()}/instance/logout/${encodeURIComponent(instanceName)}`, {
+    await fetch(`${(await base())}/instance/logout/${encodeURIComponent(instanceName)}`, {
       method: "DELETE",
-      headers: authHeader(),
+      headers: (await authHeader()),
     });
   } catch (e) {
     console.error(`[evolution-api] logoutInstance FALHOU instance=${instanceName}`, e);
@@ -264,12 +267,12 @@ export async function logoutInstance(instanceName: string): Promise<void> {
 // vez — por segurança sempre chamamos logout antes, igual ao closeSession+
 // logoutSession do WPPConnect (no-op inofensivo em instância nunca conectada).
 export async function deleteInstance(instanceName: string): Promise<boolean> {
-  if (!base()) return false;
+  if (!(await base())) return false;
   await logoutInstance(instanceName);
   try {
-    const res = await fetch(`${base()}/instance/delete/${encodeURIComponent(instanceName)}`, {
+    const res = await fetch(`${(await base())}/instance/delete/${encodeURIComponent(instanceName)}`, {
       method: "DELETE",
-      headers: authHeader(),
+      headers: (await authHeader()),
     });
     return res.ok;
   } catch (e) {
@@ -309,7 +312,7 @@ export async function sendText(
   // visível (a Evolution aceita o envio mesmo que o número não exista).
   skipNormalize = false,
 ): Promise<boolean> {
-  if (!base()) return false;
+  if (!(await base())) return false;
   try {
     const isGroup = phone.endsWith("@g.us");
     // isLid: contato identificado por LID (id interno do WhatsApp), não por
@@ -319,21 +322,17 @@ export async function sendText(
     const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
     const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
-    markPhoneSending(phoneKey);
-    markSent(phoneKey, message);
+    markPhoneSending(phoneKey,instanceName);
+    markSent(phoneKey,message,instanceName);
 
-    const url = `${base()}/message/sendText/${encodeURIComponent(instanceName)}`;
-    const headers = { "Content-Type": "application/json", ...authHeader(instanceApiKey) };
-    let res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ number, text: message }) });
-    if (!res.ok && res.status >= 400 && res.status < 500) {
-      const fallback = await fetch(url, { method: "POST", headers, body: JSON.stringify({ number, textMessage: { text: message } }) });
-      if (fallback.ok) return true;
-    }
+    const url = `${(await base())}/message/sendText/${encodeURIComponent(instanceName)}`;
+    const headers = { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) };
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ number, text: message }) });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.error(`[evolution-api] sendText FAILED status=${res.status} instance=${instanceName} number=${number} body=${body.slice(0, 300)}`);
     }
-    return res.ok;
+    return confirmedSend(res);
   } catch (e) {
     console.error(`[evolution-api] sendText EXCEPTION instance=${instanceName}`, e);
     return false;
@@ -379,8 +378,9 @@ export async function sendMedia(
   isLid = false,
   skipNormalize = false,
 ): Promise<boolean> {
-  if (!base()) return false;
+  if (!(await base())) return false;
   try {
+    mediaUrl = await signMediaUrl(mediaUrl);
     const isGroup = phone.endsWith("@g.us");
     // isLid: contato identificado por LID (id interno do WhatsApp), não por
     // telefone real — precisa do sufixo "@lid" explícito, senão a Evolution
@@ -389,10 +389,10 @@ export async function sendMedia(
     const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
     const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
-    markPhoneSending(phoneKey);
-    if (caption?.trim()) markSent(phoneKey, caption.trim());
+    markPhoneSending(phoneKey,instanceName);
+    if (caption?.trim()) markSent(phoneKey,caption.trim(),instanceName);
 
-    const fileRes = await fetch(mediaUrl);
+    const fileRes = await fetchPublicResource(mediaUrl);
     if (!fileRes.ok) {
       console.error(`[evolution-api] sendMedia: falha ao baixar ${mediaUrl} status=${fileRes.status}`);
       return false;
@@ -401,22 +401,22 @@ export async function sendMedia(
     const { mime, ext, type } = detectMime(mediaUrl, contentType);
     const buffer = await fileRes.arrayBuffer();
     const base64Data = Buffer.from(buffer).toString("base64");
-    const headers = { "Content-Type": "application/json", ...authHeader(instanceApiKey) };
+    const headers = { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) };
 
     if (type === "audio") {
       // Evolution/Baileys decodifica o campo com Buffer.from(media, "base64")
       // sem tirar prefixo — mandar "data:mime;base64,..." corrompe o arquivo.
-      const res = await fetch(`${base()}/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
+      const res = await fetch(`${(await base())}/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
         method: "POST",
         headers,
         body: JSON.stringify({ number, audio: base64Data }),
       });
       if (!res.ok) console.error(`[evolution-api] sendWhatsAppAudio FAILED status=${res.status} body=${await res.text().catch(() => "")}`);
-      return res.ok;
+      return confirmedSend(res);
     }
 
     const mediatype = type === "image" ? "image" : type === "video" ? "video" : "document";
-    const res = await fetch(`${base()}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
+    const res = await fetch(`${(await base())}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -431,7 +431,7 @@ export async function sendMedia(
       const body = await res.text().catch(() => "");
       console.error(`[evolution-api] sendMedia FAILED status=${res.status} body=${body.slice(0, 300)}`);
     }
-    return res.ok;
+    return confirmedSend(res);
   } catch (e) {
     console.error(`[evolution-api] sendMedia EXCEPTION instance=${instanceName}`, e);
     return false;
@@ -449,7 +449,7 @@ export async function sendMediaFromBase64(
   isLid = false,
   skipNormalize = false,
 ): Promise<boolean> {
-  if (!base()) return false;
+  if (!(await base())) return false;
   try {
     const isGroup = phone.endsWith("@g.us");
     // isLid: contato identificado por LID (id interno do WhatsApp), não por
@@ -459,8 +459,8 @@ export async function sendMediaFromBase64(
     const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
     const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
     const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
-    markPhoneSending(phoneKey);
-    if (caption?.trim()) markSent(phoneKey, caption.trim());
+    markPhoneSending(phoneKey,instanceName);
+    if (caption?.trim()) markSent(phoneKey,caption.trim(),instanceName);
 
     const rawExt = mimeType.split("/")[1]?.split(";")[0] ?? "bin";
     const ext = rawExt === "jpeg" ? "jpg" : rawExt;
@@ -468,30 +468,30 @@ export async function sendMediaFromBase64(
                : mimeType.startsWith("video/") ? "video"
                : mimeType.startsWith("audio/") ? "audio"
                : "document";
-    const headers = { "Content-Type": "application/json", ...authHeader(instanceApiKey) };
+    const headers = { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) };
     // Evolution/Baileys decodifica com Buffer.from(media, "base64") sem tirar
     // prefixo — mandar a data-URI completa ("data:mime;base64,...") corrompe
     // o arquivo. Aceita tanto data-URI quanto base64 puro como entrada aqui.
     const rawBase64 = base64DataUri.replace(/^data:[^,]*,/, "");
 
     if (type === "audio") {
-      const res = await fetch(`${base()}/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
+      const res = await fetch(`${(await base())}/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
         method: "POST",
         headers,
         body: JSON.stringify({ number, audio: rawBase64 }),
       });
       if (!res.ok) console.error(`[evolution-api] sendMediaFromBase64 sendWhatsAppAudio FAILED status=${res.status}`);
-      return res.ok;
+      return confirmedSend(res);
     }
 
     const mediatype = type === "image" ? "image" : type === "video" ? "video" : "document";
-    const res = await fetch(`${base()}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
+    const res = await fetch(`${(await base())}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
       method: "POST",
       headers,
       body: JSON.stringify({ number, mediatype, media: rawBase64, caption: caption ?? "", fileName: `file.${ext}` }),
     });
     if (!res.ok) console.error(`[evolution-api] sendMediaFromBase64 sendMedia FAILED status=${res.status}`);
-    return res.ok;
+    return confirmedSend(res);
   } catch (e) {
     console.error(`[evolution-api] sendMediaFromBase64 EXCEPTION instance=${instanceName}`, e);
     return false;
@@ -502,7 +502,7 @@ export async function sendMediaFromBase64(
 // nesta instância, falha silenciosamente (mesmo padrão do WPPConnect: recurso
 // "não-crítico", nunca deve bloquear o envio da mensagem em si).
 export async function startTyping(instanceName: string, instanceApiKey: string, phone: string): Promise<void> {
-  if (!base()) return;
+  if (!(await base())) return;
   try {
     const number = normalizeBrPhone(phone);
     // "delay" é obrigatório no schema de presença da Evolution (chat.schema.ts,
@@ -514,21 +514,21 @@ export async function startTyping(instanceName: string, instanceApiKey: string, 
     // periodicamente fazia os pontinhos aparecerem/sumirem várias vezes
     // durante a espera. 5000 dá folga confortável pra cobrir a pausa fixa de
     // ~3s antes do envio de verdade.
-    await fetch(`${base()}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
+    await fetch(`${(await base())}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },
+      headers: { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) },
       body: JSON.stringify({ number, presence: "composing", delay: 5000 }),
     });
   } catch { /* ignora — não-crítico */ }
 }
 
 export async function stopTyping(instanceName: string, instanceApiKey: string, phone: string): Promise<void> {
-  if (!base()) return;
+  if (!(await base())) return;
   try {
     const number = normalizeBrPhone(phone);
-    await fetch(`${base()}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
+    await fetch(`${(await base())}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },
+      headers: { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) },
       body: JSON.stringify({ number, presence: "paused", delay: 0 }),
     });
   } catch { /* ignora — não-crítico */ }
@@ -543,10 +543,10 @@ export async function markUnseen(): Promise<void> {
 
 // ⚠️ NÃO TESTADO AO VIVO — baixa prioridade, implementar/testar por último.
 export async function listGroups(instanceName: string, instanceApiKey: string): Promise<{ id: string; name: string }[]> {
-  if (!base()) return [];
+  if (!(await base())) return [];
   try {
-    const res = await fetch(`${base()}/group/fetchAllGroups/${encodeURIComponent(instanceName)}?getParticipants=false`, {
-      headers: authHeader(instanceApiKey),
+    const res = await fetch(`${(await base())}/group/fetchAllGroups/${encodeURIComponent(instanceName)}?getParticipants=false`, {
+      headers: (await authHeader(instanceApiKey)),
       cache: "no-store",
     });
     if (!res.ok) return [];
@@ -568,11 +568,11 @@ export async function resolveContactPhone(): Promise<string | null> {
 
 // ⚠️ NÃO TESTADO AO VIVO — best-effort via endpoint de perfil de contato.
 export async function getContactName(instanceName: string, instanceApiKey: string, phone: string): Promise<string | null> {
-  if (!base()) return null;
+  if (!(await base())) return null;
   try {
-    const res = await fetch(`${base()}/chat/fetchProfile/${encodeURIComponent(instanceName)}`, {
+    const res = await fetch(`${(await base())}/chat/fetchProfile/${encodeURIComponent(instanceName)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },
+      headers: { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) },
       body: JSON.stringify({ number: normalizeBrPhone(phone) }),
     });
     if (!res.ok) return null;
@@ -594,11 +594,11 @@ export async function getBase64FromMediaMessage(
   instanceApiKey: string,
   messageId: string,
 ): Promise<{ base64: string; mimetype: string } | null> {
-  if (!base()) return null;
+  if (!(await base())) return null;
   try {
-    const res = await fetch(`${base()}/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceName)}`, {
+    const res = await fetch(`${(await base())}/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceName)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader(instanceApiKey) },
+      headers: { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) },
       body: JSON.stringify({ message: { key: { id: messageId } }, convertToMp4: false }),
     });
     if (!res.ok) {
@@ -618,9 +618,9 @@ export async function getBase64FromMediaMessage(
 }
 
 export async function listInstances(): Promise<Record<string, unknown>[]> {
-  if (!base()) return [];
+  if (!(await base())) return [];
   try {
-    const res = await fetch(`${base()}/instance/fetchInstances`, { headers: authHeader(), cache: "no-store" });
+    const res = await fetch(`${(await base())}/instance/fetchInstances`, { headers: (await authHeader()), cache: "no-store" });
     if (!res.ok) return [];
     const data = await res.json() as unknown;
     return Array.isArray(data) ? data as Record<string, unknown>[] : [];
@@ -634,10 +634,10 @@ export async function listInstances(): Promise<Record<string, unknown>[]> {
 // {"ownerJid":"554491056048@s.whatsapp.net", ...}). Usado só pra exibição na
 // UI (seletor "responder pelo número" etc.), nunca pra envio/lógica.
 export async function getInstancePhone(instanceName: string): Promise<string | null> {
-  if (!base()) return null;
+  if (!(await base())) return null;
   try {
-    const res = await fetch(`${base()}/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`, {
-      headers: authHeader(),
+    const res = await fetch(`${(await base())}/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`, {
+      headers: (await authHeader()),
       cache: "no-store",
     });
     if (!res.ok) return null;
@@ -650,4 +650,14 @@ export async function getInstancePhone(instanceName: string): Promise<string | n
   } catch {
     return null;
   }
+}
+
+export async function sendList(instanceName:string,instanceApiKey:string,phone:string,title:string,buttonText:string,rows:{id:string;title:string;description?:string}[]):Promise<boolean>{
+ const server=await base();if(!server)return false;
+ try{const response=await fetch(`${server}/message/sendList/${encodeURIComponent(instanceName)}`,{method:"POST",headers:{"Content-Type":"application/json",...await authHeader(instanceApiKey)},body:JSON.stringify({number:phone,title:title.slice(0,60),description:title,buttonText,sections:[{title:"Opções",rows:rows.map(row=>({rowId:row.id,title:row.title,description:row.description||""}))}]}),signal:AbortSignal.timeout(20000)});const data=await response.json();return response.ok&&!data.error;}catch{return false;}
+}
+
+async function confirmedSend(response:Response):Promise<boolean>{
+ if(!response.ok)return false;
+ try{const data=await response.json();return !data.error&&!!(data.key?.id||data.message?.key?.id||data.messages?.[0]?.id);}catch{return false;}
 }

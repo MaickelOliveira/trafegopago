@@ -212,7 +212,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
       // Send image first
       const optimisticImg: ChatMessage = { role: "assistant", content: img, ts: Date.now(), type: "image" };
       setMessages((prev) => [...prev, optimisticImg]);
-      await fetch("/api/whatsapp/inbox/send", {
+      const response=await fetch("/api/whatsapp/inbox/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -223,8 +223,9 @@ export default function InboxView({ clientId, initialConversations = [], initial
           clientId,
           connId: selectedConv?.connId ?? selectedConn ?? undefined,
         }),
-      }).catch(console.error);
-      if (!t) { setSending(false); fetchMessages(selected.phone, true, selectedConv?.connId); return; }
+      }).catch(()=>null);
+      const result=await response?.json().catch(()=>null);if(!response?.ok||!result?.ok)alert(result?.error||"O provedor não confirmou a imagem.");
+      setSending(false); fetchMessages(selected.phone, true, selectedConv?.connId); return;
     }
 
     if (t) {
@@ -360,29 +361,25 @@ export default function InboxView({ clientId, initialConversations = [], initial
     if (!selected) return;
     setSending(true);
     try {
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve((reader.result as string).split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
+      const form=new FormData();form.append("file",new File([blob],"gravacao.webm",{type:blob.type}));form.append("clientId",clientId);const connectionId=selectedConv?.connId??selectedConn;if(connectionId)form.append("connId",connectionId);
+      const upload=await fetch("/api/upload",{method:"POST",body:form});const uploaded=await upload.json();if(!upload.ok)throw Error(uploaded.error||"Não foi possível preparar o áudio.");
       const optimistic: ChatMessage = { role: "assistant", content: "[áudio]", ts: Date.now(), type: "audio" };
       isAtBottomRef.current = true;
       setMessages((prev) => [...prev, optimistic]);
 
-      await fetch("/api/whatsapp/inbox/send", {
+      const response=await fetch("/api/whatsapp/inbox/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: selected.phone,
-          content: `data:audio/ogg;base64,${base64}`,
+          content: uploaded.url,
           type: "audio",
           clientId,
           connId: selectedConv?.connId ?? selectedConn ?? undefined,
         }),
       });
-    } catch {} finally {
+      const sent=await response.json();if(!response.ok||!sent.ok)throw Error(sent.error||"O provedor não confirmou o áudio.");
+    } catch(error) {alert(error instanceof Error?error.message:"Não foi possível enviar o áudio.");} finally {
       setSending(false);
       if (selected) fetchMessages(selected.phone, false, selectedConv?.connId);
     }
@@ -576,7 +573,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
                   await fetch("/api/whatsapp/inbox/ai-pause", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ phone: selected.phone, clientId, paused: false }),
+                    body: JSON.stringify({ phone: selected.phone, clientId, connId: selected.connId, paused: false }),
                   });
                   setConversations((prev) =>
                     prev.map((c) => (c.phone === selected?.phone && c.connId === selected?.connId) ? { ...c, aiPaused: false } : c)
@@ -638,7 +635,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
           </div>
 
           {/* Input bar */}
-          <div className="bg-[#202c33] shrink-0">
+          {connections.find(connection=>connection.id===selectedConn)?.type==="archived" ? <div className="bg-[#202c33] p-4 text-sm text-[#d1d7db]">Histórico arquivado. Para novos envios, selecione uma conexão Evolution ou API oficial.</div> : <div className="bg-[#202c33] shrink-0">
             {/* Pending image preview */}
             {pendingImage && (
               <div className="flex items-center gap-2 px-3 pt-2">
@@ -719,7 +716,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
                 </button>
               )}
             </div>
-          </div>
+          </div>}
 
         </div>
       )}

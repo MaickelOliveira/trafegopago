@@ -9,7 +9,7 @@ export default async function CrmPage() {
   const session = await getSession();
   if (!session || session.role !== "manager") redirect("/login");
 
-  const clients = getClients().map((c) => ({
+  const clients = (await getClients()).map((c) => ({
     id: c.id,
     name: c.name,
     color: c.color,
@@ -18,8 +18,8 @@ export default async function CrmPage() {
     kanbanAgentEnabled: c.kanbanAgentEnabled !== false, // default true
     kanbanAgentPrompt: c.kanbanAgentPrompt,
   }));
-  const leads   = attachLeadsHeat(getLeads());
-  const funnels = getFunnels();
+  const leads   = (await attachLeadsHeat((await getLeads())));
+  const funnels = (await getFunnels());
 
   return (
     <CrmClient

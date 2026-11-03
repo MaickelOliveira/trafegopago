@@ -1,14 +1,16 @@
+import { stripRetiredReservationMarkers } from "@/lib/retired-systems";
+import { fetchPublicResource } from "@/lib/public-download";
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import path from "path";
 import { getEvolutionSessionById } from "@/lib/evolution-sessions";
 import { getFunnels } from "@/lib/funnels";
-import { getLeads, getLeadByPhone, upsertLeadByPhone, updateLead, deleteLead, markLeadNeedsAttention, normalizePhone } from "@/lib/leads";
+import { getLeads, getChatLeadByPhone as getLeadByPhone, captureWhatsAppLead, hasLeadByPhone, updateLead, markLeadNeedsAttention, normalizePhone } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
-import { getHistory, addMessage, setAiPaused, sanitizeContactName, updateLastMessage, ensureBrCountryCode } from "@/lib/conversations";
-import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/wppconnect-sent";
-import { splitMessage } from "@/lib/uazapi";
+import { getHistory, addMessage, setAiPaused,getAiPaused, sanitizeContactName, updateLastMessage, ensureBrCountryCode } from "@/lib/conversations";
+import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/whatsapp-sent";
+import { splitMessage } from "@/lib/message-text";
 import { runGeminiAgent, isGreetingOnlyActive } from "@/lib/gemini-agent";
 import { processKanbanActions } from "@/lib/kanban-agent";
 import {
@@ -26,10 +28,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getGeminiApiKey } from "@/lib/whatsapp-send";
 import { transcribeMedia } from "@/lib/media-transcribe";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
-import { extractAndWriteToPousada } from "@/lib/pousada-extractor";
 import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
-import { createGuestForm } from "@/lib/guest-forms";
-import { createServicoForm } from "@/lib/servico-forms";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
@@ -48,7 +47,7 @@ export const dynamic = "force-dynamic";
 // Quando o cliente chega primeiro (race condition), o fromMe da saudação automática
 // do WA Business é identificado pelo adId — não por janela de tempo.
 // Mesmo padrão do webhook do WPPConnect (Set independente — cada provider tem o seu).
-const ctwaLeadSet = new Set<string>();
+
 
 // ── Extrai marcadores [MIDIA:nome] e [APOS_MIDIA:texto] do texto da IA ──
 // Cópia exata da função equivalente em webhook/wppconnect/[token]/route.ts —
@@ -66,51 +65,6 @@ function extractMediaMarkers(text: string): { clean: string; names: string[]; fo
     return "";
   }).replace(/[ \t]{2,}/g, " ").trim();
   return { clean, names, followup };
-}
-
-/**
- * Substitui o marcador [FORMULARIO_HOSPEDAGEM] pelo link da ficha de hóspedes
- * (ver função equivalente em webhook/[instanceId]/route.ts). Cria o token só
- * quando o marcador realmente aparece na resposta da IA.
- */
-function resolveGuestFormMarker(
-  text: string,
-  clientId: string,
-  clientName: string | undefined,
-  phone: string,
-  connId: string | undefined,
-  baseUrl: string,
-): string {
-  if (!text.includes("[FORMULARIO_HOSPEDAGEM]")) return text;
-  if (!baseUrl) {
-    console.warn("[guest-forms] appBaseUrl não configurado — não é possível gerar o link do formulário");
-    return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, "").trim();
-  }
-  const form = createGuestForm({ clientId, clientName, phone, connId: connId ?? null, connType: "evolution" });
-  const url = `${baseUrl}/formulario-hospede/${form.id}`;
-  return text.replace(/\[FORMULARIO_HOSPEDAGEM\]/g, url);
-}
-
-/**
- * Substitui o marcador [FORMULARIO_SERVICO] pelo link da ficha de
- * participantes (ver função equivalente em webhook/[instanceId]/route.ts).
- */
-function resolveServicoFormMarker(
-  text: string,
-  clientId: string,
-  clientName: string | undefined,
-  phone: string,
-  connId: string | undefined,
-  baseUrl: string,
-): string {
-  if (!text.includes("[FORMULARIO_SERVICO]")) return text;
-  if (!baseUrl) {
-    console.warn("[servico-forms] appBaseUrl não configurado — não é possível gerar o link do formulário");
-    return text.replace(/\[FORMULARIO_SERVICO\]/g, "").trim();
-  }
-  const form = createServicoForm({ clientId, clientName, phone, connId: connId ?? null, connType: "evolution" });
-  const url = `${baseUrl}/formulario-servico/${form.id}`;
-  return text.replace(/\[FORMULARIO_SERVICO\]/g, url);
 }
 
 // ── Envia mídias marcadas via Evolution ──
@@ -132,7 +86,7 @@ async function sendEvolutionMarkedMedia(
     }
     try {
       const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
-      markPhoneSending(rawPhone);
+      markPhoneSending(rawPhone,instanceName);
 
       const localMatch = media.url.match(/\/api\/uploads\/([^/?#]+)$/);
       if (localMatch) {
@@ -151,10 +105,10 @@ async function sendEvolutionMarkedMedia(
         const mime = mimeMap[ext] ?? "application/octet-stream";
         const base64DataUri = `data:${mime};base64,${buffer.toString("base64")}`;
         const result = await sendMediaFromBase64(instanceName, instanceApiKey, phone, base64DataUri, mime, media.caption, isLid, skipNormalize);
-        console.log(`[Evolution sendEvolutionMarkedMedia] "${name}" (base64 local) result=${result}`);
+        ;
       } else {
         const result = await evoSendMedia(instanceName, instanceApiKey, phone, media.url, media.caption, isLid, skipNormalize);
-        console.log(`[Evolution sendEvolutionMarkedMedia] "${name}" (url externa) result=${result}`);
+        ;
       }
     } catch (e) {
       console.error(`[Evolution sendEvolutionMarkedMedia] Erro ao enviar "${name}":`, e);
@@ -184,7 +138,7 @@ async function generateEvolutionSummaryText(
   clientId: string,
   connId: string,
 ): Promise<string> {
-  const history = getHistory(phone, clientId, connId);
+  const history = (await getHistory(phone, clientId, connId));
   if (history.length === 0) return "Sem histórico de conversa.";
 
   const recent = history.slice(-20);
@@ -193,7 +147,7 @@ async function generateEvolutionSummaryText(
     .join("\n");
   if (transcript.length > 3000) transcript = transcript.slice(-3000);
 
-  const apiKey = getGeminiApiKey(agCfg.geminiApiKey ?? undefined);
+  const apiKey = (await getGeminiApiKey(agCfg.geminiApiKey ?? undefined));
   if (apiKey) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const prompt =
@@ -213,7 +167,7 @@ async function generateEvolutionSummaryText(
         if (result) {
           const text = (result as Awaited<ReturnType<typeof model.generateContent>>).response.text().trim();
           if (text) {
-            console.log(`[evolution-summary] sucesso modelo=${modelId}`);
+            ;
             return text;
           }
         } else {
@@ -240,7 +194,7 @@ async function processEvolutionActions(
 ): Promise<void> {
   for (const action of actions) {
     if (action.type === "resumo_solicitado") {
-      markLeadNeedsAttention(clientId, leadPhone, undefined, action.motivo);
+      (await markLeadNeedsAttention(clientId, leadPhone, undefined, action.motivo));
 
       const recipients = agCfg.avisos?.length
         ? agCfg.avisos
@@ -249,12 +203,12 @@ async function processEvolutionActions(
           : [];
 
       if (recipients.length === 0) {
-        console.log("[evolution-summary] Nenhum destinatário de avisos configurado — resumo ignorado");
+        ;
         continue;
       }
 
       const resumo = await generateEvolutionSummaryText(clientName, agCfg, leadPhone, action.motivo, clientId, connId);
-      const lead = getLeadByPhone(clientId, leadPhone);
+      const lead = (await getLeadByPhone(clientId, leadPhone));
       const displayPhone = ensureBrCountryCode(lead?.realPhone ?? leadPhone);
       const waLink = `https://wa.me/${displayPhone}`;
       const msg =
@@ -263,12 +217,12 @@ async function processEvolutionActions(
         `📝 *Motivo:* ${action.motivo}\n\n` +
         `${resumo}`;
 
-      console.log(`[evolution-summary] Enviando aviso para ${recipients.length} destinatário(s)`);
+      ;
       await Promise.all(
-        recipients.map((r) => {
-          console.log(`[evolution-summary] → ${r.label} (${r.type}) ${r.value}`);
-          return evoSendText(instanceName, instanceApiKey, r.value, msg, false);
-        })
+        (await Promise.all(recipients.map(async (r) => {
+          ;
+          return (await evoSendText(instanceName, instanceApiKey, r.value, msg, false));
+        })))
       );
     }
   }
@@ -334,10 +288,10 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  const evoSession = getEvolutionSessionById(token);
-  console.log(`[EVO-DIAG] token=${token} session=${evoSession?.id ?? "NOT_FOUND"} funnelId=${evoSession?.funnelId ?? "null"} clientId=${evoSession?.clientId ?? "null"}`);
+  const evoSession = (await getEvolutionSessionById(token));
+  ;
   if (!evoSession) {
-    console.log(`[Evolution Webhook] token=${token} ignorado (sessão inexistente)`);
+    ;
     return NextResponse.json({ ok: true });
   }
 
@@ -367,7 +321,7 @@ export async function POST(
   }
 
   if (!evoSession.funnelId) {
-    console.log(`[Evolution Webhook] token=${token} ignorado (sessão sem funil)`);
+    ;
     return NextResponse.json({ ok: true });
   }
 
@@ -392,7 +346,7 @@ export async function POST(
   // Só processa upsert de mensagens — resto (CONNECTION_UPDATE, CONTACTS_UPSERT
   // etc.) é logado acima e descartado, igual ao filtro de evento do WPPConnect.
   if (event !== "messages_upsert") {
-    if (eventRaw) console.log(`[Evolution Webhook] evento filtrado: event=${eventRaw} instance=${evoSession.instanceName}`);
+    if (eventRaw) {}
     return NextResponse.json({ ok: true });
   }
 
@@ -422,7 +376,7 @@ export async function POST(
   if (msgTimestamp > 0) {
     const ageSec = nowSec - msgTimestamp;
     if (ageSec > 300 || ageSec < -30) {
-      console.log(`[Evolution Webhook] histórico ignorado: remoteJid=${remoteJid} age=${ageSec}s ts=${msgTimestamp}`);
+      ;
       return NextResponse.json({ ok: true });
     }
   }
@@ -431,7 +385,7 @@ export async function POST(
   const phone = remoteJid.replace(/@.*/, "").replace(/\D/g, "");
   if (!phone) return NextResponse.json({ ok: true });
 
-  console.log(`[Evolution Webhook] phone extraído: ${phone} (remoteJid=${remoteJid} fromMe=${fromMe})`);
+  ;
 
   // ── Detecta tipo de mensagem e extrai texto/mídia ──
   const messageObj = data.message ?? {};
@@ -516,32 +470,7 @@ export async function POST(
   // Facebook, cliente Vitalli Garden): pra mensagem tipo "conversation" o
   // contextInfo vem em data.contextInfo (irmão de data.message), e o campo
   // é "externalAdReply" (SEM "Info" no final) — diferente do que se assumia.
-  const isNewPhone = !getLeadByPhone(
-    (getFunnels().find(f => f.id === evoSession.funnelId)?.clientId ?? evoSession.clientId ?? "sem-cliente"),
-    phone,
-    evoSession.funnelId ?? undefined,
-  );
-  const contextInfo = findContextInfo(messageObj, data);
-  if (isNewPhone && !fromMe) {
-    console.log(`[Evolution CTWa DIAG] NOVO LEAD phone=${phone} messageType=${msgType} contextInfo=${JSON.stringify(contextInfo)}`);
-    try {
-      const debugFile = path.join(process.cwd(), "data", "debug-evolution-webhook-payloads.json");
-      mkdirSync(path.dirname(debugFile), { recursive: true });
-      const existing: unknown[] = existsSync(debugFile)
-        ? (JSON.parse(readFileSync(debugFile, "utf-8")) as unknown[])
-        : [];
-      // Grava a mensagem bruta inteira (não só o contextInfo já filtrado) —
-      // findContextInfo pode estar olhando no lugar errado; sem o objeto cru
-      // não dá pra confirmar onde o contextInfo/externalAdReplyInfo realmente
-      // está quando a mensagem é do tipo "conversation" (texto puro).
-      existing.unshift({ ts: new Date().toISOString(), phone, instance: evoSession.instanceName, messageType: msgType, contextInfoEncontrado: contextInfo, messageObjBruto: messageObj, dataContextInfo: data.contextInfo });
-      if (existing.length > 50) existing.length = 50;
-      writeFileSync(debugFile, JSON.stringify(existing, null, 2));
-    } catch (e) {
-      console.warn("[Evolution CTWa DIAG] Erro ao salvar debug file:", e);
-    }
-  }
-
+  const contextInfo=findContextInfo(messageObj,data);
   // Confirmado ao vivo: o campo real é "externalAdReply" (sem "Info" no final).
   // Mantém o fallback pra "externalAdReplyInfo" por segurança, caso alguma
   // versão da Evolution use o outro nome.
@@ -561,14 +490,14 @@ export async function POST(
       ctwaSourceUrl.match(/\/ads\/(\d{10,})/i);
     if (urlAdIdMatch) {
       ctwaAdId = urlAdIdMatch[1];
-      console.log(`[Evolution CTWa] Ad ID extraído da source_url: ${ctwaAdId}`);
+      ;
     }
   }
 
   // Mesmo fallback de resolução de redirect fb.me do WPPConnect.
   if (!ctwaAdId && ctwaSourceUrl && /fb\.me\//.test(ctwaSourceUrl)) {
     try {
-      const resp = await fetch(ctwaSourceUrl, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(3000) });
+      const resp = await fetchPublicResource(ctwaSourceUrl, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(3000) });
       const resolvedUrl = resp.url;
       if (resolvedUrl && resolvedUrl !== ctwaSourceUrl) {
         const resolvedMatch =
@@ -579,7 +508,7 @@ export async function POST(
           resolvedUrl.match(/[?&]ad_id=(\d+)/i);
         if (resolvedMatch) {
           ctwaAdId = resolvedMatch[1];
-          console.log(`[Evolution CTWa] Ad ID extraído da URL resolvida (${resolvedUrl}): ${ctwaAdId}`);
+          ;
         }
       }
     } catch (e) {
@@ -588,32 +517,24 @@ export async function POST(
   }
 
   if (externalAd) {
-    console.log(`[Evolution CTWa] referral detectado — source_id=${ctwaAdId} headline="${ctwaHeadline}" source_url=${ctwaSourceUrl} ctwaClid=${ctwaClid}`);
+    ;
   }
 
   // ── Encontra o funil vinculado (mesma lógica de reaproveitamento cross-funil do WPPConnect) ──
-  const funnels = getFunnels();
+  const funnels = (await getFunnels());
   const funnel = funnels.find(f => f.id === evoSession.funnelId);
   const defaultFunnelId = funnel?.id ?? evoSession.funnelId!;
-  const clientId = evoSession.clientId ?? funnel?.clientId ?? "sem-cliente";
+  if (!funnel?.clientId || (evoSession.clientId && evoSession.clientId !== funnel.clientId)) return NextResponse.json({ok:true,ignored:"connection_ownership_conflict"});
+  const clientId = funnel.clientId;
   const connId = evoSession.id;
 
   // Base pra montar o link do formulário de hóspedes (ver resolveGuestFormMarker).
-  const guestFormBaseUrl = (
-    getConfig().appBaseUrl ||
-    `${req.headers.get("x-forwarded-proto") ?? "https"}://${req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? ""}`
-  ).replace(/\/$/, "");
 
-  const leadInDefaultFunnel = getLeadByPhone(clientId, phone, defaultFunnelId);
-  const leadElsewhere = leadInDefaultFunnel ? null : getLeadByPhone(clientId, phone);
-  const hasHistoryOnThisConn = !!leadElsewhere && getHistory(phone, clientId, connId).length > 0;
-  const existingLeadAnyFunnel = leadInDefaultFunnel ?? (hasHistoryOnThisConn ? leadElsewhere : null);
-  const funnelId = existingLeadAnyFunnel?.funnelId ?? defaultFunnelId;
-  const funnelForEntrada = funnelId === defaultFunnelId ? funnel : funnels.find(f => f.id === funnelId);
-  const entradaColumnId = funnelForEntrada?.columns?.[0]?.id ?? "entrada";
-
-  const existingLead = existingLeadAnyFunnel;
-  const isNew = !existingLead;
+  // A conversation belongs to the funnel assigned to this connection.
+  const funnelId = defaultFunnelId;
+  const entradaColumnId = funnel?.columns?.[0]?.id ?? "entrada";
+  const existingLead = await getLeadByPhone(clientId,phone,funnelId);
+  const isNew = !existingLead && !await hasLeadByPhone(clientId,phone,funnelId);
   const shouldUpdateName = !fromMe && (isNew || existingLead?.name === phone);
 
   // Busca o nome via API sempre que for lead novo e a gente não tem um nome
@@ -623,7 +544,7 @@ export async function POST(
   let contactNameFromApi: string | undefined;
   if (isNew && (fromMe || !pushName || pushName === phone)) {
     const fetched = await getContactName(evoSession.instanceName, evoSession.instanceApiKey, phone);
-    console.log(`[Evolution Webhook] getContactName phone=${phone} fromMe=${fromMe} pushName="${pushName}" resultado=${fetched ?? "(null)"}`);
+    ;
     if (fetched) contactNameFromApi = fetched;
   }
   const nameToSave = contactNameFromApi ?? (shouldUpdateName ? pushName : undefined);
@@ -644,10 +565,10 @@ export async function POST(
   const shouldLookupAd = !!ctwaAdId && !alreadyAttributed;
   if (shouldLookupAd) {
     try {
-      const cfg = getConfig();
+      const cfg = (await getConfig());
       if (cfg.metaToken) {
         adInfo = await getAdInfoById(ctwaAdId!, cfg.metaToken);
-        console.log(`[Evolution CTWa] Meta API result: campaign="${adInfo?.campaignName}" adSet="${adInfo?.adSetName}" ad="${adInfo?.adName}"`);
+        ;
       } else {
         console.warn("[Evolution CTWa] metaToken não configurado — não foi possível resolver campanha via Meta API");
       }
@@ -684,7 +605,7 @@ export async function POST(
 
   // ── Proteção contra criação de leads falsos no history sync do reconnect ──
   if (isNew && msgTimestamp === 0) {
-    console.log(`[EVO-DIAG] BLOQUEADO: sem timestamp + lead novo phone=${phone}`);
+    ;
     return NextResponse.json({ ok: true });
   }
 
@@ -692,7 +613,7 @@ export async function POST(
   // WPPConnect nesta fase (ver evolution-api.ts) — passo omitido aqui.
 
   // ── 1. Grava o lead IMEDIATAMENTE ──
-  const savedLead = upsertLeadByPhone(clientId, phone, {
+  const savedLead = (await captureWhatsAppLead(clientId, phone, {
     clientId,
     funnelId,
     source: "whatsapp",
@@ -700,54 +621,45 @@ export async function POST(
     ...(isNew ? { status: entradaColumnId } : {}),
     ...(isLidContact ? { isLid: true } : {}),
     ...adFields,
-  });
+  }));
 
   // ── 2. Resolve o número real do LID em background ──
   // resolveContactPhone da Evolution retorna sempre null nesta fase (ver
   // evolution-api.ts) — mantido pelo mesmo contrato defensivo do WPPConnect
   // para não quebrar quando/se um endpoint equivalente for confirmado.
-  const needsPhoneResolution = isLidContact && !savedLead.realPhone;
-  if (needsPhoneResolution) {
+  const needsPhoneResolution = !!savedLead && isLidContact && !savedLead.realPhone;
+  if (needsPhoneResolution && savedLead) {
     resolveContactPhone()
-      .then((realPhone) => {
+      .then(async (realPhone) => {
         if (realPhone && realPhone !== phone) {
-          console.log(`[Evolution Webhook] LID ${phone} → número real: ${realPhone}`);
-          updateLead(savedLead.id, { realPhone });
-          const allLeads = getLeads(clientId);
-          const normalizedRealPhone = normalizePhone(realPhone);
-          for (const dup of allLeads) {
-            if (dup.id !== savedLead.id && normalizePhone(dup.phone) === normalizedRealPhone) {
-              console.log(`[Evolution Webhook] Removendo duplicata com phone=${dup.phone} (LID já resolvido)`);
-              deleteLead(dup.id);
-            }
-          }
+          ;
+          (await updateLead(savedLead.id, { realPhone }));
+          // Resolving a number never authorizes deletion of another contact.
+          const duplicates = (await getLeads(clientId)).filter(lead => lead.funnelId === savedLead.funnelId && [lead.phone,lead.realPhone].some(value => value && normalizePhone(value) === normalizePhone(realPhone)));
+          if (duplicates.length > 1) for (const duplicate of duplicates) await updateLead(duplicate.id,{ needsAttention:true,needsAttentionReason:"Telefone repetido após identificação do WhatsApp. Revise os cadastros; os históricos foram preservados." });
         }
       })
       .catch((e) => console.log(`[Evolution Webhook] LID ${phone} erro ao resolver: ${e}`));
   }
 
   if (ctwaAdId) {
-    console.log(`[Evolution Webhook] CTWa lead phone=${phone} adId=${ctwaAdId} adInfo=${JSON.stringify(adInfo)}`);
+    ;
   }
 
   // ── Salva a mensagem na conversa (somente mensagens recebidas do lead) ──
   if (contentForHistory.trim() && !fromMe) {
     const ts = Date.now();
-    addMessage(
+    (await addMessage(
       phone,
       { role: "user", content: contentForHistory, ts },
       clientId,
       { connId, contactName: sanitizeContactName(pushName !== phone ? pushName : undefined, phone) },
-    );
+    ));
   }
 
   // ── Automações por palavra-chave (message_received) ──
-  if (!fromMe && text.trim() && clientId !== "sem-cliente") {
-    runAutomationsForMessage(clientId, savedLead, text);
-  }
-
-  if (ctwaAdId && !fromMe) {
-    ctwaLeadSet.add(phone);
+  if (!fromMe && savedLead && text.trim() && clientId !== "sem-cliente") {
+    await runAutomationsForMessage(clientId, savedLead, text);
   }
 
   // ── Mensagem enviada por nós (IA, plataforma ou operador pelo celular) ──
@@ -758,46 +670,38 @@ export async function POST(
 
     if (!isOperatorOnlyMedia) {
       if (text.trim()) {
-        const consumed = consumeSent(phone, text.trim());
-        console.log(`[Evolution fromMe] phone=${phone} consumed=${consumed} text="${text.trim().slice(0, 80)}"`);
+        const consumed = consumeSent(phone,text.trim(),evoSession.instanceName);
+        ;
         if (consumed) return NextResponse.json({ ok: true });
       }
 
-      if (isPhoneSending(phone)) {
-        console.log(`[Evolution fromMe] phone=${phone} janela de envio ativa — não pausa IA`);
+      if (isPhoneSending(phone,evoSession.instanceName)) {
+        ;
         return NextResponse.json({ ok: true });
       }
 
-      if (text.trim()) {
-        const isCTWaGreeting = ctwaLeadSet.has(phone);
-        if (isCTWaGreeting) {
-          ctwaLeadSet.delete(phone);
-          console.log(`[Evolution fromMe] phone=${phone} — saudação automática (CTWa identificado via adId), não pausa IA`);
-          addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
-          return NextResponse.json({ ok: true });
-        }
-      }
+
     }
 
     if (text.trim()) {
-      console.log(`[Evolution fromMe] phone=${phone} msgType=${msgType} — operador enviou mídia/texto, pausando IA`);
-      addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId });
-      const activeClientFM = clientId !== "sem-cliente" ? getClientById(clientId) : null;
+      ;
+      (await addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId }));
+      const activeClientFM = clientId !== "sem-cliente" ? (await getClientById(clientId)) : null;
       const agentCfgFM = activeClientFM ? getAgentConfigForConnection(activeClientFM, connId) : undefined;
       const resumeKeyword = agentCfgFM?.aiResumeKeyword?.trim();
       const isPausing = !(resumeKeyword && text.trim().toLowerCase() === resumeKeyword.toLowerCase());
-      setAiPaused(phone, isPausing, clientId);
-      const freshLead = getLeadByPhone(clientId, phone, funnelId);
-      if (freshLead) updateLead(freshLead.id, { aiPaused: isPausing });
+      (await setAiPaused(phone, isPausing, clientId, connId));
+      const freshLead = (await getLeadByPhone(clientId, phone, funnelId));
+      if (freshLead) (await updateLead(freshLead.id, { aiPaused: isPausing }));
       if (isPausing) {
         // Cancela resposta da IA já em andamento (batch de messageWaitSeconds)
         // — sem isso, uma resposta que já estava sendo gerada no momento em
         // que o operador respondeu pelo próprio celular ainda dispara logo
         // depois, por cima da mensagem dele.
-        cancelPendingForPhone(clientId, phone);
+        (await cancelPendingForPhone(clientId, phone, connId));
       }
       if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
-        restartFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId);
+        (await restartFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId));
       }
     }
     return NextResponse.json({ ok: true });
@@ -806,33 +710,33 @@ export async function POST(
 
   // ── Agente Kanban — roda sempre, independente da IA de atendimento ──
   if (clientId !== "sem-cliente") {
-    const _h = getHistory(phone, clientId, connId);
+    const _h = (await getHistory(phone, clientId, connId));
     const historyForKanban = _h.length > 1 ? _h.slice(0, -1) : [];
     processKanbanActions(text, historyForKanban, clientId, phone, connId).catch(() => {});
   }
 
   // ── Follow-ups: agenda quando lead responde, independente de IA ──
   if (clientId !== "sem-cliente") {
-    const activeClientFU = getClientById(clientId);
+    const activeClientFU = (await getClientById(clientId));
     const agentCfgFU = activeClientFU ? getAgentConfigForConnection(activeClientFU, connId) : undefined;
     if (agentCfgFU?.followUpEnabled && (agentCfgFU.followUps?.length ?? 0) > 0) {
-      restartFollowUpSequence(clientId, phone, agentCfgFU.followUps, connId);
+      (await restartFollowUpSequence(clientId, phone, agentCfgFU.followUps, connId));
     }
   }
 
   // ── Verifica IA ── (saudação determinística ignora o pause — ver isGreetingOnlyActive)
-  const currentLead = getLeadByPhone(clientId, phone, funnelId);
-  if (currentLead?.aiPaused && !isGreetingOnlyActive(clientId, connId)) {
-    console.log(`[Evolution IA] phone=${phone} clientId=${clientId} — IA pausada (aiPaused=true)`);
+  const currentLead = (await getLeadByPhone(clientId, phone, funnelId));
+  if ((currentLead?.aiPaused || await getAiPaused(phone,clientId,connId)) && !(await isGreetingOnlyActive(clientId, connId))) {
+    ;
     return NextResponse.json({ ok: true });
   }
 
-  const activeClient = clientId !== "sem-cliente" ? getClientById(clientId) : null;
+  const activeClient = clientId !== "sem-cliente" ? (await getClientById(clientId)) : null;
   const agentCfg = activeClient ? getAgentConfigForConnection(activeClient, connId) : undefined;
   const geminiEnabled = agentCfg?.enabled === true && isWithinBusinessHours(agentCfg);
 
   if (!geminiEnabled || clientId === "sem-cliente") {
-    console.log(`[Evolution IA] IA desligada — geminiEnabled=${geminiEnabled} clientId=${clientId}`);
+    ;
     return NextResponse.json({ ok: true });
   }
 
@@ -841,14 +745,14 @@ export async function POST(
     const phoneNorm = normalizePhone(phone);
     const testNorm = normalizePhone(agentCfg.testPhone);
     if (phoneNorm !== testNorm) {
-      console.log(`[Evolution IA] phone=${phone} bloqueado — testPhone=${agentCfg.testPhone} norm_phone=${phoneNorm} norm_test=${testNorm} (modo teste ativo)`);
+      ;
       return NextResponse.json({ ok: true });
     }
   }
 
   // ── Transcreve áudio/imagem ANTES do agente ──
   if (mediaBuffer && mediaMime && mediaKind) {
-    const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
+    const apiKey = (await getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined));
     if (apiKey) {
       try {
         const transcription = await transcribeMedia(mediaBuffer, mediaMime, apiKey, mediaKind);
@@ -858,7 +762,7 @@ export async function POST(
           // da transcrição ficar pronta — sem isso, follow-ups e qualquer releitura
           // futura da conversa nunca veem o conteúdo real do áudio/imagem.
           const emoji = mediaKind === "audio" ? "🎙️" : mediaKind === "image" ? "📷" : "📎";
-          updateLastMessage(phone, { content: `${emoji} ${transcription}` }, clientId, connId);
+          (await updateLastMessage(phone, { content: `${emoji} ${transcription}` }, clientId, connId));
         }
       } catch (e) {
         console.error("[Evolution Webhook] Erro na transcrição de mídia:", e);
@@ -867,12 +771,12 @@ export async function POST(
   }
 
   const waitSeconds = agentCfg?.messageWaitSeconds ?? 0;
-  const history = getHistory(phone, clientId, connId);
+  const history = (await getHistory(phone, clientId, connId));
 
   const instanceSnap = evoSession.instanceName;
   const apiKeySnap = evoSession.instanceApiKey;
 
-  console.log(`[Evolution IA] Chamando runGeminiAgent — phone=${phone} clientId=${clientId} waitSeconds=${waitSeconds} historyLen=${history.length}`);
+  ;
 
   // "Digitando..." só aparece agora, uma única vez, bem perto do envio de
   // verdade — não durante toda a espera do batching/geração (que pode levar
@@ -889,22 +793,21 @@ export async function POST(
     // string vazia e o fallback pro texto original vazava o marcador
     // literal pro cliente. Quando não sobra texto, simplesmente não
     // envia bolha de texto nenhuma (mídia/link seguem enviados normalmente).
-    const cleanGuestForm = resolveGuestFormMarker(cleanRaw, clientId, activeClient?.name ?? clientId, phone, connId, guestFormBaseUrl);
-    const clean = resolveServicoFormMarker(cleanGuestForm, clientId, activeClient?.name ?? clientId, phone, connId, guestFormBaseUrl);
+    const cleanGuestForm = (await stripRetiredReservationMarkers(cleanRaw));
+    const clean = (await stripRetiredReservationMarkers(cleanGuestForm));
     const names = filterUnsentMedia(clientId, connId, phone, namesRaw);
     if (names.length < namesRaw.length) {
-      console.log(`[Evolution sendReply] Mídia(s) já enviada(s) nesta conversa, ignorando repetição: ${JSON.stringify(namesRaw.filter((n) => !names.includes(n)))}`);
+      ;
     }
     if (clean) {
       const chunks = agentCfg?.splitMessages
         ? splitMessage(clean, agentCfg.maxMessageLength ?? 300)
         : [clean];
-      for (const chunk of chunks) markSent(phone, chunk);
-      addMessage(phone, { role: "assistant", content: clean, ts: Date.now() }, clientId, { connId });
-      const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
-      for (let i = 0; i < chunks.length; i++) {
-        await evoSendText(instanceSnap, apiKeySnap, phone, chunks[i], isLidContact, true);
-        if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+      const chunkDelayMs=Math.round((agentCfg?.splitMessageDelaySeconds??1.5)*1000);
+      for(let i=0;i<chunks.length;i++){
+        if(!await evoSendText(instanceSnap,apiKeySnap,phone,chunks[i],isLidContact,true))throw Error("A Evolution não confirmou a resposta.");
+        await addMessage(phone,{role:"assistant",content:chunks[i],ts:Date.now()},clientId,{connId});
+        if(i<chunks.length-1)await new Promise<void>(resolve=>setTimeout(resolve,chunkDelayMs));
       }
     }
     if (names.length > 0 && agentCfg?.mediaLibrary?.length) {
@@ -915,89 +818,27 @@ export async function POST(
     }
     if (followup) {
       await new Promise<void>((r) => setTimeout(r, 800));
-      markSent(phone, followup);
-      await evoSendText(instanceSnap, apiKeySnap, phone, followup, isLidContact, true);
+      markSent(phone,followup,instanceSnap);
+      if(await evoSendText(instanceSnap,apiKeySnap,phone,followup,isLidContact,true))await addMessage(phone,{role:"assistant",content:followup,ts:Date.now()},clientId,{connId});
     }
   }
 
   // ── Batching: acumula mensagens antes de responder ──
   if (waitSeconds > 0) {
-    const pending = upsertPending(clientId, phone, text, waitSeconds);
+    const pending = (await upsertPending(clientId, phone, text, waitSeconds, connId));
     const _pendingId = pending.id;
     const _clientId = clientId;
     const _phone = phone;
-    setTimeout(() => {
-      const batch = getPendingForPhone(_clientId, _phone);
-      if (!batch || batch.id !== _pendingId || batch.status !== "pending") return;
-      if (new Date(batch.respondAfter) > new Date()) return;
-      markProcessing(batch.id);
-      const combined = batch.messages.join("\n");
-      const h = getHistory(_phone, _clientId, connId);
-      runGeminiAgent(combined, h, _clientId, _phone, connId)
-        .then(async ({ text: geminiText, actions }) => {
-          markDone(batch.id);
-          if (getLeadByPhone(_clientId, _phone, funnelId)?.aiPaused && !isGreetingOnlyActive(_clientId, connId)) {
-            console.log(`[Evolution IA batch] IA pausada durante processamento — descartando resposta para ${_phone}`);
-            stopTyping(instanceSnap, apiKeySnap, _phone).catch(() => {});
-            return;
-          }
-          if (geminiText) await sendReply(geminiText);
-          if (actions.length && activeClient && agentCfg) {
-            await processEvolutionActions(actions, instanceSnap, apiKeySnap, activeClient.name, agentCfg, _phone, isLidContact, _clientId, connId).catch(() => {});
-          }
-          const resumoActionBatch = actions.find((a) => a.type === "resumo_solicitado");
-          const motivoBatch = resumoActionBatch?.type === "resumo_solicitado" ? resumoActionBatch.motivo : undefined;
-          if (resumoActionBatch && activeClient?.enabledSystems?.includes("pousada") && activeClient.pousadaTipos?.length) {
-            const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey);
-            if (apiKey) {
-              const leadBatch = getLeadByPhone(_clientId, _phone);
-              const realPhoneBatch = (leadBatch?.realPhone ?? _phone).replace(/\D/g, "");
-              extractAndWriteToPousada({
-                apiKey,
-                clientId: _clientId,
-                tipos: activeClient.pousadaTipos,
-                totalQuartos: activeClient.pousadaTotalQuartos ?? 0,
-                messages: getHistory(_phone, _clientId, connId),
-                phone: realPhoneBatch,
-                motivo: motivoBatch,
-              }).catch((e) => console.warn("[Evolution] pousada-extractor erro:", e instanceof Error ? e.message : e));
-            }
-          }
-          // Escreve também na planilha em paralelo enquanto o sistema da
-          // Pousada ainda está em validação.
-          if (resumoActionBatch && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
-            const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
-            if (apiKey) {
-              const leadBatch = getLeadByPhone(_clientId, _phone);
-              const realPhoneBatch = (leadBatch?.realPhone ?? _phone).replace(/\D/g, "");
-              extractAndWriteToSheet({
-                apiKey,
-                spreadsheetId: agentCfg.spreadsheetId,
-                googleRefreshToken: agentCfg.googleRefreshToken,
-                sheetMappings: agentCfg.sheetMappings,
-                messages: getHistory(_phone, _clientId, connId),
-                phone: realPhoneBatch,
-                motivo: motivoBatch,
-              }).catch((e) => console.warn("[Evolution] sheet-extractor erro:", e instanceof Error ? e.message : e));
-            }
-          }
-        })
-        .catch((e) => {
-          console.error("[Evolution webhook] Erro no batch:", e);
-          markDone(batch.id);
-          stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
-        });
-    }, waitSeconds * 1000);
 
     return NextResponse.json({ ok: true });
   }
 
   // ── Resposta imediata (sem batching) ──
-  cancelPendingForPhone(clientId, phone);
+  (await cancelPendingForPhone(clientId, phone, connId));
   try {
     const { text: geminiText, actions } = await runGeminiAgent(text, history, clientId, phone, connId);
-    if (getLeadByPhone(clientId, phone, funnelId)?.aiPaused && !isGreetingOnlyActive(clientId, connId)) {
-      console.log(`[Evolution IA] IA pausada durante processamento imediato — descartando resposta para ${phone}`);
+    if (((await getLeadByPhone(clientId,phone,funnelId))?.aiPaused || await getAiPaused(phone,clientId,connId)) && !(await isGreetingOnlyActive(clientId, connId))) {
+      ;
       stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
       return NextResponse.json({ ok: true });
     }
@@ -1011,35 +852,19 @@ export async function POST(
     }
     const resumoActionImediato = actions.find((a) => a.type === "resumo_solicitado");
     const motivoImediato = resumoActionImediato?.type === "resumo_solicitado" ? resumoActionImediato.motivo : undefined;
-    if (resumoActionImediato && activeClient?.enabledSystems?.includes("pousada") && activeClient.pousadaTipos?.length) {
-      const apiKey = getGeminiApiKey(agentCfg?.geminiApiKey);
-      if (apiKey) {
-        const leadImediato = getLeadByPhone(clientId, phone);
-        const realPhoneImediato = (leadImediato?.realPhone ?? phone).replace(/\D/g, "");
-        extractAndWriteToPousada({
-          apiKey,
-          clientId,
-          tipos: activeClient.pousadaTipos,
-          totalQuartos: activeClient.pousadaTotalQuartos ?? 0,
-          messages: getHistory(phone, clientId, connId),
-          phone: realPhoneImediato,
-          motivo: motivoImediato,
-        }).catch((e) => console.warn("[Evolution] pousada-extractor erro:", e instanceof Error ? e.message : e));
-      }
-    }
     // Escreve também na planilha em paralelo enquanto o sistema da Pousada
     // ainda está em validação.
     if (resumoActionImediato && agentCfg?.googleRefreshToken && agentCfg.spreadsheetId && agentCfg.sheetMappings?.length) {
-      const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
+      const apiKey = (await getGeminiApiKey(agentCfg.geminiApiKey));
       if (apiKey) {
-        const leadImediato = getLeadByPhone(clientId, phone);
+        const leadImediato = (await getLeadByPhone(clientId, phone, funnelId));
         const realPhoneImediato = (leadImediato?.realPhone ?? phone).replace(/\D/g, "");
         extractAndWriteToSheet({
           apiKey,
           spreadsheetId: agentCfg.spreadsheetId,
           googleRefreshToken: agentCfg.googleRefreshToken,
           sheetMappings: agentCfg.sheetMappings,
-          messages: getHistory(phone, clientId, connId),
+          messages: (await getHistory(phone, clientId, connId)),
           phone: realPhoneImediato,
           motivo: motivoImediato,
         }).catch((e) => console.warn("[Evolution] sheet-extractor erro:", e instanceof Error ? e.message : e));

@@ -13,11 +13,11 @@ async function authorize(accountId: string): Promise<GoogleAdsCreds | null | und
   if (!session) return null;
 
   if (session.role !== "manager") {
-    const client = getClientById(session.clientId!);
+    const client = (await getClientById(session.clientId!));
     const owns = client?.adAccounts.some((a) => a.id === accountId && a.platform === "google");
     if (!owns) return null;
   }
-  return getGoogleAdsCreds() ?? undefined;
+  return (await getGoogleAdsCreds()) ?? undefined;
 }
 
 export async function GET(req: NextRequest, { params }: Params) {

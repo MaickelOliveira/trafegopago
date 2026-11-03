@@ -10,7 +10,7 @@ export default async function ClienteDashboard() {
   if (!session || (session.role !== "client" && session.role !== "employee")) redirect("/login");
 
   const clientId = session.clientId!;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/login");
 
   return (

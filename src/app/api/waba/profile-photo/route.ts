@@ -1,3 +1,5 @@
+import { getFunnels } from "@/lib/funnels";
+import { getEmployeeById, employeeCanAccessFunnel } from "@/lib/employees";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getConfig } from "@/lib/clients";
@@ -19,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const appId = getConfig().metaAppId;
+  const appId = (await getConfig()).metaAppId;
   if (!appId) {
     return NextResponse.json({ error: "metaAppId não configurado em Configurações" }, { status: 400 });
   }
@@ -32,12 +34,17 @@ export async function POST(req: NextRequest) {
   }
   const file = formData.get("file");
   const phoneNumberId = formData.get("phoneNumberId");
-  const token = formData.get("token");
+  const requestedToken = formData.get("token");
+  const employee = session.role === "employee" ? await getEmployeeById(session.employeeId!) : undefined;
+  if (employee && !employee.permissions?.canManageQR) return NextResponse.json({ error: "Acesso não permitido." }, { status: 403 });
+  const source = (await getFunnels()).filter(funnel => (session.role === "manager" || funnel.clientId === session.clientId) && (!employee || employeeCanAccessFunnel(employee, funnel.id))).flatMap(funnel => funnel.connections ?? []).find(connection => connection.type === "meta" && connection.metaPhoneNumberId === phoneNumberId);
+  const token = source?.metaToken || (session.role === "manager" && typeof requestedToken === "string" ? requestedToken : undefined);
   console.log(`[profile-photo] file=${file instanceof File ? `${file.name} (${file.size} bytes)` : "ausente"} phoneNumberId=${phoneNumberId} appId=${appId}`);
 
   if (!(file instanceof File) || typeof phoneNumberId !== "string" || typeof token !== "string") {
     return NextResponse.json({ error: "file, phoneNumberId e token são obrigatórios" }, { status: 400 });
   }
+  if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: "A imagem deve ter no máximo 10 MB." }, { status: 400 });
   if (!file.type.startsWith("image/")) {
     return NextResponse.json({ error: "O arquivo deve ser uma imagem (jpg ou png)" }, { status: 400 });
   }
@@ -48,7 +55,7 @@ export async function POST(req: NextRequest) {
   let startRes: Response;
   try {
     startRes = await fetch(
-      `https://graph.facebook.com/v19.0/${appId}/uploads?file_length=${buffer.length}&file_type=${encodeURIComponent(file.type)}&access_token=${encodeURIComponent(token)}`,
+      `https://graph.facebook.com/v26.0/${appId}/uploads?file_length=${buffer.length}&file_type=${encodeURIComponent(file.type)}&access_token=${encodeURIComponent(token)}`,
       { method: "POST" },
     );
   } catch (e) {
@@ -72,7 +79,7 @@ export async function POST(req: NextRequest) {
   // 2) Envia o binário da imagem para a sessão de upload
   let binRes: Response;
   try {
-    binRes = await fetch(`https://graph.facebook.com/v19.0/${uploadSessionId}`, {
+    binRes = await fetch(`https://graph.facebook.com/v26.0/${uploadSessionId}`, {
       method: "POST",
       headers: { Authorization: `OAuth ${token}`, file_offset: "0" },
       body: buffer,
@@ -98,7 +105,7 @@ export async function POST(req: NextRequest) {
   // 3) Atualiza o perfil do WhatsApp Business com o handle obtido
   let profileRes: Response;
   try {
-    profileRes = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/whatsapp_business_profile`, {
+    profileRes = await fetch(`https://graph.facebook.com/v26.0/${phoneNumberId}/whatsapp_business_profile`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ messaging_product: "whatsapp", profile_picture_handle: handle }),
