@@ -15,6 +15,7 @@ import {
   updateEvolutionSession,
 } from "@/lib/evolution-sessions";
 import { withDataTransaction } from "@/lib/document-store";
+import { signWebhookUrl } from "@/lib/webhook-auth";
 
 export type EnrichedEvolutionSession = {
   id: string;
@@ -30,19 +31,12 @@ export type EnrichedEvolutionSession = {
   instanceWebhookUrl: string;
 };
 
-function detectBase(req: NextRequest): string {
-  const fwdHost  = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? "https";
-  return fwdHost ? `${fwdProto}://${fwdHost}` : `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-}
-
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || (session.role !== "manager" && session.role !== "client" && session.role !== "employee")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const baseUrl = detectBase(req);
   let storedSessions = (await getEvolutionSessions());
   const funnels = (await getFunnels());
   const clients = (await getClients());
@@ -97,7 +91,7 @@ export async function GET(req: NextRequest) {
         linkedClientName,
         hasAgentLinked: !!clientInfo,
         agentEnabled: clientInfo?.agentEnabled ?? false,
-        instanceWebhookUrl: session.role === "manager" ? `${baseUrl}/api/whatsapp/webhook/evolution/${s.id}` : "",
+        instanceWebhookUrl: session.role === "manager" ? signWebhookUrl(await evolutionWebhookForSession(s.id)) : "",
       };
     })
   );

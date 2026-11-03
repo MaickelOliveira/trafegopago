@@ -325,12 +325,15 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
                           : <span className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-0.5">Sem funil</span>}
                       </div>
                       {s.instanceWebhookUrl && (
-                        <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-lg px-2.5 py-1.5 max-w-lg">
+                        <details className="mt-2 max-w-lg text-xs text-slate-500">
+                          <summary className="cursor-pointer">Detalhes de recebimento</summary>
+                          <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-lg px-2.5 py-1.5">
                           <span className="text-xs text-slate-400">🔗</span>
                           <span className="text-xs font-mono text-slate-500 truncate flex-1">{s.instanceWebhookUrl}</span>
                           <button onClick={() => navigator.clipboard.writeText(s.instanceWebhookUrl).catch(() => {})}
                             className="text-xs text-blue-600 font-semibold hover:text-blue-800 whitespace-nowrap">Copiar</button>
-                        </div>
+                          </div>
+                        </details>
                       )}
                     </div>
                   </div>
