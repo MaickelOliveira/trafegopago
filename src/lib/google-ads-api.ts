@@ -27,11 +27,9 @@ export function formatGoogleAdsError(e: unknown): string {
       .join("; ");
   }
   if (e instanceof Error && e.message) return e.message;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
+  if (e && typeof e === "object" && "error" in e && e.error === "invalid_grant") return "invalid_grant";
+  // Unknown transport errors can contain request headers and OAuth credentials.
+  return "Não foi possível consultar o Google Ads.";
 }
 
 function buildCustomer(creds: GoogleAdsCreds, customerId: string) {

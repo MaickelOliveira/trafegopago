@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { ownsAdAccount } from "@/lib/ad-account-access";
 import { getClientById } from "@/lib/clients";
 import { getGoogleAdsCreds } from "@/lib/google-ads-creds";
 import { getAccountInsightsRange, getDailyInsights, formatGoogleAdsError, type GoogleAdsCreds } from "@/lib/google-ads-api";
@@ -14,7 +15,7 @@ async function authorize(accountId: string): Promise<GoogleAdsCreds | null | und
 
   if (session.role !== "manager") {
     const client = (await getClientById(session.clientId!));
-    const owns = client?.adAccounts.some((a) => a.id === accountId && a.platform === "google");
+    const owns = client && ownsAdAccount(client.adAccounts, "google", accountId);
     if (!owns) return null;
   }
   return (await getGoogleAdsCreds()) ?? undefined;

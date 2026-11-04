@@ -15,6 +15,22 @@ it("requests Google data through its own endpoints with one selected period",asy
  const result=await loadDashboardData({id:"1234567890",platform:"google"},"client-a","last_7d",undefined,request as typeof fetch);
  const urls=request.mock.calls.map(([url])=>String(url));expect(urls.filter(url=>url.includes("/google-ads/")).length).toBe(3);expect(urls.some(url=>url.includes("/meta/"))).toBe(false);expect(urls.filter(url=>!url.includes("/crm/")).every(url=>url.includes("datePreset=last_7d"))).toBe(true);expect(result.summary?.conversions).toBe(2);
 });
+it("normalizes Google account separators before requesting every ads endpoint",async()=>{
+ const request=vi.fn(async(input:RequestInfo|URL)=>Response.json(String(input).includes("campaigns")||String(input).includes("daily=1")||String(input).includes("/crm/")?[]:{}));
+ await loadDashboardData({id:"123-456-7890",platform:"google"},"client-a","last_7d",undefined,request as typeof fetch);
+ const urls=request.mock.calls.map(([url])=>String(url)).filter(url=>url.includes("/google-ads/"));
+ expect(urls).toHaveLength(3);expect(urls.every(url=>url.startsWith("/api/google-ads/1234567890/"))).toBe(true);
+});
+it("explains expired Google authorization without displaying provider details or losing CRM",async()=>{
+ const request=vi.fn(async(input:RequestInfo|URL)=>String(input).includes("/crm/")?Response.json([{id:"lead-a"}]):Response.json({error:"invalid_grant: private provider details"},{status:500}));
+ const result=await loadDashboardData({id:"123",platform:"google"},"client-a","last_30d",undefined,request as typeof fetch);
+ expect(result.adsReconnect).toBe(true);expect(result.adsError).toContain("reconectar o Google Ads");expect(result.adsError).not.toContain("private provider");expect(result.summary).toBeNull();expect(result.crmLeads).toEqual([{id:"lead-a"}]);
+});
+it("does not suggest Google reauthorization for an unrelated provider failure",async()=>{
+ const request=vi.fn(async(input:RequestInfo|URL)=>String(input).includes("/crm/")?Response.json([]):Response.json({error:"permission denied"},{status:403}));
+ const result=await loadDashboardData({id:"123",platform:"google"},"client-a","last_30d",undefined,request as typeof fetch);
+ expect(result.adsReconnect).toBe(false);expect(result.adsError).toContain("Confira a conexão");
+});
 it("reports unavailable ads while preserving independently loaded CRM data",async()=>{
  const lead={id:"lead-a",clientId:"client-a"};
  const request=vi.fn(async(input:RequestInfo|URL)=>String(input).includes("/crm/")?Response.json([lead]):new Response("unavailable",{status:403}));

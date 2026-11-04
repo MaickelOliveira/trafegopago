@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { ownsAdAccount } from "@/lib/ad-account-access";
 import { getClientById } from "@/lib/clients";
 import { getGoogleAdsCreds } from "@/lib/google-ads-creds";
 import { getAds, formatGoogleAdsError } from "@/lib/google-ads-api";
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   if (session.role === "client") {
     const client = (await getClientById(session.clientId!));
-    if (!client?.adAccounts.some((a) => a.id === accountId && a.platform === "google")) {
+    if (!client || !ownsAdAccount(client.adAccounts, "google", accountId)) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
     }
   }

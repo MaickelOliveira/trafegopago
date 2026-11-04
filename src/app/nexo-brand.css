@@ -1,7 +1,7 @@
 /* Nexo's original brand: #afe507, #0f0f0f and cool white. */
 :is(.nexo-app-shell,.nexo-client-shell,.nexo-login) {
-  --nexo-bg:#101112; --nexo-surface:#181a1b; --nexo-raised:#202324;
-  --nexo-ink:#f2f4f5; --nexo-muted:#9ca4a7; --nexo-line:#303537;
+  --nexo-bg:#101113; --nexo-surface:#191b1e; --nexo-raised:#202328;
+  --nexo-ink:#f0f2f4; --nexo-muted:#a4a9b1; --nexo-line:#30343b;
   --nexo-accent:#afe507; --nexo-lime:#afe507; --nexo-quiet:#202916;
   color:var(--nexo-ink); background:var(--nexo-bg); color-scheme:dark;
   font-family:var(--font-geist-sans),Arial,sans-serif;
@@ -223,6 +223,75 @@
 .nexo-client-shell>header {background:#0f0f0f;border-color:#3c4c58}
 .nexo-client-shell>header nav a[aria-current=page] {background:#2b3c1c;color:#d2edb0}
 
+.nexo-crm-page {height:100%;min-height:0}
+.nexo-crm-page-heading {padding:23px 24px 19px;gap:18px;flex-wrap:wrap;border-bottom:1px solid #292d33}
+.nexo-crm-page-heading h1 {font-size:29px;font-weight:600;letter-spacing:-.9px}
+.nexo-crm-page-heading p {font-size:12px;margin-top:5px;color:#9da4ae}
+.nexo-crm-heading-tools {display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.nexo-crm-board-area {display:flex;flex:1;min-height:0;padding:20px 24px 16px}
+.nexo-kanban {flex:1;min-width:0;min-height:0;gap:15px}
+.nexo-crm-summary {gap:12px}
+.nexo-kanban .nexo-crm-origins>span:not(:first-child) {background:#20242a;border-color:#343b45;color:#b9c3ce;font-size:10px;font-weight:500;padding:4px 9px}
+.nexo-kanban .nexo-crm-summary>div {background:linear-gradient(145deg,#202328,#191c20);border:1px solid #30343b;border-radius:13px;padding:17px 19px;box-shadow:0 1px 0 #ffffff05 inset}
+.nexo-crm-summary>div>p:first-child {font-size:11px;letter-spacing:.2px}
+.nexo-crm-summary>div>p:nth-child(2) {font-size:27px;letter-spacing:-.7px;margin:7px 0;font-weight:600}
+.nexo-crm-summary>div>p:last-child {font-size:11px}
+.nexo-crm-toolbar {padding:13px;background:#17191c;border:1px solid #2a2e35;border-radius:13px;gap:8px}
+.nexo-kanban .nexo-crm-toolbar :is(button,select,input) {min-height:36px;border-radius:8px;font-size:12px}
+.nexo-kanban .nexo-crm-toolbar button {display:inline-flex;align-items:center;justify-content:center;gap:7px;background:#22252a;border-color:#3b4049;color:#c7cdd5;box-shadow:none}
+.nexo-kanban .nexo-crm-tools {display:none}
+.nexo-kanban .nexo-crm-tools.is-open {display:flex;align-items:center;flex-wrap:wrap;gap:8px;order:10;width:100%;padding-top:12px;margin-top:3px;border-top:1px solid #343a43}
+.nexo-kanban .nexo-crm-toolbar button[aria-pressed=true] {background:#2b351d;border-color:#758d42;color:#d6eba5}
+.nexo-crm-toolbar .bg-violet-500 {background:#afe507}
+.nexo-kanban .nexo-crm-toolbar button:hover {background:#2b3035;border-color:#68735a;color:#eff3e8}
+.nexo-kanban .nexo-crm-toolbar .nexo-crm-new {background:#afe507;border-color:#afe507;color:#182008;padding-inline:15px;font-weight:650}
+.nexo-kanban .nexo-crm-toolbar .nexo-crm-new:hover {background:#bde92e;color:#182008}
+.nexo-stages {display:grid;grid-auto-flow:column;grid-auto-columns:minmax(216px,1fr);gap:12px;flex:1;min-height:0;align-items:stretch;scrollbar-width:thin;scrollbar-color:#424953 transparent}
+.nexo-stage {height:100%;min-height:0}
+.nexo-stage-header {background:#1a1d21;border-color:#30343b;min-height:70px;display:flex;flex-direction:column;justify-content:center;flex-shrink:0;padding:13px 14px}
+.nexo-stage-header>div>span:nth-child(2) {color:#e3e7eb;font-size:13px;font-weight:600}
+.nexo-stage-header>div>span:first-child {width:7px;height:7px;box-shadow:0 0 0 4px #ffffff05}
+.nexo-stage-header .nexo-stage-count {display:flex;align-items:center;justify-content:center;min-width:25px;min-height:23px;background:#2b3037;color:#d1d6dd;border:1px solid #3b424c;font-size:11px}
+.nexo-stage-header p {color:#9ba3ad;font-size:10px;margin-top:7px}
+.nexo-stage-header .bg-indigo-100 {background:#2c3239;color:#c1cbd6;border-color:#424c56;font-size:9px}
+.nexo-stage-body {flex:1;min-height:0;overflow-y:auto;background:#141619;border-color:#30343b;padding:9px;scrollbar-width:thin;scrollbar-color:#414953 transparent}
+.nexo-kanban .nexo-lead-card {background:#202328;border:1px solid #383d46;border-radius:11px;padding:14px 12px;box-shadow:0 2px 5px #00000018}
+.nexo-kanban .nexo-lead-card:hover {background:#252a2e;border-color:#70804e;box-shadow:0 5px 14px #0003}
+.nexo-lead-card .font-semibold {font-weight:580}
+.nexo-kanban .nexo-lead-card .bg-amber-100 {background:#323027;color:#cfc49d}
+.nexo-kanban .nexo-campaign-label {background:#2b3137;color:#c7d0d9;border:1px solid #3a444e;font-size:10px}
+.nexo-client-shell:has(.nexo-crm-page) {display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden}
+.nexo-client-shell:has(.nexo-crm-page)>header {flex-shrink:0}
+.nexo-client-shell:has(.nexo-crm-page)>main {flex:1;min-height:0}
+.nexo-client-shell>main>.nexo-crm-page {height:100%}
+@media(max-width:900px) {
+ .nexo-crm-page {height:auto;min-height:100%}
+ .nexo-kanban .nexo-crm-toolbar :is(button,select,input) {min-height:44px}
+ .nexo-crm-page-heading {padding:17px 16px 14px}
+ .nexo-crm-heading-tools {display:grid;grid-template-columns:minmax(0,1fr) auto;width:100%;gap:8px}
+ .nexo-crm-heading-tools>div:first-child {min-width:0}
+ .nexo-crm-heading-tools>div>button {width:100%;font-size:10px;padding:10px;min-height:42px}
+ .nexo-crm-heading-tools>div:first-child button {overflow:hidden;white-space:nowrap}
+ .nexo-kanban .nexo-crm-summary>div {padding:12px 13px}
+ .nexo-crm-summary>div>p:nth-child(2) {font-size:23px;margin:4px 0}
+ .nexo-crm-summary>div>p:first-child,.nexo-crm-summary>div>p:last-child {font-size:10px}
+ .nexo-crm-board-area {display:block;padding:16px}
+ .nexo-stages {min-height:360px;grid-auto-columns:minmax(240px,1fr)}
+ .nexo-stage-body {min-height:250px;max-height:60dvh}
+ .nexo-client-shell:has(.nexo-crm-page)>main {overflow:auto}
+ .nexo-client-shell>main>.nexo-crm-page {height:auto}
+}
+/* Clear tracking setup and recoverable connection feedback. */
+.nexo-tracking-status {display:flex;align-items:flex-start;gap:12px;padding:17px;background:#20281c;border:1px solid #475438;border-radius:10px;margin-bottom:25px;color:#c9ddb0}
+.nexo-tracking-status[data-ready=false] {background:#29261f;border-color:#625137;color:#e2c797}
+.nexo-tracking-status>svg {flex-shrink:0;margin-top:2px}
+.nexo-tracking-status strong {font-size:12px;font-weight:600}
+.nexo-tracking-status p,.nexo-tracking-help {font-size:12px;line-height:1.8;color:#b2beb0;margin-top:7px}
+.nexo-settings-subheading {font-size:13px;font-weight:600;border-top:1px solid #343a41;padding-top:24px;margin:3px 0 20px}
+.nexo-dashboard-feedback {flex-wrap:wrap;gap:12px}
+.nexo-dashboard-feedback>div {flex:1;min-width:220px}
+.nexo-feedback:has(a) {flex-wrap:wrap}
+
 /* Conversation surfaces need paired text/background colors, including legacy modals. */
 .nexo-lead-modal {background:#1b2023;color:#edf3f6;border:1px solid #3a454a}
 .nexo-lead-header {background:#1b2023;border-color:#3a454a}
@@ -348,7 +417,7 @@
  .nexo-workspace {padding:24px 18px}.nexo-version {display:none}.nexo-page-top {padding-bottom:18px}.nexo-eyebrow {font-size:9px}
  .nexo-page-heading {margin:27px 0 24px;align-items:flex-start;gap:12px}.nexo-page-heading h1 {font-size:35px}.nexo-page-heading p {font-size:12px;max-width:215px}
  .nexo-heading-label {font-size:8px;letter-spacing:1.5px}.nexo-page-heading>.nexo-primary {font-size:0;gap:0;padding:12px;min-width:44px;min-height:44px;margin-top:22px}
- .nexo-page-heading>.nexo-primary>svg {width:20px;height:20px}.nexo-page-heading.compact {flex-direction:column}.nexo-page-heading.compact h1 {font-size:29px}
+ .nexo-page-heading>.nexo-primary>svg {width:20px;height:20px}.nexo-page-heading.compact {flex-direction:column;align-items:flex-start}.nexo-page-heading.compact h1 {font-size:29px}
  .nexo-stats {grid-template-columns:1fr 1fr;gap:10px;margin-bottom:23px}.nexo-stat {padding:17px 15px}.nexo-stat>div>span {font-size:8px;letter-spacing:.5px}.nexo-stat strong {font-size:30px;margin-top:14px}.nexo-stat small {font-size:10px}
  .nexo-directory-top {padding:21px 17px 17px;gap:17px}.nexo-directory-top h2 {font-size:15px}.nexo-directory-top p {font-size:11px}
  .nexo-filter-row {padding:0 17px;gap:23px}.nexo-filter-row button {font-size:11px;min-height:46px}

@@ -6,11 +6,7 @@ import { getConfig } from "@/lib/clients";
 /** Retorna a URL base pública correta mesmo dentro de Docker/EasyPanel */
 async function getPublicBase(req: NextRequest): Promise<string> {
   const config = (await getConfig());
-  if (config.appBaseUrl) return config.appBaseUrl.replace(/\/$/, "");
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (host) return `${proto}://${host}`;
-  return req.nextUrl.origin;
+  return (process.env.APP_BASE_URL || config.appBaseUrl || req.nextUrl.origin).replace(/\/$/, "");
 }
 
 // GET /api/agent/google-ads-auth — inicia OAuth do Google Ads (conexão única

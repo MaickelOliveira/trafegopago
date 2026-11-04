@@ -1,6 +1,6 @@
 export function ownsAdAccount(accounts: { id: string; platform: string }[], platform: "meta" | "google", accountId: string): boolean {
   const normalize = (value: string) => platform === "meta" ? value.replace(/^act_/, "") : value.replace(/-/g, "");
-  if (!/^(?:act_)?\d+$/.test(accountId)) return false;
+  if (!(platform === "meta" ? /^(?:act_)?\d+$/ : /^\d+(?:-\d+)*$/).test(accountId)) return false;
   return accounts.some(account => account.platform === platform && normalize(account.id) === normalize(accountId));
 }
 

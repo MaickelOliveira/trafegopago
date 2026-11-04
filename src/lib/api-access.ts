@@ -93,7 +93,7 @@ export async function authorizeApi(request: NextRequest): Promise<NextResponse |
     const client=await getClientById(session.clientId!);
     return client && ownsAdAccount(client.adAccounts,"meta",request.nextUrl.searchParams.get("accountId")!) ? null : denied();
   }
-  const accountRead = pathname.match(/^\/api\/(meta|google-ads)\/((?:act_)?\d+)\/(?:campaigns(?:\/\d+\/adsets(?:\/\d+\/ads)?)?|insights)$/);
+  const accountRead = pathname.match(/^\/api\/(meta|google-ads)\/((?:act_)?\d[\d-]*)\/(?:campaigns(?:\/\d+\/adsets(?:\/\d+\/ads)?)?|insights)$/);
   if (accountRead && request.method === "GET") {
     if (session.role !== "client") return denied();
     const client = await getClientById(session.clientId!);

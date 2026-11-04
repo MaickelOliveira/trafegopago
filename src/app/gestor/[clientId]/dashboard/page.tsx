@@ -13,6 +13,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ clie
 
   return (
     <DashboardView
+      canManageConnection
       client={{
         id: client.id,
         name: client.name,

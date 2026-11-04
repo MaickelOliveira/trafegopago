@@ -37,8 +37,8 @@ export function ClientCrm({ clientId, clientName, clientColor, initialLeads, ini
   if (funnels.length === 0 && !creating) ensureFunnel();
 
   return (
-    <div className="h-[calc(100vh-57px)] flex flex-col">
-      <div className="flex items-center justify-between px-6 lg:px-8 pt-5 pb-0 flex-shrink-0">
+    <div className="nexo-crm-page h-[calc(100vh-57px)] flex flex-col">
+      <div className="nexo-crm-page-heading flex items-center justify-between px-6 lg:px-8 pt-5 pb-0 flex-shrink-0">
         <div>
           <h1 className="text-xl font-bold text-slate-900">CRM</h1>
           <p className="text-sm text-slate-500 mt-0.5">Gerencie seus leads — {clientName}</p>
@@ -46,7 +46,7 @@ export function ClientCrm({ clientId, clientName, clientColor, initialLeads, ini
         <ClientWhatsAppConnect />
       </div>
 
-      <div className="flex-1 min-h-0 p-6 lg:p-8 pt-4">
+      <div className="nexo-crm-board-area flex-1 min-h-0 p-6 lg:p-8 pt-4">
         {creating ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">

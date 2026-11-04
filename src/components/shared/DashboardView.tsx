@@ -66,13 +66,14 @@ function KPI({ label, value, sub, icon, trend }: {
 
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-export function DashboardView({ client }: { client: Client }) {
+export function DashboardView({ client, canManageConnection = false }: { client: Client; canManageConnection?: boolean }) {
   const [selectedAccountId,setSelectedAccountId] = useState<string|undefined>();
   const account=client.adAccounts.find(item=>item.id===selectedAccountId)??client.adAccounts[0];
   const [datePreset, setDatePreset] = useState("last_30d");
   const [campaigns, setCampaigns] = useState<DashboardCampaign[]>([]);
   const [summary,setSummary] = useState<DashboardInsights|null>(null);
   const [adsError,setAdsError] = useState<string|null>(null);
+  const [adsReconnect,setAdsReconnect] = useState(false);
   const [crmError,setCrmError] = useState<string|null>(null);
   const [reloadKey,setReloadKey] = useState(0);
   const [daily, setDaily]          = useState<DashboardDaily[]>([]);
@@ -92,7 +93,7 @@ export function DashboardView({ client }: { client: Client }) {
     loadDashboardData(account,client.id,datePreset,controller.signal).then(result=>{
       if(controller.signal.aborted)return;
       setCampaigns(result.campaigns);setDaily(result.daily);setSummary(result.summary);
-      setAdsError(result.adsError);setCrmError(result.crmError);setCrmLeads(result.crmLeads);
+      setAdsError(result.adsError);setAdsReconnect(result.adsReconnect);setCrmError(result.crmError);setCrmLeads(result.crmLeads);
     }).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
   },[account,client.id,datePreset,reloadKey]);
@@ -202,7 +203,7 @@ export function DashboardView({ client }: { client: Client }) {
         </div>
       </div>
 
-      {(adsError||crmError)&&<div role="alert" className="nexo-feedback error"><div>{adsError&&<p>{adsError}</p>}{crmError&&<p>{crmError}</p>}</div><button className="nexo-secondary" onClick={()=>setReloadKey(value=>value+1)}>Tentar novamente</button></div>}
+      {(adsError||crmError)&&<div role="alert" className="nexo-feedback error nexo-dashboard-feedback"><div>{adsError&&<p>{adsError}</p>}{adsReconnect&&!canManageConnection&&<p>Peça ao gestor para renovar a conexão da agência.</p>}{crmError&&<p>{crmError}</p>}</div>{adsReconnect&&canManageConnection&&<a className="nexo-secondary" href="/api/agent/google-ads-auth">Reconectar Google Ads</a>}<button className="nexo-secondary" onClick={()=>setReloadKey(value=>value+1)}>Tentar novamente</button></div>}
       {/* KPIs */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <KPI label="Investimento" value={adsAvailable?fmt(totalSpend):"—"} sub={adsAvailable?`CPM médio ${fmt(avgCpm)}`:"Dados indisponíveis"} icon="💸" />

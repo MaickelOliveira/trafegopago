@@ -7,6 +7,7 @@ export type DashboardCampaign = {id:string;name:string;status:string;insights:Da
 export type DashboardDaily = {date:string;spend:number;clicks:number;impressions:number;reach?:number};
 export type DashboardAccount = {id:string;platform:string};
 export type DashboardCrmLead = {id:string;name:string;phone:string;realPhone?:string;status:string;funnelId:string;createdAt:string;updatedAt?:string;value?:number|null};
+class GoogleAuthorizationExpired extends Error {}
 const number=(value:unknown)=>Number.isFinite(Number(value))?Number(value):0;
 const object=(value:unknown):Record<string,unknown>=>value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
 
@@ -27,9 +28,20 @@ function daily(value:unknown):DashboardDaily[]{
  return value.map(item=>{const row=object(item);return{date:String(row.date??""),spend:number(row.spend),impressions:number(row.impressions),clicks:number(row.clicks),...(row.reach!=null?{reach:number(row.reach)}:{})};});
 }
 export async function loadDashboardData(account:DashboardAccount|undefined,clientId:string,datePreset:string,signal?:AbortSignal,request:typeof fetch=fetch){
- const read=async(url:string)=>{const response=await request(url,{signal});if(!response.ok)throw Error("Unavailable dashboard source");return response.json();};
+ const read=async(url:string)=>{
+  const response=await request(url,{signal});
+  if(!response.ok){
+   // Classify only a known OAuth failure; never display a provider response or credentials.
+   if(url.startsWith("/api/google-ads/")){
+    const body=await response.json().catch(()=>null);
+    if(typeof body?.error==="string"&&/\binvalid_grant\b/i.test(body.error))throw new GoogleAuthorizationExpired();
+   }
+   throw Error("Unavailable dashboard source");
+  }
+  return response.json();
+ };
  const supported=account&&(account.platform==="meta"||account.platform==="google");
- const base=supported?`/api/${account.platform==="google"?"google-ads":"meta"}/${encodeURIComponent(account.id)}`:null;
+ const base=supported?`/api/${account.platform==="google"?"google-ads":"meta"}/${encodeURIComponent(account.platform==="google"?account.id.replace(/-/g,""):account.id)}`:null;
  const query=new URLSearchParams({datePreset}).toString();
  const [campaignResult,dailyResult,summaryResult,crmResult]=await Promise.allSettled([
   base?read(`${base}/campaigns?${query}`).then(value=>campaigns(account!.platform,value)):Promise.resolve([]),
@@ -37,8 +49,9 @@ export async function loadDashboardData(account:DashboardAccount|undefined,clien
   base?read(`${base}/insights?${query}`).then(value=>{if(value!==null&&(!value||typeof value!=="object"||Array.isArray(value)||"error" in value))throw Error("Invalid summary response");return dashboardInsights(account!.platform,value);}):Promise.resolve(null),
   read(`/api/crm/leads?clientId=${encodeURIComponent(clientId)}`).then(value=>{if(!Array.isArray(value))throw Error("Invalid CRM response");return value as DashboardCrmLead[];}),
  ]);
- const adsError=!base?"Conecte uma conta da Meta ou do Google para consultar os indicadores.":[campaignResult,dailyResult,summaryResult].some(result=>result.status==="rejected")?"Não foi possível atualizar todos os dados de anúncios. Confira a conexão e tente novamente.":null;
+ const adsReconnect=[campaignResult,dailyResult,summaryResult].some(result=>result.status==="rejected"&&result.reason instanceof GoogleAuthorizationExpired);
+ const adsError=!base?"Conecte uma conta da Meta ou do Google para consultar os indicadores.":adsReconnect?"O Google recusou a autorização salva. É necessário reconectar o Google Ads com a conta que acessa os anúncios.":[campaignResult,dailyResult,summaryResult].some(result=>result.status==="rejected")?"Não foi possível atualizar todos os dados de anúncios. Confira a conexão e tente novamente.":null;
  return {campaigns:campaignResult.status==="fulfilled"?campaignResult.value:[],daily:dailyResult.status==="fulfilled"?dailyResult.value:[],
-  summary:summaryResult.status==="fulfilled"?summaryResult.value:null,adsError,
+  summary:summaryResult.status==="fulfilled"?summaryResult.value:null,adsError,adsReconnect,
   crmLeads:crmResult.status==="fulfilled"?crmResult.value:[],crmError:crmResult.status==="rejected"?"Não foi possível atualizar os indicadores do CRM.":null};
 }
