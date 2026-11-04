@@ -2,7 +2,7 @@ import { readRecordMap, writeRecordMap } from "./record-store";
 import { withDataTransaction } from "./document-store";
 import path from "path";
 
-export type ChatMessage = { role: "user" | "assistant"; content: string; ts: number; type?: "text" | "audio" | "image"; mediaUrl?: string };
+export type ChatMessage = { role: "user" | "assistant"; content: string; ts: number; messageId?: string; type?: "text" | "audio" | "image"; mediaUrl?: string };
 
 type Conversation = {
   messages: ChatMessage[];
@@ -252,8 +252,9 @@ export async function addMessage(
   // Deduplicação: ignora mensagem idêntica com mesmo role em janela de 10s
   const DEDUP_MS = 10_000;
   const lastMsg = conv.messages[conv.messages.length - 1];
-  if (lastMsg && lastMsg.role === msg.role && lastMsg.content === msg.content && Math.abs(msg.ts - lastMsg.ts) < DEDUP_MS) {
-    return;
+  if (msg.messageId && conv.messages.some(existing => existing.messageId === msg.messageId && existing.role === msg.role)) return false;
+  if (!msg.messageId && lastMsg && lastMsg.role === msg.role && lastMsg.content === msg.content && lastMsg.type === msg.type && lastMsg.mediaUrl === msg.mediaUrl && Math.abs(msg.ts - lastMsg.ts) < DEDUP_MS) {
+    return false;
   }
 
   conv.messages.push(msg);
@@ -271,7 +272,22 @@ export async function addMessage(
   if (msg.role === "user") conv.unread = true;
   all[existingKey] = conv;
   (await save(all));
+  return true;
 
+  });
+}
+
+/** A slow transcription must update its own message, even after a newer reply. */
+export async function updateMessage(phone: string, match: { messageId?: string; ts: number; role: ChatMessage["role"] }, patch: Partial<Pick<ChatMessage, "content" | "type" | "mediaUrl">>, clientId: string, connId: string) {
+  return withDataTransaction(async () => {
+    const all = await load(clientId, phone, connId);
+    const key = scopedKeys(all, phone, clientId, connId)[0];
+    if (!key) return false;
+    const matches = all[key].messages.filter(message => message.role === match.role && (match.messageId ? message.messageId === match.messageId : message.ts === match.ts));
+    if (matches.length !== 1) return false;
+    Object.assign(matches[0], patch);
+    await save(all);
+    return true;
   });
 }
 

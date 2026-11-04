@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getFunnels } from "@/lib/funnels";
 import { getClients } from "@/lib/clients";
 import { captureWhatsAppLead, hasLeadByPhone, getChatLeadByPhone as getLeadByPhone, markLeadNeedsAttention, toDialablePhone } from "@/lib/leads";
-import { addMessage,getAiPaused, getHistory } from "@/lib/conversations";
+import { addMessage,getAiPaused, getHistory, updateMessage } from "@/lib/conversations";
 import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection, getConfig, isWithinBusinessHours } from "@/lib/clients";
 import { isAgentPhoneIgnored } from "@/lib/agent-phone-policy";
@@ -15,6 +15,8 @@ import { sendTemplate } from "@/lib/waba-templates";
 import { generateSummaryText } from "@/lib/summary-generator";
 import { extractAndWriteToSheet } from "@/lib/sheet-extractor";
 import { processKanbanActions } from "@/lib/kanban-agent";
+import { chatMediaMessage } from "@/lib/chat-media-message";
+import type { ChatMessage } from "@/lib/conversations";
 import { transcribeMedia, type MediaKind } from "@/lib/media-transcribe";
 import { getAdInfoById } from "@/lib/meta-api";
 import type { GeminiAction } from "@/lib/gemini-agent";
@@ -66,6 +68,7 @@ export async function POST(req: NextRequest) {
       const matches = funnels.flatMap(funnel => (funnel.connections ?? []).filter(connection => connection.type === "meta" && connection.metaPhoneNumberId === phoneNumberId).map(connection => ({ funnel, connection })));
       if (matches.length !== 1) continue;
       const mapped = matches[0];
+      if (!mapped.funnel.clientId) continue;
       funnelId = mapped.funnel.id;
       clientId = mapped.funnel.clientId ?? null;
       connId = mapped.connection.id;
@@ -95,41 +98,25 @@ export async function POST(req: NextRequest) {
         if (!phone) continue;
         let text = msg.text?.body || msg.button?.text || "";
 
-        // ── Mídia (áudio/imagem/documento/vídeo): transcreve antes de seguir ──
-        // A Graph API manda só o media id — sem isso a mensagem chegava sem
-        // texto e era descartada no continue abaixo, então a IA nunca via
-        // nem respondia a áudios/fotos/documentos enviados via API oficial.
-        const mediaTypeMap: Record<string, MediaKind> = { audio: "audio", image: "image", document: "document", video: "video" };
-        const mediaKind = mediaTypeMap[msg.type as string];
-        if (!text.trim() && mediaKind && metaToken) {
-          const mediaObj = msg[msg.type as string] as { id?: string; mime_type?: string; caption?: string } | undefined;
-          if (mediaObj?.id) {
-            const cidForKey = clientId ?? "sem-cliente";
-            const clientForKey = cidForKey !== "sem-cliente" ? (await getClientById(cidForKey)) : null;
-            const agentCfgForKey = clientForKey && connId ? getAgentConfigForConnection(clientForKey, connId) : undefined;
-            const apiKey = (await getGeminiApiKey(agentCfgForKey?.geminiApiKey ?? undefined));
-            if (apiKey) {
-              const buffer = await downloadMetaMedia(mediaObj.id, metaToken);
-              if (buffer) {
-                const transcription = await transcribeMedia(buffer, mediaObj.mime_type ?? "application/octet-stream", apiKey, mediaKind);
-                if (transcription) {
-                  text = mediaObj.caption ? `${mediaObj.caption}\n${transcription}` : transcription;
-                  ;
-                }
-              } else {
-                console.error(`[meta] Falha ao baixar mídia (${mediaKind}) id=${mediaObj.id}`);
-              }
-            } else {
-              console.error(`[meta] Sem apiKey do Gemini configurada — não foi possível transcrever mídia (${mediaKind})`);
-            }
-          }
-        }
-
-        if (!text.trim()) continue;
-
-        const pushName = value?.contacts?.find((c: { wa_id: string }) => c.wa_id === msg.from)?.profile?.name ?? phone;
         const cid = clientId ?? "sem-cliente";
         const ts = Date.now();
+        const messageId = typeof msg.id === "string" && msg.id.length <= 160 ? msg.id : undefined;
+        let storedMedia: ChatMessage | undefined;
+        let pendingTranscription: { buffer: Buffer; mime: string; kind: MediaKind; caption?: string } | undefined;
+        const mediaTypeMap: Record<string, MediaKind> = { audio: "audio", image: "image", document: "document", video: "video" };
+        const mediaKind = mediaTypeMap[msg.type as string];
+        const mediaObj = mediaKind ? msg[msg.type as string] as { id?: string; mime_type?: string; caption?: string } | undefined : undefined;
+        if (mediaKind) {
+          text = mediaObj?.caption?.trim() || text || (mediaKind === "audio" ? "[Áudio]" : mediaKind === "image" ? "[Imagem]" : mediaKind === "video" ? "[Vídeo]" : "[Documento]");
+          const buffer = mediaObj?.id && metaToken ? await downloadMetaMedia(mediaObj.id, metaToken).catch(() => null) : null;
+          if (mediaKind === "audio" || mediaKind === "image") {
+            storedMedia = await chatMediaMessage({ role: "user", content: text, ts, messageId, type: mediaKind, buffer: buffer ?? undefined, mimeType: mediaObj?.mime_type || (mediaKind === "audio" ? "audio/ogg" : "image/jpeg"), phone, clientId: cid, connId: connId ?? undefined });
+          }
+          if (buffer) pendingTranscription = { buffer, mime: mediaObj?.mime_type || (mediaKind === "audio" ? "audio/ogg" : "application/octet-stream"), kind: mediaKind, caption: mediaObj?.caption };
+
+        }
+        if (!text.trim()) continue;
+        const pushName = value?.contacts?.find((c: { wa_id: string }) => c.wa_id === msg.from)?.profile?.name ?? phone;
 
         // ── Lead / CRM ────────────────────────────────────────────────────
         const effectiveFunnelId = funnelId ?? "default";
@@ -205,7 +192,25 @@ export async function POST(req: NextRequest) {
 
         // ── Histórico ────────────────────────────────────────────────────
         const historyForKanbanMeta = (await getHistory(phone, clientId, connId ?? undefined));
-        (await addMessage(phone, { role: "user", content: text, ts }, clientId, { connId: connId ?? undefined, contactName: pushName !== phone ? pushName : undefined }));
+        const added = await addMessage(phone, storedMedia ? { ...storedMedia, content: text } : { role: "user", content: text, ts, ...(messageId ? { messageId } : {}) }, clientId, { connId: connId ?? undefined, contactName: pushName !== phone ? pushName : undefined });
+        if (!added) continue;
+        // The attachment is already visible; transcription enriches the same message.
+        if (pendingTranscription) {
+          const clientForKey = await getClientById(cid);
+          const agentCfgForKey = clientForKey && connId ? getAgentConfigForConnection(clientForKey, connId) : undefined;
+          const apiKey = await getGeminiApiKey(agentCfgForKey?.geminiApiKey ?? undefined);
+          if (apiKey) {
+            try {
+              const { buffer, mime, kind, caption } = pendingTranscription;
+              const transcription = await transcribeMedia(buffer, mime, apiKey, kind);
+              if (transcription) {
+                text = caption ? `${caption}\n${transcription}` : transcription;
+                await updateMessage(phone, { messageId, ts, role: "user" }, { content: text }, cid, connId!);
+              }
+            } catch { console.warn("[meta] Transcrição indisponível; mensagem e mídia preservadas."); }
+          }
+        }
+
 
         // ── Agente Kanban — roda sempre, independente da IA de atendimento ──
         if (cid !== "sem-cliente") {

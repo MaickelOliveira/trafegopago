@@ -6,6 +6,7 @@ export function matchesUploadType(extension: string, data: Buffer): boolean {
   if (extension === ".webp") return data.subarray(0, 4).toString() === "RIFF" && data.subarray(8, 12).toString() === "WEBP";
   if(extension===".webm")return starts("1a45dfa3");
   if(extension===".ogg")return data.subarray(0,4).toString()==="OggS";
+  if(extension===".wav")return data.subarray(0,4).toString()==="RIFF"&&data.subarray(8,12).toString()==="WAVE";
   if(extension===".mp3")return data.subarray(0,3).toString()==="ID3"||(data[0]===255&&(data[1]&224)===224);
   if (extension === ".mp4" || extension === ".m4a") return data.subarray(4, 8).toString() === "ftyp";
   if (extension === ".pdf") return data.subarray(0, 5).toString() === "%PDF-";

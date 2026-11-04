@@ -610,10 +610,10 @@ export async function getBase64FromMediaMessage(
       method: "POST",
       headers: { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) },
       body: JSON.stringify({ message: { key: { id: messageId } }, convertToMp4: false }),
+      signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error(`[evolution-api] getBase64FromMediaMessage FALHOU status=${res.status} instance=${instanceName} messageId=${messageId} body=${body.slice(0, 300)}`);
+      console.error(`[evolution-api] Falha ao consultar mídia: HTTP ${res.status}`);
       return null;
     }
     const data = await res.json() as Record<string, unknown>;
@@ -621,8 +621,8 @@ export async function getBase64FromMediaMessage(
     const mimetype = (data.mimetype as string) || "";
     if (!base64) return null;
     return { base64, mimetype };
-  } catch (e) {
-    console.error(`[evolution-api] getBase64FromMediaMessage EXCEPTION instance=${instanceName} messageId=${messageId}`, e);
+  } catch {
+    console.error("[evolution-api] Consulta de mídia indisponível.");
     return null;
   }
 }

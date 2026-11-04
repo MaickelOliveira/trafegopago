@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { writeDocument, readDocument } from "../document-store";
-import { getHistory, getAllConversationsByClientId, setAiPaused, addMessage } from "../conversations";
+import { getHistory, getAllConversationsByClientId, setAiPaused, addMessage, updateMessage } from "../conversations";
 let directory: string, cwd: string;
 beforeEach(async () => { cwd = process.cwd(); directory = await mkdtemp(path.join(tmpdir(), "tp-scope-")); process.chdir(directory); });
 afterEach(async () => { process.chdir(cwd); await rm(directory, { recursive: true, force: true }); });
@@ -41,6 +41,22 @@ describe("conversation isolation", () => {
     const old=Date.now()-40*24*60*60*1000;
     await writeDocument("conversations.json",{[`a:x:${phone}`]:{clientId:"a",connId:"x",messages:[{role:"user",content:"historical fixture",ts:old}],lastActivity:old}});
     expect((await getHistory(phone,"a","x"))[0].content).toBe("historical fixture");expect(await getHistory(phone,"b","x")).toEqual([]);
+  });
+
+  it("keeps separate voice notes with identical placeholders and deduplicates their provider IDs", async () => {
+    const first={role:"user" as const,content:"[Áudio de 2s]",ts:1000,type:"audio" as const,messageId:"voice-a",mediaUrl:"/api/media/a.ogg"};
+    expect(await addMessage(phone,first,"a",{connId:"x"})).toBe(true);
+    expect(await addMessage(phone,{...first,ts:2000,messageId:"voice-b",mediaUrl:"/api/media/b.ogg"},"a",{connId:"x"})).toBe(true);
+    expect(await addMessage(phone,{...first,ts:30000},"a",{connId:"x"})).toBe(false);
+    expect(await getHistory(phone,"a","x")).toHaveLength(2);
+  });
+  it("targets late transcription without overwriting a newer message or losing its audio", async () => {
+    await addMessage(phone,{role:"user",content:"[Áudio]",ts:1000,type:"audio",messageId:"voice-a",mediaUrl:"/api/media/a.ogg"},"a",{connId:"x"});
+    await addMessage(phone,{role:"user",content:"Mensagem posterior",ts:2000,messageId:"text-b"},"a",{connId:"x"});
+    expect(await updateMessage(phone,{messageId:"voice-a",ts:1000,role:"user"},{content:"Transcrição fictícia"},"a","x")).toBe(true);
+    expect(await getHistory(phone,"a","x")).toMatchObject([{content:"Transcrição fictícia",type:"audio",mediaUrl:"/api/media/a.ogg"},{content:"Mensagem posterior"}]);
+    expect(await updateMessage(phone,{messageId:"voice-a",ts:1000,role:"user"},{content:"Must not cross channels"},"a","y")).toBe(false);
+    expect(await updateMessage(phone,{messageId:"voice-a",ts:1000,role:"user"},{content:"Must not cross clients"},"b","x")).toBe(false);
   });
 
 });

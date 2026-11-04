@@ -40,3 +40,15 @@ Referências oficiais:
 - [Erros comuns do Google Ads](https://developers.google.com/google-ads/api/docs/get-started/common-errors)
 - [Expiração e revogação de autorizações Google](https://developers.google.com/identity/protocols/oauth2#expiration)
 - [Deduplicação de eventos Meta](https://developers.facebook.com/documentation/ads-commerce/conversions-api/deduplicate-pixel-and-server-events)
+
+## Arquivos de áudio e imagem no histórico
+
+O recebimento pela Evolution e pela API oficial deve guardar a referência do arquivo junto da mensagem. Essa gravação ocorre independentemente da transcrição e de a IA estar ligada. Mensagens do operador enviadas pelo celular também precisam dessa referência.
+
+A mídia é salva em arquivo privado, com formato e tamanho conferidos, e recebe o proprietário e o canal de atendimento. Um arquivo ausente mantém a mensagem identificada como áudio ou imagem, com aviso honesto no chat. Conteúdo de falhas do provedor não é registrado junto com credenciais.
+
+O identificador da mensagem distingue duas notas de voz com a mesma duração e evita duplicação quando o provedor repete um aviso. A transcrição posterior atualiza a mensagem correspondente, preserva o arquivo e não substitui uma mensagem mais recente. A intervenção humana pausa a IA e cancela os acompanhamentos apenas do canal correspondente.
+
+A recuperação de arquivos de mensagens antigas deve consultar o provedor por leitura e vincular somente correspondências inequívocas de cliente, canal, direção e horário. Não deve reproduzir o webhook original, disparar a IA ou reenviar mensagens ao contato.
+
+Conferência local desta correção: mensagens simuladas nas duas direções, IA pausada, repetição do aviso sem duplicação, arquivo idêntico ao original, acesso protegido e cancelamento de acompanhamento restrito ao canal. A API oficial também foi testada sem chave de transcrição e com arquivo indisponível.

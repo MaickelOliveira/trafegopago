@@ -1,6 +1,7 @@
 import { fetchPublicResource } from "@/lib/public-download";
 import { registerMediaFile } from "./media-access";
 import { randomUUID } from "node:crypto";
+import { matchesUploadType } from "./upload-signature";
 /**
  * Faz download e descriptografia de mídia do WhatsApp (AES-256-CBC + HKDF),
  * depois transcreve/descreve via Gemini.
@@ -10,7 +11,7 @@ import { randomUUID } from "node:crypto";
  * Para imagem/vídeo/documento usa inlineData base64.
  */
 import { createDecipheriv, hkdfSync, createHmac, timingSafeEqual } from "crypto";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "fs";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
@@ -18,19 +19,20 @@ import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 const MEDIA_DIR = path.join(process.cwd(), "data", "media");
 
 function ensureMediaDir() {
-  if (!existsSync(MEDIA_DIR)) mkdirSync(MEDIA_DIR, { recursive: true });
+  if (!existsSync(MEDIA_DIR)) mkdirSync(MEDIA_DIR, { recursive: true, mode: 0o700 });
 }
 
 export async function saveDecryptedMedia(buffer: Buffer, _phone: string, _ts: number, mimeType: string, clientId: string, connId?: string): Promise<string> {
+  const mime = mimeType.split(";")[0].trim().toLowerCase();
+  const extensions: Record<string, string> = { "audio/ogg": "ogg", "application/ogg": "ogg", "audio/opus": "ogg", "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a", "audio/webm": "webm", "audio/wav": "wav", "audio/x-wav": "wav", "video/mp4": "mp4", "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf" };
+  const ext = extensions[mime];
+  if (!clientId || !ext || !buffer.length || buffer.length > 25 * 1024 * 1024 || !matchesUploadType(`.${ext}`, buffer)) throw Error("Arquivo de mídia inválido.");
   ensureMediaDir();
-  const ext = mimeType.includes("mp4") || mimeType.includes("video") ? "mp4"
-    : mimeType.includes("webp") ? "webp"
-    : mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg"
-    : mimeType.includes("png") ? "png"
-    : "ogg";
   const filename = `${randomUUID()}.${ext}`;
-  writeFileSync(path.join(MEDIA_DIR, filename), buffer);
-  await registerMediaFile(`/api/media/${filename}`, clientId, connId);
+  const destination = path.join(MEDIA_DIR, filename);
+  writeFileSync(destination, buffer, { mode: 0o600, flag: "wx" });
+  try { await registerMediaFile(`/api/media/${filename}`, clientId, connId); }
+  catch (error) { unlinkSync(destination); throw error; }
   return `/api/media/${filename}`;
 }
 

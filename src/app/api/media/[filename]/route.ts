@@ -11,11 +11,16 @@ const MEDIA_DIR = path.join(process.cwd(), "data", "media");
 const MIME_MAP: Record<string, string> = {
   ogg: "audio/ogg",
   mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  wav: "audio/wav",
+  webm: "audio/webm",
   mp4: "video/mp4",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
+  gif: "image/gif",
+  pdf: "application/pdf",
 };
 
 export async function GET(

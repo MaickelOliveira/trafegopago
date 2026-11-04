@@ -8,7 +8,8 @@ import { getFunnels } from "@/lib/funnels";
 import { getLeads, getChatLeadByPhone as getLeadByPhone, captureWhatsAppLead, hasLeadByPhone, updateLead, markLeadNeedsAttention, normalizePhone } from "@/lib/leads";
 import { getConfig, getClientById, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
-import { getHistory, addMessage, setAiPaused,getAiPaused, sanitizeContactName, updateLastMessage, ensureBrCountryCode } from "@/lib/conversations";
+import { getHistory, addMessage, setAiPaused,getAiPaused, sanitizeContactName, updateMessage, ensureBrCountryCode } from "@/lib/conversations";
+import { chatMediaMessage, decodeChatMediaBase64 } from "@/lib/chat-media-message";
 import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/whatsapp-sent";
 import { splitMessage } from "@/lib/message-text";
 import { runGeminiAgent, isGreetingOnlyActive } from "@/lib/gemini-agent";
@@ -32,7 +33,7 @@ import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
-import { restartFollowUpSequence } from "@/lib/followups";
+import { restartFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
 import {
   upsertPending,
   getPendingForPhone,
@@ -415,9 +416,8 @@ export async function POST(
     contentForHistory = `[Imagem]${caption ? `: ${caption}` : ""}`;
     // ⚠️ Base64 inline não confirmado — ver getBase64FromMediaMessage abaixo,
     // chamado depois se este campo não vier preenchido pelo webhook.
-    const inlineBase64 = typeInfo.obj.base64 as string | undefined;
-    if (inlineBase64) {
-      mediaBuffer = Buffer.from(inlineBase64, "base64");
+    mediaBuffer = decodeChatMediaBase64(typeInfo.obj.base64 ?? messageObj.base64 ?? evoData.base64);
+    if (mediaBuffer) {
       mediaMime = String(typeInfo.obj.mimetype ?? "image/jpeg");
       mediaKind = "image";
     }
@@ -425,9 +425,8 @@ export async function POST(
   } else if (typeInfo?.type === "audioMessage") {
     const dur = typeInfo.obj.seconds ? ` de ${Math.round(Number(typeInfo.obj.seconds))}s` : "";
     contentForHistory = `[Áudio${dur}]`;
-    const inlineBase64 = typeInfo.obj.base64 as string | undefined;
-    if (inlineBase64) {
-      mediaBuffer = Buffer.from(inlineBase64, "base64");
+    mediaBuffer = decodeChatMediaBase64(typeInfo.obj.base64 ?? messageObj.base64 ?? evoData.base64);
+    if (mediaBuffer) {
       mediaMime = String(typeInfo.obj.mimetype ?? "audio/ogg");
       mediaKind = "audio";
     }
@@ -453,7 +452,7 @@ export async function POST(
   if (isMediaMsg && key.id) {
     const fetched = await getBase64FromMediaMessage(evoSession.instanceName, evoSession.instanceApiKey, key.id).catch(() => null);
     if (fetched) {
-      mediaBuffer = Buffer.from(fetched.base64, "base64");
+      mediaBuffer = decodeChatMediaBase64(fetched.base64);
       mediaMime = fetched.mimetype || (typeInfo?.type === "audioMessage" ? "audio/ogg" : "image/jpeg");
       mediaKind = typeInfo?.type === "audioMessage" ? "audio" : "image";
     } else {
@@ -527,6 +526,12 @@ export async function POST(
   if (!funnel?.clientId || (evoSession.clientId && evoSession.clientId !== funnel.clientId)) return NextResponse.json({ok:true,ignored:"connection_ownership_conflict"});
   const clientId = funnel.clientId;
   const connId = evoSession.id;
+  const historyTs = Date.now();
+  const messageId = typeof key.id === "string" && key.id.length <= 160 ? key.id : undefined;
+  const attachmentType = typeInfo?.type === "audioMessage" ? "audio" : typeInfo?.type === "imageMessage" ? "image" : undefined;
+  const historyMessage = async (role: "user" | "assistant") => attachmentType
+    ? chatMediaMessage({ role, content: contentForHistory, ts: historyTs, type: attachmentType, messageId, buffer: mediaBuffer, mimeType: mediaMime || (attachmentType === "audio" ? "audio/ogg" : "image/jpeg"), phone, clientId, connId })
+    : { role, content: contentForHistory, ts: historyTs, ...(messageId ? { messageId } : {}) };
 
   // Base pra montar o link do formulário de hóspedes (ver resolveGuestFormMarker).
 
@@ -648,13 +653,13 @@ export async function POST(
 
   // ── Salva a mensagem na conversa (somente mensagens recebidas do lead) ──
   if (contentForHistory.trim() && !fromMe) {
-    const ts = Date.now();
-    (await addMessage(
+    const added = await addMessage(
       phone,
-      { role: "user", content: contentForHistory, ts },
+      await historyMessage("user"),
       clientId,
       { connId, contactName: sanitizeContactName(pushName !== phone ? pushName : undefined, phone) },
-    ));
+    );
+    if (!added) return NextResponse.json({ ok: true });
   }
 
   // ── Automações por palavra-chave (message_received) ──
@@ -685,7 +690,8 @@ export async function POST(
 
     if (text.trim()) {
       ;
-      (await addMessage(phone, { role: "assistant", content: text, ts: Date.now() }, clientId, { connId }));
+      const added = await addMessage(phone, await historyMessage("assistant"), clientId, { connId });
+      if (!added) return NextResponse.json({ ok: true });
       const activeClientFM = clientId !== "sem-cliente" ? (await getClientById(clientId)) : null;
       const agentCfgFM = activeClientFM ? getAgentConfigForConnection(activeClientFM, connId) : undefined;
       const resumeKeyword = agentCfgFM?.aiResumeKeyword?.trim();
@@ -699,8 +705,9 @@ export async function POST(
         // que o operador respondeu pelo próprio celular ainda dispara logo
         // depois, por cima da mensagem dele.
         (await cancelPendingForPhone(clientId, phone, connId));
+        await cancelFollowUpsForPhone(clientId, phone, connId);
       }
-      if (clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
+      if (!isPausing && clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
         (await restartFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId));
       }
     }
@@ -762,7 +769,7 @@ export async function POST(
           // da transcrição ficar pronta — sem isso, follow-ups e qualquer releitura
           // futura da conversa nunca veem o conteúdo real do áudio/imagem.
           const emoji = mediaKind === "audio" ? "🎙️" : mediaKind === "image" ? "📷" : "📎";
-          (await updateLastMessage(phone, { content: `${emoji} ${transcription}` }, clientId, connId));
+          await updateMessage(phone, { messageId, ts: historyTs, role: "user" }, { content: `${emoji} ${transcription}` }, clientId, connId);
         }
       } catch (e) {
         console.error("[Evolution Webhook] Erro na transcrição de mídia:", e);
