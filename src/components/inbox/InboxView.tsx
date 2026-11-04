@@ -5,6 +5,8 @@ import { QuickRepliesPicker, QuickRepliesManager, WabaTemplateVariablesPanel } f
 import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
 import type { WabaTemplate } from "@/lib/waba-templates";
 import { chatDayKey, chatDayLabel, chatTime, groupChatMessages } from "@/lib/chat-dates";
+import { ChatMessageContent } from "@/components/shared/ChatMessageContent";
+import { ArrowLeft, Check, MessageSquare, Search, Send, Zap } from "lucide-react";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -61,6 +63,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const [search, setSearch] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   // Quick Replies
@@ -96,7 +99,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
     if (newCount === 0) return;
     // Rola só no carregamento inicial ou quando chega msg nova E usuário não rolou p/ cima
     if (prevCount === 0 || (newCount > prevCount && !userScrolledUpRef.current)) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: prevCount === 0 ? "auto" : "smooth", block: "end" });
     }
   }, [messages]);
 
@@ -348,7 +351,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
     try {
       const form=new FormData();form.append("file",new File([blob],"gravacao.webm",{type:blob.type}));form.append("clientId",clientId);const connectionId=selectedConv?.connId??selectedConn;if(connectionId)form.append("connId",connectionId);
       const upload=await fetch("/api/upload",{method:"POST",body:form});const uploaded=await upload.json();if(!upload.ok)throw Error(uploaded.error||"Não foi possível preparar o áudio.");
-      const optimistic: ChatMessage = { role: "assistant", content: "[áudio]", ts: Date.now(), type: "audio" };
+      const optimistic: ChatMessage = { role: "assistant", content: "[áudio]", ts: Date.now(), type: "audio", mediaUrl: uploaded.url };
       isAtBottomRef.current = true;
       setMessages((prev) => [...prev, optimistic]);
 
@@ -374,6 +377,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const connConversations = conversations.filter((c) => {
     // Só mostra conversas que pertencem exatamente à conexão selecionada
     if (c.connId !== selectedConn) return false;
+    if (unreadOnly && !c.unread) return false;
     if (!search) return true;
     const s = search.toLowerCase();
     return (c.contactName ?? c.phone).toLowerCase().includes(s) || c.phone.includes(s);
@@ -387,31 +391,34 @@ export default function InboxView({ clientId, initialConversations = [], initial
   const activeConn = connections.find((c) => c.id === selectedConn);
 
   return (
-    <div className="flex h-full min-h-0 bg-[#111b21] text-white overflow-hidden">
+    <div className="nexo-inbox flex h-full min-h-0 text-white overflow-hidden" data-open={!!selected}>
       {/* ── Sidebar esquerda ── */}
-      <div className="w-[340px] min-w-[260px] shrink-0 flex flex-col border-r border-[#2a3942] bg-[#111b21]">
+      <div className="nexo-inbox-sidebar shrink-0 flex flex-col">
         {/* Header sidebar */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#202c33]">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-base">Mensagens</span>
+        <div className="nexo-inbox-list-header">
+          <div>
+            <p className="nexo-inbox-eyebrow">CENTRAL DE ATENDIMENTO</p>
+            <div className="flex items-center gap-2"><h2>Mensagens.</h2>
             {totalUnread > 0 && (
-              <span className="bg-[#00a884] text-black text-xs font-bold px-2 py-0.5 rounded-full">
+              <span className="nexo-inbox-unread">
                 {totalUnread}
               </span>
             )}
+            </div>
           </div>
           <button
             onClick={() => setShowQuickManager(true)}
             title="Respostas rápidas"
-            className="w-8 h-8 rounded-full bg-[#2a3942] flex items-center justify-center text-sm hover:bg-[#3c4f5c] transition-colors"
+            aria-label="Gerenciar respostas rápidas"
+            className="nexo-inbox-icon"
           >
-            ⚡
+            <Zap size={18} />
           </button>
         </div>
 
         {/* ── Seletor de número (tabs) ── */}
         {connections.length > 0 && (
-          <div className="bg-[#111b21] border-b border-[#2a3942] overflow-x-auto">
+          <div className="nexo-inbox-channels overflow-x-auto">
             <div className="flex gap-0 min-w-max">
               {connections.map((conn) => {
                 const isActive = conn.id === selectedConn;
@@ -420,18 +427,19 @@ export default function InboxView({ clientId, initialConversations = [], initial
                 return (
                   <button
                     key={conn.id}
+                    aria-pressed={isActive}
                     onClick={() => { setSelectedConn(conn.id); setSelected(null); setMessages([]); }}
                     className={`flex flex-col items-center px-3 py-2 text-xs border-b-2 transition-colors whitespace-nowrap gap-0.5 ${
                       isActive
-                        ? "border-[#00a884] text-[#00a884] bg-[#1a2a30]"
-                        : "border-transparent text-[#8696a0] hover:text-[#d1d7db] hover:bg-[#1a2530]"
+                        ? "border-[#afe507] text-[#afe507] bg-[#28341f]"
+                        : "border-transparent text-[#b1c0c8] hover:text-[#d1d7db] hover:bg-[#252e27]"
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px]">{conn.type === "meta" ? "🔵" : "🟢"}</span>
                       <span className="font-medium">{label}</span>
                       {unread > 0 && (
-                        <span className="w-4 h-4 bg-[#00a884] rounded-full text-[9px] text-black font-bold flex items-center justify-center">
+                        <span className="w-4 h-4 bg-[#afe507] rounded-full text-[9px] text-black font-bold flex items-center justify-center">
                           {unread > 9 ? "9+" : unread}
                         </span>
                       )}
@@ -444,25 +452,28 @@ export default function InboxView({ clientId, initialConversations = [], initial
         )}
 
         {/* Busca */}
-        <div className="px-3 py-2 bg-[#111b21]">
-          <div className="flex items-center bg-[#202c33] rounded-lg px-3 py-1.5 gap-2">
-            <svg className="text-[#8696a0] w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+        <div className="px-4 pt-4 pb-2">
+          <div className="nexo-inbox-search">
+            <Search size={17} />
             <input
-              type="text"
+              type="search"
               placeholder="Pesquisar conversa"
-              className="bg-transparent text-sm outline-none w-full text-[#d1d7db] placeholder:text-[#8696a0]"
+              aria-label="Pesquisar conversa"
+              className="bg-transparent text-sm outline-none w-full text-[#d1d7db] placeholder:text-[#b1c0c8]"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
         </div>
+        <div className="nexo-inbox-filters" aria-label="Filtrar conversas">
+          <button type="button" aria-pressed={!unreadOnly} onClick={()=>setUnreadOnly(false)}>Todas</button>
+          <button type="button" aria-pressed={unreadOnly} onClick={()=>setUnreadOnly(true)}>Não lidas</button>
+        </div>
 
         {/* Lista de conversas */}
         <div className="flex-1 overflow-y-auto">
           {connConversations.length === 0 && (
-            <div className="text-[#8696a0] text-sm text-center mt-10 px-4">
+            <div className="text-[#b1c0c8] text-sm text-center mt-10 px-4">
               Nenhuma conversa encontrada.
               <br /><span className="text-xs">As mensagens aparecerão aqui quando seus contatos enviarem mensagens via WhatsApp.</span>
             </div>
@@ -479,27 +490,28 @@ export default function InboxView({ clientId, initialConversations = [], initial
               : "";
             return (
               <button
-                key={conv.phone}
+                key={`${conv.connId}:${conv.phone}`}
+                aria-pressed={isActive}
                 onClick={() => handleSelect(conv.phone, conv.connId)}
-                className={`w-full text-left flex items-center px-3 py-3 border-b border-[#2a3942] hover:bg-[#2a3942] transition-colors ${isActive ? "bg-[#2a3942]" : ""}`}
+                className="nexo-inbox-contact w-full text-left flex items-center"
               >
-                <div className="w-10 h-10 rounded-full bg-[#6b7280] flex items-center justify-center text-white font-semibold text-sm shrink-0 mr-3">
+                <div className="w-10 h-10 rounded-full bg-[#354329] flex items-center justify-center text-white font-semibold text-sm shrink-0 mr-3">
                   {name.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-0.5">
-                    <span className="font-medium text-sm text-[#e9edef] truncate">{name}</span>
-                    <span className="text-xs text-[#8696a0] ml-2 shrink-0">
+                    <span className="font-medium text-sm text-[#f1f4f6] truncate">{name}</span>
+                    <span className="text-xs text-[#b1c0c8] ml-2 shrink-0">
                       {conv.lastMessage ? formatTime(conv.lastMessage.ts) : formatTime(conv.lastActivity)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-[#8696a0] truncate flex-1 mr-2">
-                      {conv.lastMessage?.role === "assistant" && <span className="text-[#53bdeb] mr-1">✓✓</span>}
+                    <span className="text-xs text-[#b1c0c8] truncate flex-1 mr-2">
+                      {conv.lastMessage?.role === "assistant" && <Check size={13} className="inline mr-1" aria-label="Enviada" />}
                       {preview || <span className="italic">Sem mensagens</span>}
                     </span>
                     {conv.unread && (
-                      <span className="w-5 h-5 bg-[#00a884] rounded-full shrink-0 flex items-center justify-center text-[10px] text-black font-bold">
+                      <span className="w-5 h-5 bg-[#afe507] rounded-full shrink-0 flex items-center justify-center text-[10px] text-black font-bold">
                         ●
                       </span>
                     )}
@@ -513,36 +525,35 @@ export default function InboxView({ clientId, initialConversations = [], initial
 
       {/* ── Área direita (chat) ── */}
       {!selected ? (
-        <div className="flex-1 flex flex-col items-center justify-center bg-[#222e35] gap-4">
+        <div className="nexo-inbox-empty flex-1 flex flex-col items-center justify-center gap-4">
           <div className="w-20 h-20 rounded-full bg-[#374248] flex items-center justify-center">
-            <svg className="w-10 h-10 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
+            <MessageSquare size={36} className="text-[#afe507]" />
           </div>
           <div className="text-center">
             <p className="text-[#d1d7db] font-light text-xl">Selecione uma conversa</p>
             {activeConn && (
-              <p className="text-[#8696a0] text-sm mt-1">
-                Número: <span className="text-[#00a884]">{displayPhone(activeConn.phone || activeConn.id)}</span>
+              <p className="text-[#b1c0c8] text-sm mt-1">
+                Número: <span className="text-[#afe507]">{displayPhone(activeConn.phone || activeConn.id)}</span>
               </p>
             )}
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[#0b141a] relative">
+        <div className="nexo-inbox-conversation flex-1 min-w-0 min-h-0 flex flex-col relative">
           {/* Header do chat */}
-          <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] border-b border-[#2a3942]">
-            <div className="w-10 h-10 rounded-full bg-[#6b7280] flex items-center justify-center text-white font-semibold text-sm">
+          <div className="nexo-inbox-chat-header flex items-center gap-3">
+            <button type="button" className="nexo-inbox-back nexo-inbox-icon" aria-label="Voltar às conversas" onClick={()=>{setSelected(null);setMessages([]);}}><ArrowLeft size={19}/></button>
+            <div className="w-10 h-10 rounded-full bg-[#354329] flex items-center justify-center text-white font-semibold text-sm">
               {(selectedConv?.contactName || displayPhone(selected.phone)).charAt(0).toUpperCase()}
             </div>
-            <div>
-              <p className="font-medium text-sm text-[#e9edef]">
+            <div className="min-w-0">
+              <p className="font-semibold text-sm text-[#f1f4f6] truncate">
                 {selectedConv?.contactName || displayPhone(selected.phone)}
               </p>
-              <p className="text-xs text-[#8696a0]">{displayPhone(selectedConv?.realPhone ?? selected.phone)}</p>
+              <p className="text-xs text-[#b1c0c8]">{displayPhone(selectedConv?.realPhone ?? selected.phone)}</p>
             </div>
             {activeConn && (
-              <div className="ml-auto flex items-center gap-1.5 text-xs text-[#8696a0] bg-[#2a3942] rounded-full px-3 py-1">
+              <div className="ml-auto flex items-center gap-1.5 text-xs text-[#b1c0c8] bg-[#3a454b] rounded-full px-3 py-1">
                 <span>{activeConn.type === "meta" ? "🔵" : "🟢"}</span>
                 <span>{displayPhone(activeConn.phone || activeConn.id)}</span>
               </div>
@@ -564,7 +575,7 @@ export default function InboxView({ clientId, initialConversations = [], initial
                     prev.map((c) => (c.phone === selected?.phone && c.connId === selected?.connId) ? { ...c, aiPaused: false } : c)
                   );
                 }}
-                className="text-xs text-[#00a884] hover:text-[#06cf9c] font-medium ml-4 shrink-0"
+                className="text-xs text-[#afe507] hover:text-[#c2ec47] font-medium ml-4 shrink-0"
               >
                 Reativar IA
               </button>
@@ -585,10 +596,10 @@ export default function InboxView({ clientId, initialConversations = [], initial
             aria-label="Histórico da conversa"
           >
             {loadingMessages && (
-              <div className="text-center text-[#8696a0] text-sm py-4">Carregando...</div>
+              <div className="text-center text-[#b1c0c8] text-sm py-4">Carregando...</div>
             )}
             {!loadingMessages && messages.length === 0 && (
-              <div className="text-center text-[#8696a0] text-sm py-4">Nenhuma mensagem ainda.</div>
+              <div className="text-center text-[#b1c0c8] text-sm py-4">Nenhuma mensagem ainda.</div>
             )}
             {groupChatMessages(messages).map((group, groupIndex) => (
               <section className="nexo-chat-day" aria-label={`Mensagens de ${group.label}`} key={`${group.key}:${groupIndex}`}>
@@ -602,21 +613,10 @@ export default function InboxView({ clientId, initialConversations = [], initial
                   <div
                     className={`nexo-chat-bubble nexo-chat-message px-3 py-2 rounded-lg text-sm shadow relative ${isMe ? "outgoing rounded-br-none" : "incoming rounded-bl-none"}`}
                   >
-                    {msg.type === "audio" ? (
-                      <div className="flex items-center gap-2 text-[#8696a0]">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
-                        </svg>
-                        <span className="italic text-xs">Áudio</span>
-                      </div>
-                    ) : msg.type === "image" ? (
-                      <span className="italic text-xs text-[#8696a0]">📷 Imagem</span>
-                    ) : (
-                      <span className="whitespace-pre-wrap break-words">{msg.content}</span>
-                    )}
+                    <ChatMessageContent key={`${msg.ts}:${msg.mediaUrl ?? msg.type}`} message={msg} onReady={()=>{if(isAtBottomRef.current&&!userScrolledUpRef.current)messagesEndRef.current?.scrollIntoView({block:"end"});}} />
                     <div className="nexo-chat-time text-[11px] mt-1 text-right">
                       {chatTime(msg.ts)}
-                      {isMe && <span className="ml-1 text-[#53bdeb]">✓✓</span>}
+                      {isMe && <Check size={12} className="inline ml-1" aria-label="Enviada" />}
                     </div>
                   </div>
                 </div>
@@ -628,15 +628,15 @@ export default function InboxView({ clientId, initialConversations = [], initial
           </div>
 
           {/* Input bar */}
-          {connections.find(connection=>connection.id===selectedConn)?.type==="archived" ? <div className="bg-[#202c33] p-4 text-sm text-[#d1d7db]">Histórico arquivado. Para novos envios, selecione uma conexão Evolution ou API oficial.</div> : <div className="bg-[#202c33] shrink-0">
+          {connections.find(connection=>connection.id===selectedConn)?.type==="archived" ? <div className="bg-[#20272b] p-4 text-sm text-[#d1d7db]">Histórico arquivado. Para novos envios, selecione uma conexão Evolution ou API oficial.</div> : <div className="bg-[#20272b] shrink-0">
             {/* Pending image preview */}
             {pendingImage && (
               <div className="flex items-center gap-2 px-3 pt-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={pendingImage} alt="preview" className="h-12 w-12 object-cover rounded-lg border border-[#3c4f5c]" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-[#8696a0]">📎 Foto anexada</p>
-                  <p className="text-xs text-[#8696a0] truncate">{pendingImage}</p>
+                  <p className="text-xs text-[#b1c0c8]">📎 Foto anexada</p>
+                  <p className="text-xs text-[#b1c0c8] truncate">{pendingImage}</p>
                 </div>
                 <button onClick={() => setPendingImage(null)} className="text-xs text-red-400 hover:text-red-300 font-medium">✕</button>
               </div>
@@ -668,14 +668,14 @@ export default function InboxView({ clientId, initialConversations = [], initial
               <button
                 onClick={() => setShowQuickManager(true)}
                 title="Respostas rápidas"
-                className="shrink-0 w-10 h-10 rounded-full bg-[#2a3942] flex items-center justify-center text-base hover:bg-[#3c4f5c] transition-colors"
+                className="shrink-0 w-10 h-10 rounded-full bg-[#3a454b] flex items-center justify-center text-base hover:bg-[#3c4f5c] transition-colors"
               >
                 ⚡
               </button>
 
-              <div className="flex-1 bg-[#2a3942] rounded-lg px-4 py-2 flex items-end">
+              <div className="flex-1 bg-[#3a454b] rounded-lg px-4 py-2 flex items-end">
                 <textarea
-                  className="flex-1 bg-transparent resize-none outline-none text-sm text-[#d1d7db] placeholder:text-[#8696a0] max-h-32 min-h-[36px]"
+                  className="flex-1 bg-transparent resize-none outline-none text-sm text-[#d1d7db] placeholder:text-[#b1c0c8] max-h-32 min-h-[36px]"
                   placeholder="Digite uma mensagem ou / para respostas rápidas"
                   value={text}
                   onChange={handleTextChange}
@@ -688,11 +688,10 @@ export default function InboxView({ clientId, initialConversations = [], initial
                 <button
                   onClick={handleSend}
                   disabled={sending}
-                  className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center hover:bg-[#06cf9c] transition-colors disabled:opacity-50 shrink-0"
+                  aria-label="Enviar mensagem"
+                  className="w-10 h-10 rounded-full bg-[#afe507] flex items-center justify-center hover:bg-[#c2ec47] transition-colors disabled:opacity-50 shrink-0"
                 >
-                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                  </svg>
+                  <Send size={19} className="text-[#17200c]" />
                 </button>
               ) : (
                 <button
@@ -700,10 +699,11 @@ export default function InboxView({ clientId, initialConversations = [], initial
                   onMouseUp={stopRecording}
                   onTouchStart={startRecording}
                   onTouchEnd={stopRecording}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0 ${recording ? "bg-red-500 animate-pulse" : "bg-[#00a884] hover:bg-[#06cf9c]"}`}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0 ${recording ? "bg-red-500 animate-pulse" : "bg-[#afe507] hover:bg-[#c2ec47]"}`}
                   title={recording ? "Solte para enviar" : "Segure para gravar áudio"}
+                  aria-label={recording ? "Solte para enviar o áudio" : "Segure para gravar áudio"}
                 >
-                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className={`w-5 h-5 ${recording ? "text-white" : "text-[#17200c]"}`} fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
                   </svg>
                 </button>

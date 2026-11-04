@@ -10,6 +10,8 @@
 .nexo-main {flex:1;min-width:0;overflow:auto;scrollbar-gutter:stable}
 .nexo-main::-webkit-scrollbar {width:7px;height:7px}
 .nexo-main::-webkit-scrollbar-thumb {background:#3b4142;border-radius:8px}
+.nexo-main>:is(div,section)[class*="max-w-"],.nexo-client-shell>main>:is(div,section)[class*="max-w-"] {width:100%;max-width:none;margin-inline:0}
+.nexo-main>:is(div,section):is(.p-6,.p-8,[class*="lg:p-8"]),.nexo-client-shell>main>:is(div,section):is(.p-6,.p-8,[class*="lg:p-8"]) {padding-inline:24px}
 .nexo-sidebar {width:248px;flex-shrink:0;display:flex;flex-direction:column;background:#0f0f0f;color:#9da4a7;padding:31px 19px 18px;overflow-y:auto;z-index:50;border-right:1px solid #292d2e}
 .nexo-wordmark {display:flex;align-items:center;padding:0 10px;width:192px;min-height:39px}
 .nexo-wordmark img {display:block;width:172px;height:35px;object-fit:contain}
@@ -42,7 +44,7 @@
 .nexo-nav-tools summary {display:flex;align-items:center;justify-content:space-between;padding:12px;cursor:pointer}
 .nexo-mobile-bar,.nexo-nav-backdrop {display:none}
 
-.nexo-workspace {max-width:1600px;margin:0 auto;padding:32px 40px 25px}
+.nexo-workspace {width:100%;max-width:none;margin:0;padding:26px 24px 22px}
 .nexo-page-top {display:flex;align-items:center;justify-content:space-between;padding-bottom:22px;border-bottom:1px solid #2b3032}
 .nexo-eyebrow {display:inline-flex;align-items:center;gap:10px;font-size:10px;font-weight:600;letter-spacing:1.5px;color:#b0b9bc}
 .nexo-path-divider {color:#54616a;margin:0 5px}
@@ -187,7 +189,7 @@
 .nexo-backup-panel small {display:block;font-size:11px;color:#b0c29f;line-height:1.7;margin-top:10px}
 .nexo-platform-advanced {padding:17px 22px;border:1px solid #3d4d57;border-radius:10px;background:#192126}
 .nexo-settings-reassurance {display:flex;align-items:center;gap:9px;margin-top:25px;font-size:11px;line-height:1.75;color:#afc0cb}
-.nexo-integration-form {max-width:900px}
+.nexo-integration-form {max-width:none;width:100%}
 .nexo-integration-form .nexo-settings-panel {min-height:auto;margin-bottom:19px}
 .nexo-integration-form details:not([open]) {padding-bottom:0}
 .nexo-integration-form summary {padding:0 0 16px}
@@ -244,7 +246,53 @@
 .nexo-chat-composer textarea {min-width:0}
 .nexo-chat-send {background:#afe507;color:#151c0a;min-height:42px}
 .nexo-chat-send:hover:not(:disabled) {background:#c0ef36}
+.nexo-message-content {display:grid;gap:9px;min-width:0}
+.nexo-message-image-link {display:block;max-width:360px}
+.nexo-message-image {display:block;width:auto;max-width:100%;max-height:330px;object-fit:contain;border-radius:10px;background:#13191b}
+.nexo-message-audio {display:block;width:280px;max-width:100%;height:42px;color-scheme:light}
+.nexo-message-unavailable {font-size:12px;line-height:1.6;padding:8px 0}
+.nexo-message-unavailable button {display:inline-block;margin-top:5px;text-decoration:underline;font-weight:600}
+.nexo-inbox {background:#14191c;border:1px solid #354047;border-radius:16px;isolation:isolate}
+.nexo-inbox-sidebar {width:350px;min-width:270px;border-right:1px solid #354047;background:#181e21}
+.nexo-inbox-list-header {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:25px 22px 21px;background:#1d2428}
+.nexo-inbox-eyebrow {font-size:9px;letter-spacing:1.8px;color:#b0bdc3;margin-bottom:10px}
+.nexo-inbox-list-header h2 {font-size:27px;line-height:1.1;letter-spacing:-.8px;font-weight:600}
+.nexo-inbox-icon {display:grid;place-items:center;flex-shrink:0;width:38px;height:38px;border-radius:11px;border:1px solid #455347;background:#293126;color:#c9e78c}
+.nexo-inbox-icon:hover {background:#35412a}
+.nexo-inbox-unread {background:#afe507;color:#17200c;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:700}
+.nexo-inbox-channels {border-bottom:1px solid #354047;background:#141a1d}
+.nexo-inbox-channels button {min-height:47px}
+.nexo-inbox-search {display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #435047;border-radius:11px;background:#12191c;color:#b0c294}
+.nexo-inbox-search input {min-width:0;border:0!important;background:transparent!important;padding:0}
+.nexo-inbox-filters {display:flex;gap:9px;padding:8px 16px 14px}
+.nexo-inbox-filters button {font-size:11px;padding:6px 12px;border:1px solid #3c494f;border-radius:999px;color:#bdcbd2}
+.nexo-inbox-filters button[aria-pressed=true] {color:#d4ebaa;border-color:#5e773a;background:#2b3822}
+.nexo-inbox-contact {padding:17px 16px;border-bottom:1px solid #303b40;gap:0;transition:background .15s}
+.nexo-inbox-contact:hover {background:#253024}
+.nexo-inbox-contact[aria-pressed=true] {background:#28341f;box-shadow:inset 3px 0 #afe507}
+.nexo-inbox-empty {background:radial-gradient(ellipse at center,#29351f33,transparent 65%),#151c1f;padding:28px}
+.nexo-inbox-conversation {background:#111719}
+.nexo-inbox-chat-header {padding:17px 22px;background:#20272b;border-bottom:1px solid #3a454b;min-height:78px}
+.nexo-inbox-back {display:none}
+.nexo-inbox .nexo-chat-surface {padding:16px 26px}
+.nexo-inbox .nexo-chat-bubble {padding:10px 14px;margin-bottom:5px}
+.nexo-inbox textarea {min-width:0;background:transparent!important;border:0}
+.nexo-client-shell:has(.nexo-inbox) {display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden}
+.nexo-client-shell:has(.nexo-inbox)>header {flex-shrink:0}
+.nexo-client-shell:has(.nexo-inbox)>main {flex:1;min-height:0;overflow:hidden}
+.nexo-client-shell>main>div:has(.nexo-inbox) {height:100%!important;min-height:0}
+@media (max-width:760px) {
+  .nexo-inbox {border-radius:11px}
+  .nexo-inbox-sidebar {width:100%;min-width:0;border-right:0}
+  .nexo-inbox[data-open=true] .nexo-inbox-sidebar,.nexo-inbox[data-open=false] .nexo-inbox-empty {display:none}
+  .nexo-inbox-back {display:grid}
+  .nexo-inbox-chat-header {padding:12px;gap:8px;flex-wrap:wrap}
+  .nexo-inbox-chat-header>div:last-child {font-size:10px;padding:4px 8px}
+  .nexo-inbox .nexo-chat-surface {padding:10px 12px}
+  .nexo-message-audio {width:230px}
+}
 @media (max-width:640px) {
+  .nexo-main>:is(div,section):is(.p-6,.p-8,[class*="lg:p-8"]),.nexo-client-shell>main>:is(div,section):is(.p-6,.p-8,[class*="lg:p-8"]) {padding-inline:12px}
   .nexo-lead-header {padding:16px;gap:12px}
   .nexo-chat-message {max-width:86%}
   .nexo-chat-date time {font-size:11px}

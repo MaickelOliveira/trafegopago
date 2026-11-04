@@ -15,6 +15,7 @@ async function login(email) {
 }
 await request("/api/crm/leads", 401);
 await request("/api/gestor/clients", 401);
+await request("/api/crm/campaign-labels?clientId=audit-a",401);
 await request("/api/debug/leads", 404);
 await request("/api/pousada/reservas", 410);
 await request("/api/guest-forms/retired", 410);
@@ -22,6 +23,9 @@ await request("/api/servico-forms/retired", 410);
 await request("/api/whatsapp/webhook", 410, null, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
 for(const path of ["/api/whatsapp/manager","/api/whatsapp/wppconnect-manager","/api/whatsapp/webhook/wppconnect/old","/api/integrations/whatsapp-extension/messages","/api/integrations/whatsapp-server","/api/conectar/old"])await request(path,410);
 const manager = await login("gestor@example.invalid"), client = await login("audit-a@example.invalid"), employee = await login("atendente@example.invalid");
+await request("/api/crm/campaign-labels?clientId=audit-b",403,client);
+await request("/api/crm/campaign-labels?clientId=audit-a",200,client);
+await request("/api/crm/campaign-labels?clientId=audit-a",200,employee);
 await request("/api/gestor/config", 403, client);
 await request("/api/campaigns",410,client);
 await request("/api/not-a-feature",403,client);

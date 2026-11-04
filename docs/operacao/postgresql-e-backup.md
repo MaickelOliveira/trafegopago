@@ -57,3 +57,11 @@ Campanhas, resumo e série diária recebem o período selecionado. A Meta aceita
 ## Leitura das conversas
 
 O histórico do modal de contato e da caixa de mensagens usa separadores por data completa, com dia, mês e ano. Datas e horários usam Brasília, independentemente do relógio do navegador. A data permanece visível durante a rolagem do respectivo grupo. O agrupamento preserva a sequência e o conteúdo armazenados; não altera canais, destinatários, envios ou decisões da IA. Fundos e textos das mensagens são definidos em pares para manter contraste no tema escuro.
+
+Imagens são exibidas com abertura do original e áudios usam controles nativos do navegador. A legenda ou transcrição permanece visível. Arquivos ausentes ou expirados mostram indisponibilidade e opção de tentar carregar. Mídias locais de mensagens antigas usam as rotas autenticadas do domínio atual. A lista do Inbox oferece busca e filtro de não lidas; no celular, a conversa ocupa a tela e tem ação de voltar à lista. As páginas autenticadas aproveitam a largura disponível, preservando limites dos modais.
+
+## Nomes das campanhas nos contatos
+
+Os cartões usam nomes confirmados pela integração ou nomes legíveis já capturados. Identificadores numéricos de rastreamento e valores genéricos como `cpc` não viram nomes. A consulta de nomes usa somente contas vinculadas ao cliente, sem alterar campanhas ou investimento. Funcionários recebem rótulos somente para os contatos dos funis permitidos. A leitura de nomes é independente da leitura do CRM; sua falha mantém os contatos acessíveis e informa campanha não identificada. Nomes confirmados pelo provedor são preservados mesmo quando o próprio anunciante escolheu um nome numérico.
+
+A lista de nomes usa [metadados de campanhas do Google](https://developers.google.com/google-ads/api/samples/get-campaigns) e o recurso de campanhas do [SDK oficial da Meta](https://github.com/meta/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adaccount.py). A memória temporária é separada por cliente e contas vinculadas; não regrava a atribuição original do contato.

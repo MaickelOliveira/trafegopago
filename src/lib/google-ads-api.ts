@@ -166,6 +166,13 @@ export async function getCampaigns(
   });
 }
 
+export async function getCampaignLabels(creds: GoogleAdsCreds, customerId: string): Promise<{ id: string; name: string }[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const query = buildCustomer(creds, customerId).report({ entity: "campaign", attributes: ["campaign.id", "campaign.name"] });
+  const rows = await Promise.race([query, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error("Campaign names unavailable")), 15000); })]).finally(() => { if (timer) clearTimeout(timer); });
+  return rows.map(row => ({ id: String(row.campaign?.id ?? ""), name: String(row.campaign?.name ?? "") })).filter(row => row.id && row.name);
+}
+
 export type GoogleAdGroup = {
   id: string;
   name: string;

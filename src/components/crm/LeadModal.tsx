@@ -9,6 +9,7 @@ import { QuickRepliesPicker, QuickRepliesManager, WabaTemplateVariablesPanel } f
 import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
 import type { WabaTemplate } from "@/lib/waba-templates";
 import { chatTime, groupChatMessages } from "@/lib/chat-dates";
+import { ChatMessageContent } from "@/components/shared/ChatMessageContent";
 
 function withCountryCode(p: string) {
   const d = p.replace(/\D/g, "");
@@ -447,7 +448,7 @@ export function LeadModal({
     lastMsgCountRef.current = newCount;
     if (newCount === 0) return;
     if (prevCount === 0 || (newCount > prevCount && isAtBottomRef.current)) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      chatEndRef.current?.scrollIntoView({ behavior: prevCount === 0 ? "auto" : "smooth", block: "end" });
     }
   }, [messages, tab]);
 
@@ -1071,26 +1072,7 @@ export function LeadModal({
                               isMe
                                 ? "nexo-chat-bubble outgoing rounded-br-none"
                                 : "nexo-chat-bubble incoming rounded-bl-none")}>
-                              {m.type === "audio" && m.mediaUrl ? (
-                                <div className="flex flex-col gap-1.5">
-                                  <audio
-                                    controls
-                                    src={m.mediaUrl}
-                                    className="h-8 w-52 max-w-full"
-                                    preload="metadata"
-                                  />
-                                  {m.content && !m.content.startsWith("[") && (
-                                    <p className="text-xs text-slate-500 italic whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
-                                  )}
-                                </div>
-                              ) : m.type === "audio" ? (
-                                <span className="flex items-center gap-1.5 text-slate-500 italic text-xs">
-                                  <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
-                                  {m.content && !m.content.startsWith("[") ? m.content : "Áudio"}
-                                </span>
-                              ) : (
-                                <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
-                              )}
+                              <ChatMessageContent key={`${m.ts}:${m.mediaUrl ?? m.type}`} message={m} onReady={()=>{if(isAtBottomRef.current)chatEndRef.current?.scrollIntoView({block:"end"});}} />
                               <p className="nexo-chat-time text-[11px] mt-1 text-right">
                                 {fmtTime(m.ts)}
                               </p>

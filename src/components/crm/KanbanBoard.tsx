@@ -6,6 +6,7 @@ import { LeadModal, prefetchConversation } from "./LeadModal";
 import ImportModal from "./ImportModal";
 import type { Lead, LeadReminder } from "@/lib/leads";
 import type { Funnel, FunnelColumn, TriggerPhrase } from "@/lib/funnels";
+import { campaignLabel } from "@/lib/campaign-label";
 
 type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean; kanbanAgentPrompt?: string };
 
@@ -641,6 +642,17 @@ export function KanbanBoard({
     return initialFunnels[0]?.id ?? "default";
   });
   const filterClient = selectedClient ?? clients[0]?.id ?? "all";
+  const [campaignLabels, setCampaignLabels] = useState<{clientId: string; labels: Record<string, string>}>({clientId: "", labels: {}});
+  const campaignLeadSignature = leads.filter(lead => lead.clientId === filterClient).map(lead => `${lead.id}:${lead.campaignId}:${lead.campaignName}:${lead.utmCampaign}`).join("|");
+  useEffect(() => {
+    if (!filterClient || filterClient === "all") return;
+    const controller = new AbortController();
+    fetch(`/api/crm/campaign-labels?clientId=${encodeURIComponent(filterClient)}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (!controller.signal.aborted && data?.labels) setCampaignLabels({ clientId: filterClient, labels: data.labels }); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [filterClient, campaignLeadSignature]);
   const [search, setSearch]   = useState("");
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [customStart, setCustomStart] = useState("");
@@ -1521,6 +1533,7 @@ export function KanbanBoard({
                   const client = clients.find((c) => c.id === lead.clientId);
                   const days = daysSince(lead.updatedAt ?? lead.createdAt);
                   const platform = getLeadPlatform(lead);
+                  const campaignName = (campaignLabels.clientId === lead.clientId ? campaignLabels.labels[lead.id] : null) ?? campaignLabel(lead);
                   return (
                     <div
                       key={lead.id}
@@ -1581,20 +1594,10 @@ export function KanbanBoard({
 
                       <div className="flex items-center gap-1 flex-wrap mb-1">
                         <PlatformIcon lead={lead} />
-                        {platform === "google" ? (
-                          // Google Ads: campaignName costuma vir mal preenchido (ex: "g") — mostra
-                          // o utm_medium em vez disso.
-                          lead.utmMedium && (
-                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 truncate max-w-[100px]">
-                              {lead.utmMedium}
-                            </span>
-                          )
-                        ) : (
-                          lead.campaignName && !["google","meta","facebook","instagram","fb"].includes(lead.campaignName.toLowerCase()) && (
-                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 truncate max-w-[100px]">
-                              {lead.campaignName}
-                            </span>
-                          )
+                        {(campaignName || platform === "meta" || platform === "google") && (
+                          <span className="nexo-campaign-label rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 truncate max-w-[180px]" title={campaignName ?? "Confira a conexão da conta de anúncios para identificar a campanha."}>
+                            {campaignName ?? "Campanha não identificada"}
+                          </span>
                         )}
                         {lead.adName && lead.adName !== lead.campaignName && (
                           <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600 truncate max-w-[100px]">

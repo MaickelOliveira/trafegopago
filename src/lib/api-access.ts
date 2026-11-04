@@ -41,7 +41,7 @@ export function isPublicApi(pathname: string): boolean {
 export function isTenantApiPath(pathname:string):boolean {
  return [
   /^\/api\/cliente\/(?:my-settings|change-request|connection-(?:status|metrics|qr)|checklist(?:\/[^/]+)?|employees(?:\/[^/]+)?)$/,
-  /^\/api\/crm\/(?:connections|funnels(?:\/[^/]+)?|leads(?:\/[^/]+(?:\/(?:analyze|followups))?)?|conversations\/[^/]+|automations(?:\/[^/]+)?|webhooks(?:\/[^/]+)?|import|reset-ai-context|kanban-agent)$/,
+  /^\/api\/crm\/(?:connections|campaign-labels|funnels(?:\/[^/]+)?|leads(?:\/[^/]+(?:\/(?:analyze|followups))?)?|conversations\/[^/]+|automations(?:\/[^/]+)?|webhooks(?:\/[^/]+)?|import|reset-ai-context|kanban-agent)$/,
   /^\/api\/(?:quick-replies|creatives|broadcasts)(?:\/[^/]+)?$/,
   /^\/api\/creatives\/[^/]+\/(?:comment|status)$/,
   /^\/api\/waba\/(?:connections|send|profile-photo|templates(?:\/[^/]+)?)$/,

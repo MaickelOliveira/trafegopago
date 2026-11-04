@@ -194,6 +194,26 @@ export async function getCampaigns(
   }));
 }
 
+/** Names only, including archived campaigns; no spend or delivery mutation. */
+export async function getCampaignLabels(accountId: string, token: string): Promise<{ id: string; name: string }[]> {
+  const result: { id: string; name: string }[] = [];
+  let after: string | undefined;
+  const signal = AbortSignal.timeout(15000);
+  for (let page = 0; page < 50; page++) {
+    const id = accountId.startsWith("act_") ? accountId : `act_${accountId}`;
+    const url = new URL(`${BASE}/${id}/campaigns`);
+    url.searchParams.set("fields", "id,name"); url.searchParams.set("limit", "100"); url.searchParams.set("access_token", token);
+    if (after) url.searchParams.set("after", after);
+    const response = await fetch(url, { signal, cache: "no-store" });
+    if (!response.ok) throw Error("Campaign names unavailable");
+    const data = await response.json();
+    for (const row of data.data ?? []) if (row.id && row.name) result.push({ id: String(row.id), name: String(row.name) });
+    if (!data.paging?.next || !data.paging?.cursors?.after) return result;
+    after = data.paging.cursors.after;
+  }
+  throw Error("Campaign list exceeded the lookup limit");
+}
+
 export type MetaAdSet = {
   id: string;
   name: string;
