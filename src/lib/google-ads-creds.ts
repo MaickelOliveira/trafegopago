@@ -6,13 +6,12 @@ import { hasNexoGoogleAdsAuthorization, nexoGoogleCredentials } from "./google-n
  *  Retorna null se a conexão ainda não foi configurada/feita. */
 export async function getGoogleAdsCreds(): Promise<GoogleAdsCreds | null> {
   const config = (await getConfig());
-  if (!hasNexoGoogleAdsAuthorization(config) || !config.googleAdsDeveloperToken) {
+  if (!hasNexoGoogleAdsAuthorization(config)) {
     return null;
   }
   const credentials = nexoGoogleCredentials(config)!;
   return {
     ...credentials,
-    developerToken: config.googleAdsDeveloperToken,
     refreshToken: config.googleAdsRefreshToken!,
     loginCustomerId: config.googleAdsLoginCustomerId,
   };

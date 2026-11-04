@@ -49,6 +49,15 @@ it("uses only a refresh token bound to the selected Nexo application", async () 
   fixtures.config.googleAdsOAuthClientId = undefined;
   expect(await getGoogleAdsCreds()).toBeNull();
 });
+it("does not require or return the retired developer token", async () => {
+  fixtures.config = config();
+  fixtures.config.googleAdsDeveloperToken = undefined;
+  expect(await getGoogleAdsCreds()).toMatchObject({ clientId: fixtures.config.nexoGoogleClientId, refreshToken: "synthetic-refresh" });
+  fixtures.config.googleAdsDeveloperToken = "synthetic-retired-token";
+  expect(await getGoogleAdsCreds()).not.toHaveProperty("developerToken");
+  expect(safePlatformConfig(fixtures.config)).not.toHaveProperty("googleAdsDeveloperToken");
+  expect(platformConfigPatch({ googleAdsDeveloperToken: "synthetic-injected" })).toEqual({});
+});
 it("requires a new Ads authorization after rotating the Nexo pair while preserving calendar and backup credentials", () => {
   const current = config();
   const updated = mergePlatformConfig(current, platformConfigPatch({ nexoGoogleClientId: "new-nexo.apps.googleusercontent.com", nexoGoogleClientSecret: "synthetic-new" }));

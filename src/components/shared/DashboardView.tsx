@@ -181,18 +181,20 @@ export function DashboardView({ client, canManageConnection = false }: { client:
             <p className="text-xs text-slate-400">{adsAvailable ? `${active.length} ativas · ${campaigns.length} campanhas carregadas` : "Indicadores de anúncios indisponíveis"} · Meta: R$ {client.cplTarget}/resultado</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="nexo-dashboard-controls">
+          <div className="nexo-dashboard-account-options" role="group" aria-label="Contas de anúncio">
           {client.adAccounts.length > 1 && client.adAccounts.map((acc) => (
-            <button key={acc.id} onClick={() => setSelectedAccountId(acc.id)}
+            <button key={acc.id} onClick={() => setSelectedAccountId(acc.id)} aria-pressed={account?.id === acc.id}
               className={clsx("rounded-xl border px-3 py-1.5 text-xs font-semibold transition",
                 account?.id === acc.id ? "border-indigo-500 bg-indigo-500/20 text-indigo-300" : "border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300"
               )}>
-              {acc.name}
+              {acc.platform === "google" ? "Google Ads" : acc.platform === "meta" ? "Meta Ads" : acc.platform} · {acc.name}
             </button>
           ))}
-          <div className="flex rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+          </div>
+          <div className="nexo-dashboard-period-options flex rounded-xl border border-white/10 bg-white/5 overflow-hidden" role="group" aria-label="Período dos indicadores">
             {PRESETS.map((p) => (
-              <button key={p.value} onClick={() => setDatePreset(p.value)}
+              <button key={p.value} onClick={() => setDatePreset(p.value)} aria-pressed={datePreset === p.value}
                 className={clsx("px-3 py-2 text-xs font-semibold transition",
                   datePreset === p.value ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/10"
                 )}>

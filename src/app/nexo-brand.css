@@ -465,6 +465,16 @@
 .nexo-dashboard .bg-indigo-600 {background:#afe507;color:#141b09}
 .nexo-dashboard .bg-indigo-400 {background:#afe507}
 .nexo-dashboard .text-indigo-300 {color:#c8e6a3}
+.nexo-dashboard-controls {display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;min-width:0;max-width:100%}
+.nexo-dashboard-account-options {display:flex;flex-wrap:wrap;gap:8px;min-width:0;max-width:100%}
+.nexo-dashboard-account-options>button {min-height:38px;max-width:100%;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+.nexo-dashboard-period-options>button {min-height:38px}
+@media(max-width:700px) {
+ .nexo-dashboard-controls {width:100%;justify-content:flex-start}
+ .nexo-dashboard-account-options,.nexo-dashboard-period-options {width:100%}
+ .nexo-dashboard-account-options>button {flex:1 1 145px;min-height:44px}
+ .nexo-dashboard-period-options>button {flex:1;min-height:44px}
+}
 .nexo-dashboard .border-indigo-500 {border-color:#98c634}
 .nexo-dashboard .bg-indigo-500\/20 {background:#2b391f}
 @media(max-width:700px) {.nexo-kpi {padding:19px 16px}.nexo-kpi .text-3xl {font-size:25px}.nexo-kpi .text-white\/70 {font-size:9px;letter-spacing:.5px}}

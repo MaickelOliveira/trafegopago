@@ -1,6 +1,6 @@
 import type { AppConfig } from "./clients";
 import { hasNexoGoogleAdsAuthorization } from "./google-nexo-auth";
-export const secretConfigKeys = ["metaToken", "metaAppSecret", "anthropicApiKey", "geminiApiKey", "evolutionAdminKey", "googleClientSecret", "nexoGoogleClientSecret", "googleAdsDeveloperToken", "agentCronSecret"] as const;
+export const secretConfigKeys = ["metaToken", "metaAppSecret", "anthropicApiKey", "geminiApiKey", "evolutionAdminKey", "googleClientSecret", "nexoGoogleClientSecret", "agentCronSecret"] as const;
 export const visibleConfigKeys = ["metaAppId", "evolutionServer", "appBaseUrl", "googleClientId", "nexoGoogleClientId", "googleAdsLoginCustomerId", "masterPhone", "masterConnectionId", "masterMetaTemplateBriefing", "masterMetaLanguage"] as const;
 type SecretKey = typeof secretConfigKeys[number];
 type ConfigKey = SecretKey | typeof visibleConfigKeys[number];

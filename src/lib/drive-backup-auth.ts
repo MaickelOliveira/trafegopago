@@ -4,6 +4,7 @@ import { createNexoGoogleOAuthClient, nexoGoogleCredentials } from "./google-nex
 import { consumeOAuthState } from "./oauth-state";
 import { getConfig, saveConfig } from "./clients";
 import { withDataTransaction } from "./document-store";
+class BackupFolderAccessError extends Error {}
 export async function completeDriveBackupAuthorization(request: NextRequest): Promise<NextResponse> {
   const config = await getConfig();
   const base = (process.env.APP_BASE_URL || config.appBaseUrl || request.nextUrl.origin).replace(/\/$/, "");
@@ -19,8 +20,10 @@ export async function completeDriveBackupAuthorization(request: NextRequest): Pr
     const drive = createDrive({ version: "v3", auth: oauth });
     let folderId = config.backupDriveFolderId;
     if (folderId) {
-      try { const existing = await drive.files.get({ fileId: folderId, fields: "id,mimeType,trashed" }); if (existing.data.trashed || existing.data.mimeType !== "application/vnd.google-apps.folder") folderId = undefined; }
-      catch { folderId = undefined; }
+      try {
+        const existing = await drive.files.get({ fileId: folderId, fields: "id,mimeType,trashed" });
+        if (existing.data.trashed || existing.data.mimeType !== "application/vnd.google-apps.folder") throw new BackupFolderAccessError();
+      } catch { throw new BackupFolderAccessError(); }
     }
     if (!folderId) {
       const folder = await drive.files.create({ requestBody: { name: "Backups — Plataforma Tráfego Pago", mimeType: "application/vnd.google-apps.folder", appProperties: { purpose: "trafegopago-backup" } }, fields: "id" });
@@ -31,10 +34,11 @@ export async function completeDriveBackupAuthorization(request: NextRequest): Pr
     if (!permissions.data.permissions?.length || permissions.data.permissions.some(permission => permission.type !== "user" || permission.role !== "owner")) throw Error("Backup folder must remain private");
     await withDataTransaction(async () => {
       const current = await getConfig();
+      if (current.backupDriveFolderId && current.backupDriveFolderId !== folderId) throw new BackupFolderAccessError();
       await saveConfig({ ...current, backupDriveFolderId: folderId, backupGoogleRefreshToken: tokens.refresh_token!, backupGoogleClientId: credentials.clientId, backupGoogleClientSecret: credentials.clientSecret });
     });
     return NextResponse.redirect(`${base}/gestor/configuracoes?backup=connected`);
-  } catch {
-    return NextResponse.redirect(`${base}/gestor/configuracoes?backup=error`);
+  } catch (error) {
+    return NextResponse.redirect(`${base}/gestor/configuracoes?backup=${error instanceof BackupFolderAccessError ? "folder_access" : "error"}`);
   }
 }

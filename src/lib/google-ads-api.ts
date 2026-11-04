@@ -1,9 +1,10 @@
-import { GoogleAdsApi, enums, ResourceNames, toMicros, fields } from "google-ads-api";
+import { enums, errors, ResourceNames, toMicros, fields } from "google-ads-api";
+import { createGoogleAdsCustomer } from "./google-ads-customer";
 
 export type GoogleAdsCreds = {
   clientId: string;
   clientSecret: string;
-  developerToken: string;
+  developerToken?: string; // Legacy compatibility; Google now authorizes the Cloud project.
   refreshToken: string;
   loginCustomerId?: string;
 };
@@ -12,37 +13,39 @@ function digits(s: string): string {
   return s.replace(/\D/g, "");
 }
 
-type RawGoogleAdsError = { message?: string; error_code?: unknown };
-type RawGoogleAdsFailure = { errors?: RawGoogleAdsError[] };
+type RawGoogleAdsError = { message?: string; error_code?: { authorization_error?: number | string; quota_error?: number | string } };
+type RawGoogleAdsFailure = { errors?: RawGoogleAdsError[]; error?: unknown; response?: { data?: { error?: unknown }; status?: number } };
+export type GoogleAdsIssue = "authorization_expired" | "account_access" | "project_access" | "rate_limited" | "unavailable";
 
-/** Extrai uma mensagem legível de erros da lib google-ads-api. Falhas
- *  específicas da API (token/permissão/conta) vêm como GoogleAdsFailure
- *  (objeto com `errors[].message`), não como Error comum — String(e) nesses
- *  casos só devolve "[object Object]", por isso esse helper é necessário. */
-export function formatGoogleAdsError(e: unknown): string {
-  const failure = e as RawGoogleAdsFailure;
-  if (failure?.errors?.length) {
-    return failure.errors
-      .map((err) => err.message || JSON.stringify(err.error_code))
-      .join("; ");
+export function googleAdsIssue(error: unknown): GoogleAdsIssue {
+  const failure = error as RawGoogleAdsFailure | null;
+  if (failure?.error === "invalid_grant" || failure?.response?.data?.error === "invalid_grant" || error instanceof Error && /\binvalid_grant\b/i.test(error.message)) return "authorization_expired";
+  for (const item of Array.isArray(failure?.errors) ? failure.errors : []) {
+    const code = item?.error_code?.authorization_error;
+    const authorization = errors.AuthorizationErrorEnum.AuthorizationError;
+    const matches = (name: string) => code === name || typeof code === "number" && code === (authorization as unknown as Record<string, number>)[name];
+    if (["USER_PERMISSION_DENIED", "INVALID_LOGIN_CUSTOMER_ID_SERVING_CUSTOMER_ID_COMBINATION", "CUSTOMER_NOT_ENABLED", "ACCESS_DENIED_FOR_ACCOUNT_TYPE"].some(matches)) return "account_access";
+    if (["CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION", "ACTION_NOT_PERMITTED", "DEVELOPER_TOKEN_NOT_APPROVED", "PROJECT_DISABLED", "SERVICE_ACCESS_DENIED"].some(matches)) return "project_access";
+    const quota = item?.error_code?.quota_error;
+    if (quota != null && quota !== 0 && quota !== "UNSPECIFIED") return "rate_limited";
   }
-  if (e instanceof Error && e.message) return e.message;
-  if (e && typeof e === "object" && "error" in e && e.error === "invalid_grant") return "invalid_grant";
-  // Unknown transport errors can contain request headers and OAuth credentials.
+  if (failure?.response?.status === 429) return "rate_limited";
+  return "unavailable";
+}
+
+/** Classify provider codes without returning request details or secret values. */
+export function formatGoogleAdsError(e: unknown): string {
+  // Provider messages can contain request data. Return only a known classification.
+  const issue = googleAdsIssue(e);
+  if (issue === "authorization_expired") return "invalid_grant";
+  if (issue === "account_access") return "A conexão Google não tem acesso a esta conta de anúncios. Confira a conta vinculada e as permissões no Google Ads.";
+  if (issue === "project_access") return "O projeto Google precisa de liberação para acessar contas reais. Confira o nível de acesso da Google Ads API no Google Cloud.";
+  if (issue === "rate_limited") return "O limite de consultas do Google Ads foi atingido. Aguarde e tente novamente.";
   return "Não foi possível consultar o Google Ads.";
 }
 
 function buildCustomer(creds: GoogleAdsCreds, customerId: string) {
-  const client = new GoogleAdsApi({
-    client_id: creds.clientId,
-    client_secret: creds.clientSecret,
-    developer_token: creds.developerToken,
-  });
-  return client.Customer({
-    customer_id: digits(customerId),
-    refresh_token: creds.refreshToken,
-    login_customer_id: creds.loginCustomerId ? digits(creds.loginCustomerId) : undefined,
-  });
+  return createGoogleAdsCustomer(creds, customerId);
 }
 
 /** ENABLED/PAUSED/REMOVED (Google) → ACTIVE/PAUSED/ARCHIVED (vocabulário já usado na UI, igual à Meta). */

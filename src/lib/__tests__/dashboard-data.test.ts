@@ -31,6 +31,20 @@ it("does not suggest Google reauthorization for an unrelated provider failure",a
  const result=await loadDashboardData({id:"123",platform:"google"},"client-a","last_30d",undefined,request as typeof fetch);
  expect(result.adsReconnect).toBe(false);expect(result.adsError).toContain("Confira a conexão");
 });
+it.each([
+ ["account_access", "não tem acesso a esta conta"],
+ ["project_access", "liberação para acessar contas reais"],
+ ["rate_limited", "limite de consultas"],
+])("explains Google %s while preserving CRM and the existing authorization",async(issue,expected)=>{
+ const request=vi.fn(async(input:RequestInfo|URL)=>String(input).includes("/crm/")?Response.json([{id:"synthetic-lead"}]):Response.json({googleAdsIssue:issue,error:"synthetic-provider-private-value"},{status:403}));
+ const result=await loadDashboardData({id:"123",platform:"google"},"client-a","last_30d",undefined,request as typeof fetch);
+ expect(result.adsReconnect).toBe(false);expect(result.adsError).toContain(expected);expect(result.adsError).not.toContain("synthetic-provider");expect(result.summary).toBeNull();expect(result.crmLeads).toEqual([{id:"synthetic-lead"}]);
+});
+it("does not treat an unknown issue string as trusted display text",async()=>{
+ const request=vi.fn(async(input:RequestInfo|URL)=>String(input).includes("/crm/")?Response.json([]):Response.json({googleAdsIssue:"synthetic-private-value",error:"synthetic-private-value"},{status:500}));
+ const result=await loadDashboardData({id:"123",platform:"google"},"client-a","last_30d",undefined,request as typeof fetch);
+ expect(result.adsError).not.toContain("synthetic-private");expect(result.adsReconnect).toBe(false);
+});
 it("reports unavailable ads while preserving independently loaded CRM data",async()=>{
  const lead={id:"lead-a",clientId:"client-a"};
  const request=vi.fn(async(input:RequestInfo|URL)=>String(input).includes("/crm/")?Response.json([lead]):new Response("unavailable",{status:403}));

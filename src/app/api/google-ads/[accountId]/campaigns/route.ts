@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { ownsAdAccount } from "@/lib/ad-account-access";
 import { getClientById } from "@/lib/clients";
 import { getGoogleAdsCreds } from "@/lib/google-ads-creds";
-import { getCampaigns, formatGoogleAdsError } from "@/lib/google-ads-api";
+import { getCampaigns, formatGoogleAdsError, googleAdsIssue } from "@/lib/google-ads-api";
 import { datePresetToRange } from "@/lib/date-presets";
 
 type Params = { params: Promise<{ accountId: string }> };
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
 
-  if (session.role === "client") {
+  if (session.role !== "manager") {
     const client = (await getClientById(session.clientId!));
     if (!client || !ownsAdAccount(client.adAccounts, "google", accountId)) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
@@ -31,6 +31,6 @@ export async function GET(req: NextRequest, { params }: Params) {
     const campaigns = await getCampaigns(creds, accountId, since, until);
     return NextResponse.json(campaigns);
   } catch (e) {
-    return NextResponse.json({ error: formatGoogleAdsError(e) }, { status: 500 });
+    return NextResponse.json({ error: formatGoogleAdsError(e), googleAdsIssue: googleAdsIssue(e) }, { status: 500 });
   }
 }

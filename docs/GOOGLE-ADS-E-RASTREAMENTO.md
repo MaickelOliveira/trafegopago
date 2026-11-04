@@ -13,6 +13,10 @@ A autorização do Google Drive serve para os backups. A autorização do Google
 
 Se o Google retornar `invalid_grant`, a autorização salva não é mais aceita. O painel apresenta uma explicação e oferece reconexão ao gestor; clientes recebem orientação para procurar o gestor. Falhas de anúncios preservam os dados disponíveis do CRM e não viram resultados zerados.
 
+Conta sem permissão, projeto sem liberação para contas reais e limite de consultas têm orientações próprias. Renovar repetidamente o consentimento não concede acesso a uma conta nem aprova o projeto. Os botões de contas mostram Meta Ads ou Google Ads antes do nome, para distinguir contas com nomes iguais; as opções se reorganizam em telas pequenas.
+
+O acesso atual da Google Ads API é concedido ao projeto Google Cloud. Desde setembro de 2026, o token de desenvolvedor legado foi descontinuado. O formulário não solicita esse token. O adaptador do SDK instalado remove o cabeçalho `developer-token` por completo, pois um cabeçalho vazio também é recusado. As credenciais OAuth, a conta consultada e a identificação da gerenciadora continuam sendo usadas. O valor legado armazenado não é apagado nem enviado.
+
 A autorização pode expirar por diferentes motivos. Projetos OAuth externos em modo de teste podem emitir autorizações que expiram em sete dias. Isso deve ser verificado no Google Cloud; não presuma que é a causa de toda falha. Não amplie escopos nem reduza a validação de segurança para contornar uma autorização expirada.
 
 O retorno OAuth continua vinculado à sessão, ao provedor e a um nonce de uso único válido por dez minutos. Retornos inválidos ou expirados não trocam credenciais. A gravação usa uma transação e preserva mudanças concorrentes da configuração; erros do provedor não são registrados com seu conteúdo completo. O endereço de retorno usa a configuração pública do servidor; cabeçalhos de encaminhamento não definem o destino. Erros desconhecidos de transporte não são serializados nas respostas da API, pois podem conter credenciais.
@@ -38,6 +42,8 @@ Testes com dados fictícios cobrem contas com e sem traços, bloqueio de contas 
 Referências oficiais:
 
 - [Erros comuns do Google Ads](https://developers.google.com/google-ads/api/docs/get-started/common-errors)
+- [Mudança do token legado para acesso por projeto](https://developers.google.com/google-ads/api/docs/api-policy/developer-token)
+- [Níveis de acesso da Google Ads API](https://developers.google.com/google-ads/api/docs/api-policy/access-levels)
 - [Expiração e revogação de autorizações Google](https://developers.google.com/identity/protocols/oauth2#expiration)
 - [Deduplicação de eventos Meta](https://developers.facebook.com/documentation/ads-commerce/conversions-api/deduplicate-pixel-and-server-events)
 

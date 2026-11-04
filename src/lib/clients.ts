@@ -153,7 +153,7 @@ export type AppConfig = {
   googleClientSecret?: string;
   nexoGoogleClientId?: string;   // Aplicativo exclusivo da Nexo para Ads e backup, independente das agendas.
   nexoGoogleClientSecret?: string;
-  googleAdsDeveloperToken?: string;  // Developer Token do Centro de API do Google Ads
+  googleAdsDeveloperToken?: string;  // Legado preservado no arquivo; a integração atual não depende desse token.
   googleAdsRefreshToken?: string;    // OAuth refresh token (escopo adwords) — conexão única p/ toda a agência, nunca exposto ao browser
   googleAdsOAuthClientId?: string;   // Vincula o token ao aplicativo que recebeu a autorização.
   googleAdsLoginCustomerId?: string; // ID da conta MCC/gerenciadora (sem hífen), opcional

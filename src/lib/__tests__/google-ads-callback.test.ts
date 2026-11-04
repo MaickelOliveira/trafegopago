@@ -36,7 +36,7 @@ it("keeps the prior credential and excludes provider payloads from failure logs"
 it("does not expose an unknown transport error containing credentials", () => {
   expect(formatGoogleAdsError({ request: { client_secret: "synthetic-private" }, headers: { authorization: "synthetic-private" } })).toBe("Não foi possível consultar o Google Ads.");
   expect(formatGoogleAdsError({ error: "invalid_grant", request: { client_secret: "synthetic-private" } })).toBe("invalid_grant");
-  expect(formatGoogleAdsError({ errors: [{ message: "Account permission denied" }] })).toBe("Account permission denied");
+  expect(formatGoogleAdsError({ errors: [{ message: "synthetic-private-provider-value" }] })).toBe("Não foi possível consultar o Google Ads.");
 });
 
 it("uses the configured public address instead of a forwarded host", async () => {

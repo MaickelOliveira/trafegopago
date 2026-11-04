@@ -8,6 +8,9 @@ export type DashboardDaily = {date:string;spend:number;clicks:number;impressions
 export type DashboardAccount = {id:string;platform:string};
 export type DashboardCrmLead = {id:string;name:string;phone:string;realPhone?:string;status:string;funnelId:string;createdAt:string;updatedAt?:string;value?:number|null};
 class GoogleAuthorizationExpired extends Error {}
+class GoogleDashboardAccessError extends Error {
+ constructor(readonly issue:"account_access"|"project_access"|"rate_limited"){super(issue);}
+}
 const number=(value:unknown)=>Number.isFinite(Number(value))?Number(value):0;
 const object=(value:unknown):Record<string,unknown>=>value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
 
@@ -35,6 +38,7 @@ export async function loadDashboardData(account:DashboardAccount|undefined,clien
    if(url.startsWith("/api/google-ads/")){
     const body=await response.json().catch(()=>null);
     if(typeof body?.error==="string"&&/\binvalid_grant\b/i.test(body.error))throw new GoogleAuthorizationExpired();
+    if(body?.googleAdsIssue==="account_access"||body?.googleAdsIssue==="project_access"||body?.googleAdsIssue==="rate_limited")throw new GoogleDashboardAccessError(body.googleAdsIssue);
    }
    throw Error("Unavailable dashboard source");
   }
@@ -50,7 +54,8 @@ export async function loadDashboardData(account:DashboardAccount|undefined,clien
   read(`/api/crm/leads?clientId=${encodeURIComponent(clientId)}`).then(value=>{if(!Array.isArray(value))throw Error("Invalid CRM response");return value as DashboardCrmLead[];}),
  ]);
  const adsReconnect=[campaignResult,dailyResult,summaryResult].some(result=>result.status==="rejected"&&result.reason instanceof GoogleAuthorizationExpired);
- const adsError=!base?"Conecte uma conta da Meta ou do Google para consultar os indicadores.":adsReconnect?"O Google recusou a autorização salva. É necessário reconectar o Google Ads com a conta que acessa os anúncios.":[campaignResult,dailyResult,summaryResult].some(result=>result.status==="rejected")?"Não foi possível atualizar todos os dados de anúncios. Confira a conexão e tente novamente.":null;
+ const accessErrors=[campaignResult,dailyResult,summaryResult].flatMap(result=>result.status==="rejected"&&result.reason instanceof GoogleDashboardAccessError?[result.reason.issue]:[]);
+ const adsError=!base?"Conecte uma conta da Meta ou do Google para consultar os indicadores.":adsReconnect?"O Google recusou a autorização salva. É necessário reconectar o Google Ads com a conta que acessa os anúncios.":accessErrors.includes("account_access")?"A conexão Google não tem acesso a esta conta de anúncios. Confira a conta vinculada e as permissões no Google Ads.":accessErrors.includes("project_access")?"O projeto Google precisa de liberação para acessar contas reais. Confira o nível de acesso da Google Ads API no Google Cloud.":accessErrors.includes("rate_limited")?"O limite de consultas do Google Ads foi atingido. Aguarde e tente novamente.":[campaignResult,dailyResult,summaryResult].some(result=>result.status==="rejected")?"Não foi possível atualizar todos os dados de anúncios. Confira a conexão e tente novamente.":null;
  return {campaigns:campaignResult.status==="fulfilled"?campaignResult.value:[],daily:dailyResult.status==="fulfilled"?dailyResult.value:[],
   summary:summaryResult.status==="fulfilled"?summaryResult.value:null,adsError,adsReconnect,
   crmLeads:crmResult.status==="fulfilled"?crmResult.value:[],crmError:crmResult.status==="rejected"?"Não foi possível atualizar os indicadores do CRM.":null};

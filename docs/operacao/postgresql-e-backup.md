@@ -29,7 +29,9 @@ A versão da Graph API foi alinhada ao SDK oficial da Meta observado na revisão
 
 ## Backup diário no Drive
 
-Em **Plataforma e conexões → Conectar backup**, o gestor autoriza `drive.file` no aplicativo Google já configurado. Esse consentimento é separado da conexão de Agenda e da conexão do Drive no assistente. A pasta do assistente pode não estar acessível ao aplicativo; nesse caso o consentimento cria uma pasta privada própria com o mesmo nome.
+Em **Plataforma e conexões → Conectar backup**, o gestor autoriza `drive.file` no aplicativo exclusivo da Nexo. Esse consentimento é separado da conexão de Agenda e da conexão do Drive no assistente. Somente a primeira conexão, sem destino salvo, cria uma pasta privada. As cópias diárias usam sempre o identificador dessa pasta, sem criar subpastas por data.
+
+Renovar a autorização preserva a mesma pasta. Se a conta conectada não conseguir acessá-la, ou se ela estiver na lixeira, o retorno informa o problema e mantém a configuração anterior; não cria outro destino silenciosamente. A gravação também recusa substituir uma pasta salva por outra autorização concorrente. Uma cópia inicial criada por outro aplicativo deve ser movida para a pasta ativa pelo proprietário, preservando seu conteúdo e sua privacidade. O nome sozinho não identifica uma pasta no Drive.
 
 O envio roda às 03h em Brasília e também tenta concluir um dia pendente depois desse horário. Não dispara mensagens. O backup usa `pg_dump`, proteção AES-256-GCM, resumo SHA-256 e conferência do identificador/tamanho no Drive. Uma cópia apenas local não aparece como backup diário concluído. Pastas compartilhadas são recusadas.
 
