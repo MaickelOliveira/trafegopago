@@ -191,6 +191,12 @@ async function fireEntryColumnMetaEvent(lead: Lead): Promise<void> {
   }).catch((e) => console.error("[Meta CAPI] evento da coluna de entrada", e));
 }
 
+async function queueGoogleConversion(lead: Lead, previous?: Lead): Promise<void> {
+  if (!(await getClientById(lead.clientId))?.googleConversions?.enabled) return;
+  const { enqueueLeadGoogleConversion } = await import("./google-conversion-outbox");
+  await enqueueLeadGoogleConversion(lead, previous);
+}
+
 export async function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedAt">): Promise<Lead> {
   return withDataTransaction(async () => {
   const leads = (await load({ clientId: data.clientId, phone: data.phone, funnelId: data.funnelId }));
@@ -210,6 +216,7 @@ export async function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedA
   const lead: Lead = { ...data, id: randomUUID(), createdAt: now, updatedAt: now };
   leads.push(lead);
   (await save(leads));
+  await queueGoogleConversion(lead);
   (await fireEntryColumnMetaEvent(lead));
   return lead;
 
@@ -235,6 +242,7 @@ export async function updateLead(id: string, patch: Partial<Omit<Lead, "id" | "c
   else if (normalizedPatch.aiPaused === false) normalizedPatch.aiPausedAt = null;
   leads[idx] = { ...leads[idx], ...normalizedPatch, id: leads[idx].id, clientId: leads[idx].clientId, createdAt: leads[idx].createdAt, updatedAt: new Date().toISOString() };
   (await save(leads));
+  await queueGoogleConversion(leads[idx], previous);
   if (patch.status !== undefined || patch.aiPaused !== undefined || patch.followUpDisabled !== undefined) {
     const { synchronizeLeadWorkflows } = await import("./lead-workflows");
     await synchronizeLeadWorkflows(leads[idx], previous);
@@ -309,6 +317,7 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
   const idx = candidates.length ? leads.indexOf(candidates[0]) : -1;
   const now = new Date().toISOString();
   if (idx >= 0) {
+    const previous = { ...leads[idx] };
     // Missing automatic metadata must not erase manually edited or captured data.
     patch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== null));
     if (patch.notes !== undefined && leads[idx].notes) patch.notes = !patch.notes || leads[idx].notes.includes(patch.notes) ? leads[idx].notes : `${leads[idx].notes}\n${patch.notes}`.slice(-30000);
@@ -331,6 +340,7 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
     else if (patch.aiPaused === false) patch = { ...patch, aiPausedAt: null };
     leads[idx] = { ...leads[idx], ...patch, updatedAt: now };
     (await save(leads));
+    await queueGoogleConversion(leads[idx], previous);
     return leads[idx];
   }
   const lead: Lead = {
@@ -371,6 +381,7 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
   };
   leads.push(lead);
   (await save(leads));
+  await queueGoogleConversion(lead);
   (await fireEntryColumnMetaEvent(lead));
   return lead;
 

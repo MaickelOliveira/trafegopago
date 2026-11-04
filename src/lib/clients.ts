@@ -129,6 +129,7 @@ export type Client = {
   capiTestEventCode?: string;   // Código temporário da aba "Testar eventos" do Gerenciador de Eventos — só preencher durante testes, remover depois
   googleAdsId?: string;         // ID de conta Google Ads  (ex: AW-123456789)
   googleConvLabel?: string;     // Label de conversão Google Ads (ex: AbCdEfGhI)
+  googleConversions?: import("./google-conversion-plan").GoogleConversionSettings;
   kanbanAgentEnabled?: boolean; // Agente IA de CRM ativo (default: true se anthropicApiKey configurado)
   kanbanAgentPrompt?: string;   // Prompt configurável que guia quando mover/pular um lead no Kanban
   enabledSystems?: string[];    // Slugs de AVAILABLE_SYSTEMS (src/lib/systems.ts) habilitados pra este cliente
@@ -156,6 +157,8 @@ export type AppConfig = {
   googleAdsDeveloperToken?: string;  // Legado preservado no arquivo; a integração atual não depende desse token.
   googleAdsRefreshToken?: string;    // OAuth refresh token (escopo adwords) — conexão única p/ toda a agência, nunca exposto ao browser
   googleAdsOAuthClientId?: string;   // Vincula o token ao aplicativo que recebeu a autorização.
+  googleConversionsRefreshToken?: string; // Autorização separada, somente Data Manager; nunca enviada ao navegador.
+  googleConversionsOAuthClientId?: string;
   googleAdsLoginCustomerId?: string; // ID da conta MCC/gerenciadora (sem hífen), opcional
   agentCronSecret?: string;      // Secret para proteger o endpoint de cron
   masterPhone?: string;              // Número master: recebe notificações do sistema (com DDI, só dígitos)

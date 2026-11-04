@@ -37,6 +37,14 @@ O envio roda às 03h em Brasília e também tenta concluir um dia pendente depoi
 
 Confira a primeira execução com `node scripts/backup.mjs --force` e restaure o arquivo em banco vazio, separado. `scripts/preflight.mjs` lista pendências sem revelar credenciais. O volume de mídia, documentos enviados e autenticação de WhatsApp precisa de proteção separada: o backup PostgreSQL não substitui a cópia desse volume.
 
+## Fila de conversões Google
+
+A migração `003-google-conversions.sql` cria uma tabela vazia e índices próprios; não reescreve os dados existentes. Essa tabela integra o `pg_dump` e sua cópia criptografada. A fila registra no máximo uma qualificação e uma venda por cliente e contato, com restrição única no banco.
+
+O trabalhador usa uma trava PostgreSQL própria e processa lotes limitados, fora das transações de atendimento. Autorização ausente preserva a fila. Contas, funis e regras são reconferidos antes de enviar. Falhas temporárias usam espera crescente e o mesmo identificador, horário e valor originais. Um recibo aguardando diagnóstico não é reenviado como se fosse outra conversão. Pausar a configuração impede novos envios; eventos já recebidos pelo Google continuam sujeitos ao processamento do provedor.
+
+Após mudar a configuração de conversões, confirme a autorização, as regras salvas e a inclusão dessa tabela no próximo backup. Ao restaurar uma cópia mais antiga, aplique as migrações compatíveis antes de iniciar os trabalhadores. Nenhum teste deve truncar o banco da plataforma: os testes desta fila exigem banco local descartável com identificação própria.
+
 ## Recuperação
 
 - Banco: `RESTORE_DATABASE_URL` deve apontar para um banco novo e vazio; execute `node scripts/restore-backup.mjs ARQUIVO.dump.enc` com a chave original disponível. O programa recusa o banco ativo e remove seu arquivo temporário descriptografado.

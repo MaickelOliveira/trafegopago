@@ -1,4 +1,20 @@
 /* Nexo's original brand: #afe507, #0f0f0f and cool white. */
+@media(max-width:640px){
+ .nexo-settings-workspace .nexo-settings-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible;gap:8px;}
+ .nexo-settings-workspace .nexo-settings-tabs>button{white-space:normal;min-height:48px;padding:10px;font-size:12px;}
+ .nexo-settings-workspace .nexo-settings-tabs>button:nth-of-type(5){grid-column:1/-1;}
+}
+.nexo-google-conversions { display:grid; gap:20px; min-width:0; }
+.nexo-conversion-actions { display:flex; gap:12px; flex-wrap:wrap; }
+.nexo-conversion-help,.nexo-conversion-rule p,.nexo-conversion-history>p { color:var(--nexo-muted); font-size:13px; line-height:1.7; }
+.nexo-conversion-rule { padding:18px; border:1px solid var(--nexo-line); border-radius:14px; background:var(--nexo-raised); }
+.nexo-conversion-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; }
+.nexo-conversion-summary article { display:grid; gap:8px; padding:16px; border:1px solid var(--nexo-line); border-radius:12px; }
+.nexo-conversion-summary span,.nexo-conversion-history article span { color:var(--nexo-muted); font-size:12px; }
+.nexo-conversion-summary strong { font-size:24px; }
+.nexo-conversion-history article { display:flex; gap:16px; justify-content:space-between; border-bottom:1px solid var(--nexo-line); padding:16px 0; }
+.nexo-conversion-history article>div { display:grid; gap:6px; }
+@media(max-width:600px){.nexo-conversion-actions>*{width:100%;min-height:44px;white-space:normal;text-align:center;justify-content:center;}.nexo-conversion-history article{flex-direction:column;}.nexo-conversion-summary{grid-template-columns:repeat(2,minmax(0,1fr));}}
 :is(.nexo-app-shell,.nexo-client-shell,.nexo-login) {
   --nexo-bg:#101113; --nexo-surface:#191b1e; --nexo-raised:#202328;
   --nexo-ink:#f0f2f4; --nexo-muted:#a4a9b1; --nexo-line:#30343b;

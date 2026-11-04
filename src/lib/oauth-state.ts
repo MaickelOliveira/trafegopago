@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { getSession } from "./auth";
 
-type Provider = "google-calendar" | "google-ads" | "google-backup" | "meta";
+type Provider = "google-calendar" | "google-ads" | "google-backup" | "google-conversions" | "meta";
 function key() {
   if (!process.env.JWT_SECRET) throw new Error("Chave de sessão não configurada.");
   return new TextEncoder().encode(process.env.JWT_SECRET);

@@ -34,6 +34,8 @@ export function mergePlatformConfig(current: AppConfig, patch: Partial<AppConfig
     // A refresh token belongs to one OAuth application; never try it with a different pair.
     updated.googleAdsRefreshToken = undefined;
     updated.googleAdsOAuthClientId = undefined;
+    updated.googleConversionsRefreshToken = undefined;
+    updated.googleConversionsOAuthClientId = undefined;
   }
   // Existing calendars and the frozen credential of an authorized backup remain unchanged.
   return updated;

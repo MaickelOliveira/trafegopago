@@ -23,6 +23,8 @@ const nextConfig: NextConfig = {
     "sharp",
     "pg",
     "googleapis",
+    // This server-only SDK is loaded natively, including by the conversion worker.
+    "google-ads-api",
   ],
   images: {
     remotePatterns: [

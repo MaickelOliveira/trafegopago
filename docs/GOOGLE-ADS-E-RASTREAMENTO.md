@@ -21,6 +21,22 @@ A autorização pode expirar por diferentes motivos. Projetos OAuth externos em 
 
 O retorno OAuth continua vinculado à sessão, ao provedor e a um nonce de uso único válido por dez minutos. Retornos inválidos ou expirados não trocam credenciais. A gravação usa uma transação e preserva mudanças concorrentes da configuração; erros do provedor não são registrados com seu conteúdo completo. O endereço de retorno usa a configuração pública do servidor; cabeçalhos de encaminhamento não definem o destino. Erros desconhecidos de transporte não são serializados nas respostas da API, pois podem conter credenciais.
 
+## Conversões do CRM para o Google Ads
+
+No cadastro do cliente, abra **Conversões para o Google**. A autorização Data Manager é separada dos anúncios, das agendas e do backup e solicita somente `datamanager`. O retorno reutiliza o endereço já registrado da Nexo, com estado assinado de uso único, cookie e token próprios. Ele não substitui as autorizações dos outros serviços.
+
+Escolha uma conta Google vinculada ao cliente, um funil do próprio cliente e etapas diferentes para contato qualificado e venda. A preparação consulta a conta que efetivamente administra as conversões e reutiliza ou cria duas ações compatíveis do tipo `UPLOAD_CLICKS`. Ações com nomes conflitantes são recusadas. As novas ações são secundárias; a configuração não altera campanhas, objetivos ou lances existentes.
+
+A ativação considera as próximas entradas nas etapas escolhidas. Cada contato pode gerar uma qualificação e uma venda. Repetições e reentradas mantêm o mesmo identificador. O valor da venda é o valor do contato naquele momento; a ausência de valor produz zero. Contatos sem GCLID válido ou explicitamente atribuídos à Meta são registrados como não enviados. Não há busca retroativa de conversões nem criação de identificadores que faltam. Esta versão não faz correspondência por telefone, e-mail, endereço ou identificadores alternativos de dispositivos.
+
+A mudança de etapa e seu registro na fila são confirmados na mesma transação PostgreSQL. O envio posterior ocorre separadamente da IA. São enviados apenas GCLID, data, tipo de ação, valor, moeda e identificador estável do evento. Consentimento não é inventado e informações pessoais do contato ou conversas não são acrescentadas. O gestor deve manter a captura de cliques e os consentimentos aplicáveis na origem.
+
+Um recibo significa recebimento. A consulta do processamento começa após 30 minutos, preserva avisos e não trata respostas parciais ou falhas como sucesso. Processamento bem-sucedido também não é prova de atribuição a uma campanha. A tela distingue a fila, o recebimento, o processamento e os itens que precisam de atenção. Identificadores de clique são removidos da fila após um resultado final. Contas e funis que deixem de pertencer ao cliente bloqueiam novos envios.
+
+O projeto Nexo precisa da Data Manager API habilitada e do consentimento específico. Isso não exige modificar o projeto Google de outro sistema. Não use `UploadClickConversions` para novas integrações sem a liberação legada exigida pelo Google.
+
+Referências oficiais: [integração de conversões offline](https://developers.google.com/data-manager/api/devguides/events/google-ads/offline/send-events), [acesso e autorização](https://developers.google.com/data-manager/api/devguides/concepts/deploy), [recebimento e diagnóstico](https://developers.google.com/data-manager/api/reference/rest/v1/events/ingest), [skill oficial de eventos](https://github.com/google/skills/blob/main/skills/ads/data-manager-api-event-ingestion/SKILL.md).
+
 ## Pixel e API da Meta
 
 Abra Clientes → Configurar → Pixel e API da Meta. O atalho `?secao=pixel` abre essa seção diretamente.

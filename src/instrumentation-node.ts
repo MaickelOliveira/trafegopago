@@ -24,6 +24,11 @@ export async function startBackgroundJobs() {
       } catch {
         console.error("[backup] O backup diário precisa de atenção. Consulte a configuração e o histórico.");
       }
+      // Independent outbox: conversion delivery never holds up AI processing.
+      try {
+        const { processGoogleConversionOutbox } = await import("./lib/google-conversion-outbox");
+        void processGoogleConversionOutbox().catch(() => console.error("[google-conversions] A fila de conversões precisa de atenção."));
+      } catch { console.error("[google-conversions] Não foi possível verificar a fila de conversões."); }
     };
 
     // Aguarda 5s após iniciar (servidor estabilizar) e depois roda a cada 60s

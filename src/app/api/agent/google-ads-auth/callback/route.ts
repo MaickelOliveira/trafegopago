@@ -4,6 +4,7 @@ import { exchangeAdsCode } from "@/lib/google-ads-auth";
 import { getConfig, saveConfig } from "@/lib/clients";
 import { withDataTransaction } from "@/lib/document-store";
 import { nexoGoogleCredentials } from "@/lib/google-nexo-auth";
+import { completeGoogleConversionAuthorization, CONVERSION_STATE_PREFIX } from "@/lib/google-conversion-auth";
 
 async function getPublicBase(req: NextRequest): Promise<string> {
   const config = (await getConfig());
@@ -14,6 +15,7 @@ async function getPublicBase(req: NextRequest): Promise<string> {
 // Diferente do Calendar (per-cliente), aqui o refresh token é salvo no
 // AppConfig global — uma conexão só, reaproveitada por todos os clientes.
 export async function GET(req: NextRequest) {
+  if (req.nextUrl.searchParams.get("state")?.startsWith(CONVERSION_STATE_PREFIX)) return completeGoogleConversionAuthorization(req);
   const base = await getPublicBase(req);
   try { await consumeOAuthState("google-ads", req.nextUrl.searchParams.get("state")); }
   catch { return NextResponse.redirect(`${base}/gestor/configuracoes?googleAds=expired`); }
