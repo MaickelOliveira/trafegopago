@@ -4,7 +4,8 @@ import path from "node:path";
 const registered = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock("../media-access", () => ({ registerMediaFile: registered }));
 import { saveDecryptedMedia } from "../media-transcribe";
-import { chatMediaMessage, decodeChatMediaBase64 } from "../chat-media-message";
+import { chatMediaMessage, decodeChatMediaBase64, findWhatsAppMessageObject } from "../chat-media-message";
+import { chatFileDownload, chatFileName, chatFileSize } from "../chat-attachments";
 const saved: string[] = [];
 afterEach(async () => { await Promise.all(saved.splice(0).map(file => unlink(file))); vi.clearAllMocks(); vi.restoreAllMocks(); });
 it("decodes provider data URIs and refuses malformed, empty or oversized base64", () => {
@@ -35,4 +36,27 @@ it("preserves an honest audio message when the file cannot be recovered", async 
   vi.spyOn(console,"warn").mockImplementation(()=>{});
   const result=await chatMediaMessage({role:"user",content:"[Áudio]",ts:1000,type:"audio",buffer:Buffer.from("invalid"),mimeType:"audio/ogg",phone:"synthetic",clientId:"client-a",connId:"connection-a"},vi.fn().mockRejectedValue(Error("unavailable")));
   expect(result).toEqual({role:"user",content:"[Áudio]",ts:1000,type:"audio"});
+});
+it("stores real PDF signatures as PDF and other documents as private opaque downloads", async () => {
+  for (const [data, mime, extension] of [["%PDF-1.7\nfixture", "application/octet-stream", "pdf"], ["PK synthetic office file", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "bin"], ["<script>fixture</script>", "text/html", "bin"]]) {
+    const url=await saveDecryptedMedia(Buffer.from(data),"synthetic",1000,mime,"client-a","connection-a","document");
+    saved.push(path.join(process.cwd(),"data","media",url.split("/").pop()!)); expect(url.endsWith(`.${extension}`)).toBe(true); expect(registered).toHaveBeenLastCalledWith(url,"client-a","connection-a");
+  }
+  await expect(saveDecryptedMedia(Buffer.alloc(25*1024*1024+1),"synthetic",1000,"application/pdf","client-a","connection-a","document")).rejects.toThrow();
+});
+it.each(["user","assistant"] as const)("archives documents for %s without changing their channel", async role => {
+  const result=await chatMediaMessage({role,content:"[Documento]",ts:1000,type:"document",fileName:"../../Orçamento.pdf",messageId:"synthetic-doc",buffer:Buffer.from("%PDF-fixture"),mimeType:"application/pdf",phone:"synthetic",clientId:"client-a",connId:"connection-a"});
+  saved.push(path.join(process.cwd(),"data","media",result.mediaUrl!.split("/").pop()!));
+  expect(result).toMatchObject({role,type:"document",fileName:"Orçamento.pdf",mimeType:"application/pdf",fileSize:12,messageId:"synthetic-doc"});
+});
+it("recognizes captioned and ephemeral documents with bounded unwrapping", () => {
+  const document={fileName:"Pedido.pdf",mimetype:"application/pdf"};
+  expect(findWhatsAppMessageObject({ephemeralMessage:{message:{documentWithCaptionMessage:{message:{documentMessage:document}}}}})).toEqual({type:"documentMessage",obj:document});
+  expect(findWhatsAppMessageObject({documentMessage:document})).toEqual({type:"documentMessage",obj:document});
+  const cycle:Record<string,unknown>={};cycle.ephemeralMessage={message:cycle};expect(findWhatsAppMessageObject(cycle)).toBeNull();
+});
+it("keeps filenames safe and retains signatures on attachment downloads", () => {
+  expect(chatFileName("../../Pedido\r\n.pdf")).toBe("Pedido.pdf"); expect(chatFileName("\u202efile.pdf")).toBe("file.pdf");
+  expect(chatFileDownload("/api/media/a.pdf?expires=123&signature=abc","Pedido.pdf")).toContain("expires=123&signature=abc&download=1&name=Pedido.pdf");
+  expect(chatFileDownload("https://provider.example/file","Pedido.pdf")).toBe("https://provider.example/file"); expect(chatFileSize(1024)).toBe("1 KB"); expect(chatFileSize(-1)).toBe("");
 });

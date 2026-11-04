@@ -12,8 +12,11 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   ts: number;
-  type?: "text" | "audio" | "image";
+  type?: "text" | "audio" | "image" | "document";
   mediaUrl?: string;
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
 };
 
 type Conversation = {

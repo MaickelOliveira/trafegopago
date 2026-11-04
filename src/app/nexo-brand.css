@@ -494,3 +494,19 @@
 .nexo-dashboard .border-indigo-500 {border-color:#98c634}
 .nexo-dashboard .bg-indigo-500\/20 {background:#2b391f}
 @media(max-width:700px) {.nexo-kpi {padding:19px 16px}.nexo-kpi .text-3xl {font-size:25px}.nexo-kpi .text-white\/70 {font-size:9px;letter-spacing:.5px}}
+.nexo-message-file { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; max-width: 100%; padding: 14px; border: 1px solid currentColor; border-color: color-mix(in srgb, currentColor 16%, transparent); border-radius: 14px; background: color-mix(in srgb, currentColor 4%, transparent); }
+.nexo-message-file-icon { display: grid; place-items: center; flex: 0 0 44px; height: 50px; border: 1px solid currentColor; border-radius: 9px; font-size: 11px; font-weight: 800; letter-spacing: .04em; opacity: .85; }
+.nexo-message-file-details { display: grid; gap: 4px; flex: 1 1 130px; min-width: 0; }
+.nexo-message-file-details strong { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.nexo-message-file-details span { font-size: 12px; opacity: .75; }
+.nexo-message-file-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.nexo-message-file-actions a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 12px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 9px; color: inherit; font-size: 12px; font-weight: 700; text-decoration: none; }
+.nexo-message-file-actions a:hover { background: color-mix(in srgb, currentColor 9%, transparent); }
+.nexo-message-file-actions a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.nexo-message-file-missing { width: 100%; margin: 0; font-size: 12px; line-height: 1.5; opacity: .8; }
+.nexo-tracking-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 22px; }
+.nexo-tracking-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 9px 15px; border: 1px solid var(--nexo-line); border-radius: 10px; color: var(--nexo-text); font-size: 13px; font-weight: 700; text-decoration: none; }
+.nexo-tracking-nav a:hover { border-color: var(--nexo-lime); background: color-mix(in srgb, var(--nexo-lime) 8%, transparent); }
+.nexo-tracking-nav a:focus-visible { outline: 2px solid var(--nexo-lime); outline-offset: 3px; }
+.nexo-tracking-group { display: grid; gap: 18px; scroll-margin-top: 22px; padding-block: 12px 28px; border-bottom: 1px solid var(--nexo-line); }
+.nexo-tracking-group:last-of-type { border-bottom: 0; }

@@ -22,4 +22,18 @@ describe("media displayed in conversations", () => {
     const missing = renderToStaticMarkup(createElement(ChatMessageContent, {message:{role:"user",type:"audio",content:"Transcrição preservada"}}));
     expect(missing).toContain("o arquivo não foi salvo"); expect(missing).toContain("Transcrição preservada");
   });
+  it("shows a PDF with its name, size and authenticated open/download links", () => {
+    const html = renderToStaticMarkup(createElement(ChatMessageContent, {message:{role:"user",type:"document",fileName:"Orçamento.pdf",mimeType:"application/pdf",fileSize:2048,mediaUrl:"/api/media/fixture.pdf?expires=123&signature=abc",content:"Confira as medidas"}}));
+    expect(html).toContain("Orçamento.pdf"); expect(html).toContain("2 KB"); expect(html).toContain("Abrir PDF"); expect(html).toContain("download=1"); expect(html).toContain("signature=abc"); expect(html).toContain("Confira as medidas");
+  });
+  it("downloads other files without executing or embedding their contents", () => {
+    const html = renderToStaticMarkup(createElement(ChatMessageContent, {message:{role:"assistant",type:"document",fileName:"Planilha.xlsx",mediaUrl:"/api/media/fixture.bin",content:"[Documento]"}}));
+    expect(html).toContain("Planilha.xlsx"); expect(html).toContain("Baixar"); expect(html).not.toContain("<iframe"); expect(html).not.toContain("<object"); expect(html).not.toContain("Abrir PDF");
+  });
+  it("explains missing historical documents and refuses executable links", () => {
+    const html = renderToStaticMarkup(createElement(ChatMessageContent, {message:{role:"user",type:"document",fileName:"Pedido.pdf",mediaUrl:"javascript:alert(1)",content:"[Documento]"}}));
+    expect(html).toContain("O arquivo não foi salvo"); expect(html).not.toContain("href=");
+    const old = renderToStaticMarkup(createElement(ChatMessageContent, {message:{role:"user",content:"[Documento: Pedido.pdf]"}}));
+    expect(old).toContain("Pedido.pdf"); expect(old).toContain("O arquivo não foi salvo");
+  });
 });

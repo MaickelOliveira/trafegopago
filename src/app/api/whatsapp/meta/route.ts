@@ -105,12 +105,12 @@ export async function POST(req: NextRequest) {
         let pendingTranscription: { buffer: Buffer; mime: string; kind: MediaKind; caption?: string } | undefined;
         const mediaTypeMap: Record<string, MediaKind> = { audio: "audio", image: "image", document: "document", video: "video" };
         const mediaKind = mediaTypeMap[msg.type as string];
-        const mediaObj = mediaKind ? msg[msg.type as string] as { id?: string; mime_type?: string; caption?: string } | undefined : undefined;
+        const mediaObj = mediaKind ? msg[msg.type as string] as { id?: string; mime_type?: string; caption?: string; filename?: string } | undefined : undefined;
         if (mediaKind) {
           text = mediaObj?.caption?.trim() || text || (mediaKind === "audio" ? "[Áudio]" : mediaKind === "image" ? "[Imagem]" : mediaKind === "video" ? "[Vídeo]" : "[Documento]");
           const buffer = mediaObj?.id && metaToken ? await downloadMetaMedia(mediaObj.id, metaToken).catch(() => null) : null;
-          if (mediaKind === "audio" || mediaKind === "image") {
-            storedMedia = await chatMediaMessage({ role: "user", content: text, ts, messageId, type: mediaKind, buffer: buffer ?? undefined, mimeType: mediaObj?.mime_type || (mediaKind === "audio" ? "audio/ogg" : "image/jpeg"), phone, clientId: cid, connId: connId ?? undefined });
+          if (mediaKind === "audio" || mediaKind === "image" || mediaKind === "document") {
+            storedMedia = await chatMediaMessage({ role: "user", content: text, ts, messageId, type: mediaKind, buffer: buffer ?? undefined, mimeType: mediaObj?.mime_type || (mediaKind === "audio" ? "audio/ogg" : mediaKind === "document" ? "application/octet-stream" : "image/jpeg"), fileName: mediaObj?.filename, phone, clientId: cid, connId: connId ?? undefined });
           }
           if (buffer) pendingTranscription = { buffer, mime: mediaObj?.mime_type || (mediaKind === "audio" ? "audio/ogg" : "application/octet-stream"), kind: mediaKind, caption: mediaObj?.caption };
 

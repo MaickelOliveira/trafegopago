@@ -22,11 +22,12 @@ function ensureMediaDir() {
   if (!existsSync(MEDIA_DIR)) mkdirSync(MEDIA_DIR, { recursive: true, mode: 0o700 });
 }
 
-export async function saveDecryptedMedia(buffer: Buffer, _phone: string, _ts: number, mimeType: string, clientId: string, connId?: string): Promise<string> {
+export async function saveDecryptedMedia(buffer: Buffer, _phone: string, _ts: number, mimeType: string, clientId: string, connId?: string, attachmentType?: "document"): Promise<string> {
   const mime = mimeType.split(";")[0].trim().toLowerCase();
   const extensions: Record<string, string> = { "audio/ogg": "ogg", "application/ogg": "ogg", "audio/opus": "ogg", "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a", "audio/webm": "webm", "audio/wav": "wav", "audio/x-wav": "wav", "video/mp4": "mp4", "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf" };
-  const ext = extensions[mime];
-  if (!clientId || !ext || !buffer.length || buffer.length > 25 * 1024 * 1024 || !matchesUploadType(`.${ext}`, buffer)) throw Error("Arquivo de mídia inválido.");
+  // Non-PDF documents are opaque downloads, never executable content on our origin.
+  const ext = attachmentType === "document" ? (matchesUploadType(".pdf", buffer) ? "pdf" : "bin") : extensions[mime];
+  if (!clientId || !ext || !buffer.length || buffer.length > 25 * 1024 * 1024 || (ext !== "bin" && !matchesUploadType(`.${ext}`, buffer))) throw Error("Arquivo de mídia inválido.");
   ensureMediaDir();
   const filename = `${randomUUID()}.${ext}`;
   const destination = path.join(MEDIA_DIR, filename);

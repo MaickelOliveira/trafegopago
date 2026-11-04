@@ -9,7 +9,8 @@ import { getLeads, getChatLeadByPhone as getLeadByPhone, captureWhatsAppLead, ha
 import { getConfig, getClientById, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
 import { getAdInfoById } from "@/lib/meta-api";
 import { getHistory, addMessage, setAiPaused,getAiPaused, sanitizeContactName, updateMessage, ensureBrCountryCode } from "@/lib/conversations";
-import { chatMediaMessage, decodeChatMediaBase64 } from "@/lib/chat-media-message";
+import { chatMediaMessage, decodeChatMediaBase64, findWhatsAppMessageObject as findMessageTypeObject } from "@/lib/chat-media-message";
+import { chatFileName } from "@/lib/chat-attachments";
 import { markSent, consumeSent, isPhoneSending, markPhoneSending } from "@/lib/whatsapp-sent";
 import { splitMessage } from "@/lib/message-text";
 import { runGeminiAgent, isGreetingOnlyActive } from "@/lib/gemini-agent";
@@ -249,16 +250,6 @@ type EvolutionMessageData = {
 // fica aninhado DENTRO do objeto do tipo específico, mas pra mensagens tipo
 // "conversation" (texto puro, sem objeto próprio) findContextInfo também tenta
 // message.contextInfo direto como fallback — ver findContextInfo abaixo.
-function findMessageTypeObject(message: Record<string, unknown> | undefined): { type: string; obj: Record<string, unknown> } | null {
-  if (!message) return null;
-  const candidates = ["imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "extendedTextMessage"];
-  for (const key of candidates) {
-    const obj = message[key];
-    if (obj && typeof obj === "object") return { type: key, obj: obj as Record<string, unknown> };
-  }
-  return null;
-}
-
 // Confirmado ao vivo (payload real de clique em anúncio Facebook, ver
 // /api/debug/evolution-ctwa): pra mensagem tipo "conversation", o contextInfo
 // do CTWa NÃO fica aninhado em data.message nenhum nível — vem em
@@ -436,9 +427,15 @@ export async function POST(
     contentForHistory = `[Vídeo]${caption ? `: ${caption}` : ""}`;
     text = caption || "[O usuário enviou um vídeo]";
   } else if (typeInfo?.type === "documentMessage") {
-    const fname = String(typeInfo.obj.fileName ?? typeInfo.obj.caption ?? "arquivo");
-    contentForHistory = `[Documento: ${fname}]`;
-    text = `[O usuário enviou um documento: ${fname}]`;
+    const fname = chatFileName(typeInfo.obj.fileName ?? typeInfo.obj.title);
+    const caption = typeof typeInfo.obj.caption === "string" ? typeInfo.obj.caption.trim().slice(0, 2000) : "";
+    contentForHistory = caption || `[Documento: ${fname}]`;
+    text = caption || `[O usuário enviou um documento: ${fname}]`;
+    mediaBuffer = decodeChatMediaBase64(typeInfo.obj.base64 ?? messageObj.base64 ?? evoData.base64);
+    if (mediaBuffer) {
+      mediaMime = String(typeInfo.obj.mimetype ?? "application/octet-stream");
+      mediaKind = "document";
+    }
   } else if (typeInfo?.type === "stickerMessage") {
     contentForHistory = "[Sticker]";
     text = "[O usuário enviou um sticker/figurinha]";
@@ -448,13 +445,13 @@ export async function POST(
   }
 
   // ── Busca mídia por id quando o webhook não trouxe base64 inline ──
-  const isMediaMsg = mediaKind === undefined && (typeInfo?.type === "imageMessage" || typeInfo?.type === "audioMessage");
+  const isMediaMsg = mediaKind === undefined && (typeInfo?.type === "imageMessage" || typeInfo?.type === "audioMessage" || typeInfo?.type === "documentMessage");
   if (isMediaMsg && key.id) {
     const fetched = await getBase64FromMediaMessage(evoSession.instanceName, evoSession.instanceApiKey, key.id).catch(() => null);
     if (fetched) {
       mediaBuffer = decodeChatMediaBase64(fetched.base64);
-      mediaMime = fetched.mimetype || (typeInfo?.type === "audioMessage" ? "audio/ogg" : "image/jpeg");
-      mediaKind = typeInfo?.type === "audioMessage" ? "audio" : "image";
+      mediaMime = fetched.mimetype || String(typeInfo?.obj.mimetype || (typeInfo?.type === "audioMessage" ? "audio/ogg" : typeInfo?.type === "documentMessage" ? "application/octet-stream" : "image/jpeg"));
+      mediaKind = typeInfo?.type === "audioMessage" ? "audio" : typeInfo?.type === "documentMessage" ? "document" : "image";
     } else {
       text = typeInfo?.type === "audioMessage"
         ? "[O usuário enviou um áudio. Não foi possível processar — peça para digitar.]"
@@ -528,9 +525,9 @@ export async function POST(
   const connId = evoSession.id;
   const historyTs = Date.now();
   const messageId = typeof key.id === "string" && key.id.length <= 160 ? key.id : undefined;
-  const attachmentType = typeInfo?.type === "audioMessage" ? "audio" : typeInfo?.type === "imageMessage" ? "image" : undefined;
+  const attachmentType = typeInfo?.type === "audioMessage" ? "audio" : typeInfo?.type === "imageMessage" ? "image" : typeInfo?.type === "documentMessage" ? "document" : undefined;
   const historyMessage = async (role: "user" | "assistant") => attachmentType
-    ? chatMediaMessage({ role, content: contentForHistory, ts: historyTs, type: attachmentType, messageId, buffer: mediaBuffer, mimeType: mediaMime || (attachmentType === "audio" ? "audio/ogg" : "image/jpeg"), phone, clientId, connId })
+    ? chatMediaMessage({ role, content: contentForHistory, ts: historyTs, type: attachmentType, messageId, buffer: mediaBuffer, mimeType: mediaMime || (attachmentType === "audio" ? "audio/ogg" : attachmentType === "document" ? "application/octet-stream" : "image/jpeg"), fileName: typeInfo?.obj.fileName ?? typeInfo?.obj.title, phone, clientId, connId })
     : { role, content: contentForHistory, ts: historyTs, ...(messageId ? { messageId } : {}) };
 
   // Base pra montar o link do formulário de hóspedes (ver resolveGuestFormMarker).

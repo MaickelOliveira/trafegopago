@@ -12,8 +12,8 @@ vi.mock("@/lib/gemini-agent",()=>({runGeminiAgent:mocks.runAgent}));
 vi.mock("@/lib/kanban-agent",()=>({processKanbanActions:mocks.kanban}));
 import { POST } from "@/app/api/whatsapp/meta/route";
 beforeEach(()=>{vi.clearAllMocks();mocks.add.mockResolvedValue(true);mocks.download.mockResolvedValue(Buffer.from("OggS synthetic fixture"));mocks.persist.mockResolvedValue("/api/media/synthetic.ogg");mocks.kanban.mockResolvedValue(undefined);});
-function request(){
-  const body=JSON.stringify({entry:[{changes:[{field:"messages",value:{metadata:{phone_number_id:"123"},contacts:[{wa_id:"5544999999999",profile:{name:"Contato fictício"}}],messages:[{id:"synthetic-message-id",from:"5544999999999",type:"audio",audio:{id:"synthetic-media-id",mime_type:"audio/ogg"}}]}}]}]});
+function request(type="audio"){
+  const body=JSON.stringify({entry:[{changes:[{field:"messages",value:{metadata:{phone_number_id:"123"},contacts:[{wa_id:"5544999999999",profile:{name:"Contato fictício"}}],messages:[{id:"synthetic-message-id",from:"5544999999999",type,[type]:{id:"synthetic-media-id",mime_type:type==="document"?"application/pdf":"audio/ogg",...(type==="document"?{filename:"Pedido.pdf"}:{})}}]}}]}]});
   return new NextRequest("https://app.example.invalid/api/whatsapp/meta",{method:"POST",headers:{"x-hub-signature-256":"sha256="+createHmac("sha256","synthetic-secret").update(body).digest("hex")},body});
 }
 it("archives official API audio even with AI paused and no transcription key",async()=>{
@@ -30,4 +30,11 @@ it("retains a typed audio message when its provider file is unavailable",async()
 it("does not run automatic actions again for a previously archived provider message",async()=>{
   mocks.add.mockResolvedValueOnce(false);
   expect((await POST(request())).status).toBe(200);expect(mocks.kanban).not.toHaveBeenCalled();expect(mocks.runAgent).not.toHaveBeenCalled();
+});
+it("archives official API documents with their filename even while AI is paused",async()=>{
+  mocks.download.mockResolvedValueOnce(Buffer.from("%PDF-fixture"));mocks.persist.mockResolvedValueOnce("/api/media/synthetic.pdf");
+  expect((await POST(request("document"))).status).toBe(200);
+  expect(mocks.add).toHaveBeenCalledWith("5544999999999",expect.objectContaining({type:"document",fileName:"Pedido.pdf",mediaUrl:"/api/media/synthetic.pdf",fileSize:12}),"client-a",expect.objectContaining({connId:"connection-a"}));
+  expect(mocks.persist).toHaveBeenCalledWith(expect.any(Buffer),"5544999999999",expect.any(Number),"application/pdf","client-a","connection-a","document");
+  expect(mocks.transcribe).not.toHaveBeenCalled();expect(mocks.runAgent).not.toHaveBeenCalled();
 });

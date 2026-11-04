@@ -2,7 +2,7 @@ import { readRecordMap, writeRecordMap } from "./record-store";
 import { withDataTransaction } from "./document-store";
 import path from "path";
 
-export type ChatMessage = { role: "user" | "assistant"; content: string; ts: number; messageId?: string; type?: "text" | "audio" | "image"; mediaUrl?: string };
+export type ChatMessage = { role: "user" | "assistant"; content: string; ts: number; messageId?: string; type?: "text" | "audio" | "image" | "document"; mediaUrl?: string; fileName?: string; mimeType?: string; fileSize?: number };
 
 type Conversation = {
   messages: ChatMessage[];

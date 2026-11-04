@@ -12,8 +12,11 @@ export async function createOAuthState(provider: Provider, details: { clientId?:
   const session = await getSession();
   if (session?.role !== "manager") throw new Error("Acesso não permitido.");
   const nonce = randomBytes(32).toString("hex");
-  (await cookies()).set(`tp_oauth_${provider}`, nonce, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 600 });
-  return new SignJWT({ ...details, nonce, provider }).setProtectedHeader({ alg: "HS256" }).setSubject(session.sub).setAudience(`oauth:${provider}`).setIssuedAt().setExpirationTime("10m").sign(key());
+  // This Google consent can include an unverified-app warning and manual identity
+  // confirmation. Keep the other providers' shorter window unchanged.
+  const lifetimeSeconds = provider === "google-conversions" ? 1800 : 600;
+  (await cookies()).set(`tp_oauth_${provider}`, nonce, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: lifetimeSeconds });
+  return new SignJWT({ ...details, nonce, provider }).setProtectedHeader({ alg: "HS256" }).setSubject(session.sub).setAudience(`oauth:${provider}`).setIssuedAt().setExpirationTime(`${lifetimeSeconds}s`).sign(key());
 }
 export async function consumeOAuthState(provider: Provider, state: string | null): Promise<{ clientId?: string; connId?: string | null }> {
   const session = await getSession();
