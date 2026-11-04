@@ -149,10 +149,13 @@ export type AppConfig = {
   appBaseUrl?: string;
   anthropicApiKey?: string;
   geminiApiKey?: string;         // Chave global do Gemini (usada quando cliente não tem a própria)
-  googleClientId?: string;       // Google OAuth client ID (Calendar + Ads, mesmo client)
-  googleClientSecret?: string;   // Google OAuth client secret
+  googleClientId?: string;       // Credencial legada das agendas e planilhas; preservar conexões existentes.
+  googleClientSecret?: string;
+  nexoGoogleClientId?: string;   // Aplicativo exclusivo da Nexo para Ads e backup, independente das agendas.
+  nexoGoogleClientSecret?: string;
   googleAdsDeveloperToken?: string;  // Developer Token do Centro de API do Google Ads
   googleAdsRefreshToken?: string;    // OAuth refresh token (escopo adwords) — conexão única p/ toda a agência, nunca exposto ao browser
+  googleAdsOAuthClientId?: string;   // Vincula o token ao aplicativo que recebeu a autorização.
   googleAdsLoginCustomerId?: string; // ID da conta MCC/gerenciadora (sem hífen), opcional
   agentCronSecret?: string;      // Secret para proteger o endpoint de cron
   masterPhone?: string;              // Número master: recebe notificações do sistema (com DDI, só dígitos)

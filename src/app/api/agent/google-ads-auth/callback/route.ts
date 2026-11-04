@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { exchangeAdsCode } from "@/lib/google-ads-auth";
 import { getConfig, saveConfig } from "@/lib/clients";
 import { withDataTransaction } from "@/lib/document-store";
+import { nexoGoogleCredentials } from "@/lib/google-nexo-auth";
 
 async function getPublicBase(req: NextRequest): Promise<string> {
   const config = (await getConfig());
@@ -23,10 +24,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const refreshToken = await exchangeAdsCode(code, base);
+    const authorization = await exchangeAdsCode(code, base);
     await withDataTransaction(async () => {
       const current = await getConfig();
-      await saveConfig({ ...current, googleAdsRefreshToken: refreshToken });
+      if (nexoGoogleCredentials(current)?.clientId !== authorization.clientId) throw Error("Google application changed during authorization");
+      await saveConfig({ ...current, googleAdsRefreshToken: authorization.refreshToken, googleAdsOAuthClientId: authorization.clientId });
     });
     return NextResponse.redirect(`${base}/gestor/configuracoes?googleAds=connected`);
   } catch {

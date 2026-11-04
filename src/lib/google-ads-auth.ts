@@ -1,18 +1,13 @@
 import { createOAuthState } from "./oauth-state";
-import { auth } from "googleapis/build/src/apis/calendar/index.js";
 import { getConfig } from "./clients";
+import { createNexoGoogleOAuthClient, nexoGoogleCredentials } from "./google-nexo-auth";
 
-// Arquivo separado do google-calendar.ts: mesmo Client ID/Secret OAuth, mas
-// escopo e redirect URI diferentes, e o refresh token resultante vai pro
-// AppConfig global (conexão única pra agência toda) em vez de por cliente.
+// Ads usa o aplicativo próprio da Nexo. As agendas mantêm suas credenciais.
 
 export async function getAdsOAuth2Client(baseUrl?: string) {
   const config = (await getConfig());
-  const clientId = process.env.GOOGLE_CLIENT_ID || config.googleClientId;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || config.googleClientSecret;
   const base = baseUrl || config.appBaseUrl || "";
-  const redirectUri = `${base}/api/agent/google-ads-auth/callback`;
-  return new auth.OAuth2(clientId, clientSecret, redirectUri);
+  return createNexoGoogleOAuthClient(config, base, "ads");
 }
 
 export async function getAdsAuthUrl(baseUrl?: string): Promise<string> {
@@ -25,9 +20,12 @@ export async function getAdsAuthUrl(baseUrl?: string): Promise<string> {
   });
 }
 
-export async function exchangeAdsCode(code: string, baseUrl?: string): Promise<string> {
-  const oauth2 = (await getAdsOAuth2Client(baseUrl));
+export async function exchangeAdsCode(code: string, baseUrl?: string): Promise<{ refreshToken: string; clientId: string }> {
+  const config = await getConfig();
+  const credentials = nexoGoogleCredentials(config);
+  if (!credentials) throw Error("Aplicativo Google da Nexo não configurado.");
+  const oauth2 = createNexoGoogleOAuthClient(config, baseUrl || config.appBaseUrl || "", "ads");
   const { tokens } = await oauth2.getToken(code);
   if (!tokens.refresh_token) throw new Error("No refresh token received");
-  return tokens.refresh_token;
+  return { refreshToken: tokens.refresh_token, clientId: credentials.clientId };
 }

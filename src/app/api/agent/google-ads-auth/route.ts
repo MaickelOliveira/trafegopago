@@ -19,5 +19,6 @@ export async function GET(req: NextRequest) {
   }
 
   const baseUrl = (await getPublicBase(req));
-  return NextResponse.redirect((await getAdsAuthUrl(baseUrl)));
+  try { return NextResponse.redirect(await getAdsAuthUrl(baseUrl)); }
+  catch { return NextResponse.redirect(`${baseUrl}/gestor/configuracoes?googleAds=setup`); }
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { drive as createDrive } from "googleapis/build/src/apis/drive/index.js";
-import { getOAuth2Client } from "./google-calendar";
+import { createNexoGoogleOAuthClient, nexoGoogleCredentials } from "./google-nexo-auth";
 import { consumeOAuthState } from "./oauth-state";
 import { getConfig, saveConfig } from "./clients";
 import { withDataTransaction } from "./document-store";
@@ -10,7 +10,9 @@ export async function completeDriveBackupAuthorization(request: NextRequest): Pr
   try {
     await consumeOAuthState("google-backup", request.nextUrl.searchParams.get("state"));
     const code = request.nextUrl.searchParams.get("code"); if (!code) throw Error("Consent not completed");
-    const oauth = await getOAuth2Client(base);
+    const credentials = nexoGoogleCredentials(config);
+    if (!credentials) throw Error("Nexo Google application not configured");
+    const oauth = createNexoGoogleOAuthClient(config, base, "backup");
     const { tokens } = await oauth.getToken(code);
     if (!tokens.refresh_token || !tokens.scope?.split(" ").includes("https://www.googleapis.com/auth/drive.file")) throw Error("Drive permission was not granted");
     oauth.setCredentials(tokens);
@@ -29,7 +31,7 @@ export async function completeDriveBackupAuthorization(request: NextRequest): Pr
     if (!permissions.data.permissions?.length || permissions.data.permissions.some(permission => permission.type !== "user" || permission.role !== "owner")) throw Error("Backup folder must remain private");
     await withDataTransaction(async () => {
       const current = await getConfig();
-      await saveConfig({ ...current, backupDriveFolderId: folderId, backupGoogleRefreshToken: tokens.refresh_token!, backupGoogleClientId: process.env.GOOGLE_CLIENT_ID || config.googleClientId, backupGoogleClientSecret: process.env.GOOGLE_CLIENT_SECRET || config.googleClientSecret });
+      await saveConfig({ ...current, backupDriveFolderId: folderId, backupGoogleRefreshToken: tokens.refresh_token!, backupGoogleClientId: credentials.clientId, backupGoogleClientSecret: credentials.clientSecret });
     });
     return NextResponse.redirect(`${base}/gestor/configuracoes?backup=connected`);
   } catch {

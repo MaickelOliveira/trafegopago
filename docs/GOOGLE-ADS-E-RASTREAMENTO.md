@@ -4,8 +4,8 @@
 
 A autorização do Google Drive serve para os backups. A autorização do Google Ads usa o escopo de anúncios e precisa ser concluída separadamente.
 
-1. Abra Plataforma e conexões → Configurações técnicas → Google Ads.
-2. Salve as credenciais do aplicativo e a identificação da conta gerenciadora antes de conectar.
+1. Abra Plataforma e conexões → Configurações técnicas → Google da Nexo.
+2. Salve as credenciais do aplicativo exclusivo da Nexo e a identificação da conta gerenciadora antes de conectar.
 3. Clique em Conectar ou Renovar conexão Google Ads e use uma conta que tenha acesso aos anúncios.
 4. Conclua a confirmação de identidade e a autorização até retornar à plataforma. A confirmação de sucesso indica que a autorização foi salva; a consulta dos indicadores confirma o acesso à conta.
 5. No cadastro do cliente, vincule a conta correta em Contas de anúncio. O número é reconhecido com ou sem traços.
@@ -52,3 +52,13 @@ O identificador da mensagem distingue duas notas de voz com a mesma duração e 
 A recuperação de arquivos de mensagens antigas deve consultar o provedor por leitura e vincular somente correspondências inequívocas de cliente, canal, direção e horário. Não deve reproduzir o webhook original, disparar a IA ou reenviar mensagens ao contato.
 
 Conferência local desta correção: mensagens simuladas nas duas direções, IA pausada, repetição do aviso sem duplicação, arquivo idêntico ao original, acesso protegido e cancelamento de acompanhamento restrito ao canal. A API oficial também foi testada sem chave de transcrição e com arquivo indisponível.
+
+## Aplicativo Google exclusivo da Nexo
+
+Anúncios e a conexão de novos backups usam `nexoGoogleClientId` e `nexoGoogleClientSecret`. A ausência dessas duas chaves abre uma orientação de configuração; nunca inicia uma conexão com o cadastro antigo de outro sistema. Identificador e chave incompletos são recusados, sem combinar credenciais de aplicativos diferentes.
+
+As agendas e planilhas existentes mantêm `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` ou o par legado de configuração. O código dessas conexões e seus tokens não são alterados. O cadastro, o nome e os clientes OAuth do outro projeto Google devem ser preservados.
+
+O token de anúncios fica vinculado ao identificador do aplicativo que recebeu a autorização. Trocar as chaves da Nexo invalida apenas essa autorização de anúncios e exige reconexão. Credenciais e pasta de um backup já autorizado permanecem congeladas junto de seu token, até uma renovação explícita. Nenhuma chave secreta ou token é devolvido ao formulário.
+
+Cadastre o novo aplicativo web em um projeto separado com os retornos `/api/agent/google-ads-auth/callback` (anúncios) e `/api/agent/google-auth/callback` (backup), usando o endereço público HTTPS da Nexo. O backup solicita somente `drive.file`; Ads solicita somente `adwords`. Agendas não precisam ser reconectadas. Antes de considerar o backup diário concluído, confirme um envio real e uma restauração em banco separado; estar autorizado não comprova a execução.
