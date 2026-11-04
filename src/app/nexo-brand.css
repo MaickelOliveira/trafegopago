@@ -221,6 +221,35 @@
 .nexo-client-shell>header {background:#0f0f0f;border-color:#3c4c58}
 .nexo-client-shell>header nav a[aria-current=page] {background:#2b3c1c;color:#d2edb0}
 
+/* Conversation surfaces need paired text/background colors, including legacy modals. */
+.nexo-lead-modal {background:#1b2023;color:#edf3f6;border:1px solid #3a454a}
+.nexo-lead-header {background:#1b2023;border-color:#3a454a}
+.nexo-lead-header h2 {color:#f3f6f8}
+.nexo-lead-modal .nexo-lead-header a {background:#2d3924;color:#d3eaad;border:1px solid #526b35}
+.nexo-lead-modal .nexo-lead-tabs button[data-active=true] {color:#d2ec9f;border-color:#afe507}
+.nexo-chat-avatar {background:#2c3822;color:#d4ed9e;border:1px solid #566d36}
+.nexo-chat-surface {background:#111719;color:#edf3f6;min-height:0;scroll-padding-top:55px}
+.nexo-chat-day {min-width:0;flex-shrink:0}
+.nexo-chat-date {position:sticky;top:0;z-index:2;display:flex;justify-content:center;padding:9px 0;margin:5px 0 9px;background:#111719;pointer-events:none}
+.nexo-chat-date time {background:#2b3438;color:#e1e8eb;border:1px solid #46545b;border-radius:999px;padding:6px 15px;font-size:12px;line-height:1.4;font-weight:550;box-shadow:0 3px 12px #0005}
+.nexo-chat-message {max-width:78%;min-width:0;margin-bottom:5px}
+.nexo-chat-author {color:#d0e4ab}
+.nexo-chat-bubble {border:1px solid transparent;overflow-wrap:anywhere;font-size:14px;line-height:1.6}
+.nexo-chat-bubble.incoming {background:#283135;color:#f0f4f6;border-color:#3d4b51}
+.nexo-chat-bubble.outgoing {background:#c5e579;color:#17200c;border-color:#c5e579}
+.nexo-chat-bubble.incoming .nexo-chat-time {color:#bccbd2}
+.nexo-chat-bubble.outgoing .nexo-chat-time {color:#435229}
+.nexo-chat-bubble.outgoing :is(.text-slate-500,.text-\[\#8696a0\]) {color:#435229}
+.nexo-chat-composer {background:#1b2226}
+.nexo-chat-composer textarea {min-width:0}
+.nexo-chat-send {background:#afe507;color:#151c0a;min-height:42px}
+.nexo-chat-send:hover:not(:disabled) {background:#c0ef36}
+@media (max-width:640px) {
+  .nexo-lead-header {padding:16px;gap:12px}
+  .nexo-chat-message {max-width:86%}
+  .nexo-chat-date time {font-size:11px}
+}
+
 .nexo-login {min-height:100dvh;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(420px,1fr);background:#0f0f0f}
 .nexo-login-art {position:relative;display:flex;flex-direction:column;justify-content:space-between;padding:48px 64px;overflow:hidden;border-right:1px solid #343b3f;background:#0f0f0f}
 .nexo-login-art::before {content:"";position:absolute;inset:110px -80px 40px;background:url('/brand/nexo-light-symbol.webp') center/contain no-repeat;opacity:.85;mix-blend-mode:screen}

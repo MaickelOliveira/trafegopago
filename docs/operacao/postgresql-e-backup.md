@@ -47,3 +47,13 @@ Confira a primeira execução com `node scripts/backup.mjs --force` e restaure o
 As verificações automáticas não substituem a observação de tráfego real depois da troca. A revisão reduziu as vulnerabilidades conhecidas de dependências para zero críticas e zero altas, com ocorrências moderadas ainda presentes em bibliotecas indiretas. A análise estática também sinaliza padrões antigos de React que exigem revisão própria; a compilação de produção e os testes funcionais são verificações distintas.
 
 Chaves anteriormente publicadas no histórico precisam ser substituídas no provedor, de forma coordenada com as conexões em uso. Apagar uma chave do código não revoga o acesso antigo.
+
+## Indicadores de anúncios
+
+O painel escolhe a API pela plataforma da conta e conserva conversões do Google como conversões, sem tratá-las como conversas de WhatsApp ou compras. O resumo da conta é a origem dos totais; alcance não é somado entre campanhas. CTR e CPM usam os totais de cliques, impressões e investimento. CRM é carregado independentemente da disponibilidade dos anúncios. Falhas aparecem como indisponibilidade, com opção de tentar novamente.
+
+Campanhas, resumo e série diária recebem o período selecionado. A Meta aceita o período e a divisão diária no mesmo endpoint, conforme o [SDK oficial](https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adaccount.py). Os campos de conversão e valor do Google seguem a [referência oficial de métricas](https://developers.google.com/google-ads/api/fields/v25/metrics#metrics.conversions_value). As janelas explícitas do Google usam datas de calendário de Brasília; sete dias incluem o dia atual e os seis anteriores.
+
+## Leitura das conversas
+
+O histórico do modal de contato e da caixa de mensagens usa separadores por data completa, com dia, mês e ano. Datas e horários usam Brasília, independentemente do relógio do navegador. A data permanece visível durante a rolagem do respectivo grupo. O agrupamento preserva a sequência e o conteúdo armazenados; não altera canais, destinatários, envios ou decisões da IA. Fundos e textos das mensagens são definidos em pares para manter contraste no tema escuro.

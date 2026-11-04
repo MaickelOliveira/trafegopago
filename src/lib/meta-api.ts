@@ -140,12 +140,13 @@ export async function getAccountInsightsRange(
 export async function getDailyInsights(
   id: string,
   token: string,
-  since: string,
-  until: string
+  since?: string,
+  until?: string,
+  datePreset?: string
 ) {
   const data = await metaGet(`/${id}/insights`, {
     fields: "spend,impressions,clicks,ctr,cpm,reach,actions,cost_per_action_type",
-    time_range: JSON.stringify({ since, until }),
+    ...(datePreset ? { date_preset: datePreset } : { time_range: JSON.stringify({ since, until }) }),
     time_increment: "1",
     limit: "90",
   }, token);

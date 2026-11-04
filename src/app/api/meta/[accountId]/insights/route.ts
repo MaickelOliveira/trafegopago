@@ -33,6 +33,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       const data = await getDailyInsights(accountId, token, since, until);
       return NextResponse.json(data);
     }
+    if (daily) return NextResponse.json(await getDailyInsights(accountId, token, undefined, undefined, datePreset || "last_30d"));
     if (since && until) {
       const data = await getAccountInsightsRange(accountId, token, since, until);
       return NextResponse.json(data);

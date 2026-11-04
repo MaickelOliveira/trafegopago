@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { QuickRepliesPicker, QuickRepliesManager, WabaTemplateVariablesPanel } from "@/components/shared/QuickRepliesPopover";
 import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
 import type { WabaTemplate } from "@/lib/waba-templates";
+import { chatDayKey, chatDayLabel, chatTime, groupChatMessages } from "@/lib/chat-dates";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -37,23 +38,7 @@ interface Props {
 }
 
 function formatTime(ts: number) {
-  const d = new Date(ts);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  if (msgDate.getTime() === today.getTime()) {
-    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  }
-  const diff = Math.floor((today.getTime() - msgDate.getTime()) / 86400000);
-  if (diff === 1) return "Ontem";
-  if (diff < 7) return d.toLocaleDateString("pt-BR", { weekday: "short" });
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-}
-
-function formatFullTime(ts: number) {
-  return new Date(ts).toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
-  });
+  return chatDayKey(ts) === chatDayKey(Date.now()) ? chatTime(ts) : chatDayLabel(ts).replace(/^Ontem · .*/, "Ontem");
 }
 
 function displayPhone(phone: string) {
@@ -596,7 +581,8 @@ export default function InboxView({ clientId, initialConversations = [], initial
               isAtBottomRef.current = distFromBottom < 100;
               userScrolledUpRef.current = distFromBottom > 150; // usuário rolou p/ cima: trava auto-scroll
             }}
-            className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1"
+            className="nexo-chat-surface flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1"
+            aria-label="Histórico da conversa"
           >
             {loadingMessages && (
               <div className="text-center text-[#8696a0] text-sm py-4">Carregando...</div>
@@ -604,12 +590,17 @@ export default function InboxView({ clientId, initialConversations = [], initial
             {!loadingMessages && messages.length === 0 && (
               <div className="text-center text-[#8696a0] text-sm py-4">Nenhuma mensagem ainda.</div>
             )}
-            {messages.map((msg, i) => {
+            {groupChatMessages(messages).map((group, groupIndex) => (
+              <section className="nexo-chat-day" aria-label={`Mensagens de ${group.label}`} key={`${group.key}:${groupIndex}`}>
+                <div className="nexo-chat-date" role="separator" aria-label={group.label}>
+                  <time dateTime={group.key === "undated" ? undefined : group.key}>{group.label}</time>
+                </div>
+                {group.messages.map((msg, i) => {
               const isMe = msg.role === "assistant";
               return (
                 <div key={i} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`max-w-[70%] px-3 py-2 rounded-lg text-sm shadow relative ${isMe ? "bg-[#005c4b] text-[#e9edef] rounded-br-none" : "bg-[#202c33] text-[#e9edef] rounded-bl-none"}`}
+                    className={`nexo-chat-bubble nexo-chat-message px-3 py-2 rounded-lg text-sm shadow relative ${isMe ? "outgoing rounded-br-none" : "incoming rounded-bl-none"}`}
                   >
                     {msg.type === "audio" ? (
                       <div className="flex items-center gap-2 text-[#8696a0]">
@@ -623,14 +614,16 @@ export default function InboxView({ clientId, initialConversations = [], initial
                     ) : (
                       <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                     )}
-                    <div className={`text-[10px] mt-1 text-right ${isMe ? "text-[#8fcbbf]" : "text-[#8696a0]"}`}>
-                      {formatFullTime(msg.ts)}
+                    <div className="nexo-chat-time text-[11px] mt-1 text-right">
+                      {chatTime(msg.ts)}
                       {isMe && <span className="ml-1 text-[#53bdeb]">✓✓</span>}
                     </div>
                   </div>
                 </div>
               );
-            })}
+                })}
+              </section>
+            ))}
             <div ref={messagesEndRef} />
           </div>
 
