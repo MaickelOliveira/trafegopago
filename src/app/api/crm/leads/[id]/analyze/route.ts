@@ -11,10 +11,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const lead = getLeadById(id);
+  const lead = (await getLeadById(id));
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const config = getConfig();
+  const config = (await getConfig());
   if (!config.anthropicApiKey) {
     return NextResponse.json({ error: "API key não configurada" }, { status: 400 });
   }
@@ -62,7 +62,7 @@ O score deve ser de 1 a 10 (intenção de compra). Seja direto e prático.`;
       generatedAt: new Date().toISOString(),
     };
 
-    const updated = updateLead(id, { ai: aiData });
+    const updated = (await updateLead(id, { ai: aiData }));
     return NextResponse.json(updated);
   } catch (err) {
     console.error("[CRM AI] Erro:", err);

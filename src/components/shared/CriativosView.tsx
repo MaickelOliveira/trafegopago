@@ -138,7 +138,7 @@ export function CriativosView({ clientId, clientName, clientColor, adAccountId, 
           {creatives.length === 0 && (
             <div className="py-20 text-center">
               <p className="text-slate-400 mb-2">Nenhum criativo ainda.</p>
-              <p className="text-sm text-slate-400">Clique em "Enviar criativo" para começar.</p>
+              <p className="text-sm text-slate-400">Clique em &quot;Enviar criativo&quot; para começar.</p>
             </div>
           )}
         </div>

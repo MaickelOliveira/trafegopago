@@ -1,3 +1,7 @@
+import { getClientById } from "@/lib/clients";
+import { getFunnels } from "@/lib/funnels";
+import { getLeadByPhone } from "@/lib/leads";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { upsertLeadByPhone } from "@/lib/leads";
 
@@ -7,7 +11,7 @@ function getCors(req: NextRequest) {
     "Access-Control-Allow-Origin": origin && origin !== "null" ? origin : "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Credentials": "true",
+
   };
 }
 
@@ -29,8 +33,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body) || Object.values(body).some(value => typeof value !== "string") || JSON.stringify(body).length > 65536) return NextResponse.json({ error: "Formulário inválido." }, { status: 400, headers: getCors(req) });
+  const client = await getClientById(clientId);
+  if (!client) return NextResponse.json({ error: "Destino não encontrado." }, { status: 404 });
+  const funnels = (await getFunnels()).filter(funnel => funnel.clientId === clientId);
+  const funnel = funnels.find(funnel => funnel.id === (body.funnelId || client.trackingFunnelId)) ?? (!body.funnelId && !client.trackingFunnelId && funnels.length === 1 ? funnels[0] : undefined);
+  if (!funnel) return NextResponse.json({ error: "Configure o funil de entrada deste cliente." }, { status: 422, headers: getCors(req) });
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
+  if (!checkRateLimit(`form:${clientId}:${ip}`, 30, 60000)) return NextResponse.json({ error: "Aguarde antes de tentar novamente." }, { status: 429 });
   const phone = (body.phone ?? body.whatsapp ?? "").replace(/\D/g, "");
-  if (!phone) return NextResponse.json({ error: "phone obrigatório" }, { status: 400 });
+  if (phone.length < 7 || phone.length > 20) return NextResponse.json({ error: "phone obrigatório" }, { status: 400 });
 
   // Detecta plataforma de anúncio
   const utmSourceRaw = (body.utm_source ?? body.utmSource ?? "").toLowerCase();
@@ -52,8 +64,9 @@ export async function POST(req: NextRequest) {
   }
   const notesLines = Object.entries(formFields).map(([k, v]) => `${k}: ${v}`);
 
-  const lead = upsertLeadByPhone(clientId, phone, {
-    funnelId: body.funnelId ?? "f5abde8a-02ac-47bc-9b91-fd51b9261d39",
+  const existing = await getLeadByPhone(clientId, phone, funnel.id);
+  const lead = (await upsertLeadByPhone(clientId, phone, {
+    funnelId: funnel.id,
     name: body.name ?? body.nome ?? "Lead do site",
     email: body.email ?? null,
     source: "form",
@@ -71,8 +84,8 @@ export async function POST(req: NextRequest) {
     fbclid: body.fbclid ?? null,
     gclid:  body.gclid  ?? null,
     notes: notesLines.join("\n"),
-    status: "novo",
-  });
+    ...(existing ? {} : { status: funnel.columns[0]?.id ?? "novo" }),
+  }));
 
   return NextResponse.json({ ok: true, leadId: lead.id }, { headers: getCors(req) });
 }

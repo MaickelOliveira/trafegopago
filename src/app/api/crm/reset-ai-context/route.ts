@@ -20,6 +20,6 @@ export async function POST(req: NextRequest) {
   };
   if (!phone) return NextResponse.json({ error: "phone obrigatório" }, { status: 400 });
 
-  const resetAt = resetAiContext(phone, clientId ?? null, connId ?? null);
+  const resetAt = (await resetAiContext(phone, clientId ?? null, connId ?? null));
   return NextResponse.json({ ok: true, resetAt });
 }

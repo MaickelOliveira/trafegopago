@@ -1,3 +1,4 @@
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 /**
  * Store temporário de cliques em botões de WhatsApp rastreados.
  * Cada clique é salvo quando o lead acessa /api/wa-redirect.
@@ -5,7 +6,6 @@
  * pelo clientId + janela de tempo (30 min) e associa os UTMs ao lead.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -27,36 +27,36 @@ const DIR  = path.join(process.cwd(), "data");
 const FILE = path.join(DIR, "wa-clicks.json");
 const TTL_MS = 30 * 60 * 1000; // 30 minutos
 
-function load(): WaClick[] {
-  if (!existsSync(FILE)) return [];
-  try { return JSON.parse(readFileSync(FILE, "utf-8")); } catch { return []; }
+async function load(): Promise<WaClick[]> {
+  return (await readDocument<WaClick[]>("wa-clicks.json", []));
 }
 
-function save(clicks: WaClick[]) {
-  if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
-  const tmp = FILE + ".tmp";
-  writeFileSync(tmp, JSON.stringify(clicks, null, 2));
-  renameSync(tmp, FILE);
+async function save(clicks: WaClick[]) {
+  await writeDocument("wa-clicks.json", clicks);
 }
 
 /** Registra um novo clique e limpa os antigos (> 30 min) */
-export function recordClick(data: Omit<WaClick, "id" | "createdAt" | "matchedPhone">): WaClick {
-  const all = load();
+export async function recordClick(data: Omit<WaClick, "id" | "createdAt" | "matchedPhone">): Promise<WaClick> {
+  return withDataTransaction(async () => {
+  const all = (await load());
   const now = Date.now();
   // Remove cliques velhos
   const fresh = all.filter((c) => now - new Date(c.createdAt).getTime() < TTL_MS * 4);
   const click: WaClick = { ...data, id: randomUUID(), createdAt: new Date().toISOString(), matchedPhone: null };
   fresh.push(click);
-  save(fresh);
+  (await save(fresh));
   return click;
+
+  });
 }
 
 /**
  * Encontra o clique não-matched mais antigo nos últimos 30 min para este clientId.
  * Usa estratégia FIFO: o clique mais antigo é o mais provável para o próximo lead.
  */
-export function matchClick(clientId: string, phone: string): WaClick | null {
-  const all = load();
+export async function matchClick(clientId: string, phone: string): Promise<WaClick | null> {
+  return withDataTransaction(async () => {
+  const all = (await load());
   const now = Date.now();
   const unmatched = all
     .filter((c) =>
@@ -70,6 +70,8 @@ export function matchClick(clientId: string, phone: string): WaClick | null {
 
   const matched = unmatched[0];
   const updated = all.map((c) => c.id === matched.id ? { ...c, matchedPhone: phone } : c);
-  save(updated);
+  (await save(updated));
   return matched;
+
+  });
 }

@@ -8,7 +8,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const ok = deleteWebhook(id);
+  const ok = (await deleteWebhook(id));
   return ok
     ? NextResponse.json({ ok: true })
     : NextResponse.json({ error: "Not found" }, { status: 404 });

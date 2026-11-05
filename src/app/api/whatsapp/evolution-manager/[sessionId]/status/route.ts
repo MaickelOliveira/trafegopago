@@ -11,7 +11,7 @@ export async function GET(
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { sessionId } = await params;
-  const evoSession = getEvolutionSessionById(sessionId);
+  const evoSession = (await getEvolutionSessionById(sessionId));
   if (!evoSession) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
 
   const rawStatus = await checkConnectionStatus(evoSession.instanceName);

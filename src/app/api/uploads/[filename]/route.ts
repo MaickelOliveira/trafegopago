@@ -1,3 +1,5 @@
+import { canReadMedia } from "@/lib/media-access";
+import type { NextRequest } from "next/server";
 import { readFileSync, existsSync } from "fs";
 import { join, extname, basename } from "path";
 import { NextResponse } from "next/server";
@@ -18,9 +20,10 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ filename: string }> }
 ) {
+  if (!await canReadMedia(request)) return new NextResponse("Not found", { status: 404 });
   const { filename } = await params;
 
   // Segurança: bloqueia path traversal
@@ -41,7 +44,7 @@ export async function GET(
   return new NextResponse(file, {
     headers: {
       "Content-Type": contentType,
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": "private, no-store",
     },
   });
 }

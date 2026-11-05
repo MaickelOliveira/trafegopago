@@ -1,18 +1,18 @@
 import { getConfig } from "./clients";
 import type { GoogleAdsCreds } from "./google-ads-api";
+import { hasNexoGoogleAdsAuthorization, nexoGoogleCredentials } from "./google-nexo-auth";
 
 /** Resolve as credenciais do Google Ads a partir do AppConfig global.
  *  Retorna null se a conexão ainda não foi configurada/feita. */
-export function getGoogleAdsCreds(): GoogleAdsCreds | null {
-  const config = getConfig();
-  if (!config.googleClientId || !config.googleClientSecret || !config.googleAdsDeveloperToken || !config.googleAdsRefreshToken) {
+export async function getGoogleAdsCreds(): Promise<GoogleAdsCreds | null> {
+  const config = (await getConfig());
+  if (!hasNexoGoogleAdsAuthorization(config)) {
     return null;
   }
+  const credentials = nexoGoogleCredentials(config)!;
   return {
-    clientId: config.googleClientId,
-    clientSecret: config.googleClientSecret,
-    developerToken: config.googleAdsDeveloperToken,
-    refreshToken: config.googleAdsRefreshToken,
+    ...credentials,
+    refreshToken: config.googleAdsRefreshToken!,
     loginCustomerId: config.googleAdsLoginCustomerId,
   };
 }

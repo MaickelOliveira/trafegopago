@@ -1,3 +1,4 @@
+import { patchClient } from "@/lib/clients";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { deleteInstance } from "@/lib/evolution-api";
@@ -14,22 +15,19 @@ export async function DELETE(
   }
 
   const { sessionId } = await params;
-  const evoSession = getEvolutionSessionById(sessionId);
+  const evoSession = (await getEvolutionSessionById(sessionId));
 
   if (evoSession) {
     await deleteInstance(evoSession.instanceName).catch(() => {});
 
-    const clients = getClients();
+    const clients = (await getClients());
     for (const client of clients) {
       if (client.agentConfig?.whatsappConnectionId === sessionId) {
-        upsertClient({
-          ...client,
-          agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined },
-        });
+        (await patchClient(client.id, { agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined } }));
       }
     }
 
-    deleteEvolutionSessionRecord(sessionId);
+    (await deleteEvolutionSessionRecord(sessionId));
   }
 
   return NextResponse.json({ ok: true });

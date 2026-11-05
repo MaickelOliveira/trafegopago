@@ -121,7 +121,7 @@ curl --request POST \
   --url https://nexopro.uazapi.com/instance/create \
   --header 'Accept: application/json' \
   --header 'Content-Type: application/json' \
-  --header 'admintoken: hAb2D8eK9mCejxOJGRyWxImkTDe7xgUmxkOsySIyJV7ME3OmfX' \
+  --header 'admintoken: ${UAZAPI_ADMIN_TOKEN}' \
   --data '{
   "name": "minha-instancia",
   "adminField01": "custom-metadata-1",
@@ -133,7 +133,7 @@ Listar instancia
 curl --request GET \
   --url https://nexopro.uazapi.com/instance/all \
   --header 'Accept: application/json' \
-  --header 'admintoken: hAb2D8eK9mCejxOJGRyWxImkTDe7xgUmxkOsySIyJV7ME3OmfX'
+  --header 'admintoken: ${UAZAPI_ADMIN_TOKEN}'
 
   conectar instancia
 

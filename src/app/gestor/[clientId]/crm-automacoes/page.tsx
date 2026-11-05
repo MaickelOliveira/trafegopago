@@ -4,22 +4,20 @@ import { getFunnels } from "@/lib/funnels";
 import { getAutomations } from "@/lib/crm-automations";
 import { getTemplates } from "@/lib/waba-templates";
 import { getWebhooks } from "@/lib/webhooks";
-import { getWppSessions } from "@/lib/wppconnect-sessions";
 import { getEvolutionSessions } from "@/lib/evolution-sessions";
-import { getServerWhatsAppSessions } from "@/lib/server-whatsapp-sessions";
 import { CrmAutomationsView } from "@/components/crm/CrmAutomationsView";
 
 type Props = { params: Promise<{ clientId: string }> };
 
 export default async function CrmAutomacoesPage({ params }: Props) {
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) notFound();
 
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  const automations = getAutomations(clientId);
-  const approvedTemplates = getTemplates(clientId).filter((t) => t.status === "APPROVED");
-  const webhooks = getWebhooks(clientId).filter((w) => w.active);
+  const funnels = (await getFunnels()).filter((f) => f.clientId === clientId);
+  const automations = (await getAutomations(clientId));
+  const approvedTemplates = (await getTemplates(clientId)).filter((t) => t.status === "APPROVED");
+  const webhooks = (await getWebhooks(clientId)).filter((w) => w.active);
 
   // Conexões disponíveis (UazapiGO e Meta) de todos os funis
   const funnelConnections = funnels.flatMap((f) =>
@@ -34,18 +32,8 @@ export default async function CrmAutomacoesPage({ params }: Props) {
 
   // Sessões WPPConnect vinculadas a este cliente (por clientId ou por funnelId)
   const clientFunnelIds = new Set(funnels.map((f) => f.id));
-  const wppConnections = getWppSessions()
-    .filter((s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId)))
-    .map((s) => ({
-      id: s.id,
-      type: "wppconnect" as const,
-      phone: s.sessionName,
-      funnelId: s.funnelId ?? "",
-      funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "WPPConnect",
-    }));
-
-  const evolutionConnections = getEvolutionSessions()
-    .filter((s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId)))
+  const evolutionConnections = (await getEvolutionSessions())
+    .filter((s) => (!s.clientId || s.clientId === clientId) && s.funnelId && clientFunnelIds.has(s.funnelId))
     .map((s) => ({
       id: s.id,
       type: "evolution" as const,
@@ -54,17 +42,7 @@ export default async function CrmAutomacoesPage({ params }: Props) {
       funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "Evolution API",
     }));
 
-  const serverConnections = getServerWhatsAppSessions()
-    .filter((s) => s.clientId === clientId || clientFunnelIds.has(s.funnelId))
-    .map((s) => ({
-      id: s.id,
-      type: "server" as const,
-      phone: s.phone,
-      funnelId: s.funnelId,
-      funnelName: funnels.find((f) => f.id === s.funnelId)?.name ?? "WhatsApp 24h",
-    }));
-
-  const connections = [...funnelConnections, ...wppConnections, ...evolutionConnections, ...serverConnections];
+  const connections = [...funnelConnections, ...evolutionConnections];
 
   return (
     <CrmAutomationsView

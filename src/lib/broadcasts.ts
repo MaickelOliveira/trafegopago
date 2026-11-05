@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -22,28 +22,24 @@ export type Broadcast = {
 
 const FILE = path.join(process.cwd(), "data", "broadcasts.json");
 
-function load(): Broadcast[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch {
-    return [];
-  }
+async function load(): Promise<Broadcast[]> {
+  return (await readDocument<Broadcast[]>("broadcasts.json", []));
 }
 
-function save(items: Broadcast[]) {
-  writeFileSync(FILE, JSON.stringify(items, null, 2));
+async function save(items: Broadcast[]) {
+  await writeDocument("broadcasts.json", items);
 }
 
-export function createBroadcast(data: {
+export async function createBroadcast(data: {
   clientId: string;
   name: string;
   message: string;
   connectionId: string;
   delaySeconds: number;
   totalCount: number;
-}): Broadcast {
-  const items = load();
+}): Promise<Broadcast> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const now = new Date().toISOString();
   const broadcast: Broadcast = {
     ...data,
@@ -55,30 +51,35 @@ export function createBroadcast(data: {
     startedAt: now,
   };
   items.push(broadcast);
-  save(items);
+  (await save(items));
   return broadcast;
+
+  });
 }
 
-export function getBroadcasts(clientId?: string): Broadcast[] {
-  const all = load();
+export async function getBroadcasts(clientId?: string): Promise<Broadcast[]> {
+  const all = (await load());
   return (clientId ? all.filter((b) => b.clientId === clientId) : all)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function getBroadcastById(id: string): Broadcast | undefined {
-  return load().find((b) => b.id === id);
+export async function getBroadcastById(id: string): Promise<Broadcast | undefined> {
+  return (await load()).find((b) => b.id === id);
 }
 
-export function updateBroadcast(id: string, patch: Partial<Omit<Broadcast, "id">>): Broadcast | null {
-  const items = load();
+export async function updateBroadcast(id: string, patch: Partial<Omit<Broadcast, "id">>): Promise<Broadcast | null> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const idx = items.findIndex((b) => b.id === id);
   if (idx < 0) return null;
   items[idx] = { ...items[idx], ...patch };
   if ((patch.status === "cancelled" || patch.status === "completed") && !items[idx].finishedAt) {
     items[idx].finishedAt = new Date().toISOString();
   }
-  save(items);
+  (await save(items));
   return items[idx];
+
+  });
 }
 
 /** Incrementa o contador cacheado no pai (chamado a cada item processado
@@ -87,8 +88,9 @@ export function updateBroadcast(id: string, patch: Partial<Omit<Broadcast, "id">
  *  total conhecido desde a criação (campanhas canceladas já têm status
  *  trocado direto por cancelBroadcastItems/updateBroadcast, então nunca
  *  batem esse total e não são reabertas por aqui). */
-export function incrementBroadcastCounters(id: string, field: "sentCount" | "failedCount"): void {
-  const items = load();
+export async function incrementBroadcastCounters(id: string, field: "sentCount" | "failedCount"): Promise<void> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const idx = items.findIndex((b) => b.id === id);
   if (idx < 0) return;
   items[idx][field] += 1;
@@ -97,5 +99,7 @@ export function incrementBroadcastCounters(id: string, field: "sentCount" | "fai
     b.status = "completed";
     b.finishedAt = new Date().toISOString();
   }
-  save(items);
+  (await save(items));
+
+  });
 }

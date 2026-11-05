@@ -7,12 +7,12 @@ export default async function GestorLayout({ children }: { children: React.React
   const session = await getSession();
   if (!session || session.role !== "manager") redirect("/login");
 
-  const clients = getClients().map(({ passwordHash: _, ...c }) => c);
+  const clients = (await getClients()).map(c => ({ id: c.id, name: c.name, email: c.email, color: c.color, cplTarget: c.cplTarget, adAccounts: c.adAccounts, enabledSystems: c.enabledSystems }));
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="nexo-app-shell">
       <GestorSidebar clients={clients} />
-      <main className="flex-1 min-w-0 overflow-auto h-full">{children}</main>
+      <main id="main-content" className="nexo-main">{children}</main>
     </div>
   );
 }

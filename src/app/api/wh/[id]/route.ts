@@ -33,7 +33,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const wh = getWebhookById(id);
+  const wh = (await getWebhookById(id));
   if (!wh || !wh.active) {
     return NextResponse.json({ error: "Webhook não encontrado ou inativo" }, { status: 404, headers: CORS_HEADERS });
   }
@@ -56,6 +56,7 @@ export async function POST(
     return NextResponse.json({ error: "Payload inválido" }, { status: 400, headers: CORS_HEADERS });
   }
 
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.values(payload).some(value => typeof value !== "string") || JSON.stringify(payload).length > 65536) return NextResponse.json({ error: "Formulário inválido." }, { status: 400, headers: CORS_HEADERS });
   // Mapeamento de campos
   const { nameField, phoneField, emailField } = wh.fieldMapping;
   // Campos comuns como fallback se o mapeamento não encontrar
@@ -91,7 +92,8 @@ export async function POST(
     }
   }
 
-  const funnel = getFunnelById(wh.funnelId);
+  const funnel = (await getFunnelById(wh.funnelId));
+  if (!funnel || funnel.clientId !== wh.clientId) return NextResponse.json({ error: "Destino inválido." }, { status: 422, headers: CORS_HEADERS });
   const columnExists = funnel?.columns.some((c) => c.id === wh.columnId) ?? false;
   const columnId = columnExists ? wh.columnId : (funnel?.columns[0]?.id ?? "entrada");
 
@@ -105,16 +107,16 @@ export async function POST(
 
   // Checa ANTES do upsert se o lead já existia — só dispara o evento CAPI
   // "Lead" pra quem é realmente novo, não a cada reenvio do mesmo telefone.
-  const isNewLead = !getLeadByPhone(wh.clientId, phone, wh.funnelId);
+  const isNewLead = !(await getLeadByPhone(wh.clientId, phone, wh.funnelId));
 
   // Upsert: se lead já existe no mesmo funil (mesmo se veio por WhatsApp), atualiza status
   // para a coluna configurada no webhook (ex: "Novo"). Se não existe, cria.
-  const lead = upsertLeadByPhone(wh.clientId, phone, {
+  const lead = (await upsertLeadByPhone(wh.clientId, phone, {
     funnelId: wh.funnelId,
     name,
     email: email ?? null,
     source: "form",
-    status: columnId,
+    ...(isNewLead ? { status: columnId } : {}),
     notes: `Origem: ${wh.name}`,
     customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
     adPlatform,
@@ -129,10 +131,9 @@ export async function POST(
     fbp: payload.fbp || null,
     clientIp,
     clientUserAgent,
-    value: null,
-    ai: null,
-  });
-  incrementWebhookCount(id);
+
+  }));
+  (await incrementWebhookCount(id));
 
   // Dispara evento CAPI "Lead" pra lead novo — esse webhook já captura telefone,
   // e-mail, nome, fbclid, fbp, IP e User-Agent reais no momento exato da
@@ -143,7 +144,7 @@ export async function POST(
   // da coluna (fireEntryColumnMetaEvent em leads.ts), e disparar os dois seria duplicado.
   const entryColHasMetaEvent = !!funnel?.columns.find((c) => c.id === columnId)?.metaEvent;
   if (isNewLead && !entryColHasMetaEvent) {
-    const client = getClientById(wh.clientId);
+    const client = (await getClientById(wh.clientId));
     if (client?.pixelId) {
       sendCapiEvent({
         pixelId: client.pixelId,
@@ -163,8 +164,10 @@ export async function POST(
   }
 
   // Dispara automações CRM
-  runAutomationsForEvent("lead_created", lead, { webhookId: id });
-  runAutomationsForEvent("column_entered", lead, { toColumnId: columnId });
+  if (isNewLead) {
+    await runAutomationsForEvent("lead_created", lead, { webhookId: id });
+    await runAutomationsForEvent("column_entered", lead, { toColumnId: columnId });
+  }
 
   return NextResponse.json({ ok: true, leadId: lead.id, name: lead.name, phone: lead.phone }, { headers: CORS_HEADERS });
 }
@@ -175,7 +178,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const wh = getWebhookById(id);
+  const wh = (await getWebhookById(id));
   if (!wh) return NextResponse.json({ error: "Not found" }, { status: 404, headers: CORS_HEADERS });
   return NextResponse.json({ id: wh.id, name: wh.name, active: wh.active, leadCount: wh.leadCount }, { headers: CORS_HEADERS });
 }

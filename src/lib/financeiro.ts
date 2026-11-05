@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 import type { Transacao, ResumoMes } from "./financeiro-types";
@@ -8,47 +8,53 @@ export { CATEGORIAS_RECEITA, CATEGORIAS_DESPESA } from "./financeiro-types";
 
 const FILE = path.join(process.cwd(), "data", "financeiro.json");
 
-function load(): Transacao[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch { return []; }
+async function load(): Promise<Transacao[]> {
+  return (await readDocument<Transacao[]>("financeiro.json", []));
 }
 
-function save(data: Transacao[]) {
-  writeFileSync(FILE, JSON.stringify(data, null, 2));
+async function save(data: Transacao[]) {
+  await writeDocument("financeiro.json", data);
 }
 
-export function getTransacoes(): Transacao[] { return load(); }
+export async function getTransacoes(): Promise<Transacao[]> { return (await load()); }
 
-export function getTransacoesMes(ano: number, mes: number): Transacao[] {
+export async function getTransacoesMes(ano: number, mes: number): Promise<Transacao[]> {
   const prefix = `${ano}-${String(mes).padStart(2, "0")}`;
-  return load().filter((t) => t.data.startsWith(prefix));
+  return (await load()).filter((t) => t.data.startsWith(prefix));
 }
 
-export function createTransacao(data: Omit<Transacao, "id" | "createdAt">): Transacao {
-  const all = load();
+export async function createTransacao(data: Omit<Transacao, "id" | "createdAt">): Promise<Transacao> {
+  return withDataTransaction(async () => {
+  const all = (await load());
   const t: Transacao = { ...data, id: randomUUID(), createdAt: new Date().toISOString() };
   all.push(t);
-  save(all);
+  (await save(all));
   return t;
+
+  });
 }
 
-export function updateTransacao(id: string, patch: Partial<Omit<Transacao, "id" | "createdAt">>): Transacao | null {
-  const all = load();
+export async function updateTransacao(id: string, patch: Partial<Omit<Transacao, "id" | "createdAt">>): Promise<Transacao | null> {
+  return withDataTransaction(async () => {
+  const all = (await load());
   const idx = all.findIndex((t) => t.id === id);
   if (idx < 0) return null;
   all[idx] = { ...all[idx], ...patch };
-  save(all);
+  (await save(all));
   return all[idx];
+
+  });
 }
 
-export function deleteTransacao(id: string): boolean {
-  const all = load();
+export async function deleteTransacao(id: string): Promise<boolean> {
+  return withDataTransaction(async () => {
+  const all = (await load());
   const filtered = all.filter((t) => t.id !== id);
   if (filtered.length === all.length) return false;
-  save(filtered);
+  (await save(filtered));
   return true;
+
+  });
 }
 
 export function calcularResumo(transacoes: Transacao[]): ResumoMes {
@@ -83,8 +89,8 @@ export function calcularResumo(transacoes: Transacao[]): ResumoMes {
   return { totalReceitas, totalDespesas, lucro, margem, receitasPorCategoria, despesasPorCategoria, receitasPorCliente, pendentes, atrasados };
 }
 
-export function getHistoricoMeses(n = 6): { mes: string; receitas: number; despesas: number; lucro: number }[] {
-  const all = load();
+export async function getHistoricoMeses(n = 6): Promise<{ mes: string; receitas: number; despesas: number; lucro: number }[]> {
+  const all = (await load());
   const result = [];
   const hoje = new Date();
 

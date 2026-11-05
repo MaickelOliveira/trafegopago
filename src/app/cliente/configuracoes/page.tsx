@@ -11,7 +11,7 @@ export default async function ClienteConfiguracoesPage() {
     redirect("/cliente");
   }
 
-  const client = getClientById(session.clientId);
+  const client = (await getClientById(session.clientId));
   if (!client) redirect("/login");
 
   return (

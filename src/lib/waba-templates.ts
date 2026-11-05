@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -39,54 +39,56 @@ export type WabaTemplate = {
 
 const FILE = path.join(process.cwd(), "data", "waba-templates.json");
 
-function load(): WabaTemplate[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch {
-    return [];
-  }
+async function load(): Promise<WabaTemplate[]> {
+  return (await readDocument<WabaTemplate[]>("waba-templates.json", []));
 }
 
-function save(items: WabaTemplate[]) {
-  const dir = path.dirname(FILE);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(items, null, 2));
+async function save(items: WabaTemplate[]) {
+  await writeDocument("waba-templates.json", items);
 }
 
-export function getTemplates(clientId?: string): WabaTemplate[] {
-  const all = load();
+export async function getTemplates(clientId?: string): Promise<WabaTemplate[]> {
+  const all = (await load());
   return clientId ? all.filter((t) => t.clientId === clientId) : all;
 }
 
-export function getTemplateById(id: string): WabaTemplate | undefined {
-  return load().find((t) => t.id === id);
+export async function getTemplateById(id: string): Promise<WabaTemplate | undefined> {
+  return (await load()).find((t) => t.id === id);
 }
 
-export function createTemplate(data: Omit<WabaTemplate, "id" | "createdAt" | "updatedAt">): WabaTemplate {
-  const items = load();
+export async function createTemplate(data: Omit<WabaTemplate, "id" | "createdAt" | "updatedAt">): Promise<WabaTemplate> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const now = new Date().toISOString();
   const tpl: WabaTemplate = { ...data, id: randomUUID(), createdAt: now, updatedAt: now };
   items.push(tpl);
-  save(items);
+  (await save(items));
   return tpl;
+
+  });
 }
 
-export function updateTemplate(id: string, patch: Partial<Omit<WabaTemplate, "id" | "createdAt">>): WabaTemplate | null {
-  const items = load();
+export async function updateTemplate(id: string, patch: Partial<Omit<WabaTemplate, "id" | "createdAt">>): Promise<WabaTemplate | null> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const idx = items.findIndex((t) => t.id === id);
   if (idx < 0) return null;
   items[idx] = { ...items[idx], ...patch, updatedAt: new Date().toISOString() };
-  save(items);
+  (await save(items));
   return items[idx];
+
+  });
 }
 
-export function deleteTemplate(id: string): boolean {
-  const items = load();
+export async function deleteTemplate(id: string): Promise<boolean> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const filtered = items.filter((t) => t.id !== id);
   if (filtered.length === items.length) return false;
-  save(filtered);
+  (await save(filtered));
   return true;
+
+  });
 }
 
 /** Sincroniza status de um template com a Meta API. Retorna o template atualizado. */
@@ -94,12 +96,12 @@ export async function syncTemplateStatus(tpl: WabaTemplate): Promise<WabaTemplat
   if (!tpl.metaId || !tpl.metaToken) return tpl;
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${tpl.metaId}?fields=id,name,status,rejected_reason&access_token=${tpl.metaToken}`,
+      `https://graph.facebook.com/v26.0/${tpl.metaId}?fields=id,name,status,rejected_reason&access_token=${tpl.metaToken}`,
     );
     if (!res.ok) return tpl;
     const data = await res.json() as { id: string; name: string; status: string; rejected_reason?: string };
     const metaStatus = (data.status ?? "PENDING").toUpperCase() as TemplateStatus;
-    return updateTemplate(tpl.id, { status: metaStatus, rejectedReason: data.rejected_reason }) ?? tpl;
+    return (await updateTemplate(tpl.id, { status: metaStatus, rejectedReason: data.rejected_reason })) ?? tpl;
   } catch {
     return tpl;
   }
@@ -125,7 +127,7 @@ export async function sendTemplate(
         ...(components && components.length > 0 ? { components } : {}),
       },
     };
-    const res = await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+    const res = await fetch(`https://graph.facebook.com/v26.0/${phoneNumberId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${metaToken}` },
       body: JSON.stringify(body),

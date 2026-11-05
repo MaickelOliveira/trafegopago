@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import { join } from "path";
 import { randomUUID } from "crypto";
 
@@ -14,51 +14,59 @@ type Store = Record<string, QuickReply[]>;
 
 const FILE = join(process.cwd(), "data", "quick-replies.json");
 
-function load(): Store {
-  if (!existsSync(FILE)) return {};
-  try { return JSON.parse(readFileSync(FILE, "utf-8")); } catch { return {}; }
+async function load(): Promise<Store> {
+  return (await readDocument<Store>("quick-replies.json", {}));
 }
 
-function persist(store: Store) {
-  writeFileSync(FILE, JSON.stringify(store, null, 2), "utf-8");
+async function persist(store: Store) {
+  await writeDocument("quick-replies.json", store);
 }
 
-export function getQuickReplies(clientId: string): QuickReply[] {
-  return load()[clientId] ?? [];
+export async function getQuickReplies(clientId: string): Promise<QuickReply[]> {
+  return (await load())[clientId] ?? [];
 }
 
-export function createQuickReply(
+export async function createQuickReply(
   clientId: string,
   data: Omit<QuickReply, "id">,
-): QuickReply {
-  const store = load();
+): Promise<QuickReply> {
+  return withDataTransaction(async () => {
+  const store = (await load());
   const reply: QuickReply = { id: randomUUID(), ...data };
   store[clientId] = [...(store[clientId] ?? []), reply];
-  persist(store);
+  (await persist(store));
   return reply;
+
+  });
 }
 
-export function updateQuickReply(
+export async function updateQuickReply(
   clientId: string,
   id: string,
   data: Partial<Omit<QuickReply, "id">>,
-): QuickReply | null {
-  const store = load();
+): Promise<QuickReply | null> {
+  return withDataTransaction(async () => {
+  const store = (await load());
   const list = store[clientId] ?? [];
   const idx = list.findIndex((r) => r.id === id);
   if (idx === -1) return null;
   list[idx] = { ...list[idx], ...data };
   store[clientId] = list;
-  persist(store);
+  (await persist(store));
   return list[idx];
+
+  });
 }
 
-export function deleteQuickReply(clientId: string, id: string): boolean {
-  const store = load();
+export async function deleteQuickReply(clientId: string, id: string): Promise<boolean> {
+  return withDataTransaction(async () => {
+  const store = (await load());
   const list = store[clientId] ?? [];
   const filtered = list.filter((r) => r.id !== id);
   if (filtered.length === list.length) return false;
   store[clientId] = filtered;
-  persist(store);
+  (await persist(store));
   return true;
+
+  });
 }

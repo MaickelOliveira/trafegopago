@@ -1,3 +1,4 @@
+import { publicFunnel, publicTemplate } from "@/lib/public-records";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getClientById } from "@/lib/clients";
@@ -13,16 +14,16 @@ export default async function FuncionariosPage() {
   if (!session || session.role !== "client") redirect("/login");
 
   const clientId = session.clientId!;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/login");
 
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  const employees = getEmployees(clientId).map(({ passwordHash: _, ...rest }) => rest);
+  const funnels = (await getFunnels()).filter((f) => f.clientId === clientId);
+  const employees = (await getEmployees(clientId)).map(({ passwordHash: _, ...rest }) => rest);
 
   return (
     <FuncionariosView
       initialEmployees={employees}
-      funnels={funnels}
+      funnels={funnels.map(publicFunnel)}
     />
   );
 }

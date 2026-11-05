@@ -11,12 +11,12 @@ export async function GET(req: NextRequest) {
 
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (clientId) {
-    return NextResponse.json({ tasks: getChecklistTasks(clientId) });
+    return NextResponse.json({ tasks: (await getChecklistTasks(clientId)) });
   }
 
   // Visão geral: todas as tarefas, agrupadas por cliente
-  const clients = getClients();
-  const allTasks = getAllChecklistTasks();
+  const clients = (await getClients());
+  const allTasks = (await getAllChecklistTasks());
   const groups = clients
     .map((c) => ({
       clientId: c.id,
@@ -39,12 +39,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "clientId, title e owner são obrigatórios" }, { status: 400 });
   }
 
-  const task = createChecklistTask({
+  const task = (await createChecklistTask({
     clientId: body.clientId,
     title: body.title.trim(),
     dueDate: body.dueDate || undefined,
     owner: body.owner,
     createdBy: "manager",
-  });
+  }));
   return NextResponse.json(task);
 }

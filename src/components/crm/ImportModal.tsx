@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import * as XLSX from "xlsx";
+import { parseImportSpreadsheet } from "@/lib/import-spreadsheet";
 import type { Funnel } from "@/lib/funnels";
 
 interface ColumnMapping {
@@ -74,29 +74,20 @@ export default function ImportModal({ clientId, availableFunnels = [], onClose, 
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function parseFile(f: File) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target!.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
-        if (rows.length === 0) { setError("Planilha vazia."); return; }
-
-        const hdrs = Object.keys(rows[0]);
-        setHeaders(hdrs);
-        setPreview(rows.slice(0, 3));
-        const detected = detectMapping(hdrs);
-        setMapping(detected);
-        setFile(f);
-        setStep("mapping");
-        setError("");
-      } catch {
-        setError("Não foi possível ler o arquivo. Verifique se é .xlsx ou .csv válido.");
-      }
-    };
-    reader.readAsArrayBuffer(f);
+  async function parseFile(f: File) {
+    try {
+      const rows = await parseImportSpreadsheet(f);
+      if (!rows.length) { setError("Planilha vazia."); return; }
+      const hdrs = Object.keys(rows[0]);
+      setHeaders(hdrs);
+      setPreview(rows.slice(0, 3));
+      setMapping(detectMapping(hdrs));
+      setFile(f);
+      setStep("mapping");
+      setError("");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível ler o arquivo.");
+    }
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -114,33 +105,18 @@ export default function ImportModal({ clientId, availableFunnels = [], onClose, 
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragging(true); }, []);
   const handleDragLeave = useCallback(() => setDragging(false), []);
 
-  function goToConfirm() {
+  async function goToConfirm() {
     if (!mapping.phone) { setError("Mapeie a coluna de telefone."); return; }
     if (!mapping.stage) { setError("Mapeie a coluna de etapa."); return; }
-    // calcula etapas únicas
-    const stages: string[] = [];
-    const seen = new Set<string>();
-    for (const row of preview) {
-      // preview só tem 3 linhas — usamos os dados já parsed para calcular a lista completa
-    }
-    // Re-parse completo para etapas — usamos o mesmo file
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target!.result as ArrayBuffer);
-      const workbook = XLSX.read(data, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
-      for (const row of rows) {
-        const s = String(row[mapping.stage] ?? "").trim();
-        if (s && !seen.has(s)) { seen.add(s); stages.push(s); }
-      }
+    if (!file) return;
+    try {
+      const rows = await parseImportSpreadsheet(file);
+      const stages = [...new Set(rows.map(row => row[mapping.stage]?.trim()).filter(Boolean))];
       setUniqueStages(stages);
-      const today = new Date().toLocaleDateString("pt-BR");
-      setFunnelName(`Importação Kommo — ${today}`);
+      setFunnelName(`Importação Kommo — ${new Date().toLocaleDateString("pt-BR")}`);
       setStep("confirm");
       setError("");
-    };
-    reader.readAsArrayBuffer(file!);
+    } catch { setError("Não foi possível ler as etapas da planilha."); }
   }
 
   function moveStage(idx: number, dir: -1 | 1) {

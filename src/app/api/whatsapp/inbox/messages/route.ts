@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId") ?? undefined;
   const connId = req.nextUrl.searchParams.get("connId") ?? undefined;
 
-  const messages = getHistory(phone, clientId, connId);
-  markAsRead(phone, clientId, connId);
+  const messages = (await getHistory(phone, clientId, connId));
+  (await markAsRead(phone, clientId, connId));
 
   return NextResponse.json({ messages });
 }

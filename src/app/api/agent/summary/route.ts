@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getClientById } from "@/lib/clients";
+import { getClientById, getAgentConfigForConnection } from "@/lib/clients";
 import type { AvisoRecipient } from "@/lib/clients";
 import { getHistory } from "@/lib/conversations";
 import { sendMessage } from "@/lib/whatsapp-send";
@@ -20,8 +20,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "clientId e phone obrigatórios" }, { status: 400 });
   }
 
-  const client = getClientById(clientId);
-  const agentCfg = client?.agentConfig;
+  const client = (await getClientById(clientId));
+  const connId = req.nextUrl.searchParams.get("connId") ?? undefined;
+  const agentCfg = client ? getAgentConfigForConnection(client, connId) : undefined;
 
   // Usa avisos[] com fallback para summaryPhone legado
   const recipients: AvisoRecipient[] = agentCfg?.avisos?.length
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Nenhum destinatário de avisos configurado" }, { status: 400 });
   }
 
-  const history = getHistory(phone);
+  const history = (await getHistory(phone, clientId, connId));
   if (history.length === 0) {
     return NextResponse.json({ error: "Sem conversa para resumir" }, { status: 400 });
   }
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
 
   const summary = `📋 *Resumo de conversa — ${client?.name}*\n\n📞 Número: ${phone}\n\n${lines}`;
 
-  await Promise.all(recipients.map((r) => sendMessage(r.value, summary, clientId)));
+  await Promise.all(recipients.map(r => sendMessage(r.value, summary, clientId, connId)));
 
   return NextResponse.json({ ok: true });
 }

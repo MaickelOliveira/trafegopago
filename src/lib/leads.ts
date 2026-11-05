@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, renameSync, mkdirSync, statSync } from "fs";
+import { readRecordList, writeRecordList, type RecordFilter } from "./record-store";
+import { withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 import { getAllConversationsByClientId } from "./conversations";
@@ -9,6 +10,7 @@ import { sendCapiEvent } from "./meta-capi";
 export type LeadStatus = "novo" | "contato" | "proposta" | "ganho" | "perdido";
 export type LeadSource = "whatsapp" | "form" | "manual";
 export type AdPlatform = "meta" | "google" | null;
+export class LeadIdentityConflict extends Error {}
 
 export type LeadAI = {
   summary: string;
@@ -76,53 +78,13 @@ const FILE = path.join(DIR, "leads.json");
 const BAK  = FILE + ".bak";
 const TMP  = FILE + ".tmp";
 
-// Cache em memória — só relê o disco quando o arquivo muda (mtime)
-let _cache: Lead[] | null = null;
-let _cacheMtime = 0;
 
-function load(): Lead[] {
-  // Tenta arquivo principal
-  try {
-    if (existsSync(FILE)) {
-      const mtime = statSync(FILE).mtimeMs;
-      if (_cache && mtime === _cacheMtime) return _cache;
-      const raw = readFileSync(FILE, "utf-8");
-      if (raw.trim()) {
-        _cache = JSON.parse(raw);
-        _cacheMtime = mtime;
-        return _cache!;
-      }
-    }
-  } catch {
-    console.warn("[leads] leads.json corrompido, tentando backup...");
-  }
-  // Fallback: backup anterior
-  try {
-    if (existsSync(BAK)) {
-      console.warn("[leads] Restaurando de leads.json.bak");
-      return JSON.parse(readFileSync(BAK, "utf-8"));
-    }
-  } catch {
-    // nada a fazer
-  }
-  return [];
-}
+const load = (filter?: RecordFilter) => readRecordList<Lead>("leads.json", filter);
 
-function save(leads: Lead[]) {
-  if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
-  // 1. Escreve em arquivo temporário
-  writeFileSync(TMP, JSON.stringify(leads, null, 2));
-  // 2. Backup do arquivo atual (se existir)
-  if (existsSync(FILE)) renameSync(FILE, BAK);
-  // 3. Rename atômico: tmp → principal
-  renameSync(TMP, FILE);
-  // 4. Atualiza cache imediatamente
-  _cache = leads;
-  try { _cacheMtime = statSync(FILE).mtimeMs; } catch { /* ignore */ }
-}
+const save = (leads: Lead[], previous: Lead[] = leads) => writeRecordList("leads.json", leads, previous);
 
-export function getLeads(clientId?: string): Lead[] {
-  const all = load();
+export async function getLeads(clientId?: string): Promise<Lead[]> {
+  const all = (await load(clientId ? { clientId } : {}));
   return clientId ? all.filter((l) => l.clientId === clientId) : all;
 }
 
@@ -145,7 +107,7 @@ function computeHeat(messageCount: number, lastActivity: number): Lead["heat"] {
  * os objetos originais, que vêm do cache em memória de getLeads() e poderiam
  * acabar persistidos em disco caso outro código salve o array depois.
  */
-export function attachLeadsHeat(leads: Lead[]): Lead[] {
+export async function attachLeadsHeat(leads: Lead[]): Promise<Lead[]> {
   const heatByLeadId = new Map<string, Lead["heat"]>();
   const leadsByClient = new Map<string, Lead[]>();
   for (const lead of leads) {
@@ -154,36 +116,51 @@ export function attachLeadsHeat(leads: Lead[]): Lead[] {
     leadsByClient.set(lead.clientId, group);
   }
   for (const [clientId, clientLeads] of leadsByClient) {
-    const conversations = getAllConversationsByClientId(clientId);
-    const byPhone = new Map(conversations.map((c) => [normalizePhone(c.phone), c]));
+    const conversations = (await getAllConversationsByClientId(clientId));
+    const { getFunnelForConnection } = await import("./lead-context");
+    const connectionFunnels = new Map(await Promise.all([...new Set(conversations.map(conversation => conversation.connId).filter((id): id is string => !!id))].map(async id => [id,(await getFunnelForConnection(clientId,id))?.id] as const)));
+    const byPhone = new Map<string,(typeof conversations)[number]>();
+    for (const conversation of conversations) {
+      const funnelId = conversation.connId ? connectionFunnels.get(conversation.connId) : undefined;
+      if (!funnelId) continue;
+      const key = `${funnelId}:${normalizePhone(conversation.phone)}`;
+      const current = byPhone.get(key);
+      if (!current || conversation.lastActivity > current.lastActivity) byPhone.set(key,conversation);
+    }
     for (const lead of clientLeads) {
-      const conv = byPhone.get(normalizePhone(lead.realPhone || lead.phone));
+      const conv = byPhone.get(`${lead.funnelId}:${normalizePhone(lead.realPhone || lead.phone)}`);
       if (conv) heatByLeadId.set(lead.id, computeHeat(conv.messageCount, conv.lastActivity));
     }
   }
   return leads.map((lead) => heatByLeadId.has(lead.id) ? { ...lead, heat: heatByLeadId.get(lead.id) } : lead);
 }
 
-export function getLeadById(id: string): Lead | undefined {
-  return load().find((l) => l.id === id);
+export async function getLeadById(id: string): Promise<Lead | undefined> {
+  return (await load({ id })).find((l) => l.id === id);
 }
 
 /** Marca um lead como precisando de atenção humana — chamado quando a IA dispara resumo_solicitado */
-export function markLeadNeedsAttention(clientId: string, phone: string, funnelId: string | undefined, motivo: string): void {
-  const lead = getLeadByPhone(clientId, phone, funnelId);
+export async function markLeadNeedsAttention(clientId: string, phone: string, funnelId: string | undefined, motivo: string): Promise<void> {
+  const lead = (await getLeadByPhone(clientId, phone, funnelId));
   if (!lead) return;
-  updateLead(lead.id, { needsAttention: true, needsAttentionReason: motivo, needsAttentionAt: new Date().toISOString() });
+  (await updateLead(lead.id, { needsAttention: true, needsAttentionReason: motivo, needsAttentionAt: new Date().toISOString() }));
 }
 
-export function getLeadByPhone(clientId: string, phone: string, funnelId?: string): Lead | undefined {
+export async function getLeadByPhone(clientId: string, phone: string, funnelId?: string): Promise<Lead | undefined> {
   const normalized = normalizePhone(phone);
-  return load().find(
+  const matches = (await load({ clientId, phone, ...(funnelId ? { funnelId } : {}) })).filter(
     (l) =>
       l.clientId === clientId &&
       (!funnelId || l.funnelId === funnelId) &&
       (normalizePhone(l.phone) === normalized ||
         (l.realPhone != null && normalizePhone(l.realPhone) === normalized)),
   );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+export async function hasLeadByPhone(clientId: string, phone: string, funnelId?: string): Promise<boolean> {
+  const normalized=normalizePhone(phone);
+  return (await load({clientId,phone,...(funnelId?{funnelId}:{})})).some(lead=>lead.clientId===clientId&&(!funnelId||lead.funnelId===funnelId)&&[lead.phone,lead.realPhone].some(value=>value&&normalizePhone(value)===normalized));
 }
 
 /**
@@ -192,11 +169,11 @@ export function getLeadByPhone(clientId: string, phone: string, funnelId?: strin
  * passar por uma mudança de status via PUT (único lugar que disparava isso
  * antes, então lead novo criado já na coluna "Novo" nunca gerava o evento).
  */
-function fireEntryColumnMetaEvent(lead: Lead): void {
-  const funnel = getFunnelById(lead.funnelId);
+async function fireEntryColumnMetaEvent(lead: Lead): Promise<void> {
+  const funnel = (await getFunnelById(lead.funnelId));
   const col = funnel?.columns.find((c) => c.id === lead.status);
   if (!col?.metaEvent) return;
-  const client = getClientById(lead.clientId);
+  const client = (await getClientById(lead.clientId));
   if (!client?.pixelId) return;
   sendCapiEvent({
     pixelId: client.pixelId,
@@ -214,34 +191,47 @@ function fireEntryColumnMetaEvent(lead: Lead): void {
   }).catch((e) => console.error("[Meta CAPI] evento da coluna de entrada", e));
 }
 
-export function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedAt">): Lead {
-  const leads = load();
+async function queueGoogleConversion(lead: Lead, previous?: Lead): Promise<void> {
+  if (!(await getClientById(lead.clientId))?.googleConversions?.enabled) return;
+  const { enqueueLeadGoogleConversion } = await import("./google-conversion-outbox");
+  await enqueueLeadGoogleConversion(lead, previous);
+}
+
+export async function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedAt">): Promise<Lead> {
+  return withDataTransaction(async () => {
+  const leads = (await load({ clientId: data.clientId, phone: data.phone, funnelId: data.funnelId }));
   // Evita duplicata por telefone + cliente + funil (checa também realPhone)
   const normalizedNew = normalizePhone(data.phone);
-  const existing = leads.find(
+  const existing = leads.filter(
     (l) =>
       l.clientId === data.clientId &&
       l.funnelId === data.funnelId &&
       (normalizePhone(l.phone) === normalizedNew ||
         (l.realPhone != null && normalizePhone(l.realPhone) === normalizedNew)),
   );
-  if (existing) return existing;
+  if (existing.length > 1) throw new LeadIdentityConflict("Identidade de contato duplicada neste funil. Revise o cadastro antes de automatizar.");
+  if (existing.length === 1) return existing[0];
 
   const now = new Date().toISOString();
   const lead: Lead = { ...data, id: randomUUID(), createdAt: now, updatedAt: now };
   leads.push(lead);
-  save(leads);
-  fireEntryColumnMetaEvent(lead);
+  (await save(leads));
+  await queueGoogleConversion(lead);
+  (await fireEntryColumnMetaEvent(lead));
   return lead;
+
+  });
 }
 
-export function updateLead(id: string, patch: Partial<Omit<Lead, "id" | "createdAt">>): Lead | null {
-  const leads = load();
+export async function updateLead(id: string, patch: Partial<Omit<Lead, "id" | "createdAt">>): Promise<Lead | null> {
+  return withDataTransaction(async () => {
+  const leads = (await load({ id }));
   const idx = leads.findIndex((l) => l.id === id);
   if (idx < 0) return null;
   // Normaliza phone/realPhone quando presentes no patch (ex: edição manual no CRM)
   // — sem isso, um telefone salvo sem o 9º dígito nunca mais bate com
   // normalizePhone(l.phone) nas buscas de outras funções, criando duplicatas.
+  const previous = { ...leads[idx] };
   const normalizedPatch = { ...patch };
   if (normalizedPatch.phone) normalizedPatch.phone = normalizePhone(normalizedPatch.phone);
   if (normalizedPatch.realPhone) normalizedPatch.realPhone = normalizePhone(normalizedPatch.realPhone);
@@ -250,17 +240,27 @@ export function updateLead(id: string, patch: Partial<Omit<Lead, "id" | "created
   // sem precisar duplicar essa lógica em cada chamador que pausa/retoma a IA.
   if (normalizedPatch.aiPaused === true) normalizedPatch.aiPausedAt = new Date().toISOString();
   else if (normalizedPatch.aiPaused === false) normalizedPatch.aiPausedAt = null;
-  leads[idx] = { ...leads[idx], ...normalizedPatch, updatedAt: new Date().toISOString() };
-  save(leads);
+  leads[idx] = { ...leads[idx], ...normalizedPatch, id: leads[idx].id, clientId: leads[idx].clientId, createdAt: leads[idx].createdAt, updatedAt: new Date().toISOString() };
+  (await save(leads));
+  await queueGoogleConversion(leads[idx], previous);
+  if (patch.status !== undefined || patch.aiPaused !== undefined || patch.followUpDisabled !== undefined) {
+    const { synchronizeLeadWorkflows } = await import("./lead-workflows");
+    await synchronizeLeadWorkflows(leads[idx], previous);
+  }
   return leads[idx];
+
+  });
 }
 
-export function deleteLead(id: string): boolean {
-  const leads = load();
+export async function deleteLead(id: string): Promise<boolean> {
+  return withDataTransaction(async () => {
+  const leads = (await load({ id }));
   const filtered = leads.filter((l) => l.id !== id);
   if (filtered.length === leads.length) return false;
-  save(filtered);
+  (await save(filtered, leads));
   return true;
+
+  });
 }
 
 /**
@@ -292,8 +292,11 @@ export function toDialablePhone(raw: string): string {
   return "55" + normalizePhone(raw);
 }
 
-export function upsertLeadByPhone(clientId: string, phone: string, patch: Partial<Lead>): Lead {
-  const leads = load();
+export async function upsertLeadByPhone(clientId: string, phone: string, patch: Partial<Lead>): Promise<Lead> {
+  return withDataTransaction(async () => {
+  const leads = (await load({ clientId, phone, funnelId: patch.funnelId ?? "default" }));
+  patch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  delete patch.id; delete patch.clientId; delete patch.phone;
   const normalized = normalizePhone(phone);
   const funnelId = patch.funnelId ?? "default";
   // Normaliza ANTES de ramificar create/update — senão um lead novo (que lê
@@ -303,15 +306,21 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
   // Busca por clientId + funnelId + telefone normalizado.
   // Mesmo número em funnels diferentes = leads separados (cada agente/canal tem seu próprio lead).
   // Mesmo número no mesmo funil = um único lead (sem duplicata).
-  const idx = leads.findIndex(
+  const candidates = leads.filter(
     (l) =>
       l.clientId === clientId &&
       l.funnelId === funnelId &&
       (normalizePhone(l.phone) === normalized ||
         (l.realPhone != null && normalizePhone(l.realPhone) === normalized)),
   );
+  if (candidates.length > 1) throw new LeadIdentityConflict("Identidade de contato duplicada neste funil. Revise o cadastro antes de automatizar.");
+  const idx = candidates.length ? leads.indexOf(candidates[0]) : -1;
   const now = new Date().toISOString();
   if (idx >= 0) {
+    const previous = { ...leads[idx] };
+    // Missing automatic metadata must not erase manually edited or captured data.
+    patch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== null));
+    if (patch.notes !== undefined && leads[idx].notes) patch.notes = !patch.notes || leads[idx].notes.includes(patch.notes) ? leads[idx].notes : `${leads[idx].notes}\n${patch.notes}`.slice(-30000);
     // Proteção: nome automático (webhook) nunca sobrescreve um nome real já definido.
     // "Nome real" = não é número de telefone e não é "Desconhecido".
     // Edições manuais via CRM usam updateLead() — não passam por aqui.
@@ -330,7 +339,8 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     if (patch.aiPaused === true) patch = { ...patch, aiPausedAt: now };
     else if (patch.aiPaused === false) patch = { ...patch, aiPausedAt: null };
     leads[idx] = { ...leads[idx], ...patch, updatedAt: now };
-    save(leads);
+    (await save(leads));
+    await queueGoogleConversion(leads[idx], previous);
     return leads[idx];
   }
   const lead: Lead = {
@@ -370,9 +380,33 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     updatedAt: now,
   };
   leads.push(lead);
-  save(leads);
-  fireEntryColumnMetaEvent(lead);
+  (await save(leads));
+  await queueGoogleConversion(lead);
+  (await fireEntryColumnMetaEvent(lead));
   return lead;
+
+  });
+}
+
+/** Keep the channel's conversation working while an ambiguous CRM identity is
+ * reviewed. No arbitrary contact is chosen, moved, merged or deleted. */
+export async function captureWhatsAppLead(clientId: string, phone: string, patch: Partial<Lead>): Promise<Lead | undefined> {
+  try { return await upsertLeadByPhone(clientId,phone,patch); }
+  catch(error) {
+    if (!(error instanceof LeadIdentityConflict)) throw error;
+    await withDataTransaction(async () => {
+      const normalized=normalizePhone(phone),funnelId=patch.funnelId??"default";
+      const rows=await load({clientId,phone,funnelId});
+      for(const row of rows) if(row.clientId===clientId&&row.funnelId===funnelId&&[row.phone,row.realPhone].some(value=>value&&normalizePhone(value)===normalized)) {
+        row.needsAttention=true;
+        row.needsAttentionReason="Há mais de um cadastro para este telefone no funil. Revise os contatos antes de movimentar ou iniciar acompanhamentos.";
+        row.needsAttentionAt=new Date().toISOString();
+        row.updatedAt=row.needsAttentionAt;
+      }
+      await save(rows);
+    });
+    return undefined;
+  }
 }
 
 export const KANBAN_COLUMNS: { id: LeadStatus; label: string; color: string }[] = [
@@ -382,3 +416,8 @@ export const KANBAN_COLUMNS: { id: LeadStatus; label: string; color: string }[] 
   { id: "ganho",    label: "Ganho",             color: "green"  },
   { id: "perdido",  label: "Perdido",           color: "slate"  },
 ];
+
+/** Chat history can still be served when CRM has ambiguous duplicate identities. */
+export async function getChatLeadByPhone(clientId:string,phone:string,funnelId?:string):Promise<Lead|undefined>{
+ try{return await getLeadByPhone(clientId,phone,funnelId);}catch(error){if(error instanceof LeadIdentityConflict)return undefined;throw error;}
+}

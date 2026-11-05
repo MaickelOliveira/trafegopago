@@ -1,9 +1,9 @@
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 // Fila de destinatários de um disparo em massa (Broadcast). Mesmo formato
 // flat-array + claim atômico de followups.ts — sobrevive a restart do
 // processo, diferente de um setTimeout por item (motivo já documentado em
 // crm-automation-jobs.ts: passos agendados só em memória se perdiam
 // silenciosamente a cada deploy).
-import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { getBroadcastById, incrementBroadcastCounters } from "./broadcasts";
@@ -27,31 +27,27 @@ export type BroadcastItem = {
 
 const FILE = path.join(process.cwd(), "data", "broadcast-items.json");
 
-function load(): BroadcastItem[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch {
-    return [];
-  }
+async function load(): Promise<BroadcastItem[]> {
+  return (await readDocument<BroadcastItem[]>("broadcast-items.json", []));
 }
 
-function save(items: BroadcastItem[]) {
-  writeFileSync(FILE, JSON.stringify(items, null, 2));
+async function save(items: BroadcastItem[]) {
+  await writeDocument("broadcast-items.json", items);
 }
 
 /** Cria a fila inteira de uma vez, cada item já com scheduledAt calculado —
  *  diferente de followups.ts (que agenda "o próximo" a cada envio porque a
  *  sequência pode ser interrompida pela resposta do lead), aqui a campanha
  *  inteira já é conhecida no momento da criação. */
-export function createBroadcastItems(
+export async function createBroadcastItems(
   campaignId: string,
   clientId: string,
   recipients: { phone: string; name?: string; leadId?: string }[],
   startedAt: string,
   delaySeconds: number,
-): BroadcastItem[] {
-  const items = load();
+): Promise<BroadcastItem[]> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const startMs = new Date(startedAt).getTime();
   const created: BroadcastItem[] = recipients.map((r, i) => ({
     id: randomUUID(),
@@ -64,12 +60,14 @@ export function createBroadcastItems(
     scheduledAt: new Date(startMs + i * delaySeconds * 1000).toISOString(),
   }));
   items.push(...created);
-  save(items);
+  (await save(items));
   return created;
+
+  });
 }
 
-export function getBroadcastItems(campaignId: string): BroadcastItem[] {
-  return load().filter((i) => i.campaignId === campaignId);
+export async function getBroadcastItems(campaignId: string): Promise<BroadcastItem[]> {
+  return (await load()).filter((i) => i.campaignId === campaignId);
 }
 
 /** Reivindica no máximo 1 item pendente vencido POR campanha a cada chamada
@@ -80,9 +78,10 @@ export function getBroadcastItems(campaignId: string): BroadcastItem[] {
  *  sem cancelar o restante). Mesmo esqueleto atômico de claimDueFollowUps:
  *  lê + marca "processing" num único write, evitando processamento
  *  duplicado entre ticks concorrentes. */
-export function claimNextDueBroadcastItems(): BroadcastItem[] {
+export async function claimNextDueBroadcastItems(): Promise<BroadcastItem[]> {
+  return withDataTransaction(async () => {
   const now = new Date();
-  const items = load();
+  const items = (await load());
   const earliestDueByCampaign = new Map<string, BroadcastItem>();
 
   for (const item of items) {
@@ -93,7 +92,7 @@ export function claimNextDueBroadcastItems(): BroadcastItem[] {
 
   const claimed: BroadcastItem[] = [];
   for (const [campaignId, candidate] of earliestDueByCampaign) {
-    const campaign = getBroadcastById(campaignId);
+    const campaign = (await getBroadcastById(campaignId));
     if (campaign?.status !== "running") continue;
     const idx = items.findIndex((i) => i.id === candidate.id);
     if (idx >= 0) {
@@ -102,34 +101,43 @@ export function claimNextDueBroadcastItems(): BroadcastItem[] {
     }
   }
 
-  if (claimed.length > 0) save(items);
+  if (claimed.length > 0) (await save(items));
   return claimed;
+
+  });
 }
 
-export function markItemSent(id: string): void {
-  const items = load();
+export async function markItemSent(id: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const idx = items.findIndex((i) => i.id === id);
   if (idx >= 0) {
     items[idx].status = "sent";
     items[idx].sentAt = new Date().toISOString();
-    save(items);
+    (await save(items));
   }
+
+  });
 }
 
-export function markItemFailed(id: string, error: string): void {
-  const items = load();
+export async function markItemFailed(id: string, error: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const idx = items.findIndex((i) => i.id === id);
   if (idx >= 0) {
     items[idx].status = "failed";
     items[idx].lastError = error;
-    save(items);
+    (await save(items));
   }
+
+  });
 }
 
 /** Cancela em cascata os itens pending/processing de uma campanha — mesmo
  *  padrão de cancelFollowUpsForPhone. */
-export function cancelBroadcastItems(campaignId: string): void {
-  const items = load();
+export async function cancelBroadcastItems(campaignId: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   let changed = false;
   for (const item of items) {
     if (item.campaignId === campaignId && (item.status === "pending" || item.status === "processing")) {
@@ -137,7 +145,9 @@ export function cancelBroadcastItems(campaignId: string): void {
       changed = true;
     }
   }
-  if (changed) save(items);
+  if (changed) (await save(items));
+
+  });
 }
 
 /** Interpola {{nome}}/{{nome_completo}} (primeiro nome / nome completo) na
@@ -157,13 +167,13 @@ function interpolateBroadcastMessage(msg: string, name: string | undefined): str
  *  externo redundante, ex: EasyPanel) — mesmo racional de
  *  processDueFollowUpsAndBatches. */
 export async function processDueBroadcastItems(): Promise<{ processed: number }> {
-  const due = claimNextDueBroadcastItems();
+  const due = (await claimNextDueBroadcastItems());
   let processed = 0;
 
   for (const item of due) {
-    const campaign = getBroadcastById(item.campaignId);
+    const campaign = (await getBroadcastById(item.campaignId));
     if (!campaign) {
-      markItemFailed(item.id, "campanha não encontrada");
+      (await markItemFailed(item.id, "campanha não encontrada"));
       processed++;
       continue;
     }
@@ -172,17 +182,17 @@ export async function processDueBroadcastItems(): Promise<{ processed: number }>
       const msg = interpolateBroadcastMessage(campaign.message, item.name);
       const ok = await sendMessage(item.phone, msg, item.clientId, campaign.connectionId);
       if (ok) {
-        markItemSent(item.id);
-        addMessage(item.phone, { role: "assistant", content: msg, ts: Date.now() }, item.clientId, { connId: campaign.connectionId });
-        incrementBroadcastCounters(campaign.id, "sentCount");
+        (await markItemSent(item.id));
+        (await addMessage(item.phone, { role: "assistant", content: msg, ts: Date.now() }, item.clientId, { connId: campaign.connectionId }));
+        (await incrementBroadcastCounters(campaign.id, "sentCount"));
       } else {
-        markItemFailed(item.id, "sendMessage falhou — ver logs de evolution-api");
-        incrementBroadcastCounters(campaign.id, "failedCount");
+        (await markItemFailed(item.id, "sendMessage falhou — ver logs de evolution-api"));
+        (await incrementBroadcastCounters(campaign.id, "failedCount"));
       }
     } catch (e) {
       console.error(`[broadcast-items] erro ao processar item ${item.id}:`, e);
-      markItemFailed(item.id, e instanceof Error ? e.message : String(e));
-      incrementBroadcastCounters(campaign.id, "failedCount");
+      (await markItemFailed(item.id, e instanceof Error ? e.message : String(e)));
+      (await incrementBroadcastCounters(campaign.id, "failedCount"));
     }
     processed++;
   }

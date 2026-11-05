@@ -6,7 +6,7 @@ import { getEmployeeById, updateEmployee, deleteEmployee } from "@/lib/employees
 async function requireClientOwner(employeeId: string) {
   const session = await getSession();
   if (!session || session.role !== "client") return null;
-  const employee = getEmployeeById(employeeId);
+  const employee = (await getEmployeeById(employeeId));
   if (!employee || employee.clientId !== session.clientId) return null;
   return { session, employee };
 }
@@ -29,11 +29,12 @@ export async function PATCH(
   if (body.permissions && typeof body.permissions === "object") {
     patch.permissions = { ...ctx.employee.permissions, ...body.permissions };
   }
-  if (typeof body.password === "string" && body.password.length >= 6) {
-    patch.passwordHash = bcrypt.hashSync(body.password, 10);
+  if (body.password && (typeof body.password !== "string" || body.password.length < 12 || Buffer.byteLength(body.password) > 72)) return NextResponse.json({ error: "Use uma senha de pelo menos 12 caracteres e até 72 bytes." }, { status: 400 });
+  if (typeof body.password === "string" && body.password) {
+    patch.passwordHash = await bcrypt.hash(body.password, 12);
   }
 
-  const updated = updateEmployee(employeeId, patch);
+  const updated = (await updateEmployee(employeeId, patch));
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { passwordHash: _, ...safe } = updated;
@@ -49,7 +50,7 @@ export async function DELETE(
   const ctx = await requireClientOwner(employeeId);
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const ok = deleteEmployee(employeeId);
+  const ok = (await deleteEmployee(employeeId));
   if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

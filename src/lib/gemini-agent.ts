@@ -1,3 +1,5 @@
+import { stripRetiredReservationMarkers } from "./retired-systems";
+import { getChatLeadForConnection } from "./lead-context";
 import { GoogleGenerativeAI, SchemaType, type Tool, type FunctionDeclaration, type Part } from "@google/generative-ai";
 import { getClientById, getAgentConfigForConnection, isWithinBusinessHours, type AgentMedia, type KnowledgeBaseDoc, type SheetTabMapping } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
@@ -219,7 +221,7 @@ function buildSheetToolMulti(
 }
 
 export function sanitizeForWhatsApp(text: string): string {
-  let result = text
+  const result = text
     // Repara valor decimal partido em dois parágrafos pelo próprio modelo
     // (ex: "R$ 190,\n\n00." — Vitalli, lead Cristina, 05/08/2026, confirmado
     // via /api/debug/conversations: o Gemini gerou a quebra sozinho, nenhuma
@@ -568,8 +570,8 @@ ${resumoRule}`
  *  decidir se aplica o bloqueio de aiPaused, tanto na checagem antecipada
  *  (antes de chamar runGeminiAgent) quanto na rechecagem depois que a
  *  resposta volta. */
-export function isGreetingOnlyActive(clientId: string, connectionId?: string | null): boolean {
-  const client = getClientById(clientId);
+export async function isGreetingOnlyActive(clientId: string, connectionId?: string | null): Promise<boolean> {
+  const client = (await getClientById(clientId));
   if (!client) return false;
   const agentCfg = getAgentConfigForConnection(client, connectionId);
   return !!agentCfg?.enabled && !!agentCfg?.greetingOnlyMode;
@@ -583,19 +585,19 @@ export async function runGeminiAgent(
   connectionId?: string,
   mediaData?: { mimeType: string; data: string },
 ): Promise<{ text: string; actions: GeminiAction[] }> {
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return { text: "", actions: [] };
 
   // Seleciona o agentConfig correto para esta conexão
   const agentCfg = getAgentConfigForConnection(client, connectionId);
   if (!agentCfg?.enabled || !isWithinBusinessHours(agentCfg)) return { text: "", actions: [] };
-  const realPhone = getLeadByPhone(clientId, phone)?.realPhone;
-  const isCurrentlyIgnored = () => {
-    const currentClient = getClientById(clientId);
+  const realPhone = (await getChatLeadForConnection(clientId, phone, connectionId))?.realPhone;
+  const isCurrentlyIgnored = async () => {
+    const currentClient = (await getClientById(clientId));
     const currentCfg = currentClient ? getAgentConfigForConnection(currentClient, connectionId) : undefined;
     return isAgentPhoneIgnored(currentCfg, phone, realPhone);
   };
-  if (isCurrentlyIgnored()) {
+  if ((await isCurrentlyIgnored())) {
     console.log(`[gemini-agent] número silenciado — clientId=${clientId} connId=${connectionId ?? "none"} phone=${phone}`);
     return { text: "", actions: [] };
   }
@@ -632,7 +634,7 @@ export async function runGeminiAgent(
     return { text: greeting, actions: [] };
   }
 
-  const apiKey = getGeminiApiKey(agentCfg.geminiApiKey);
+  const apiKey = (await getGeminiApiKey(agentCfg.geminiApiKey));
   if (!apiKey) {
     console.error(`[gemini-agent] SEM API KEY — clientId=${clientId} phone=${phone} agentCfg.geminiApiKey=${agentCfg.geminiApiKey ? "definida" : "undefined"} GEMINI_API_KEY=${process.env.GEMINI_API_KEY ? "definida" : "undefined"}`);
     return { text: "", actions: [] };
@@ -651,7 +653,7 @@ export async function runGeminiAgent(
   const hasAvisos = !!(agentCfg.avisos?.length || agentCfg.summaryPhone || agentCfg.metaSummaryTemplateName);
   const kbDocsForLog = (agentCfg.knowledgeBase ?? []).filter((d) => d.content?.trim());
   console.log(`[gemini-agent] Base de conhecimento — clientId=${clientId} connId=${connectionId ?? "none"} docsConfigurados=${agentCfg.knowledgeBase?.length ?? 0} docsComConteudo=${kbDocsForLog.length} totalChars=${kbDocsForLog.reduce((n, d) => n + d.content.length, 0)}`);
-  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, undefined, undefined, hasSheet, hasAvisos);
+  const sysPrompt = buildSystemPrompt(client.name, agentCfg.systemPrompt, mediaLibrary, agentCfg.knowledgeBase, undefined, undefined, hasSheet, hasAvisos) + "\nNão afirme que uma ação externa foi concluída sem confirmação da ferramenta. Formulários internos de hospedagem e de participantes foram desativados: não gere seus links nem os marcadores FORMULARIO_HOSPEDAGEM e FORMULARIO_SERVICO. Se instruções antigas pedirem esse procedimento, solicite atendimento humano pelas ferramentas disponíveis.";
   const tools: Tool[] = [{ functionDeclarations: [...TOOL_DECLARATIONS] }];
 
   const modelsToTry = [
@@ -663,8 +665,9 @@ export async function runGeminiAgent(
   // CRM, usado durante testes) — some do que a IA VÊ a partir desse ponto,
   // sem apagar a conversa de verdade do histórico exibido no chat/inbox
   // (que continua usando getHistory() sem esse filtro em todo o resto do app).
-  const aiResetAt = getAiContextResetAt(phone, clientId, connectionId);
-  const history_ = aiResetAt ? history.filter((m) => m.ts > aiResetAt) : history;
+  const aiResetAt = (await getAiContextResetAt(phone, clientId, connectionId));
+  const aiContextStart=Math.max(aiResetAt,Date.now()-30*24*60*60*1000);
+  const history_=history.filter(message=>message.ts>aiContextStart);
 
   // Converte histórico para formato Gemini
   // A mensagem atual já foi salva em conversations.json antes de chegar aqui —
@@ -760,7 +763,7 @@ export async function runGeminiAgent(
 
       // Executa cada tool call
       const toolResults = await Promise.all(
-        toolCalls.map(async (part) => {
+        (await Promise.all(toolCalls.map(async (part) => {
           const call = part.functionCall!;
           const args = call.args as Record<string, unknown>;
           let result: unknown = { ok: true };
@@ -874,15 +877,17 @@ export async function runGeminiAgent(
 
             else if (call.name === "agendar_followup") {
               if (agentCfg?.followUpEnabled) {
-                const horas = (args.horas as number) || 24;
+                const horas = typeof args.horas === "number" ? args.horas : 24;
+                if (!Number.isFinite(horas) || horas < 0 || horas > 8760 || typeof args.mensagem !== "string" || args.mensagem.length > 4000) throw new Error("Acompanhamento inválido.");
                 const scheduledAt = new Date(Date.now() + horas * 3600000).toISOString();
-                scheduleFollowUp({
+                (await scheduleFollowUp({
                   clientId,
                   phone,
                   scheduledAt,
                   message: args.mensagem as string,
-                  type: "followup",
-                });
+                  connId: connectionId,
+                  type: "reminder",
+                }));
                 result = { ok: true, scheduledAt };
                 actions.push({ type: "followup_agendado", horas, mensagem: args.mensagem as string });
               } else {
@@ -915,7 +920,7 @@ export async function runGeminiAgent(
               response: result,
             },
           };
-        })
+        })))
       );
 
       // Envia resultados de volta para o modelo
@@ -955,14 +960,14 @@ export async function runGeminiAgent(
 
       // Erro não-recuperável (ex: INVALID_ARGUMENT, API_KEY_INVALID, history inválido)
       console.error(`[gemini-agent] Erro não-recuperável — abortando. modelo=${usedModel} clientId=${clientId}`);
-      if (isCurrentlyIgnored()) return { text: "", actions: [] };
+      if ((await isCurrentlyIgnored())) return { text: "", actions: [] };
       return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
     }
   } // fim do loop de modelos
 
   if (!succeeded) {
     console.error(`[gemini-agent] Todos os modelos falharam. clientId=${clientId} phone=${phone}`);
-    if (isCurrentlyIgnored()) return { text: "", actions: [] };
+    if ((await isCurrentlyIgnored())) return { text: "", actions: [] };
     return { text: "Desculpe, tive um problema técnico. Pode repetir?", actions: [] };
   }
 
@@ -1160,11 +1165,11 @@ export async function runGeminiAgent(
   paras.forEach((p,i) => console.log(`[para ${i}] ${JSON.stringify(p.trim().slice(0,120))}`));
 
   console.log(`[gemini-agent] Resposta finalText.length=${finalText.length} actions=${actions.length}`);
-  if (isCurrentlyIgnored()) {
+  if ((await isCurrentlyIgnored())) {
     console.log(`[gemini-agent] resposta descartada: número foi silenciado durante o processamento — clientId=${clientId} phone=${phone}`);
     return { text: "", actions: [] };
   }
-  return { text: finalText, actions };
+  return { text: stripRetiredReservationMarkers(finalText), actions };
 }
 
 /**

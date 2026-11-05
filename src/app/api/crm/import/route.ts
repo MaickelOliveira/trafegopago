@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { createFunnel, updateFunnel, getFunnels } from "@/lib/funnels";
 import { upsertLeadByPhone } from "@/lib/leads";
-import * as XLSX from "xlsx";
+import { parseImportSpreadsheet } from "@/lib/import-spreadsheet";
 import { randomUUID } from "crypto";
 
 const STAGE_COLORS = [
@@ -51,12 +51,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Parse do arquivo
-  const buffer = Buffer.from(await file.arrayBuffer());
   let rows: Record<string, string>[];
   try {
-    const workbook = XLSX.read(buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
+    rows = await parseImportSpreadsheet(file);
   } catch {
     return NextResponse.json({ error: "Erro ao ler o arquivo. Verifique se é .xlsx ou .csv válido." }, { status: 400 });
   }
@@ -66,12 +63,12 @@ export async function POST(req: NextRequest) {
   }
 
   let funnel;
-  let stageIdMap: Record<string, string> = {};
+  const stageIdMap: Record<string, string> = {};
 
   if (existingFunnelId) {
     // Importar para funil existente — todos os leads vão para a primeira coluna
-    const found = getFunnels().find(f => f.id === existingFunnelId);
-    if (!found) return NextResponse.json({ error: "Funil não encontrado." }, { status: 404 });
+    const found = (await getFunnels()).find(f => f.id === existingFunnelId);
+    if (!found || found.clientId !== clientId) return NextResponse.json({ error: "Funil não encontrado." }, { status: 404 });
     funnel = found;
   } else {
     // Usa a ordem definida pelo usuário no modal, ou coleta do arquivo
@@ -97,8 +94,8 @@ export async function POST(req: NextRequest) {
     }));
     const columns = [entradaCol, ...kommoColumns];
 
-    funnel = createFunnel(funnelName, columns);
-    updateFunnel(funnel.id, { clientId });
+    funnel = (await createFunnel(funnelName, columns));
+    (await updateFunnel(funnel.id, { clientId }));
 
     // Mapeia label da etapa do Kommo → id da coluna criada
     for (const col of funnel.columns) {
@@ -131,7 +128,7 @@ export async function POST(req: NextRequest) {
     const value = valueRaw ? parseFloat(valueRaw) : null;
 
     try {
-      upsertLeadByPhone(clientId, phone, {
+      (await upsertLeadByPhone(clientId, phone, {
         name: mapping.name ? String(row[mapping.name] ?? "").trim() || phone : phone,
         email: mapping.email ? String(row[mapping.email] ?? "").trim() || null : null,
         notes: mapping.notes ? String(row[mapping.notes] ?? "").trim() : "",
@@ -139,7 +136,7 @@ export async function POST(req: NextRequest) {
         status: statusId,
         funnelId: funnel.id,
         source: "manual",
-      });
+      }));
       created++;
     } catch {
       errors++;

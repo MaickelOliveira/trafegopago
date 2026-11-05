@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   }
 
   const baseUrl = detectBase(req);
-  const sessions = getEvolutionSessions();
+  const sessions = (await getEvolutionSessions());
 
   const results: { instanceName: string; webhookUrl: string; ok: boolean; skipped?: boolean }[] = [];
 

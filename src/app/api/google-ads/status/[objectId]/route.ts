@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getGoogleAdsCreds } from "@/lib/google-ads-creds";
-import { updateCampaignStatus, updateAdGroupStatus, updateAdStatus, formatGoogleAdsError } from "@/lib/google-ads-api";
+import { updateCampaignStatus, updateAdGroupStatus, updateAdStatus, formatGoogleAdsError, googleAdsIssue } from "@/lib/google-ads-api";
 
 type Params = { params: Promise<{ objectId: string }> };
 
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "accountId obrigatório" }, { status: 400 });
   }
 
-  const creds = getGoogleAdsCreds();
+  const creds = (await getGoogleAdsCreds());
   if (!creds) return NextResponse.json({ error: "Google Ads não configurado" }, { status: 500 });
 
   try {
@@ -40,6 +40,6 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     return NextResponse.json({ ok: true, status });
   } catch (e) {
-    return NextResponse.json({ error: formatGoogleAdsError(e) }, { status: 400 });
+    return NextResponse.json({ error: formatGoogleAdsError(e), googleAdsIssue: googleAdsIssue(e) }, { status: 400 });
   }
 }

@@ -1,156 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getClientById, upsertClient } from "@/lib/clients";
-import type { AgentConfig } from "@/lib/clients";
+import { getClientById, getAgentConfigForConnection, getAllAgentConfigs, upsertAgentConfigForConnection, type AgentConfig } from "@/lib/clients";
+import { withDataTransaction } from "@/lib/document-store";
+import { getFunnelForConnection } from "@/lib/lead-context";
 import { cancelFollowUpsForConnection, cancelFollowUpsForPhone } from "@/lib/followups";
 import { sanitizeAgentPhoneList } from "@/lib/agent-phone-policy";
-
-function getConfigForConn(client: ReturnType<typeof getClientById>, connId: string | null): AgentConfig {
-  if (connId && client?.agentConfigs) {
-    const found = client.agentConfigs.find(c => c.whatsappConnectionId === connId);
-    if (found) return found;
-  }
-  // Sem connId explícito (ex: tela carregou sem nenhuma conexão selecionada):
-  // nunca devolve o campo legado "solto" quando o cliente já tem conexões em
-  // agentConfigs[] — isso fazia a tela mostrar/editar uma config desconectada
-  // da que realmente está em uso, e qualquer save ali nunca refletia no
-  // agente de verdade. Tenta resolver pela conexão que o campo legado
-  // aponta, senão cai na primeira conexão disponível.
-  if (client?.agentConfigs?.length) {
-    const viaLegacy = client.agentConfig?.whatsappConnectionId
-      ? client.agentConfigs.find(c => c.whatsappConnectionId === client.agentConfig!.whatsappConnectionId)
-      : undefined;
-    return viaLegacy ?? client.agentConfigs[0];
-  }
-  return client?.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] };
+async function context(req: NextRequest) {
+  if ((await getSession())?.role !== "manager") return null;
+  const id = req.nextUrl.searchParams.get("clientId"); if (!id) return null;
+  const client = await getClientById(id); if (!client) return null;
+  const connId = req.nextUrl.searchParams.get("connId") || undefined;
+  if (connId && !await getFunnelForConnection(id, connId)) return null;
+  const configs = getAllAgentConfigs(client);
+  const current = connId ? getAgentConfigForConnection(client, connId) : configs.length === 1 ? configs[0] : client.agentConfig;
+  if (!connId && configs.length > 1) return null;
+  const selected=connId||current?.whatsappConnectionId;
+  if(selected&&!await getFunnelForConnection(id,selected))return null;
+  return { client, connId: connId || current?.whatsappConnectionId, current: current ?? { enabled: false, followUpEnabled: false, followUps: [] } };
 }
-
-function upsertConfigForConn(
-  client: NonNullable<ReturnType<typeof getClientById>>,
-  connId: string | null,
-  updated: AgentConfig
-) {
-  // Se a requisição não veio com connId (ex: a tela carregou sem nenhuma
-  // conexão selecionada), mas o config sendo salvo JÁ identifica uma conexão
-  // (updated.whatsappConnectionId, vindo do GET anterior), usa esse valor —
-  // sem isso, o save caía no campo legado único (client.agentConfig), que
-  // getAllAgentConfigs() ignora por completo assim que agentConfigs[] já tem
-  // alguma entrada (caso de qualquer cliente com mais de uma conexão
-  // configurada). O resultado prático: toggles como resumo diário/reativação
-  // automática pareciam salvar (sem erro na tela) mas o cron nunca via a
-  // mudança, porque ela foi parar num campo que ninguém mais lê.
-  const effectiveConnId = connId ?? updated.whatsappConnectionId ?? null;
-  if (effectiveConnId) {
-    // Upsert em agentConfigs
-    const existing = client.agentConfigs ?? [];
-    const idx = existing.findIndex(c => c.whatsappConnectionId === effectiveConnId);
-    const newConfigs = [...existing];
-    const withConnId = { ...updated, whatsappConnectionId: effectiveConnId };
-    if (idx >= 0) newConfigs[idx] = withConnId;
-    else newConfigs.push(withConnId);
-    upsertClient({ ...client, agentConfigs: newConfigs });
-  } else {
-    // Cliente sem nenhuma conexão configurada ainda — só aqui faz sentido
-    // salvar no campo legado único.
-    upsertClient({ ...client, agentConfig: updated });
-  }
-
-  // Follow-up desligado ou lista de passos esvaziada: cancela tudo que já
-  // estava agendado pra essa conexão — sem isso, itens agendados ANTES da
-  // mudança continuam na fila em data/followups.json e disparam mesmo com a
-  // config atual dizendo que não deveriam (toggle desligado, ou passo
-  // apagado da lista).
-  if (!updated.followUpEnabled || (updated.followUps?.length ?? 0) === 0) {
-    cancelFollowUpsForConnection(client.id, effectiveConnId);
-  }
-}
-
-// GET /api/agent?clientId=xxx[&connId=yyy] — retorna config do agente
 export async function GET(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "manager") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const clientId = req.nextUrl.searchParams.get("clientId");
-  if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
-
-  const client = getClientById(clientId);
-  if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const connId = req.nextUrl.searchParams.get("connId");
-  const cfg = getConfigForConn(client, connId);
-
-  // Retorna também um resumo de todos os agentConfigs (sem dados sensíveis)
-  const allConfigs = [...(client.agentConfigs ?? [])];
-  if (client.agentConfig && !allConfigs.some(c => c.whatsappConnectionId === client.agentConfig?.whatsappConnectionId)) {
-    allConfigs.push(client.agentConfig);
-  }
-  const configsSummary = allConfigs.map(c => ({
-    whatsappConnectionId: c.whatsappConnectionId,
-    enabled: c.enabled,
-    followUpEnabled: c.followUpEnabled,
-    name: c.name,
-  }));
-
-  // Não expõe tokens sensíveis — retorna booleano se conectado
-  return NextResponse.json({
-    ...cfg,
-    googleRefreshToken: undefined,
-    calendarConnected: !!cfg.googleRefreshToken,
-    _agentConfigsSummary: connId ? undefined : configsSummary,
+  const ctx = await context(req); if (!ctx) return NextResponse.json({ error: "Selecione um cliente e uma conexão permitida." }, { status: 403 });
+  const { current } = ctx;
+  return NextResponse.json({ ...current, geminiApiKey: "", hasGeminiKey: !!current.geminiApiKey, googleRefreshToken: undefined, calendarConnected: !!current.googleRefreshToken, _agentConfigsSummary: getAllAgentConfigs(ctx.client).map(config => ({ whatsappConnectionId: config.whatsappConnectionId, enabled: config.enabled, followUpEnabled: config.followUpEnabled, name: config.name })) });
+}
+async function update(req: NextRequest, toggle: boolean) {
+  if ((await getSession())?.role !== "manager") return NextResponse.json({ error: "Não autorizado." }, { status: 403 });
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body) || JSON.stringify(body).length > 2 * 1024 * 1024) return NextResponse.json({ error: "Configuração inválida." }, { status: 400 });
+  if (toggle && (!["enabled", "followUpEnabled"].includes(body.field) || typeof body.value !== "boolean")) return NextResponse.json({ error: "Opção inválida." }, { status: 400 });
+  for (const key of ["enabled", "followUpEnabled", "splitMessages", "dailySummaryEnabled", "aiAutoResumeEnabled", "greetingOnlyMode", "businessHoursEnabled"]) if (!toggle && body[key] !== undefined && typeof body[key] !== "boolean") return NextResponse.json({ error: "Opção inválida." }, { status: 400 });
+  if (!toggle && body.followUps !== undefined && (!Array.isArray(body.followUps) || body.followUps.length > 50 || body.followUps.some((step: { id?: unknown; delayHours?: unknown; message?: unknown }) => typeof step.id !== "string" || typeof step.delayHours !== "number" || !Number.isFinite(step.delayHours) || step.delayHours < 0 || typeof step.message !== "string"))) return NextResponse.json({ error: "Confira os passos de follow-up." }, { status: 400 });
+  return withDataTransaction(async () => {
+    const ctx = await context(req); if (!ctx) return NextResponse.json({ error: "Selecione um cliente e uma conexão permitida." }, { status: 403 });
+    const { client, current, connId } = ctx;
+    const patch = toggle ? { [body.field]: body.value } : body;
+    const updated: AgentConfig = { ...current, ...patch, googleRefreshToken: current.googleRefreshToken, dailySummaryLastSentDate: current.dailySummaryLastSentDate, geminiApiKey: patch.geminiApiKey || current.geminiApiKey, whatsappConnectionId: connId, ignoredPhones: patch.ignoredPhones === undefined ? current.ignoredPhones : sanitizeAgentPhoneList(patch.ignoredPhones) };
+    await upsertAgentConfigForConnection(client, connId, updated);
+    if (!updated.followUpEnabled || !updated.followUps?.length) await cancelFollowUpsForConnection(client.id, connId);
+    for (const phone of updated.ignoredPhones ?? []) await cancelFollowUpsForPhone(client.id, phone, connId);
+    return NextResponse.json({ ok: true, ...(toggle ? { [body.field]: body.value } : {}) });
   });
 }
-
-// PUT /api/agent?clientId=xxx[&connId=yyy] — salva config do agente
-export async function PUT(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "manager") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const clientId = req.nextUrl.searchParams.get("clientId");
-  if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
-
-  const client = getClientById(clientId);
-  if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const connId = req.nextUrl.searchParams.get("connId");
-  const body = await req.json().catch(() => ({})) as Partial<AgentConfig>;
-  const current = getConfigForConn(client, connId);
-
-  // Preserva googleRefreshToken existente se não foi alterado
-  const updated: AgentConfig = {
-    ...current,
-    ...body,
-    googleRefreshToken: body.googleRefreshToken ?? current.googleRefreshToken,
-    ignoredPhones: body.ignoredPhones === undefined
-      ? current.ignoredPhones
-      : sanitizeAgentPhoneList(body.ignoredPhones),
-  };
-
-  upsertConfigForConn(client, connId, updated);
-  for (const phone of updated.ignoredPhones ?? []) {
-    cancelFollowUpsForPhone(client.id, phone);
-  }
-  return NextResponse.json({ ok: true });
-}
-
-// PATCH /api/agent?clientId=xxx[&connId=yyy] — toggle enabled / followUpEnabled
-export async function PATCH(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "manager") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const clientId = req.nextUrl.searchParams.get("clientId");
-  if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
-
-  const client = getClientById(clientId);
-  if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const connId = req.nextUrl.searchParams.get("connId");
-  const body = await req.json().catch(() => ({})) as { field: "enabled" | "followUpEnabled"; value: boolean };
-  const current = getConfigForConn(client, connId);
-  const updated = { ...current, [body.field]: body.value };
-
-  upsertConfigForConn(client, connId, updated);
-  return NextResponse.json({ ok: true, [body.field]: body.value });
-}
+export async function PUT(req: NextRequest) { return update(req, false); }
+export async function PATCH(req: NextRequest) { return update(req, true); }

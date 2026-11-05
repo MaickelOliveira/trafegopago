@@ -1,3 +1,4 @@
+import { patchClient } from "@/lib/clients";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getSession } from "@/lib/auth";
@@ -5,7 +6,7 @@ import { getClientById, upsertClient, type KnowledgeBaseDoc } from "@/lib/client
 
 export const dynamic = "force-dynamic";
 
-function getConfigForConn(client: NonNullable<ReturnType<typeof getClientById>>, connId: string | null) {
+function getConfigForConn(client: NonNullable<Awaited<ReturnType<typeof getClientById>>>, connId: string | null) {
   if (connId && client.agentConfigs) {
     const found = client.agentConfigs.find((c) => c.whatsappConnectionId === connId);
     if (found) return found;
@@ -13,10 +14,10 @@ function getConfigForConn(client: NonNullable<ReturnType<typeof getClientById>>,
   return client.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] };
 }
 
-function upsertConfigForConn(
-  client: NonNullable<ReturnType<typeof getClientById>>,
+async function upsertConfigForConn(
+  client: NonNullable<Awaited<ReturnType<typeof getClientById>>>,
   connId: string | null,
-  updated: ReturnType<typeof getConfigForConn>
+  updated: Awaited<ReturnType<typeof getConfigForConn>>
 ) {
   if (connId) {
     const existing = client.agentConfigs ?? [];
@@ -24,9 +25,9 @@ function upsertConfigForConn(
     const newConfigs = [...existing];
     if (idx >= 0) newConfigs[idx] = updated;
     else newConfigs.push({ ...updated, whatsappConnectionId: connId });
-    upsertClient({ ...client, agentConfigs: newConfigs });
+    (await patchClient(client.id, { agentConfigs: newConfigs }));
   } else {
-    upsertClient({ ...client, agentConfig: updated });
+    (await patchClient(client.id, { agentConfig: updated }));
   }
 }
 
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const connId = req.nextUrl.searchParams.get("connId");
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const connId = req.nextUrl.searchParams.get("connId");
@@ -134,7 +135,7 @@ export async function POST(req: NextRequest) {
     ...cfg,
     knowledgeBase: [...(cfg.knowledgeBase ?? []), doc],
   };
-  upsertConfigForConn(client, connId, updatedCfg);
+  (await upsertConfigForConn(client, connId, updatedCfg));
 
   return NextResponse.json({ ok: true, doc: { ...doc, content: undefined, chars: content.length } });
 }

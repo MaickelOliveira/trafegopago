@@ -10,7 +10,7 @@ export default async function ClientCrmPage({ params }: { params: Promise<{ clie
   if (!session || session.role !== "manager") redirect("/login");
 
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/gestor");
 
   // Passa apenas este cliente como opção — sem seletor de cliente
@@ -24,8 +24,8 @@ export default async function ClientCrmPage({ params }: { params: Promise<{ clie
     kanbanAgentPrompt: client.kanbanAgentPrompt,
   }];
 
-  const leads = attachLeadsHeat(getLeads(clientId));
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
+  const leads = (await attachLeadsHeat((await getLeads(clientId))));
+  const funnels = (await getFunnels()).filter((f) => f.clientId === clientId);
 
   return (
     <CrmClient

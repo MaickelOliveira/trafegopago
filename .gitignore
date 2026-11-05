@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+/private/
+/.audit-workspace
 
 # vercel
 .vercel
@@ -49,3 +52,9 @@ wa-session/
 
 # claude code settings
 .claude/
+
+/.trafegopago-validation
+
+# Local rendered review evidence must remain private
+/docs/audit/visual/
+/docs/audit/evidence.json

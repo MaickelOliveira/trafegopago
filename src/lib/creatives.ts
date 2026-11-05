@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 
 export type CreativeStatus = "pending" | "approved" | "rejected" | "published";
@@ -37,46 +37,49 @@ export type Creative = {
 
 const DATA_PATH = path.join(process.cwd(), "data", "creatives.json");
 
-export function getCreatives(): Creative[] {
-  if (!existsSync(DATA_PATH)) return [];
-  try {
-    const raw = readFileSync(DATA_PATH, "utf-8");
-    return JSON.parse(raw).items as Creative[];
-  } catch {
-    return [];
-  }
+export async function getCreatives(): Promise<Creative[]> {
+  return (await readDocument<{ items: Creative[] }>("creatives.json", { items: [] })).items;
 }
 
-export function getCreativesByClient(clientId: string): Creative[] {
-  return getCreatives().filter((c) => c.clientId === clientId);
+export async function getCreativesByClient(clientId: string): Promise<Creative[]> {
+  return (await getCreatives()).filter((c) => c.clientId === clientId);
 }
 
-export function getCreativeById(id: string): Creative | undefined {
-  return getCreatives().find((c) => c.id === id);
+export async function getCreativeById(id: string): Promise<Creative | undefined> {
+  return (await getCreatives()).find((c) => c.id === id);
 }
 
-export function saveCreative(creative: Creative) {
-  const all = getCreatives();
+export async function saveCreative(creative: Creative) {
+  return withDataTransaction(async () => {
+  const all = (await getCreatives());
   all.push(creative);
-  writeFileSync(DATA_PATH, JSON.stringify({ items: all }, null, 2));
+  await writeDocument("creatives.json", { items: all });
+
+  });
 }
 
-export function updateCreative(updated: Creative) {
-  const all = getCreatives();
+export async function updateCreative(updated: Creative) {
+  return withDataTransaction(async () => {
+  const all = (await getCreatives());
   const idx = all.findIndex((c) => c.id === updated.id);
   if (idx >= 0) {
     all[idx] = { ...updated, updatedAt: new Date().toISOString() };
-    writeFileSync(DATA_PATH, JSON.stringify({ items: all }, null, 2));
+    await writeDocument("creatives.json", { items: all });
   }
+
+  });
 }
 
-export function deleteCreative(id: string) {
-  const all = getCreatives().filter((c) => c.id !== id);
-  writeFileSync(DATA_PATH, JSON.stringify({ items: all }, null, 2));
+export async function deleteCreative(id: string) {
+  return withDataTransaction(async () => {
+  const all = (await getCreatives()).filter((c) => c.id !== id);
+  await writeDocument("creatives.json", { items: all });
+
+  });
 }
 
-export function countPending(clientId: string, forRole: "manager" | "client"): number {
-  return getCreativesByClient(clientId).filter(
+export async function countPending(clientId: string, forRole: "manager" | "client"): Promise<number> {
+  return (await getCreativesByClient(clientId)).filter(
     (c) => c.status === "pending" && c.sentBy !== forRole
   ).length;
 }

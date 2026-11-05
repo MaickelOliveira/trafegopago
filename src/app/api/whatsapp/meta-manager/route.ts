@@ -1,3 +1,4 @@
+import { patchClient } from "@/lib/clients";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getFunnels, updateFunnel, createFunnel } from "@/lib/funnels";
@@ -5,6 +6,7 @@ import { getClients, upsertClient } from "@/lib/clients";
 
 export type MetaConnectionEnriched = {
   id: string;
+  configured:boolean;
   phoneNumberId: string;
   tokenMasked: string;
   verifyToken: string;
@@ -23,8 +25,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const funnels = getFunnels();
-  const clients = getClients();
+  const funnels = (await getFunnels());
+  const clients = (await getClients());
 
   const connIdToClient = new Map<string, { clientId: string; clientName: string; agentEnabled: boolean }>();
   for (const client of clients) {
@@ -48,6 +50,7 @@ export async function GET() {
         : null;
       result.push({
         id: conn.id,
+        configured:!!(conn.metaPhoneNumberId&&conn.metaToken),
         phoneNumberId: conn.metaPhoneNumberId ?? "",
         tokenMasked: conn.metaToken ? "••••••••" + conn.metaToken.slice(-4) : "",
         verifyToken: conn.metaVerifyToken ?? "trafegopago",
@@ -90,12 +93,12 @@ export async function POST(req: NextRequest) {
   let funnelId = rawFunnelId;
   if (funnelId.startsWith("auto:")) {
     const autoClientId = funnelId.slice(5);
-    const newFunnel = createFunnel("Funil Principal");
-    updateFunnel(newFunnel.id, { clientId: autoClientId });
+    const newFunnel = (await createFunnel("Funil Principal"));
+    (await updateFunnel(newFunnel.id, { clientId: autoClientId }));
     funnelId = newFunnel.id;
   }
 
-  const funnels = getFunnels();
+  const funnels = (await getFunnels());
   const funnel = funnels.find(f => f.id === funnelId);
   if (!funnel) return NextResponse.json({ error: "Funil não encontrado" }, { status: 404 });
 
@@ -109,20 +112,17 @@ export async function POST(req: NextRequest) {
     metaVerifyToken: verifyToken?.trim() || "trafegopago",
   };
 
-  updateFunnel(funnelId, { connections: [...(funnel.connections ?? []), newConn] });
+  (await updateFunnel(funnelId, { connections: [...(funnel.connections ?? []), newConn] }));
 
   // Vincula agente IA se fornecido
   if (clientId && linkAgent) {
-    const clients = getClients();
+    const clients = (await getClients());
     const client = clients.find(c => c.id === clientId);
     if (client) {
-      upsertClient({
-        ...client,
-        agentConfig: {
+      (await patchClient(client.id, { agentConfig: {
           ...(client.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] }),
           whatsappConnectionId: connId,
-        },
-      });
+        } }));
     }
   }
 
@@ -150,12 +150,12 @@ export async function PUT(req: NextRequest) {
   let newFunnelId = rawNewFunnelId;
   if (newFunnelId?.startsWith("auto:")) {
     const autoClientId = newFunnelId.slice(5);
-    const created = createFunnel("Funil Principal");
-    updateFunnel(created.id, { clientId: autoClientId });
+    const created = (await createFunnel("Funil Principal"));
+    (await updateFunnel(created.id, { clientId: autoClientId }));
     newFunnelId = created.id;
   }
 
-  const funnels = getFunnels();
+  const funnels = (await getFunnels());
 
   // Encontra a conexão no funil atual
   let foundConn: import("@/lib/funnels").FunnelConnection | null = null;
@@ -171,34 +171,31 @@ export async function PUT(req: NextRequest) {
   if (newFunnelId && newFunnelId !== oldFunnelId) {
     const oldFunnel = funnels.find(f => f.id === oldFunnelId);
     if (oldFunnel) {
-      updateFunnel(oldFunnelId!, {
+      (await updateFunnel(oldFunnelId!, {
         connections: (oldFunnel.connections ?? []).filter(c => c.id !== connId),
-      });
+      }));
     }
-    const newFunnels = getFunnels();
+    const newFunnels = (await getFunnels());
     const newFunnel = newFunnels.find(f => f.id === newFunnelId);
     if (newFunnel) {
-      updateFunnel(newFunnelId, { connections: [...(newFunnel.connections ?? []), foundConn] });
+      (await updateFunnel(newFunnelId, { connections: [...(newFunnel.connections ?? []), foundConn] }));
     }
   }
 
   // Atualiza vínculo de cliente
-  const clients = getClients();
+  const clients = (await getClients());
   for (const client of clients) {
     if (client.agentConfig?.whatsappConnectionId === connId && client.id !== clientId) {
-      upsertClient({ ...client, agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined } });
+      (await patchClient(client.id, { agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined } }));
     }
   }
   if (clientId) {
     const client = clients.find(c => c.id === clientId);
     if (client) {
-      upsertClient({
-        ...client,
-        agentConfig: {
+      (await patchClient(client.id, { agentConfig: {
           ...(client.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] }),
           whatsappConnectionId: linkAgent ? connId : undefined,
-        },
-      });
+        } }));
     }
   }
 
@@ -215,19 +212,19 @@ export async function DELETE(req: NextRequest) {
   const { connId } = await req.json() as { connId: string };
   if (!connId) return NextResponse.json({ error: "connId obrigatório" }, { status: 400 });
 
-  const funnels = getFunnels();
+  const funnels = (await getFunnels());
   for (const funnel of funnels) {
     if (funnel.connections?.some(c => c.id === connId)) {
-      updateFunnel(funnel.id, {
+      (await updateFunnel(funnel.id, {
         connections: (funnel.connections ?? []).filter(c => c.id !== connId),
-      });
+      }));
     }
   }
 
-  const clients = getClients();
+  const clients = (await getClients());
   for (const client of clients) {
     if (client.agentConfig?.whatsappConnectionId === connId) {
-      upsertClient({ ...client, agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined } });
+      (await patchClient(client.id, { agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined } }));
     }
   }
 

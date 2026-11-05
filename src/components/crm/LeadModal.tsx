@@ -8,6 +8,8 @@ import type { ChatMessage } from "@/lib/conversations";
 import { QuickRepliesPicker, QuickRepliesManager, WabaTemplateVariablesPanel } from "@/components/shared/QuickRepliesPopover";
 import type { QuickReply } from "@/components/shared/QuickRepliesPopover";
 import type { WabaTemplate } from "@/lib/waba-templates";
+import { chatTime, groupChatMessages } from "@/lib/chat-dates";
+import { ChatMessageContent } from "@/components/shared/ChatMessageContent";
 
 function withCountryCode(p: string) {
   const d = p.replace(/\D/g, "");
@@ -37,20 +39,7 @@ const SCORE_COLOR = (s: number) =>
            "text-red-700 bg-red-100 border-red-200";
 
 function fmtTime(ts: number) {
-  return new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-}
-const TZ_SP = "America/Sao_Paulo";
-function dateSPStr(ts: number) {
-  return new Date(ts).toLocaleDateString("sv-SE", { timeZone: TZ_SP });
-}
-function fmtDate(ts: number) {
-  const dStr = dateSPStr(ts);
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: TZ_SP });
-  if (dStr === today) return "Hoje";
-  const yest = new Date(today + "T12:00:00-03:00");
-  yest.setDate(yest.getDate() - 1);
-  if (dStr === yest.toLocaleDateString("sv-SE", { timeZone: TZ_SP })) return "Ontem";
-  return new Date(ts).toLocaleDateString("pt-BR", { timeZone: TZ_SP, day: "2-digit", month: "2-digit" });
+  return chatTime(ts);
 }
 
 type PendingFU = { id: string; scheduledAt: string; message: string; stepIndex?: number };
@@ -130,7 +119,7 @@ function FollowUpSection({ leadId }: { leadId: string }) {
 type LiveConnection = {
   id: string;
   phone: string;
-  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension" | "server";
+  type: "meta" | "evolution";
   status: string;
   connected: boolean;
   funnelId: string;
@@ -139,11 +128,7 @@ type LiveConnection = {
 
 const CONN_TYPE_LABEL: Record<LiveConnection["type"], string> = {
   meta: "📱 API Oficial (Meta)",
-  wppconnect: "💬 WPPConnect",
   evolution: "🧬 Evolution API",
-  uazapi: "📟 UazAPI",
-  extension: "🧩 Extensão (WhatsApp Web)",
-  server: "☁️ WhatsApp 24h (servidor)",
 };
 
 function fmtReminderDate(iso: string) {
@@ -463,7 +448,7 @@ export function LeadModal({
     lastMsgCountRef.current = newCount;
     if (newCount === 0) return;
     if (prevCount === 0 || (newCount > prevCount && isAtBottomRef.current)) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      chatEndRef.current?.scrollIntoView({ behavior: prevCount === 0 ? "auto" : "smooth", block: "end" });
     }
   }, [messages, tab]);
 
@@ -631,26 +616,19 @@ export function LeadModal({
 
   const days = Math.floor((Date.now() - new Date(lead.updatedAt ?? lead.createdAt).getTime()) / 86400000);
 
-  // Group messages by day for date separators
-  const grouped: { date: string; msgs: ChatMessage[] }[] = [];
-  for (const m of messages) {
-    const d = fmtDate(m.ts);
-    if (!grouped.length || grouped[grouped.length - 1].date !== d) grouped.push({ date: d, msgs: [] });
-    grouped[grouped.length - 1].msgs.push(m);
-  }
+  const grouped = groupChatMessages(messages);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
+        className="nexo-lead-modal w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         style={{ maxHeight: "95vh" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-4 px-6 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-r from-slate-50 to-white">
+        <div className="nexo-lead-header flex items-center gap-4 px-6 py-4 border-b shrink-0">
           {/* Avatar */}
-          <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white shrink-0 shadow-sm"
-            style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}>
+          <div className="nexo-chat-avatar w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shrink-0 shadow-sm">
             {(lead.name?.[0] ?? "?").toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
@@ -682,7 +660,7 @@ export function LeadModal({
               )}
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition shrink-0 p-1 rounded-lg hover:bg-slate-100">
+          <button onClick={onClose} aria-label="Fechar contato" className="text-slate-400 hover:text-slate-600 transition shrink-0 p-1 rounded-lg hover:bg-slate-100">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -690,9 +668,9 @@ export function LeadModal({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-100 shrink-0 bg-white">
+        <div className="nexo-lead-tabs flex border-b border-slate-100 shrink-0 bg-white">
           {(["details", "chat"] as const).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
+            <button key={t} data-active={tab === t} onClick={() => setTab(t)}
               className={clsx("px-8 py-3 text-sm font-semibold transition border-b-2",
                 tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700")}>
               {t === "details" ? "📋 Detalhes" : "💬 Conversa"}
@@ -990,7 +968,7 @@ export function LeadModal({
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-400 italic">Clique em "Analisar" para obter insights.</p>
+                    <p className="text-sm text-slate-400 italic">Clique em &quot;Analisar&quot; para obter insights.</p>
                   )}
                 </div>
 
@@ -1016,7 +994,7 @@ export function LeadModal({
                   onChange={(e) => { setSelectedConnId(e.target.value); setManualConnId(true); }}
                   className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-green-400"
                 >
-                  {(["meta", "wppconnect", "evolution", "uazapi", "extension"] as const).map((type) => {
+                  {(["meta", "evolution"] as const).map((type) => {
                     const group = connections.filter((c) => c.type === type);
                     if (group.length === 0) return null;
                     return (
@@ -1052,8 +1030,8 @@ export function LeadModal({
                 if (!el) return;
                 isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
               }}
-              className="flex-1 overflow-y-auto p-4 space-y-1"
-              style={{ background: "#f0f2f5" }}
+              className="nexo-chat-surface flex-1 overflow-y-auto p-4 space-y-1"
+              aria-label="Histórico da conversa"
             >
               {loadingChat ? (
                 <div className="flex items-center justify-center h-full">
@@ -1067,10 +1045,10 @@ export function LeadModal({
                   <p className="text-sm text-slate-400 text-center py-8">Nenhuma mensagem ainda.<br/>Inicie a conversa abaixo.</p>
                 </div>
               ) : (
-                grouped.map(({ date, msgs }) => (
-                  <div key={date}>
-                    <div className="flex justify-center my-2">
-                      <span className="text-xs text-slate-500 bg-white/80 rounded-full px-3 py-0.5 shadow-sm">{date}</span>
+                grouped.map(({ key, label, messages: msgs }, groupIndex) => (
+                  <section className="nexo-chat-day" aria-label={`Mensagens de ${label}`} key={`${key}:${groupIndex}`}>
+                    <div className="nexo-chat-date" role="separator" aria-label={label}>
+                      <time dateTime={key === "undated" ? undefined : key}>{label}</time>
                     </div>
                     {msgs.map((m, i) => {
                       const isMe = m.role === "assistant";
@@ -1079,43 +1057,23 @@ export function LeadModal({
                         <div key={i} className={clsx("flex items-end gap-2 mb-0.5", isMe ? "justify-end" : "justify-start")}>
                           {/* Avatar do cliente (esquerda) */}
                           {!isMe && (
-                            <div className={clsx("w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 mb-0.5",
-                              prevSameRole ? "opacity-0" : "opacity-100")}
-                              style={{ background: "#6366F1" }}>
+                            <div className={clsx("nexo-chat-avatar w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mb-0.5",
+                              prevSameRole ? "opacity-0" : "opacity-100")}>
                               {(lead.name?.[0] ?? "?").toUpperCase()}
                             </div>
                           )}
 
-                          <div className={clsx("flex flex-col max-w-[72%]", isMe ? "items-end" : "items-start")}>
+                          <div className={clsx("nexo-chat-message flex flex-col", isMe ? "items-end" : "items-start")}>
                             {/* Nome apenas na primeira mensagem de cada bloco */}
                             {!isMe && !prevSameRole && (
-                              <span className="text-[10px] font-semibold text-indigo-600 mb-0.5 ml-1">{lead.name}</span>
+                              <span className="nexo-chat-author text-xs font-semibold mb-1 ml-1">{lead.name}</span>
                             )}
                             <div className={clsx("rounded-2xl px-3.5 py-2 text-sm shadow-sm",
                               isMe
-                                ? "bg-[#dcf8c6] text-slate-800 rounded-br-none"
-                                : "bg-white text-slate-800 rounded-bl-none border border-slate-100")}>
-                              {m.type === "audio" && m.mediaUrl ? (
-                                <div className="flex flex-col gap-1.5">
-                                  <audio
-                                    controls
-                                    src={m.mediaUrl}
-                                    className="h-8 w-52 max-w-full"
-                                    preload="metadata"
-                                  />
-                                  {m.content && !m.content.startsWith("[") && (
-                                    <p className="text-xs text-slate-500 italic whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
-                                  )}
-                                </div>
-                              ) : m.type === "audio" ? (
-                                <span className="flex items-center gap-1.5 text-slate-500 italic text-xs">
-                                  <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/></svg>
-                                  {m.content && !m.content.startsWith("[") ? m.content : "Áudio"}
-                                </span>
-                              ) : (
-                                <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
-                              )}
-                              <p className={clsx("text-[10px] mt-0.5 text-right", isMe ? "text-green-700/50" : "text-slate-400")}>
+                                ? "nexo-chat-bubble outgoing rounded-br-none"
+                                : "nexo-chat-bubble incoming rounded-bl-none")}>
+                              <ChatMessageContent key={`${m.ts}:${m.mediaUrl ?? m.type}`} message={m} onReady={()=>{if(isAtBottomRef.current)chatEndRef.current?.scrollIntoView({block:"end"});}} />
+                              <p className="nexo-chat-time text-[11px] mt-1 text-right">
                                 {fmtTime(m.ts)}
                               </p>
                             </div>
@@ -1126,14 +1084,14 @@ export function LeadModal({
                         </div>
                       );
                     })}
-                  </div>
+                  </section>
                 ))
               )}
               <div ref={chatEndRef} />
             </div>
 
             {/* Input */}
-            <div className="border-t border-slate-200 bg-white shrink-0">
+            <div className="nexo-chat-composer border-t border-slate-200 shrink-0">
               {/* Pending image preview */}
               {pendingImage && (
                 <div className="flex items-center gap-2 px-4 pt-3">
@@ -1190,7 +1148,7 @@ export function LeadModal({
                   style={{ maxHeight: 120 }}
                 />
                 <button onClick={sendMsg} disabled={sending || (!msgInput.trim() && !pendingImage)}
-                  className="shrink-0 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-40 px-5 py-2.5 text-white font-bold text-sm transition">
+                  className="nexo-chat-send shrink-0 rounded-xl disabled:opacity-40 px-5 py-2.5 font-bold text-sm transition">
                   {sending ? "..." : "Enviar"}
                 </button>
               </div>

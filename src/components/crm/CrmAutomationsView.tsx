@@ -10,7 +10,7 @@ import type { WebhookConfig } from "@/lib/webhooks";
 // ── Props ─────────────────────────────────────────────────────────────────────
 type ConnectionInfo = {
   id: string;
-  type: "uazapi" | "meta" | "wppconnect" | "evolution" | "server";
+  type: "meta" | "evolution";
   phone: string;
   funnelId: string;
   funnelName: string;
@@ -103,7 +103,7 @@ const STEP_PICKER_OPTIONS = [
     type: "send_message" as CrmStepType,
     icon: "💬",
     label: "Enviar mensagem",
-    description: "WhatsApp via UazapiGO (texto livre) ou template oficial Meta",
+    description: "WhatsApp via Evolution ou template oficial Meta",
   },
   {
     type: "send_list" as CrmStepType,
@@ -271,14 +271,8 @@ function StepEditor({
   approvedTemplates: WabaTemplate[];
 }) {
   const sel = (field: keyof StepForm, val: unknown) => onChange({ [field]: val } as Partial<StepForm>);
-  const uazapiConns    = connections.filter((c) => c.type === "uazapi");
-  const metaConns      = connections.filter((c) => c.type === "meta");
-  const wppConns       = connections.filter((c) => c.type === "wppconnect");
-  const evoConns       = connections.filter((c) => c.type === "evolution");
-  const serverConns    = connections.filter((c) => c.type === "server");
-  const allConns       = [...serverConns, ...uazapiConns, ...wppConns, ...evoConns, ...metaConns];
-
-  // ── Unified send message (UazapiGO text OR Meta template) ─────────────────
+  const allConns=connections.filter(connection=>connection.type==="meta"||connection.type==="evolution");
+  // ── Unified send message (Evolution text OR Meta template) ─────────────────
   if (step.type === "send_message" || step.type === "send_template") {
     const selectedConn = connections.find((c) => c.id === step.connectionId);
     const isMeta = selectedConn?.type === "meta" || step.type === "send_template";
@@ -313,7 +307,7 @@ function StepEditor({
                     } else {
                       onChange({ connectionId: c.id, type: "send_message" });
                     }
-                    // wppconnect falls into the else branch → send_message
+                    // Evolution uses the text branch → send_message
                   }}
                   className={clsx(
                     "flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition",
@@ -329,24 +323,20 @@ function StepEditor({
                   </div>
                   <span className={clsx(
                     "rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0",
-                    c.type === "uazapi" ? "bg-emerald-100 text-emerald-700"
-                    : c.type === "wppconnect" ? "bg-blue-100 text-blue-700"
-                    : c.type === "evolution" ? "bg-teal-100 text-teal-700"
-                    : c.type === "server" ? "bg-violet-100 text-violet-700"
-                    : "bg-green-100 text-green-700",
+                    c.type === "evolution" ? "bg-teal-100 text-teal-700" : "bg-green-100 text-green-700",
                   )}>
-                    {c.type === "uazapi" ? "UazapiGO" : c.type === "wppconnect" ? "WPPConnect" : c.type === "evolution" ? "Evolution API" : c.type === "server" ? "Servidor 24h" : "API Meta"}
+                    {c.type === "evolution" ? "Evolution" : "API oficial"}
                   </span>
                 </button>
               ))}
             </div>
           )}
           <p className="text-[10px] text-slate-400 mt-1">
-            📱 UazapiGO / WPPConnect = texto livre &nbsp;·&nbsp; 🟢 API Meta = templates aprovados
+            📱 Evolution = texto livre &nbsp;·&nbsp; 🟢 API Meta = templates aprovados
           </p>
         </div>
 
-        {/* UazapiGO: free text */}
+        {/* Evolution: free text */}
         {!isMeta && step.connectionId && (
           <div className="space-y-3">
             <div>
@@ -562,15 +552,15 @@ function StepEditor({
   }
 
   if (step.type === "send_list") {
-    const uazapiConns2 = connections.filter((c) => c.type === "uazapi");
+    const listConnections = connections.filter((c) => c.type === "meta" || c.type === "evolution");
     return (
       <div className="space-y-3">
         <div>
-          <label className={labelCls}>Número de envio (UazapiGO)</label>
+          <label className={labelCls}>Número de envio</label>
           <select value={step.connectionId} onChange={(e) => sel("connectionId", e.target.value)} className={inputCls}>
-            {uazapiConns2.length === 0
-              ? <option value="">Nenhuma conexão UazapiGO configurada</option>
-              : uazapiConns2.map((c) => <option key={c.id} value={c.id}>{c.phone} ({c.funnelName})</option>)}
+            {listConnections.length === 0
+              ? <option value="">Nenhuma conexão configurada</option>
+              : listConnections.map((c) => <option key={c.id} value={c.id}>{c.phone} ({c.funnelName})</option>)}
           </select>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -788,15 +778,15 @@ export function CrmAutomationsView({
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [showPicker, setShowPicker]     = useState(false);
 
-  const defaultConnId = (connections.find((c) => c.type === "uazapi") ?? connections.find((c) => c.type === "wppconnect") ?? connections.find((c) => c.type === "evolution") ?? connections[0])?.id ?? "";
-  const uazapiConnId = defaultConnId;
+  const defaultConnId = (connections.find((c) => c.type === "evolution") ?? connections[0])?.id ?? "";
+  const defaultConnectionId = defaultConnId;
   const firstTplId   = approvedTemplates[0]?.id ?? "";
 
   const blankFormFn = (): FormState => ({
     name: "", trigger: "lead_created",
     funnelId: "", triggerColumnId: "", triggerWebhookId: "", scheduledTime: "09:00",
     triggerKeywords: [],
-    steps: [blankStep("send_message", uazapiConnId, firstTplId)],
+    steps: [blankStep("send_message", defaultConnectionId, firstTplId)],
   });
 
   const [form, setForm] = useState<FormState>(blankFormFn());
@@ -819,7 +809,7 @@ export function CrmAutomationsView({
       triggerWebhookId: auto.triggerWebhookId ?? "",
       scheduledTime: auto.scheduledTime ?? "09:00",
       triggerKeywords: auto.triggerKeywords ?? [],
-      steps: stepsFromAuto(auto, uazapiConnId, firstTplId),
+      steps: stepsFromAuto(auto, defaultConnectionId, firstTplId),
     });
     setExpandedStep(null); setShowPicker(false); setEditingId(auto.id); setShowForm(true);
     setTimeout(() => document.getElementById("crm-form")?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -830,7 +820,7 @@ export function CrmAutomationsView({
   }
 
   function addStep(type: CrmStepType) {
-    const s = blankStep(type, uazapiConnId, firstTplId);
+    const s = blankStep(type, defaultConnectionId, firstTplId);
     setField("steps", [...form.steps, s]);
     setExpandedStep(s.id); setShowPicker(false);
   }
@@ -996,7 +986,7 @@ export function CrmAutomationsView({
                           ))}
                         </select>
                         <p className="text-[10px] text-slate-400 mt-1">
-                          Deixe em "Qualquer" para disparar quando leads entrarem por qualquer formulário.
+                          Deixe em &quot;Qualquer&quot; para disparar quando leads entrarem por qualquer formulário.
                         </p>
                       </div>
                       <div>

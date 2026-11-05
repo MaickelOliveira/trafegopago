@@ -8,11 +8,16 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Clientes só podem ver seus próprios leads
-  const clientId = session.role === "client"
+  const clientId = session.role !== "manager"
     ? session.clientId
     : (req.nextUrl.searchParams.get("clientId") ?? undefined);
-  const leads = getLeads(clientId);
-  return NextResponse.json(attachLeadsHeat(leads));
+  let leads = (await getLeads(clientId));
+  if (session.role === "employee") {
+    const { getEmployeeById, employeeCanAccessFunnel } = await import("@/lib/employees");
+    const employee = await getEmployeeById(session.employeeId!);
+    leads = employee ? leads.filter(lead => employeeCanAccessFunnel(employee, lead.funnelId)) : [];
+  }
+  return NextResponse.json((await attachLeadsHeat(leads)));
 }
 
 export async function POST(req: NextRequest) {
@@ -29,11 +34,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Clientes e funcionários só podem criar leads para o seu próprio clientId
-  if (session.role !== "manager" && session.clientId && session.clientId !== clientId) {
+  if (session.role !== "manager" && session.clientId !== clientId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
-  const lead = upsertLeadByPhone(clientId, phone, {
+  const lead = (await upsertLeadByPhone(clientId, phone, {
     funnelId: body.funnelId || "default",
     name: name || "Sem nome",
     email: email || null,
@@ -50,11 +55,11 @@ export async function POST(req: NextRequest) {
     status: body.status || "novo",
     notes: notes || "",
     ai: null,
-  });
+  }));
 
   // Dispara automações CRM (fire-and-forget)
-  runAutomationsForEvent("lead_created", lead);
-  runAutomationsForEvent("column_entered", lead, { toColumnId: lead.status });
+  (await runAutomationsForEvent("lead_created", lead));
+  (await runAutomationsForEvent("column_entered", lead, { toColumnId: lead.status }));
 
   return NextResponse.json(lead, { status: 201 });
 }

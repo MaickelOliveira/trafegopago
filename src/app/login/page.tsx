@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowUpRight } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,41 +35,47 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <img src="/nexo-logo.png" alt="Nexo" className="mx-auto mb-4 w-full h-auto object-contain" />
-          <p className="mt-1 text-sm text-slate-500">Entre com suas credenciais</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="rounded-2xl bg-white p-8 shadow-sm border border-slate-200">
+    <div className="nexo-login">
+      <aside className="nexo-login-art" aria-label="Nexo — tráfego de performance">
+        <div className="nexo-wordmark"><img src="/brand/nexo-lockup-dark.png" alt="Nexo" width="172" height="35" /></div>
+        <div className="nexo-login-art-copy"><span className="nexo-eyebrow">TRÁFEGO DE PERFORMANCE</span><h2>Conexões que<br />movem negócios.</h2><p>Campanhas, relacionamento e inteligência em um só lugar.</p></div>
+      </aside>
+      <div className="nexo-login-form-area">
+        <div className="nexo-login-form">
+          <img src="/brand/nexo-lockup-dark.png" alt="Nexo" width="172" height="35" className="nexo-login-mobile-logo" />
+          <span className="nexo-eyebrow">BEM-VINDO À NEXO</span>
+          <h1>Acesse sua operação.</h1>
+          <p>Entre para acompanhar seus clientes e resultados.</p>
+        <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">E-mail</label>
+              <label htmlFor="login-email">E-mail</label>
               <input
+                id="login-email"
+                autoComplete="username"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoFocus
-                className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-[#C4E91E] focus:ring-2 focus:ring-[#C4E91E]/20 transition"
                 placeholder="seu@email.com"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Senha</label>
+              <label htmlFor="login-password">Senha</label>
               <input
+                id="login-password"
+                autoComplete="current-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-[#C4E91E] focus:ring-2 focus:ring-[#C4E91E]/20 transition"
                 placeholder="••••••••"
               />
             </div>
 
             {error && (
-              <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">
+              <p role="alert" className="nexo-feedback error">
                 {error}
               </p>
             )}
@@ -76,12 +83,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-[#C4E91E] px-4 py-2.5 text-sm font-semibold text-black hover:bg-[#b5d81a] disabled:opacity-60 transition"
+              className="nexo-primary"
             >
-              {loading ? "Entrando..." : "Entrar"}
+              {loading ? "Entrando..." : "Entrar na plataforma"} {!loading && <ArrowUpRight size={17} />}
             </button>
           </div>
         </form>
+        <span className="nexo-login-note">NEXO · TRÁFEGO & RELACIONAMENTO</span>
+        </div>
       </div>
     </div>
   );

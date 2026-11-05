@@ -1,3 +1,4 @@
+import { consumeOAuthState } from "@/lib/oauth-state";
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig, saveConfig } from "@/lib/clients";
 
@@ -10,7 +11,9 @@ function getPublicBaseUrl(req: NextRequest, appBaseUrl?: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const config = getConfig();
+  try { await consumeOAuthState("meta", req.nextUrl.searchParams.get("state")); }
+  catch { return NextResponse.json({ error: "Autorização inválida." }, { status: 403 }); }
+  const config = (await getConfig());
   const baseUrl = getPublicBaseUrl(req, config.appBaseUrl);
 
   const code = req.nextUrl.searchParams.get("code");
@@ -28,7 +31,7 @@ export async function GET(req: NextRequest) {
 
   // Troca code por token de curta duração
   const tokenRes = await fetch(
-    `https://graph.facebook.com/v19.0/oauth/access_token?` +
+    `https://graph.facebook.com/v26.0/oauth/access_token?` +
     new URLSearchParams({
       client_id: config.metaAppId,
       client_secret: config.metaAppSecret,
@@ -44,7 +47,7 @@ export async function GET(req: NextRequest) {
 
   // Troca por token de longa duração (60 dias)
   const longRes = await fetch(
-    `https://graph.facebook.com/v19.0/oauth/access_token?` +
+    `https://graph.facebook.com/v26.0/oauth/access_token?` +
     new URLSearchParams({
       grant_type: "fb_exchange_token",
       client_id: config.metaAppId,
@@ -55,7 +58,7 @@ export async function GET(req: NextRequest) {
   const longData = await longRes.json();
   const finalToken = longData.access_token ?? tokenData.access_token;
 
-  saveConfig({ ...config, metaToken: finalToken });
+  (await saveConfig({ ...config, metaToken: finalToken }));
 
   return NextResponse.redirect(`${baseUrl}/gestor/configuracoes?meta_success=1`);
 }
