@@ -569,14 +569,23 @@ export default function InboxView({ clientId, initialConversations = [], initial
               <span className="text-[#f0a050]">⏸ IA pausada — você está no controle desta conversa</span>
               <button
                 onClick={async () => {
-                  await fetch("/api/whatsapp/inbox/ai-pause", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ phone: selected.phone, clientId, connId: selected.connId, paused: false }),
-                  });
-                  setConversations((prev) =>
-                    prev.map((c) => (c.phone === selected?.phone && c.connId === selected?.connId) ? { ...c, aiPaused: false } : c)
-                  );
+                  try {
+                    const response = await fetch("/api/whatsapp/inbox/ai-pause", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ phone: selected.phone, clientId, connId: selected.connId, paused: false }),
+                    });
+                    if (!response.ok) {
+                      const result = await response.json().catch(() => null);
+                      alert(result?.error ?? "Não foi possível reativar a IA.");
+                      return;
+                    }
+                    setConversations((prev) =>
+                      prev.map((c) => (c.phone === selected?.phone && c.connId === selected?.connId) ? { ...c, aiPaused: false } : c)
+                    );
+                  } catch {
+                    alert("Não foi possível reativar a IA. Confira sua conexão.");
+                  }
                 }}
                 className="text-xs text-[#afe507] hover:text-[#c2ec47] font-medium ml-4 shrink-0"
               >

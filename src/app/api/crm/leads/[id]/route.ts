@@ -5,7 +5,8 @@ import { getFunnelById } from "@/lib/funnels";
 import { getClientById } from "@/lib/clients";
 import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
-import { setAiPaused } from "@/lib/conversations";
+import { syncLeadAiPause } from "@/lib/lead-context";
+import { withDataTransaction } from "@/lib/document-store";
 import { cancelFollowUpsForPhone } from "@/lib/followups";
 
 // Colunas finais: ao entrar nelas, todos os follow-ups do lead são cancelados
@@ -49,7 +50,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     patch.needsAttention = false;
   }
 
-  const lead = (await updateLead(id, patch));
+  const lead = typeof body.aiPaused === "boolean"
+    ? await withDataTransaction(async () => {
+        const updated = await updateLead(id, patch);
+        if (updated) await syncLeadAiPause(updated, body.aiPaused);
+        return updated;
+      })
+    : await updateLead(id, patch);
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Dispara evento CAPI quando o status muda e a coluna tem metaEvent configurado

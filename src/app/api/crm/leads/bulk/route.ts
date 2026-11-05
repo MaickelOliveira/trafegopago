@@ -4,6 +4,8 @@ import { getLeadById, updateLead, deleteLead } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
 import { getEmployeeById, employeeCanAccessFunnel } from "@/lib/employees";
 import { withDataTransaction } from "@/lib/document-store";
+import { getEvolutionSessions } from "@/lib/evolution-sessions";
+import { syncLeadAiPause } from "@/lib/lead-context";
 
 export async function POST(request: NextRequest) {
   const session = await getSession();
@@ -28,10 +30,17 @@ export async function POST(request: NextRequest) {
       if (["move", "migrate"].includes(body.action) && (!funnel || !funnel.columns.some(column => column.id === columnId))) return NextResponse.json({ error: "Etapa de destino inválida." }, { status: 400 });
     }
     if (body.action === "ai" && typeof body.aiPaused !== "boolean") return NextResponse.json({ error: "Estado da IA inválido." }, { status: 400 });
+    const sessions = body.action === "ai" ? await getEvolutionSessions() : undefined;
     let count = 0;
     for (const lead of leads) {
       if (body.action === "delete") { if (await deleteLead(lead!.id)) count++; }
-      else if (await updateLead(lead!.id, body.action === "ai" ? { aiPaused: body.aiPaused } : { status: columnId, ...(target ? { funnelId: target.id } : {}) })) count++;
+      else {
+        const updated = await updateLead(lead!.id, body.action === "ai" ? { aiPaused: body.aiPaused } : { status: columnId, ...(target ? { funnelId: target.id } : {}) });
+        if (updated) {
+          if (body.action === "ai") await syncLeadAiPause(updated, body.aiPaused, sessions);
+          count++;
+        }
+      }
     }
     const key = body.action === "delete" ? "deleted" : body.action === "move" ? "moved" : body.action === "migrate" ? "migrated" : "updated";
     return NextResponse.json({ ok: true, [key]: count });
