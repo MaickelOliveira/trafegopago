@@ -19,8 +19,10 @@ export async function startBackgroundJobs() {
         console.error("[cron] Erro geral:", e);
       }
       try {
-        const { runDailyBackupIfDue } = await import("./lib/backup-scheduler");
-        void runDailyBackupIfDue().catch(() => console.error("[backup] O backup diário precisa de atenção."));
+        const { runDailyBackupIfDue, runDailyMediaBackupIfDue } = await import("./lib/backup-scheduler");
+        void runDailyBackupIfDue()
+          .then(runDailyMediaBackupIfDue)
+          .catch(() => console.error("[backup] O backup diário precisa de atenção."));
       } catch {
         console.error("[backup] O backup diário precisa de atenção. Consulte a configuração e o histórico.");
       }

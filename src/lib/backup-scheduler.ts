@@ -21,3 +21,19 @@ export async function runDailyBackupIfDue(): Promise<void> {
     });
   } finally { running = false; }
 }
+
+let mediaRunning = false;
+export async function runDailyMediaBackupIfDue(): Promise<void> {
+  if (mediaRunning || !isDailyBackupConfigured(await getConfig()) || currentHHMMBrasilia() < (process.env.BACKUP_HOUR || "03:00")) return;
+  mediaRunning = true;
+  try {
+    const previous = await databasePool().query<{ status: string }>("SELECT status FROM media_backup_runs WHERE day=$1", [todayISOBrasilia()]);
+    if (previous.rows[0]?.status === "completed") return;
+    const child = spawn(process.execPath, [path.join(process.cwd(), "scripts", "backup-media.mjs")], { stdio: ["ignore", "ignore", "pipe"], env: process.env });
+    child.stderr.resume();
+    await new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", code => code === 0 ? resolve() : reject(new Error("Backup de mídia falhou.")));
+    });
+  } finally { mediaRunning = false; }
+}
