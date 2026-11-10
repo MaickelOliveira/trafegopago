@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   // agendado antes do gestor assumir dispara depois e reativa a IA sozinho
   // (ver mesmo comentário em /api/whatsapp/inbox/send/route.ts).
   await cancelPendingForPhone(clientId,cleanPhone,activeConnId);
-  (await cancelFollowUpsForPhone(clientId, cleanPhone, activeConnId));
+  (await cancelFollowUpsForPhone(clientId, cleanPhone, activeConnId, "human_takeover"));
 
   return NextResponse.json({ ok: true });
 }

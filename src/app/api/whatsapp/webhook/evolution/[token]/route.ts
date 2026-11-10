@@ -34,7 +34,7 @@ import { filterUnsentMedia, markMediaSent } from "@/lib/media-sent-tracker";
 import type { AgentConfig, AgentMedia } from "@/lib/clients";
 import type { GeminiAction } from "@/lib/gemini-agent";
 import { runAutomationsForMessage } from "@/lib/crm-automations";
-import { restartFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
+import { startFollowUpSequence, cancelFollowUpsForPhone } from "@/lib/followups";
 import {
   upsertPending,
   getPendingForPhone,
@@ -702,10 +702,7 @@ export async function POST(
         // que o operador respondeu pelo próprio celular ainda dispara logo
         // depois, por cima da mensagem dele.
         (await cancelPendingForPhone(clientId, phone, connId));
-        await cancelFollowUpsForPhone(clientId, phone, connId);
-      }
-      if (!isPausing && clientId !== "sem-cliente" && agentCfgFM?.followUpEnabled && (agentCfgFM.followUps?.length ?? 0) > 0) {
-        (await restartFollowUpSequence(clientId, phone, agentCfgFM.followUps, connId));
+        await cancelFollowUpsForPhone(clientId, phone, connId, "human_takeover");
       }
     }
     return NextResponse.json({ ok: true });
@@ -716,16 +713,13 @@ export async function POST(
   if (clientId !== "sem-cliente") {
     const _h = (await getHistory(phone, clientId, connId));
     const historyForKanban = _h.length > 1 ? _h.slice(0, -1) : [];
-    processKanbanActions(text, historyForKanban, clientId, phone, connId).catch(() => {});
+    processKanbanActions(text, historyForKanban, clientId, phone, connId, { role: "user", content: text, ts: historyTs, ...(messageId ? { messageId } : {}) }).catch(() => {});
   }
 
-  // ── Follow-ups: agenda quando lead responde, independente de IA ──
+  // A resposta do cliente encerra o ciclo de inatividade; um novo ciclo só
+  // começa depois de uma nova resposta efetivamente enviada pela empresa.
   if (clientId !== "sem-cliente") {
-    const activeClientFU = (await getClientById(clientId));
-    const agentCfgFU = activeClientFU ? getAgentConfigForConnection(activeClientFU, connId) : undefined;
-    if (agentCfgFU?.followUpEnabled && (agentCfgFU.followUps?.length ?? 0) > 0) {
-      (await restartFollowUpSequence(clientId, phone, agentCfgFU.followUps, connId));
-    }
+    await cancelFollowUpsForPhone(clientId, phone, connId, "customer_replied", "followup");
   }
 
   // ── Verifica IA ── (saudação determinística ignora o pause — ver isGreetingOnlyActive)
@@ -787,6 +781,7 @@ export async function POST(
   // vários segundos e antes disso era reforçado a cada 3s via setInterval,
   // causando os pontinhos aparecerem/sumirem várias vezes até a resposta sair).
   async function sendReply(reply: string) {
+    let sentAny = false;
     startTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
     await new Promise<void>((r) => setTimeout(r, 3000));
     stopTyping(instanceSnap, apiKeySnap, phone).catch(() => {});
@@ -810,6 +805,7 @@ export async function POST(
       const chunkDelayMs=Math.round((agentCfg?.splitMessageDelaySeconds??1.5)*1000);
       for(let i=0;i<chunks.length;i++){
         if(!await evoSendText(instanceSnap,apiKeySnap,phone,chunks[i],isLidContact,true))throw Error("A Evolution não confirmou a resposta.");
+        sentAny = true;
         await addMessage(phone,{role:"assistant",content:chunks[i],ts:Date.now()},clientId,{connId});
         if(i<chunks.length-1)await new Promise<void>(resolve=>setTimeout(resolve,chunkDelayMs));
       }
@@ -823,7 +819,11 @@ export async function POST(
     if (followup) {
       await new Promise<void>((r) => setTimeout(r, 800));
       markSent(phone,followup,instanceSnap);
-      if(await evoSendText(instanceSnap,apiKeySnap,phone,followup,isLidContact,true))await addMessage(phone,{role:"assistant",content:followup,ts:Date.now()},clientId,{connId});
+      if(await evoSendText(instanceSnap,apiKeySnap,phone,followup,isLidContact,true)){sentAny=true;await addMessage(phone,{role:"assistant",content:followup,ts:Date.now()},clientId,{connId});}
+    }
+    if (sentAny && agentCfg?.followUpEnabled && agentCfg.followUps?.length) {
+      await startFollowUpSequence(clientId, phone, agentCfg.followUps, connId).catch(error =>
+        console.error("[Evolution follow-up] Não foi possível agendar após a resposta:", error));
     }
   }
 

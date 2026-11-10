@@ -53,6 +53,11 @@ type AgentCfg = {
   avisos?: AvisoRecipient[];
   followUps: FollowUpStep[];
   followUpContext?: string;
+  followUpAiReviewEnabled?: boolean;
+  followUpSendDays?: number[];
+  followUpSendStart?: string;
+  followUpSendEnd?: string;
+  followUpMaxPer7Days?: 1 | 2;
   whatsappConnectionId?: string;
   messageWaitSeconds?: number;
   systemPrompt?: string;
@@ -378,13 +383,24 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }, [searchParams]);
 
   async function toggleField(field: "enabled" | "followUpEnabled", value: boolean) {
+    if (field === "followUpEnabled" && value && (!cfg.followUps?.length || cfg.followUps.length > 2)) {
+      setMsg("✗ Configure uma ou duas etapas e salve antes de ativar o follow-up.");
+      return;
+    }
+    const previous = cfg[field];
     setCfg((c) => ({ ...c, [field]: value }));
     const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
-    await fetch(`/api/agent?clientId=${clientId}${connParam}`, {
+    const response = await fetch(`/api/agent?clientId=${clientId}${connParam}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ field, value }),
-    });
+    }).catch(() => null);
+    if (!response?.ok) {
+      setCfg(c => ({ ...c, [field]: previous }));
+      const result = await response?.json().catch(() => null);
+      setMsg(`✗ ${result?.error ?? "Não foi possível alterar esta opção."}`);
+      return;
+    }
     // Update summary badge
     if (selectedConnId) {
       setConfigsSummary(prev => prev.map(s =>
@@ -429,7 +445,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         });
       }
     } else {
-      setMsg("✗ Erro ao salvar.");
+      const error = await res.json().catch(() => null);
+      setMsg(`✗ ${error?.error ?? "Erro ao salvar."}`);
     }
   }
 
@@ -542,8 +559,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         <Toggle
           label="Follow-up automático"
           sub={(cfg.followUps?.length ?? 0) > 0
-            ? `${cfg.followUps.length} step${cfg.followUps.length !== 1 ? "s" : ""} configurado${cfg.followUps.length !== 1 ? "s" : ""}`
-            : "Nenhum step configurado ainda"}
+            ? `${cfg.followUps.length} etapa${cfg.followUps.length !== 1 ? "s" : ""} · espera após resposta da empresa`
+            : "Configure uma ou duas etapas antes de ativar"}
           checked={cfg.followUpEnabled}
           onChange={(v) => toggleField("followUpEnabled", v)}
           color="green"
@@ -977,29 +994,31 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">⏰ Sequência de Follow-ups</p>
           <button
+            disabled={(cfg.followUps?.length ?? 0) >= 2}
             onClick={() => {
               const newStep: FollowUpStep = {
                 id: crypto.randomUUID(),
                 delayHours: 24,
                 message: "",
                 label: `Follow-up ${(cfg.followUps?.length ?? 0) + 1}`,
+                messageType: selectedConnType === "meta" ? "template" : "text",
               };
               setCfg((c) => ({ ...c, followUps: [...(c.followUps ?? []), newStep] }));
             }}
-            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40 transition"
           >
             + Adicionar step
           </button>
         </div>
 
         <p className="text-xs text-slate-400">
-          Cada step é enviado após o prazo configurado. Quando o lead responde, a sequência reinicia do zero.
+          A espera começa depois de uma resposta automática da IA. Se o cliente responder ou um atendente assumir, as próximas etapas são interrompidas e o motivo fica no histórico. Uma nova resposta da IA pode iniciar outro ciclo.
         </p>
 
         {/* Contexto para análise inteligente do follow-up */}
         <div className="space-y-1.5">
           <label className="block text-xs font-medium text-slate-600">
-            Contexto do negócio para follow-up inteligente
+            Contexto do negócio para texto e revisão por IA
           </label>
           <textarea
             value={cfg.followUpContext ?? ""}
@@ -1011,9 +1030,37 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
           />
           <p className="text-[11px] text-slate-400">
-            A IA lê este contexto antes de enviar cada follow-up para decidir se a conversa merece retorno. Seja específico: o que o negócio vende, quem é o cliente ideal, e o que deve ser filtrado.
+            Usado para gerar texto personalizado e, se você optar, revisar a conversa antes do envio.
           </p>
         </div>
+
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 space-y-3">
+          <p className="text-xs font-semibold text-slate-700">Quando pode enviar</p>
+          <div className="flex flex-wrap gap-1.5">
+            {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((day, index) => {
+              const selected = (cfg.followUpSendDays ?? [1, 2, 3, 4, 5]).includes(index);
+              return <button key={day} type="button" aria-pressed={selected} onClick={() => setCfg(current => {
+                const days = current.followUpSendDays ?? [1, 2, 3, 4, 5];
+                return { ...current, followUpSendDays: selected ? days.filter(value => value !== index) : [...days, index].sort() };
+              })} className={clsx("rounded-lg border px-2.5 py-1 text-xs", selected ? "border-emerald-400 bg-emerald-100 text-emerald-800" : "border-slate-200 bg-white text-slate-500")}>{day}</button>;
+            })}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-slate-600">Das <input type="time" value={cfg.followUpSendStart ?? "09:00"} onChange={event => setCfg(current => ({ ...current, followUpSendStart: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5" /></label>
+            <label className="text-xs text-slate-600">Até <input type="time" value={cfg.followUpSendEnd ?? "18:00"} onChange={event => setCfg(current => ({ ...current, followUpSendEnd: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5" /></label>
+          </div>
+          <label className="block text-xs text-slate-600">Máximo por contato em 7 dias
+            <select value={cfg.followUpMaxPer7Days ?? 2} onChange={event => setCfg(current => ({ ...current, followUpMaxPer7Days: Number(event.target.value) as 1 | 2 }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+              <option value={1}>1 mensagem</option><option value={2}>2 mensagens</option>
+            </select>
+          </label>
+          <p className="text-[11px] text-slate-500">Horário de São Paulo. Fora da janela, o envio espera o próximo período permitido.</p>
+        </div>
+
+        {selectedConnType !== "meta" && <label className="flex items-start gap-2 text-xs text-slate-600">
+          <input type="checkbox" checked={!!cfg.followUpAiReviewEnabled} onChange={event => setCfg(current => ({ ...current, followUpAiReviewEnabled: event.target.checked }))} className="mt-0.5" />
+          <span>Usar IA também para revisar se o lembrete faz sentido. Desligado: valem as regras de resposta do cliente, etapa, horário e limite. Se a revisão por IA falhar, o envio fica marcado como falha para conferência.</span>
+        </label>}
 
         {(cfg.followUps ?? []).length === 0 && (
           <div className="rounded-xl border border-dashed border-emerald-200 p-4 text-center">
@@ -1093,7 +1140,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
                 {/* Tipo de mensagem — tabs */}
                 <div className="flex gap-1 rounded-lg bg-emerald-100 p-0.5">
-                  {(["text", "ai", ...(selectedConnType === "meta" ? ["template"] : [])] as ("text" | "ai" | "template")[]).map((t) => (
+                  {((selectedConnType === "meta" ? ["template"] : ["text", "ai"]) as ("text" | "ai" | "template")[]).map((t) => (
                     <button
                       key={t}
                       onClick={() => updateStep({ messageType: t })}

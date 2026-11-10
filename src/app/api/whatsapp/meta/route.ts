@@ -8,7 +8,7 @@ import { runGeminiAgent } from "@/lib/gemini-agent";
 import { getClientById, getAgentConfigForConnection, getConfig, isWithinBusinessHours } from "@/lib/clients";
 import { isAgentPhoneIgnored } from "@/lib/agent-phone-policy";
 import { upsertPending, getPendingForPhone, markProcessing, markDone } from "@/lib/pending-responses";
-import { startFollowUpSequence, restartFollowUpSequence, getFollowUpByWamid, markFailed } from "@/lib/followups";
+import { startFollowUpSequence, cancelFollowUpsForPhone, getFollowUpByWamid, markFailed } from "@/lib/followups";
 import { sendMessageDirect, getGeminiApiKey, downloadMetaMedia } from "@/lib/whatsapp-send";
 import { splitMessage } from "@/lib/message-text";
 import { sendTemplate } from "@/lib/waba-templates";
@@ -214,7 +214,7 @@ export async function POST(req: NextRequest) {
 
         // ── Agente Kanban — roda sempre, independente da IA de atendimento ──
         if (cid !== "sem-cliente") {
-          processKanbanActions(text, historyForKanbanMeta, cid, phone, connId ?? undefined).catch(() => {});
+          processKanbanActions(text, historyForKanbanMeta, cid, phone, connId ?? undefined, { role: "user", content: text, ts, ...(messageId ? { messageId } : {}) }).catch(() => {});
         }
 
         // ── Verifica se IA está pausada ──────────────────────────────────
@@ -273,14 +273,8 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // ── Follow-ups ───────────────────────────────────────────────────
-        if (cid !== "sem-cliente" && agentCfg?.followUpEnabled && (agentCfg.followUps?.length ?? 0) > 0) {
-          if (isNew) {
-            (await startFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined));
-          } else {
-            (await restartFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined));
-          }
-        }
+        // O cliente voltou a conversar: encerra a espera e registra o motivo.
+        if (cid !== "sem-cliente") await cancelFollowUpsForPhone(cid, phone, connId ?? undefined, "customer_replied", "followup");
 
         // ── Helper: envia resposta via Meta API ──────────────────────────
         async function sendMetaReply(replyText: string) {
@@ -293,14 +287,20 @@ export async function POST(req: NextRequest) {
             ? splitMessage(replyText, agentCfg.maxMessageLength ?? 300)
             : [replyText];
           const chunkDelayMs = Math.round((agentCfg?.splitMessageDelaySeconds ?? 1.5) * 1000);
+          let sentAny = false;
           for (let i = 0; i < chunks.length; i++) {
             const ok = await sendMessageDirect(phone, chunks[i], phoneNumberId, metaToken);
             if (ok) {
+              sentAny = true;
               (await addMessage(phone, { role: "assistant", content: chunks[i], ts: Date.now() }, clientId, { connId: connId ?? undefined }));
             } else {
               console.error(`[meta] sendMetaReply FALHOU — mensagem NÃO entregue ao WhatsApp. phone=${phone} phoneNumberId=${phoneNumberId}`);
             }
             if (i < chunks.length - 1) await new Promise<void>((r) => setTimeout(r, chunkDelayMs));
+          }
+          if (sentAny && agentCfg?.followUpEnabled && agentCfg.followUps?.length) {
+            await startFollowUpSequence(cid, phone, agentCfg.followUps, connId ?? undefined).catch(error =>
+              console.error("[Meta follow-up] Não foi possível agendar após a resposta:", error));
           }
         }
 

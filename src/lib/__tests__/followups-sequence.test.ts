@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 vi.mock("../lead-context", () => ({ getLeadForConnection: vi.fn(async (_client, _phone, conn) => ({ id: `lead-${conn}`, clientId: "a", funnelId: `f-${conn}`, phone: "44999999999", status: "novo" })) }));
 vi.mock("../clients", () => ({ getClientById: vi.fn(async () => ({ id: "a" })), getAgentConfigForConnection: vi.fn(() => ({ followUpEnabled: true })) }));
-import { getAllFollowUps, getPendingFollowUps, getActiveFollowUpsForLead, startFollowUpSequence, restartFollowUpSequence, markSent, cancelFollowUpsForPhone, scheduleFollowUp } from "../followups";
+import { getAllFollowUps, getPendingFollowUps, getActiveFollowUpsForLead, getRecentFollowUpsForLead, sentFollowUpsInLast7Days, startFollowUpSequence, markSent, cancelFollowUpsForPhone, scheduleFollowUp } from "../followups";
 import type { Lead } from "../leads";
+import { addMessage } from "../conversations";
 let directory: string, cwd: string;
 beforeEach(async () => { cwd = process.cwd(); directory = await mkdtemp(path.join(tmpdir(), "tp-followups-")); process.chdir(directory); });
 afterEach(async () => { process.chdir(cwd); await rm(directory, { recursive: true, force: true }); });
@@ -22,14 +23,25 @@ describe("follow-up sequences", () => {
     await startFollowUpSequence("a", "44999999999", steps, "x");
     expect(await getPendingFollowUps("a")).toHaveLength(1);
   });
-  it("does not restart a completed sequence after another reply", async () => {
+  it("starts a new first step only after a new company reply", async () => {
     await startFollowUpSequence("a", "44999999999", steps, "x");
     await markSent((await getPendingFollowUps("a"))[0].id);
-    await restartFollowUpSequence("a", "44999999999", steps, "x");
+    await startFollowUpSequence("a", "44999999999", steps, "x");
     const next = (await getPendingFollowUps("a"))[0];
-    expect(next.stepId).toBe("second");
-    await markSent(next.id);
-    await restartFollowUpSequence("a", "44999999999", steps, "x");
+    expect(next.stepId).toBe("first");
+    expect(next.cycleId).toBeTruthy();
+  });
+  it("keeps the reason when a customer reply interrupts the sequence", async () => {
+    await startFollowUpSequence("a", "44999999999", steps, "x");
+    await cancelFollowUpsForPhone("a", "44999999999", "x", "customer_replied");
+    expect(await getPendingFollowUps("a")).toEqual([]);
+    expect((await getAllFollowUps("a"))[0]).toMatchObject({ status: "cancelled", cancelReason: "customer_replied" });
+    const recent = await getRecentFollowUpsForLead({id:"lead-x",clientId:"a",funnelId:"f-x",phone:"44999999999"} as Lead);
+    expect(recent[0].cancelReason).toBe("customer_replied");
+  });
+  it("does not recreate a sequence when the customer replied while the company response was being confirmed", async () => {
+    await addMessage("44999999999", { role: "user", content: "Obrigado", ts: Date.now() }, "a", { connId: "x" });
+    await startFollowUpSequence("a", "44999999999", steps, "x");
     expect(await getPendingFollowUps("a")).toEqual([]);
   });
   it("reschedules only the selected channel", async () => {
@@ -43,5 +55,17 @@ describe("follow-up sequences", () => {
   it("rejects an invalid schedule instead of leaving an unprocessable job", async () => {
     await expect(scheduleFollowUp({ clientId: "a", phone: "44999999999", scheduledAt: "invalid", message: "x", type: "followup" })).rejects.toThrow();
     expect(await getAllFollowUps()).toEqual([]);
+  });
+  it("keeps different AI reminders for the same contact", async () => {
+    const scheduledAt = new Date(Date.now() + 3600_000).toISOString();
+    await scheduleFollowUp({ clientId: "a", phone: "44999999999", scheduledAt, message: "Primeiro assunto", type: "reminder", connId: "x" });
+    await scheduleFollowUp({ clientId: "a", phone: "44999999999", scheduledAt, message: "Outro assunto", type: "reminder", connId: "x" });
+    expect(await getPendingFollowUps("a")).toHaveLength(2);
+  });
+  it("counts only accepted follow-ups in the last seven days", async () => {
+    await startFollowUpSequence("a", "44999999999", steps, "x");
+    await markSent((await getPendingFollowUps("a"))[0].id);
+    expect(await sentFollowUpsInLast7Days("a", "44999999999", "x")).toBe(1);
+    expect(await sentFollowUpsInLast7Days("a", "44999999999", "y")).toBe(0);
   });
 });

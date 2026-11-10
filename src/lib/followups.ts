@@ -6,6 +6,9 @@ import type { Lead } from "./leads";
 import { getLeadForConnection } from "./lead-context";
 import { getAgentConfigForConnection, getClientById } from "./clients";
 import { isAgentPhoneIgnored } from "./agent-phone-policy";
+import { followUpWeeklyLimit, nextAllowedFollowUpTime } from "./followup-policy";
+import { getHistory } from "./conversations";
+import { getFunnelById } from "./funnels";
 
 export type FollowUpType = "followup" | "reminder" | "appointment_reminder";
 export type FollowUpStatus = "pending" | "processing" | "sent" | "cancelled" | "failed";
@@ -17,6 +20,8 @@ export type FollowUp = {
   templateVariables?: Record<string, string>; connId?: string;
   lastError?: string; wamid?: string; leadId?: string; funnelId?: string;
   processingAt?: string; sentAt?: string;
+  cycleId?: string; cancelledAt?: string;
+  cancelReason?: "customer_replied" | "human_takeover" | "new_company_reply" | "lead_closed" | "configuration_disabled" | "frequency_limit" | "manual" | "context_rejected";
 };
 type Step = { id: string; delayHours: number; message: string; messageType?: string; templateId?: string; templateVariables?: Record<string, string> };
 const load = (filter?: RecordFilter, options?: Parameters<typeof readRecordList>[2]) => readRecordList<FollowUp>("followups.json", filter, options);
@@ -28,8 +33,11 @@ export async function scheduleFollowUp(data: Omit<FollowUp, "id" | "status" | "c
   return withDataTransaction(async () => {
     const items = await load({ clientId: data.clientId, phone: data.phone, connId: data.connId ?? null, status: ["pending", "processing"] });
     const existing = items.find(item => item.clientId === data.clientId && samePhone(item.phone, data.phone) &&
-      item.connId === data.connId && item.type === data.type && item.stepId === data.stepId &&
-      item.appointmentEventId === data.appointmentEventId && ["pending", "processing"].includes(item.status));
+      item.connId === data.connId && item.type === data.type &&
+      (data.type === "reminder" && !data.stepId && !data.appointmentEventId
+        ? item.message === data.message && Math.abs(Date.parse(item.scheduledAt) - Date.parse(data.scheduledAt)) < 60_000
+        : item.stepId === data.stepId && item.appointmentEventId === data.appointmentEventId && item.cycleId === data.cycleId) &&
+      ["pending", "processing"].includes(item.status));
     if (existing) return existing;
     const item: FollowUp = { ...data, phone: normalizePhone(data.phone), id: randomUUID(), status: "pending", createdAt: new Date().toISOString() };
     items.push(item);
@@ -90,52 +98,63 @@ export async function markSent(id: string, wamid?: string): Promise<void> {
 export async function markFailed(id: string, error: string): Promise<void> {
   await patchItem(id, { status: "failed", lastError: error.slice(0, 500) });
 }
-export async function cancelFollowUp(id: string): Promise<void> {
-  await patchItem(id, { status: "cancelled" });
+export async function cancelFollowUp(id: string, reason: FollowUp["cancelReason"] = "manual"): Promise<void> {
+  await patchItem(id, { status: "cancelled", cancelledAt: new Date().toISOString(), cancelReason: reason });
 }
 
-async function queueSequence(clientId: string, phone: string, steps: Step[], connId: string | undefined, restart: boolean): Promise<void> {
+export async function rescheduleFollowUp(id: string, scheduledAt: string): Promise<void> {
+  await patchItem(id, { status: "pending", scheduledAt, processingAt: undefined });
+}
+
+export async function sentFollowUpsInLast7Days(clientId: string, phone: string, connId?: string): Promise<number> {
+  const since = Date.now() - 7 * 24 * 3600_000;
+  return (await load({ clientId, phone, connId: connId ?? null, status: "sent", type: "followup" }))
+    .filter(item => item.type === "followup" && item.clientId === clientId && item.connId === connId && samePhone(item.phone, phone) &&
+      item.sentAt && Date.parse(item.sentAt) >= since).length;
+}
+
+/** Começa um novo ciclo somente após uma resposta efetivamente enviada pela empresa. */
+export async function startFollowUpSequence(clientId: string, phone: string, steps: Step[], connId?: string): Promise<void> {
   if (!steps.length) return;
-  if (steps.some(step => !step.id || !Number.isFinite(step.delayHours) || step.delayHours < 0 || step.delayHours > 8760)) throw new Error("Intervalo de acompanhamento inválido.");
+  if (steps.length > 2 || steps.some(step => !step.id || !Number.isFinite(step.delayHours) || step.delayHours < 0 || step.delayHours > 8760)) throw new Error("A sequência permite até duas tentativas com intervalos válidos.");
   await withDataTransaction(async () => {
     let lead;
-    try{lead=await getLeadForConnection(clientId,phone,connId);}catch(error){if(!(error instanceof LeadIdentityConflict))throw error;await cancelFollowUpsForPhone(clientId,phone,connId);return;}
+    try{lead=await getLeadForConnection(clientId,phone,connId);}catch(error){if(!(error instanceof LeadIdentityConflict))throw error;await cancelFollowUpsForPhone(clientId,phone,connId,"lead_closed");return;}
     const client = await getClientById(clientId);
     const config = client ? getAgentConfigForConnection(client, connId) : undefined;
-    if (!lead || !config?.followUpEnabled || lead.followUpDisabled || ["ganho", "perdido"].includes(lead.status) || isAgentPhoneIgnored(config, phone, lead.realPhone)) {
-      await cancelFollowUpsForPhone(clientId, phone, connId);
+    if (!lead || !config?.followUpEnabled || lead.followUpDisabled || lead.aiPaused || ["ganho", "perdido"].includes(lead.status) || isAgentPhoneIgnored(config, phone, lead.realPhone)) {
+      await cancelFollowUpsForPhone(clientId, phone, connId, "lead_closed");
       return;
     }
-    const items = await load({ clientId, phone, connId: connId ?? null, type: "followup" });
-    const sequence = items.filter(item => item.type === "followup" && item.clientId === clientId && samePhone(item.phone, phone) && item.connId === connId);
-    const active = sequence.filter(item => ["pending", "processing"].includes(item.status));
-    if (!restart && active.length) return;
-    const sentIndices = sequence.filter(item => item.status === "sent").map(item => steps.findIndex(step => step.id === item.stepId));
-    const sentNext = sentIndices.length ? Math.max(...sentIndices) + 1 : 0;
-    const pendingIndices = active.map(item => steps.findIndex(step => step.id === item.stepId)).filter(index => index >= 0);
-    const index = pendingIndices.length ? Math.max(sentNext, Math.min(...pendingIndices)) : sentNext;
-    if (index >= steps.length) return; // a completed sequence never restarts itself
-    for (const item of active) item.status = "cancelled";
-    await save(items);
-    const step = steps[index];
-    await scheduleFollowUp({ clientId, phone, connId, leadId: lead.id, funnelId: lead.funnelId,
-      scheduledAt: new Date(Date.now() + step.delayHours * 3_600_000).toISOString(), message: step.message,
-      type: "followup", stepIndex: index, stepId: step.id,
+    const column = (await getFunnelById(lead.funnelId))?.columns.find(item => item.id === lead.status);
+    if (column?.blockFollowUps) {
+      await cancelFollowUpsForPhone(clientId, phone, connId, "lead_closed", "followup");
+      return;
+    }
+    // A resposta pode chegar enquanto o provedor confirma os pedaços da resposta
+    // da IA. Nesse caso, o webhook já encerrou o ciclo e não podemos recriá-lo.
+    if ((await getHistory(phone, clientId, connId)).at(-1)?.role === "user") {
+      await cancelFollowUpsForPhone(clientId, phone, connId, "customer_replied", "followup");
+      return;
+    }
+    await cancelFollowUpsForPhone(clientId, phone, connId, "new_company_reply", "followup");
+    const step = steps[0];
+    const scheduledAt = nextAllowedFollowUpTime(Date.now() + step.delayHours * 3_600_000, config);
+    const scheduled = await scheduleFollowUp({ clientId, phone, connId, leadId: lead.id, funnelId: lead.funnelId,
+      scheduledAt: new Date(scheduledAt).toISOString(), message: step.message,
+      type: "followup", cycleId: randomUUID(), stepIndex: 0, stepId: step.id,
       messageType: step.messageType as FollowUp["messageType"], templateId: step.templateId, templateVariables: step.templateVariables });
+    if (await sentFollowUpsInLast7Days(clientId, phone, connId) >= followUpWeeklyLimit(config)) {
+      await cancelFollowUp(scheduled.id, "frequency_limit");
+    }
   });
 }
-export async function startFollowUpSequence(clientId: string, phone: string, steps: Step[], connId?: string): Promise<void> {
-  await queueSequence(clientId, phone, steps, connId, false);
-}
-export async function restartFollowUpSequence(clientId: string, phone: string, steps: Step[], connId?: string): Promise<void> {
-  await queueSequence(clientId, phone, steps, connId, true);
-}
-export async function cancelFollowUpsForPhone(clientId: string, phone: string, connId?: string | null): Promise<void> {
+export async function cancelFollowUpsForPhone(clientId: string, phone: string, connId?: string | null, reason: FollowUp["cancelReason"] = "manual", onlyType?: FollowUpType): Promise<void> {
   await withDataTransaction(async () => {
-    const items = await load({ clientId, phone, ...(connId === undefined ? {} : { connId }), status: ["pending", "processing"] }); let changed = false;
+    const items = await load({ clientId, phone, ...(connId === undefined ? {} : { connId }), ...(onlyType ? { type: onlyType } : {}), status: ["pending", "processing"] }); let changed = false;
     for (const item of items) {
-      if (item.clientId === clientId && samePhone(item.phone, phone) && (connId === undefined || (item.connId ?? null) === connId) && ["pending", "processing"].includes(item.status)) {
-        item.status = "cancelled"; changed = true;
+      if (item.clientId === clientId && samePhone(item.phone, phone) && (connId === undefined || (item.connId ?? null) === connId) && (!onlyType || item.type === onlyType) && ["pending", "processing"].includes(item.status)) {
+        item.status = "cancelled"; item.cancelledAt = new Date().toISOString(); item.cancelReason = reason; changed = true;
       }
     }
     if (changed) await save(items);
@@ -154,12 +173,25 @@ export async function getActiveFollowUpsForLead(lead: Lead): Promise<FollowUp[]>
   }
   return result;
 }
-export async function cancelFollowUpsForConnection(clientId: string, connId?: string | null): Promise<void> {
+
+/** Últimos eventos do mesmo lead, inclusive cancelamentos, para explicar por que um agendamento saiu da lista. */
+export async function getRecentFollowUpsForLead(lead: Lead, limit = 5): Promise<FollowUp[]> {
+  const phones = [...new Set([lead.phone, lead.realPhone].filter((value): value is string => !!value))];
+  const groups = await Promise.all(phones.map(phone => load({ clientId: lead.clientId, phone })));
+  const unique = new Map(groups.flat().map(item => [item.id, item]));
+  return [...unique.values()].filter(item => {
+    if (item.clientId !== lead.clientId || ![lead.phone, lead.realPhone].some(phone => phone && samePhone(item.phone, phone))) return false;
+    if (item.leadId) return item.leadId === lead.id;
+    if (item.funnelId) return item.funnelId === lead.funnelId;
+    return false; // Item legado sem vínculo não pode aparecer no funil errado.
+  }).sort((a, b) => Date.parse(b.cancelledAt || b.sentAt || b.scheduledAt) - Date.parse(a.cancelledAt || a.sentAt || a.scheduledAt)).slice(0, limit);
+}
+export async function cancelFollowUpsForConnection(clientId: string, connId?: string | null, reason: FollowUp["cancelReason"] = "configuration_disabled"): Promise<void> {
   await withDataTransaction(async () => {
     const items = await load({ clientId, connId: connId ?? null, status: ["pending", "processing"] }); let changed = false;
     for (const item of items) {
       if (item.clientId === clientId && (item.connId ?? null) === (connId ?? null) && ["pending", "processing"].includes(item.status)) {
-        item.status = "cancelled"; changed = true;
+        item.status = "cancelled"; item.cancelledAt = new Date().toISOString(); item.cancelReason = reason; changed = true;
       }
     }
     if (changed) await save(items);

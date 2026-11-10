@@ -3,7 +3,8 @@
 // pela rota HTTP /api/agent/cron (acionável externamente, ex: EasyPanel).
 // Antes existiam DUAS implementações divergentes que competiam pelos mesmos
 // follow-ups — unificadas aqui para evitar comportamento inconsistente.
-import { claimDueFollowUps, markSent, markFailed, cancelFollowUp, scheduleFollowUp, getFollowUpById, cancelFollowUpsForPhone, type FollowUp } from "./followups";
+import { claimDueFollowUps, markSent, markFailed, cancelFollowUp, rescheduleFollowUp, sentFollowUpsInLast7Days, scheduleFollowUp, startFollowUpSequence, getFollowUpById, cancelFollowUpsForPhone, type FollowUp } from "./followups";
+import { followUpWeeklyLimit, nextAllowedFollowUpTime } from "./followup-policy";
 import { getDuePending, markProcessing, markDone } from "./pending-responses";
 import { getClientById, getAllAgentConfigs, getAgentConfigForConnection, type AgentConfig } from "./clients";
 import { sendMessage, getGeminiApiKey } from "./whatsapp-send";
@@ -160,23 +161,27 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       // Órfão (toggle desligado, passo apagado, ou conexão errada) — cancela
       // de vez em vez de deixar "processing" pra sempre (claimDueFollowUps já
       // marcou como processing antes desta checagem).
-      (await cancelFollowUp(followUp.id));
+      (await cancelFollowUp(followUp.id, "configuration_disabled"));
       skipped++;
       continue;
+    }
+
+    if (followUp.type === "followup" && (followUp.stepIndex ?? 0) >= 2) {
+      await cancelFollowUp(followUp.id, "frequency_limit"); skipped++; continue;
     }
 
     try {
       // ── 0. Lead em coluna final (ganho/perdido) → cancela todos e pula ───
       const lead = await getLeadForConnection(followUp.clientId, followUp.phone, followUp.connId);
-      if (!lead || lead.followUpDisabled || followUp.leadId && followUp.leadId !== lead.id) { await cancelFollowUp(followUp.id); skipped++; continue; }
+      if (!lead || lead.followUpDisabled || lead.aiPaused || followUp.leadId && followUp.leadId !== lead.id) { await cancelFollowUp(followUp.id, "lead_closed"); skipped++; continue; }
       if (isAgentPhoneIgnored(agentCfg, followUp.phone, lead?.realPhone)) {
-        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId));
+        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId, "lead_closed"));
         console.log(`[cron-tasks] FU ${followUp.id} cancelado: número silenciado no agente`);
         skipped++;
         continue;
       }
       if (lead && TERMINAL_STATUSES.includes(lead.status)) {
-        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId));
+        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId, "lead_closed"));
         console.log(`[cron-tasks] FU ${followUp.id} cancelado: lead em coluna final (${lead.status})`);
         skipped++;
         continue;
@@ -187,7 +192,7 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       const followUpFunnel = lead ? (await getFunnelById(lead.funnelId)) : undefined;
       const followUpColumn = followUpFunnel?.columns.find((c) => c.id === lead?.status);
       if (followUpColumn?.blockFollowUps) {
-        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId));
+        (await cancelFollowUpsForPhone(followUp.clientId, followUp.phone, followUp.connId, "lead_closed"));
         console.log(`[cron-tasks] FU ${followUp.id} cancelado: lead em coluna com follow-up bloqueado (${followUpColumn.label})`);
         skipped++;
         continue;
@@ -197,9 +202,10 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       const history = (await getHistory(followUp.phone, followUp.clientId, followUp.connId));
       const lastMsg = history[history.length - 1];
 
-      if (lastMsg?.role === "user") {
-        // Lead já respondeu depois do follow-up ser agendado → descarta
-        (await cancelFollowUp(followUp.id));
+      if (lastMsg?.role === "user" && lastMsg.ts > Date.parse(followUp.createdAt)) {
+        // Uma resposta NOVA do cliente encerra o ciclo; a mensagem que iniciou
+        // a conversa antes da resposta da empresa não é motivo de cancelamento.
+        (await cancelFollowUp(followUp.id, "customer_replied"));
         console.log(`[cron-tasks] FU ${followUp.id} descartado: última mensagem foi do lead`);
         skipped++;
         continue;
@@ -216,10 +222,25 @@ export async function processDueFollowUpsAndBatches(): Promise<{
         .find((c) => c.id === followUp.connId);
       const isMetaConn = followUpConn?.type === "meta";
 
-      if (!isMetaConn && apiKey && history.length > 0) {
+      const allowedAt = nextAllowedFollowUpTime(Date.now(), agentCfg);
+      if (allowedAt > Date.now() + 1000) {
+        await rescheduleFollowUp(followUp.id, new Date(allowedAt).toISOString());
+        skipped++;
+        continue;
+      }
+      if (followUp.type === "followup" && await sentFollowUpsInLast7Days(followUp.clientId, followUp.phone, followUp.connId) >= followUpWeeklyLimit(agentCfg)) {
+        await cancelFollowUp(followUp.id, "frequency_limit"); skipped++; continue;
+      }
+      if (isMetaConn && followUp.messageType !== "template") {
+        await markFailed(followUp.id, "Na API oficial, configure um modelo de mensagem aprovado para o follow-up.");
+        skipped++;
+        continue;
+      }
+
+      if (agentCfg.followUpAiReviewEnabled && !isMetaConn && apiKey && history.length > 0) {
         const send = await shouldSendFollowUp(history, systemPrompt, followUp.message, apiKey);
         if (!send) {
-          (await cancelFollowUp(followUp.id));
+          (await cancelFollowUp(followUp.id, "context_rejected"));
           console.log(`[cron-tasks] FU ${followUp.id} cancelado pela análise Gemini (contexto inadequado)`);
           skipped++;
           continue;
@@ -242,6 +263,9 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       } else {
         msgToSend = interpolateFollowUp(followUp.message, lead);
       }
+      if (followUp.messageType !== "template" && !msgToSend.trim()) {
+        await markFailed(followUp.id, "Mensagem de follow-up vazia."); skipped++; continue;
+      }
 
       // Resolve número real quando o contato é um LID (ID interno do WhatsApp)
       const sendPhone = lead?.realPhone || followUp.phone;
@@ -254,8 +278,9 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       const latest = currentHistory.at(-1);
       const freshFunnel = currentLead ? await getFunnelById(currentLead.funnelId) : undefined;
       const blockedColumn = freshFunnel?.columns.find(column => column.id === currentLead?.status)?.blockFollowUps;
-      if (!freshConfig?.followUpEnabled || blockedColumn || isAgentPhoneIgnored(freshConfig, followUp.phone, currentLead?.realPhone) || currentItem?.status !== "processing" || !currentLead || currentLead.followUpDisabled || ["ganho", "perdido"].includes(currentLead.status) || latest?.role === "user" && latest.ts > (lastMsg?.ts ?? 0)) {
-        await cancelFollowUp(followUp.id); skipped++; continue;
+      if (currentItem?.status !== "processing") { skipped++; continue; } // preserva o motivo registrado pelo webhook
+      if (!freshConfig?.followUpEnabled || blockedColumn || isAgentPhoneIgnored(freshConfig, followUp.phone, currentLead?.realPhone) || !currentLead || currentLead.followUpDisabled || currentLead.aiPaused || ["ganho", "perdido"].includes(currentLead.status) || latest?.role === "user" && latest.ts > (lastMsg?.ts ?? 0)) {
+        await cancelFollowUp(followUp.id, latest?.role === "user" && latest.ts > (lastMsg?.ts ?? 0) ? "customer_replied" : "lead_closed"); skipped++; continue;
       }
       // ── 4. Enviar (sempre pela MESMA conexão/número da conversa original) ──
       // Template é OBRIGATÓRIO para API oficial Meta fora da janela de 24h —
@@ -296,25 +321,35 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       // ── 5. Agendar próximo step (somente se o envio atual teve sucesso) ────
       const steps = agentCfg.followUps ?? [];
       const nextIdx = (followUp.stepIndex ?? 0) + 1;
-      const nextStep = sendResult.ok && followUp.type === "followup" && followUp.stepId ? steps[nextIdx] : undefined;
+      const nextStep = sendResult.ok && followUp.type === "followup" && followUp.stepId && nextIdx < 2 ? steps[nextIdx] : undefined;
       if (nextStep) {
-        const scheduledAt = new Date(Date.now() + nextStep.delayHours * 3600000).toISOString();
-        (await scheduleFollowUp({
+        const nextConfig = (await getClientById(followUp.clientId));
+        const currentConfig = nextConfig ? resolveAgentConfig(getAllAgentConfigs(nextConfig), nextStep.id, followUp.connId) : undefined;
+        if (!currentConfig?.followUpEnabled) continue;
+        const freshStep = currentConfig.followUps?.find(step => step.id === nextStep.id);
+        if (!freshStep) continue;
+        const scheduledAt = new Date(nextAllowedFollowUpTime(Date.now() + freshStep.delayHours * 3600000, currentConfig)).toISOString();
+        const scheduled = await scheduleFollowUp({
           clientId: followUp.clientId,
           phone: followUp.phone,
           scheduledAt,
-          message: nextStep.message,
+          message: freshStep.message,
           type: "followup",
           stepIndex: nextIdx,
           stepId: nextStep.id,
-          messageType: nextStep.messageType,
-          templateId: nextStep.templateId,
-          templateVariables: nextStep.templateVariables,
+          cycleId: followUp.cycleId,
+          messageType: freshStep.messageType,
+          templateId: freshStep.templateId,
+          templateVariables: freshStep.templateVariables,
           connId: followUp.connId,
           leadId: lead.id,
           funnelId: lead.funnelId,
-        }));
-        console.log(`[cron-tasks] Próximo step ${nextIdx} agendado para ${scheduledAt}`);
+        });
+        if (await sentFollowUpsInLast7Days(followUp.clientId, followUp.phone, followUp.connId) >= followUpWeeklyLimit(currentConfig)) {
+          await cancelFollowUp(scheduled.id, "frequency_limit");
+        } else {
+          console.log(`[cron-tasks] Próximo step ${nextIdx} agendado para ${scheduledAt}`);
+        }
       }
     } catch (e) {
       console.error(`[cron-tasks] Erro ao enviar ${followUp.id}:`, e);
@@ -342,7 +377,14 @@ export async function processDueFollowUpsAndBatches(): Promise<{
       const freshLead = await getChatLeadForConnection(batch.clientId,batch.phone,batch.connId);
       if (reply && !freshLead?.aiPaused && !await getAiPaused(batch.phone,batch.clientId,batch.connId)) {
         const sent=await sendMessage(batch.phone,reply,batch.clientId,batch.connId??agentCfg.whatsappConnectionId);
-        if(sent){await addMessage(batch.phone,{role:"assistant",content:reply,ts:Date.now()},batch.clientId,{connId:batch.connId});batchesProcessed++;}
+        if(sent){
+          await addMessage(batch.phone,{role:"assistant",content:reply,ts:Date.now()},batch.clientId,{connId:batch.connId});
+          batchesProcessed++;
+          if (agentCfg.followUpEnabled && agentCfg.followUps?.length) {
+            await startFollowUpSequence(batch.clientId,batch.phone,agentCfg.followUps,batch.connId??agentCfg.whatsappConnectionId)
+              .catch(error => console.error("[cron] Não foi possível agendar follow-up após a resposta:", error));
+          }
+        }
         else console.error("[cron] O provedor não confirmou a resposta do lote; item encerrado sem repetição automática.");
       }
     } catch (e) {

@@ -7,7 +7,7 @@ import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
 import { syncLeadAiPause } from "@/lib/lead-context";
 import { withDataTransaction } from "@/lib/document-store";
-import { cancelFollowUpsForPhone } from "@/lib/followups";
+import { cancelFollowUp, getActiveFollowUpsForLead } from "@/lib/followups";
 
 // Colunas finais: ao entrar nelas, todos os follow-ups do lead são cancelados
 const TERMINAL_COLUMN_IDS = ["ganho", "perdido"];
@@ -58,6 +58,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       })
     : await updateLead(id, patch);
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const currentFunnel = await getFunnelById(lead.funnelId);
+  const blocksFollowUp = !!currentFunnel?.columns.find(column => column.id === lead.status)?.blockFollowUps;
+  if (body.aiPaused === true || body.followUpDisabled === true || TERMINAL_COLUMN_IDS.includes(lead.status) || blocksFollowUp) {
+    for (const item of await getActiveFollowUpsForLead(lead)) {
+      await cancelFollowUp(item.id, body.aiPaused === true ? "human_takeover" : "lead_closed");
+    }
+  }
 
   // Dispara evento CAPI quando o status muda e a coluna tem metaEvent configurado
   if (body.status && previous && body.status !== previous.status) {

@@ -29,7 +29,7 @@ export async function sendManualWhatsApp(request:NextRequest,input:{phone:string
   await setAiPaused(input.phone,true,input.clientId,input.connId);
   if(lead)await updateLead(lead.id,{aiPaused:true});
   await cancelPendingForPhone(input.clientId,input.phone,input.connId);
-  await cancelFollowUpsForPhone(input.clientId,input.phone,input.connId);
+  await cancelFollowUpsForPhone(input.clientId,input.phone,input.connId,"human_takeover");
   const ok=type==="text"?await sendMessage(input.phone,input.content,input.clientId,input.connId):await sendMediaMessage(input.phone,input.content,input.clientId,input.caption,input.connId,type).then(()=>true);
   if(!ok)return false;
   await addMessage(input.phone,{role:"assistant",content:type==="text"?input.content:(input.caption||`[${type}]`),ts:Date.now(),...(type!=="text"?{mediaUrl:input.content}:{}),...(type==="audio"||type==="image"?{type}:{})},input.clientId,{connId:input.connId});

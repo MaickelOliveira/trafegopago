@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const existingLead = (await getLeadForConnection(clientId, cleanPhone, connId));
   if (existingLead) (await updateLead(existingLead.id, { aiPaused: paused }));
   // A paused chat must not receive a previously scheduled follow-up.
-  if (paused) (await cancelFollowUpsForPhone(clientId, cleanPhone, connId));
+  if (paused) (await cancelFollowUpsForPhone(clientId, cleanPhone, connId, "human_takeover"));
 
   return NextResponse.json({ ok: true, aiPaused: paused });
 }

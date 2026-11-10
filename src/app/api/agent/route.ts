@@ -5,6 +5,7 @@ import { withDataTransaction } from "@/lib/document-store";
 import { getFunnelForConnection } from "@/lib/lead-context";
 import { cancelFollowUpsForConnection, cancelFollowUpsForPhone } from "@/lib/followups";
 import { sanitizeAgentPhoneList } from "@/lib/agent-phone-policy";
+import { validateFollowUpConfig } from "@/lib/followup-policy";
 async function context(req: NextRequest) {
   if ((await getSession())?.role !== "manager") return null;
   const id = req.nextUrl.searchParams.get("clientId"); if (!id) return null;
@@ -35,6 +36,10 @@ async function update(req: NextRequest, toggle: boolean) {
     const { client, current, connId } = ctx;
     const patch = toggle ? { [body.field]: body.value } : body;
     const updated: AgentConfig = { ...current, ...patch, googleRefreshToken: current.googleRefreshToken, dailySummaryLastSentDate: current.dailySummaryLastSentDate, geminiApiKey: patch.geminiApiKey || current.geminiApiKey, whatsappConnectionId: connId, ignoredPhones: patch.ignoredPhones === undefined ? current.ignoredPhones : sanitizeAgentPhoneList(patch.ignoredPhones) };
+    const funnel = connId ? await getFunnelForConnection(client.id, connId) : undefined;
+    const officialMeta = !!funnel?.connections?.some(connection => connection.id === connId && connection.type === "meta");
+    const followUpError = validateFollowUpConfig(updated, officialMeta);
+    if (followUpError) return NextResponse.json({ error: followUpError }, { status: 400 });
     await upsertAgentConfigForConnection(client, connId, updated);
     if (!updated.followUpEnabled || !updated.followUps?.length) await cancelFollowUpsForConnection(client.id, connId);
     for (const phone of updated.ignoredPhones ?? []) await cancelFollowUpsForPhone(client.id, phone, connId);

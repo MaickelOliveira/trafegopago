@@ -42,17 +42,29 @@ function fmtTime(ts: number) {
   return chatTime(ts);
 }
 
-type PendingFU = { id: string; scheduledAt: string; message: string; stepIndex?: number };
+type FollowUpItem = { id: string; scheduledAt: string; message: string; stepIndex?: number; status: "pending" | "processing" | "sent" | "cancelled" | "failed"; cancelledAt?: string; sentAt?: string; cancelReason?: string; lastError?: string };
+type FollowUpList = { pending: FollowUpItem[]; recent: FollowUpItem[] };
+
+const followUpReason: Record<string, string> = {
+  customer_replied: "Interrompido porque o cliente respondeu",
+  human_takeover: "Interrompido porque um atendente assumiu",
+  new_company_reply: "Reprogramado após nova resposta da empresa",
+  lead_closed: "Interrompido pela situação do lead",
+  configuration_disabled: "Interrompido porque o follow-up foi desligado",
+  frequency_limit: "Limite de mensagens atingido",
+  context_rejected: "Conversa inadequada para acompanhamento",
+  manual: "Cancelado manualmente",
+};
 
 function FollowUpSection({ leadId }: { leadId: string }) {
-  const [items, setItems] = useState<PendingFU[] | null>(null);
+  const [items, setItems] = useState<FollowUpList | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
   function load() {
     fetch(`/api/crm/leads/${leadId}/followups`)
       .then((r) => r.json())
-      .then((data) => setItems(Array.isArray(data) ? data : []))
-      .catch(() => setItems([]));
+      .then((data) => setItems(data && Array.isArray(data.pending) && Array.isArray(data.recent) ? data : { pending: [], recent: [] }))
+      .catch(() => setItems({ pending: [], recent: [] }));
   }
 
   useEffect(() => { load(); }, [leadId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -69,19 +81,25 @@ function FollowUpSection({ leadId }: { leadId: string }) {
     return `em ${m}min`;
   }
 
+  function fmtHistoryDate(iso: string) {
+    return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  const recent = items?.recent.filter(item => item.status !== "pending" && item.status !== "processing") ?? [];
+
   return (
     <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
           ⏰ Follow-ups agendados
         </p>
-        {items !== null && items.length > 0 && (
+        {items !== null && items.pending.length > 0 && (
           <button
             onClick={async () => {
               setCancelling(true);
               await fetch(`/api/crm/leads/${leadId}/followups`, { method: "DELETE" });
               setCancelling(false);
-              setItems([]);
+              load();
             }}
             disabled={cancelling}
             className="text-xs text-red-600 hover:text-red-800 font-semibold disabled:opacity-50"
@@ -93,13 +111,13 @@ function FollowUpSection({ leadId }: { leadId: string }) {
 
       {items === null && <p className="text-xs text-slate-400 animate-pulse">Carregando...</p>}
 
-      {items !== null && items.length === 0 && (
+      {items !== null && items.pending.length === 0 && (
         <p className="text-xs text-slate-400 italic">Nenhum follow-up agendado para este lead.</p>
       )}
 
-      {items !== null && items.length > 0 && (
+      {items !== null && items.pending.length > 0 && (
         <div className="space-y-1.5">
-          {items.map((fu, i) => (
+          {items.pending.map((fu, i) => (
             <div key={fu.id} className="flex items-start gap-2 bg-white rounded-lg border border-orange-100 px-3 py-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-200 text-[10px] font-bold text-orange-700 shrink-0 mt-0.5">
                 {(fu.stepIndex ?? i) + 1}
@@ -108,6 +126,18 @@ function FollowUpSection({ leadId }: { leadId: string }) {
                 <p className="text-xs text-slate-700 line-clamp-2">{fu.message}</p>
                 <p className="text-[10px] text-orange-600 mt-0.5 font-medium">{fmtDate(fu.scheduledAt)}</p>
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {recent.length > 0 && (
+        <div className="space-y-1.5 border-t border-orange-200 pt-2">
+          <p className="text-[11px] font-semibold text-slate-600">Histórico recente</p>
+          {recent.map(item => (
+            <div key={item.id} className="rounded-lg border border-orange-100 bg-white px-3 py-2">
+              <p className="text-xs text-slate-700">{item.status === "cancelled" ? followUpReason[item.cancelReason ?? ""] ?? "Interrompido" : item.status === "failed" ? "Falha no envio" : "Aceito pelo WhatsApp"}</p>
+              <p className="text-[10px] text-slate-500">{fmtHistoryDate(item.cancelledAt || item.sentAt || item.scheduledAt)} · {item.message || "Mensagem por modelo aprovado"}</p>
+              {item.status === "failed" && item.lastError && <p className="text-[10px] text-red-600">{item.lastError}</p>}
             </div>
           ))}
         </div>

@@ -22,6 +22,6 @@ export async function synchronizeLeadWorkflows(lead: Lead, previous?: Lead): Pro
   for (const item of await getAllFollowUps(lead.clientId)) {
     if (!["pending", "processing"].includes(item.status) || normalizePhone(item.phone) !== phone) continue;
     const belongs = item.leadId ? item.leadId === lead.id : item.funnelId ? item.funnelId === lead.funnelId : item.connId ? connectionIds.has(item.connId) : matchingLeads.length === 1;
-    if (belongs) await cancelFollowUp(item.id);
+    if (belongs) await cancelFollowUp(item.id, "lead_closed");
   }
 }

@@ -7,7 +7,7 @@ import ImportModal from "./ImportModal";
 import type { Lead, LeadReminder } from "@/lib/leads";
 import type { Funnel, FunnelColumn, TriggerPhrase } from "@/lib/funnels";
 import { campaignLabel } from "@/lib/campaign-label";
-import { Bell, CheckSquare, Plus, Settings2, Sparkles } from "lucide-react";
+import { Bell, CheckSquare, Plus, Settings2 } from "lucide-react";
 
 type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean; kanbanAgentPrompt?: string };
 
@@ -731,39 +731,10 @@ export function KanbanBoard({
   }
 
   // Agente Kanban — liga/desliga
-  const [agentEnabled, setAgentEnabled] = useState(
-    clients.find((c) => c.id === (selectedClient ?? clients[0]?.id))?.kanbanAgentEnabled !== false
-  );
+  const [agentStateByClient, setAgentStateByClient] = useState<Record<string, boolean>>({});
+  const activeAgentClientId = selectedClient ?? clients[0]?.id ?? "";
+  const agentEnabled = agentStateByClient[activeAgentClientId] ?? (clients.find(c => c.id === activeAgentClientId)?.kanbanAgentEnabled === true);
   const [togglingAgent, setTogglingAgent] = useState(false);
-  const [classifying, setClassifying] = useState(false);
-  const [classifyResult, setClassifyResult] = useState<string | null>(null);
-
-  async function classifyAll() {
-    // Mais de um cliente na lista = visão global do gestor (sem seletor fixo de
-    // cliente) — nesse caso classifica a PLATAFORMA INTEIRA, não só o filtro
-    // atual do dropdown. Na tela de um cliente específico (só 1 na lista),
-    // continua restrito a esse cliente.
-    const isPlatformWide = clients.length > 1;
-    const cid = selectedClient ?? clients[0]?.id;
-    if (!isPlatformWide && !cid) return;
-    setClassifying(true);
-    setClassifyResult(null);
-    const url = isPlatformWide ? "/api/crm/kanban-agent" : `/api/crm/kanban-agent?clientId=${cid}`;
-    const res = await fetch(url, { method: "POST" });
-    if (res.ok) {
-      const data = await res.json() as { processed: number; moved: number; total: number };
-      setClassifyResult(`${data.moved} de ${data.processed} leads movidos`);
-      // Recarrega os leads
-      const leadsUrl = isPlatformWide ? "/api/crm/leads" : `/api/crm/leads?clientId=${cid}`;
-      const leadsRes = await fetch(leadsUrl);
-      if (leadsRes.ok) setLeads(await leadsRes.json());
-      setTimeout(() => setClassifyResult(null), 5000);
-    } else {
-      const err = await res.json().catch(() => ({}));
-      alert(`Erro ao classificar leads: ${err.error ?? res.status}`);
-    }
-    setClassifying(false);
-  }
 
   async function toggleAgent() {
     const cid = selectedClient ?? clients[0]?.id;
@@ -775,7 +746,7 @@ export function KanbanBoard({
       body: JSON.stringify({ enabled: !agentEnabled }),
     });
     if (res.ok) {
-      setAgentEnabled((v) => !v);
+      setAgentStateByClient(previous => ({ ...previous, [cid]: !agentEnabled }));
     } else {
       const err = await res.json().catch(() => ({}));
       alert(`Erro ao alterar IA: ${err.error ?? res.status}`);
@@ -1270,7 +1241,7 @@ export function KanbanBoard({
         <button
           onClick={toggleAgent}
           disabled={togglingAgent}
-          title={agentEnabled ? "Agente IA ativo — clique para desativar" : "Agente IA desativado — clique para ativar"}
+          title={agentEnabled ? "IA do Kanban ativa. Limite: 30 análises por cliente ao dia. Cada mensagem é analisada uma única vez." : "IA do Kanban desligada. Frases de gatilho, se configuradas, são verificadas sem custo quando a IA estiver ativa."}
           className={clsx(
             "rounded-lg border px-3 py-1.5 text-xs font-semibold transition shrink-0 flex items-center gap-1.5",
             agentEnabled
@@ -1291,22 +1262,6 @@ export function KanbanBoard({
           className="rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 transition shrink-0"
         >
           <Settings2 size={14} /> Prompt do agente
-        </button>
-
-        {/* Classificar todos os leads com IA */}
-        <button
-          onClick={classifyAll}
-          disabled={classifying}
-          title="Analisa a conversa de todos os leads e move cada um para a coluna correta"
-          className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition shrink-0 flex items-center gap-1.5 disabled:opacity-50"
-        >
-          {classifying ? (
-            <><svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Classificando...</>
-          ) : classifyResult ? (
-            <><svg className="h-3 w-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg> {classifyResult}</>
-          ) : (
-            <><Sparkles size={14} /> Classificar leads</>
-          )}
         </button>
 
         {/* Selecionar vários / Selecionar todos */}

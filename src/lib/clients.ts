@@ -58,6 +58,11 @@ export type AgentConfig = {
   metaSummaryTemplateName?: string; // Template Meta aprovado para avisos via API oficial (ex: "aviso2")
   followUps: FollowUpStep[];     // Sequência de follow-ups configurados
   followUpContext?: string;      // Contexto curto do negócio para a IA decidir se envia follow-up (ex: "atendimento comercial, filtrar fornecedores")
+  followUpAiReviewEnabled?: boolean; // Análise opcional da conversa antes de enviar; regras determinísticas sempre se aplicam.
+  followUpSendDays?: number[];    // 0=domingo...6=sábado; padrão: segunda a sexta.
+  followUpSendStart?: string;     // HH:MM em America/Sao_Paulo; padrão: 09:00.
+  followUpSendEnd?: string;       // HH:MM em America/Sao_Paulo; padrão: 18:00.
+  followUpMaxPer7Days?: 1 | 2;    // Limite por contato/conexão; padrão: 2.
   systemPrompt?: string;         // Instruções do agente para este cliente
   whatsappConnectionId?: string; // ID da conexão WhatsApp que o agente usa
   messageWaitSeconds?: number;   // Segundos de espera para acumular mensagens (0 = desabilitado)

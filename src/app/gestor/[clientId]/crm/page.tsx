@@ -20,7 +20,7 @@ export default async function ClientCrmPage({ params }: { params: Promise<{ clie
     color: client.color,
     metaAccountId: client.adAccounts.find((a) => a.platform === "meta")?.id,
     pixelId: client.pixelId,
-    kanbanAgentEnabled: client.kanbanAgentEnabled !== false,
+    kanbanAgentEnabled: client.kanbanAgentEnabled === true,
     kanbanAgentPrompt: client.kanbanAgentPrompt,
   }];
 

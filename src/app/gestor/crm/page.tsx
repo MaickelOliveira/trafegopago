@@ -15,7 +15,7 @@ export default async function CrmPage() {
     color: c.color,
     metaAccountId: c.adAccounts.find((a) => a.platform === "meta")?.id,
     pixelId: c.pixelId,
-    kanbanAgentEnabled: c.kanbanAgentEnabled !== false, // default true
+    kanbanAgentEnabled: c.kanbanAgentEnabled === true,
     kanbanAgentPrompt: c.kanbanAgentPrompt,
   }));
   const leads   = (await attachLeadsHeat((await getLeads())));
