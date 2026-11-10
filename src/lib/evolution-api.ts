@@ -3,6 +3,7 @@ import { signWebhookUrl } from "./webhook-auth";
 import { signMediaUrl } from "./media-access";
 import { getConfig } from "./clients";
 import { markSent, markPhoneSending } from "./whatsapp-sent";
+import { evolutionRecipientKeys, evolutionRecipientNumber } from "./evolution-recipient";
 import { getCachedQr, setCachedQr, clearCachedQr } from "./evolution-qr";
 
 async function base(): Promise<string> {
@@ -324,16 +325,15 @@ export async function sendText(
 ): Promise<boolean> {
   if (!(await base())) return false;
   try {
-    const isGroup = phone.endsWith("@g.us");
     // isLid: contato identificado por LID (id interno do WhatsApp), não por
     // telefone real — precisa do sufixo "@lid" explícito, senão a Evolution
     // trata os dígitos como se fossem um número de telefone normal (e falha
     // com "exists: false", já que aquele número não existe de verdade).
-    const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
-    const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
-    const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
-    markPhoneSending(phoneKey,instanceName);
-    markSent(phoneKey,message,instanceName);
+    const number = evolutionRecipientNumber(phone, isLid, skipNormalize, normalizeBrPhone);
+    for (const phoneKey of evolutionRecipientKeys(phone, number)) {
+      markPhoneSending(phoneKey, instanceName);
+      markSent(phoneKey, message, instanceName);
+    }
 
     const url = `${(await base())}/message/sendText/${encodeURIComponent(instanceName)}`;
     const headers = { "Content-Type": "application/json", ...(await authHeader(instanceApiKey)) };
@@ -391,16 +391,15 @@ export async function sendMedia(
   if (!(await base())) return false;
   try {
     mediaUrl = await signMediaUrl(mediaUrl);
-    const isGroup = phone.endsWith("@g.us");
     // isLid: contato identificado por LID (id interno do WhatsApp), não por
     // telefone real — precisa do sufixo "@lid" explícito, senão a Evolution
     // trata os dígitos como se fossem um número de telefone normal (e falha
     // com "exists: false", já que aquele número não existe de verdade).
-    const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
-    const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
-    const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
-    markPhoneSending(phoneKey,instanceName);
-    if (caption?.trim()) markSent(phoneKey,caption.trim(),instanceName);
+    const number = evolutionRecipientNumber(phone, isLid, skipNormalize, normalizeBrPhone);
+    for (const phoneKey of evolutionRecipientKeys(phone, number)) {
+      markPhoneSending(phoneKey, instanceName);
+      if (caption?.trim()) markSent(phoneKey, caption.trim(), instanceName);
+    }
 
     const fileRes = await fetchPublicResource(mediaUrl);
     if (!fileRes.ok) {
@@ -461,16 +460,15 @@ export async function sendMediaFromBase64(
 ): Promise<boolean> {
   if (!(await base())) return false;
   try {
-    const isGroup = phone.endsWith("@g.us");
     // isLid: contato identificado por LID (id interno do WhatsApp), não por
     // telefone real — precisa do sufixo "@lid" explícito, senão a Evolution
     // trata os dígitos como se fossem um número de telefone normal (e falha
     // com "exists: false", já que aquele número não existe de verdade).
-    const bareDigits = phone.replace(/@.*/, "").replace(/\D/g, "");
-    const number = isGroup ? phone : isLid ? `${bareDigits}@lid` : skipNormalize ? bareDigits : normalizeBrPhone(phone);
-    const phoneKey = number.replace(/@.*/, "").replace(/\D/g, "");
-    markPhoneSending(phoneKey,instanceName);
-    if (caption?.trim()) markSent(phoneKey,caption.trim(),instanceName);
+    const number = evolutionRecipientNumber(phone, isLid, skipNormalize, normalizeBrPhone);
+    for (const phoneKey of evolutionRecipientKeys(phone, number)) {
+      markPhoneSending(phoneKey, instanceName);
+      if (caption?.trim()) markSent(phoneKey, caption.trim(), instanceName);
+    }
 
     const rawExt = mimeType.split("/")[1]?.split(";")[0] ?? "bin";
     const ext = rawExt === "jpeg" ? "jpg" : rawExt;
