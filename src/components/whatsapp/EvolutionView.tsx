@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { EnrichedEvolutionSession } from "@/app/api/whatsapp/evolution-manager/route";
 import {
   ActionBtn,
@@ -32,7 +32,6 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [qrStage, setQrStage] = useState<"generating" | "scanning" | "done">("generating");
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const qrShownRef = useRef(false);
 
   // Link compartilhável de QR (pra enviar a quem tem o celular físico)
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -89,7 +88,6 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
     if (evoModal.type !== "qr") return;
 
     const { id, forceLogout } = evoModal;
-    qrShownRef.current = false;
     setQrImage(null);
     setQrStage("generating");
     setCooldownSeconds(0);
@@ -116,7 +114,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
         const d = await res.json() as { qr?: string | null; cooldownMs?: number };
         if (!alive) return;
         if (d.qr && d.qr !== lastQr) {
-          setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
+          setQrImage(d.qr); setQrStage("scanning");
           lastQr = d.qr; qrSetAt = Date.now();
           clearInterval(cooldownTick);
           setCooldownSeconds(0);
@@ -150,13 +148,13 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
           if (d.qr) {
             if (d.qr !== lastQr) {
               lastQr = d.qr; qrSetAt = Date.now();
-              setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
+              setQrImage(d.qr); setQrStage("scanning");
             } else if (!d.connected && Date.now() - qrSetAt > 65000) {
               setQrImage(null); setQrStage("generating");
               connectAndFetchQr(false);
             }
           }
-          if (d.connected && qrShownRef.current) {
+          if (d.connected) {
             setQrStage("done"); clearInterval(poll); alive = false;
             setTimeout(() => { setEvoModal({ type: "none" }); fetchSessions(); }, 1500);
           }
