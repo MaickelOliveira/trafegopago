@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
   const notesLines = Object.entries(formFields).map(([k, v]) => `${k}: ${v}`);
 
   const existing = await getLeadByPhone(clientId, phone, funnel.id);
+  const initialStatus = clientId === "pro-nexo" && funnel.columns.some(column => column.id === "novo")
+    ? "novo"
+    : funnel.columns[0]?.id ?? "novo";
   const lead = (await upsertLeadByPhone(clientId, phone, {
     funnelId: funnel.id,
     name: body.name ?? body.nome ?? "Lead do site",
@@ -84,7 +87,7 @@ export async function POST(req: NextRequest) {
     fbclid: body.fbclid ?? null,
     gclid:  body.gclid  ?? null,
     notes: notesLines.join("\n"),
-    ...(existing ? {} : { status: funnel.columns[0]?.id ?? "novo" }),
+    ...(existing ? {} : { status: initialStatus }),
   }));
 
   return NextResponse.json({ ok: true, leadId: lead.id }, { headers: getCors(req) });
