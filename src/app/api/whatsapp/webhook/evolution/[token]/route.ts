@@ -6,8 +6,7 @@ import path from "path";
 import { getEvolutionSessionById } from "@/lib/evolution-sessions";
 import { getFunnels } from "@/lib/funnels";
 import { getLeads, getChatLeadByPhone as getLeadByPhone, captureWhatsAppLead, hasLeadByPhone, updateLead, markLeadNeedsAttention, normalizePhone } from "@/lib/leads";
-import { getConfig, getClientById, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
-import { getAdInfoById } from "@/lib/meta-api";
+import { getClientById, getAgentConfigForConnection, isWithinBusinessHours } from "@/lib/clients";
 import { getHistory, addMessage, setAiPaused,getAiPaused, sanitizeContactName, updateMessage, ensureBrCountryCode } from "@/lib/conversations";
 import { chatMediaMessage, decodeChatMediaBase64, findWhatsAppMessageObject as findMessageTypeObject } from "@/lib/chat-media-message";
 import { chatFileName } from "@/lib/chat-attachments";
@@ -551,59 +550,14 @@ export async function POST(
   }
   const nameToSave = contactNameFromApi ?? (shouldUpdateName ? pushName : undefined);
 
-  // ── Lookup no Meta Ads API para enriquecer dados de campanha ──
-  // "alreadyAttributed" = este lead já tem exatamente este adId salvo E já
-  // resolveu campaignId via Graph API (não só o fallback de headline) — não
-  // repete a chamada à Meta API. IMPORTANTE: sem o "!!existingLead?.campaignId"
-  // aqui, um lead que caiu no fallback na primeira mensagem (token ausente,
-  // rate limit, erro transitório) ficava preso PARA SEMPRE com dados
-  // incompletos — nenhuma mensagem seguinte tentava de novo, porque o adId já
-  // "batia" com o salvo. Quando alreadyAttributed é true, adFields fica {}
-  // (não reconstrói com dados parciais) — senão uma mensagem de follow-up que
-  // ainda carrega o mesmo externalAdReply sobrescreve o Conjunto/Anúncio/
-  // Campaign ID já resolvidos com null.
-  let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-  const alreadyAttributed = !!ctwaAdId && existingLead?.adId === ctwaAdId && !!existingLead?.campaignId;
-  const shouldLookupAd = !!ctwaAdId && !alreadyAttributed;
-  if (shouldLookupAd) {
-    try {
-      const cfg = (await getConfig());
-      if (cfg.metaToken) {
-        adInfo = await getAdInfoById(ctwaAdId!, cfg.metaToken);
-        ;
-      } else {
-        console.warn("[Evolution CTWa] metaToken não configurado — não foi possível resolver campanha via Meta API");
-      }
-    } catch (e) {
-      console.warn("[Evolution CTWa] Erro ao chamar Meta API:", e instanceof Error ? e.message : e);
-    }
-  }
-
-  const adFields = adInfo
-    ? {
-        adPlatform: "meta" as const,
-        adId: adInfo.adId,
-        adName: adInfo.adName,
-        adSetId: adInfo.adSetId,
-        adSetName: adInfo.adSetName,
-        campaignId: adInfo.campaignId,
-        campaignName: adInfo.campaignName,
-        adSourceUrl: ctwaSourceUrl ?? null,
-      }
-    : alreadyAttributed
-    ? {}
-    : ctwaAdId || ctwaHeadline || ctwaSourceUrl
-    ? {
-        adPlatform: "meta" as const,
-        adId: ctwaAdId ?? null,
-        adName: null,
-        adSetId: null,
-        adSetName: null,
-        campaignId: null,
-        campaignName: ctwaHeadline ?? null,
-        adSourceUrl: ctwaSourceUrl ?? null,
-      }
-    : {};
+  // Persist referral evidence immediately. Account-verified labels are resolved
+  // by the durable worker, independently of message ingestion and AI responses.
+  const adFields = ctwaAdId || ctwaHeadline || ctwaSourceUrl ? {
+    adPlatform: "meta" as const,
+    adId: ctwaAdId ?? null,
+    adName: ctwaHeadline ?? null,
+    adSourceUrl: ctwaSourceUrl ?? null,
+  } : {};
 
   // ── Proteção contra criação de leads falsos no history sync do reconnect ──
   if (isNew && msgTimestamp === 0) {

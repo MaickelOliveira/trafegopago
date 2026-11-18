@@ -1,3 +1,4 @@
+import { attributionPlatform } from "@/lib/lead-attribution";
 import { getClientById } from "@/lib/clients";
 import { getFunnels } from "@/lib/funnels";
 import { getLeadByPhone } from "@/lib/leads";
@@ -45,12 +46,7 @@ export async function POST(req: NextRequest) {
   if (phone.length < 7 || phone.length > 20) return NextResponse.json({ error: "phone obrigatório" }, { status: 400 });
 
   // Detecta plataforma de anúncio
-  const utmSourceRaw = (body.utm_source ?? body.utmSource ?? "").toLowerCase();
-  const metaSources  = ["facebook", "instagram", "fb", "meta"];
-  const adPlatform: "meta" | "google" | null =
-    body.fbclid || metaSources.includes(utmSourceRaw)      ? "meta"
-    : body.gclid || utmSourceRaw === "google"              ? "google"
-    : null;
+  const adPlatform = attributionPlatform({ utmSource: body.utm_source ?? body.utmSource, fbclid: body.fbclid, gclid: body.gclid });
 
   // Monta notas com todos os dados extras do formulário
   const formFields: Record<string, string> = {};
@@ -75,10 +71,11 @@ export async function POST(req: NextRequest) {
     source: "form",
     adPlatform,
     campaignName: body.campaignName ?? body.utm_campaign ?? body.utmCampaign ?? null,
-    campaignId: body.campaignId ?? null,
+    campaignId: body.campaign_id ?? body.campaignId ?? null,
+    adSetId: body.adset_id ?? body.adSetId ?? null,
     adSetName:  body.adSetName  ?? null,
     adName:     body.adName     ?? null,
-    adId:       body.adId       ?? null,
+    adId:       body.ad_id ?? body.adId ?? null,
     utmSource:   body.utm_source   ?? body.utmSource   ?? null,
     utmMedium:   body.utm_medium   ?? body.utmMedium   ?? null,
     utmCampaign: body.utm_campaign ?? body.utmCampaign ?? null,
@@ -86,6 +83,7 @@ export async function POST(req: NextRequest) {
     utmTerm:     body.utm_term     ?? body.utmTerm     ?? null,
     fbclid: body.fbclid ?? null,
     gclid:  body.gclid  ?? null,
+    customFields: formFields,
     notes: notesLines.join("\n"),
     ...(existing ? {} : { status: initialStatus }),
   }));
