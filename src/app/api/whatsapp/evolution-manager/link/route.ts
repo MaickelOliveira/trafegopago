@@ -1,9 +1,10 @@
-import { patchClient } from "@/lib/clients";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getClients, upsertClient, migrateAgentConfigByOldConnectionId } from "@/lib/clients";
-import { createFunnel, updateFunnel } from "@/lib/funnels";
+import { getClients, getClientById, getAllAgentConfigs, patchClient, upsertAgentConfigForConnection } from "@/lib/clients";
+import type { AgentConfig } from "@/lib/clients";
+import { createFunnel, updateFunnel, getFunnels } from "@/lib/funnels";
 import { getEvolutionSessionById, updateEvolutionSession } from "@/lib/evolution-sessions";
+import { withDataTransaction } from "@/lib/document-store";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -11,61 +12,105 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json() as {
-    sessionId: string;
-    funnelId: string | null;
-    clientId: string | null;
-    linkAgent: boolean;
-    reuseConnectionId?: string;
-  };
-
+  let body: { sessionId: string; funnelId: string | null; clientId: string | null; linkAgent: boolean; reuseConnectionId?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Dados de vínculo inválidos." }, { status: 400 });
+  }
+  if (!body || typeof body.sessionId !== "string" || !body.sessionId
+    || typeof body.linkAgent !== "boolean"
+    || (body.clientId !== null && typeof body.clientId !== "string")
+    || (body.funnelId !== null && typeof body.funnelId !== "string")
+    || (body.reuseConnectionId !== undefined && typeof body.reuseConnectionId !== "string")) {
+    return NextResponse.json({ error: "Dados de vínculo inválidos." }, { status: 400 });
+  }
   const { sessionId, clientId, linkAgent, reuseConnectionId } = body;
-  let { funnelId } = body;
-
-  const evoSession = (await getEvolutionSessionById(sessionId));
-  if (!evoSession) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
-
-  if (funnelId?.startsWith("auto:")) {
-    const autoClientId = funnelId.slice(5);
-    const newFunnel = (await createFunnel("Funil Principal"));
-    (await updateFunnel(newFunnel.id, { clientId: autoClientId }));
-    funnelId = newFunnel.id;
+  if (linkAgent && !clientId) {
+    return NextResponse.json({ error: "Selecione o cliente do agente." }, { status: 400 });
   }
 
-  (await updateEvolutionSession(sessionId, {
-    funnelId: funnelId ?? null,
-    clientId: clientId ?? null,
-    hasAgent: linkAgent,
-  }));
-
-  const clients = (await getClients());
-
-  for (const client of clients) {
-    if (client.agentConfig?.whatsappConnectionId === sessionId && client.id !== clientId) {
-      (await patchClient(client.id, { agentConfig: { ...client.agentConfig, whatsappConnectionId: undefined } }));
+  // Cliente, funil e agente precisam ser gravados juntos. Uma falha não pode
+  // deixar a sessão vinculada enquanto a configuração do atendimento se perde.
+  return withDataTransaction(async () => {
+    const evoSession = await getEvolutionSessionById(sessionId);
+    if (!evoSession) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
+    const clients = await getClients();
+    const target = clientId ? clients.find(client => client.id === clientId) : undefined;
+    if (clientId && !target) {
+      return NextResponse.json({ error: "Cliente não encontrado." }, { status: 404 });
     }
-  }
 
-  // Config de agente é uma entidade própria (identificada pelo seu
-  // whatsappConnectionId atual, vivo ou órfão) — não presa ao ciclo de vida da
-  // sessão. O front sempre manda explicitamente qual agente reaproveitar
-  // (reuseConnectionId); sem escolha explícita, cria um agente em branco —
-  // nada de adivinhar/auto-migrar por trás das costas do gestor.
-  let migratedConfig = false;
-  if (clientId) {
-    const client = clients.find(c => c.id === clientId);
-    if (client) {
-      if (linkAgent && reuseConnectionId) {
-        migratedConfig = (await migrateAgentConfigByOldConnectionId(clientId, reuseConnectionId, sessionId));
+    // Reaproveitar exige a seleção explícita do gestor. Sem seleção, mantém
+    // somente o agente desta conexão ou cria uma configuração desativada.
+    const agentSource = reuseConnectionId && linkAgent ? reuseConnectionId : sessionId;
+    const selected = target ? getAllAgentConfigs(target).find(cfg => cfg.whatsappConnectionId === agentSource) : undefined;
+    if (linkAgent && reuseConnectionId && !selected) {
+      return NextResponse.json({ error: "O agente selecionado não pertence a este cliente." }, { status: 400 });
+    }
+
+    let { funnelId } = body;
+    const funnels = await getFunnels();
+    if (funnelId?.startsWith("auto:")) {
+      const ownerId = funnelId.slice(5);
+      if (!clients.some(client => client.id === ownerId) || (clientId && ownerId !== clientId)) {
+        return NextResponse.json({ error: "Cliente do funil inválido." }, { status: 400 });
       }
-
-      const freshClient = (await getClients()).find(c => c.id === clientId) ?? client;
-      (await patchClient(freshClient.id, { agentConfig: {
-          ...(freshClient.agentConfig ?? { enabled: false, followUpEnabled: false, followUps: [] }),
-          whatsappConnectionId: linkAgent ? sessionId : undefined,
-        } }));
+      const existing = funnels.find(funnel => funnel.clientId === ownerId);
+      if (existing) funnelId = existing.id;
+      else {
+        const created = await createFunnel("Funil Principal");
+        await updateFunnel(created.id, { clientId: ownerId });
+        funnelId = created.id;
+      }
+    } else if (!funnelId && clientId) {
+      // O recebimento depende de um funil. O cadastro do cliente já fornece
+      // esse vínculo, sem exigir uma configuração oculta depois de conectar.
+      const existing = funnels.find(funnel => funnel.clientId === clientId);
+      if (existing) funnelId = existing.id;
+      else {
+        const created = await createFunnel("Funil Principal");
+        await updateFunnel(created.id, { clientId });
+        funnelId = created.id;
+      }
+    } else if (funnelId && !funnels.some(funnel => funnel.id === funnelId)) {
+      return NextResponse.json({ error: "Funil não encontrado." }, { status: 404 });
     }
-  }
 
-  return NextResponse.json({ ok: true, funnelId, migratedConfig });
+    // Remove apenas o vínculo que está sendo alterado, nos dois formatos.
+    // As instruções e as demais conexões de cada cliente são preservadas.
+    for (const client of clients) {
+      const removeIds = new Set<string>();
+      if (client.id !== clientId || !linkAgent) removeIds.add(sessionId);
+      if (client.id === clientId && linkAgent && reuseConnectionId && reuseConnectionId !== sessionId) {
+        removeIds.add(reuseConnectionId);
+      }
+      if (removeIds.size === 0) continue;
+      const matches = (cfg: AgentConfig) => !!cfg.whatsappConnectionId && removeIds.has(cfg.whatsappConnectionId);
+      const patch: { agentConfig?: AgentConfig; agentConfigs?: AgentConfig[] } = {};
+      if (client.agentConfig && matches(client.agentConfig)) {
+        patch.agentConfig = { ...client.agentConfig, enabled: false, followUpEnabled: false, whatsappConnectionId: undefined };
+      }
+      if (client.agentConfigs?.some(matches)) {
+        patch.agentConfigs = client.agentConfigs.map(cfg => matches(cfg) ? { ...cfg, enabled: false, whatsappConnectionId: undefined } : cfg);
+      }
+      if (Object.keys(patch).length) await patchClient(client.id, patch);
+    }
+
+    await updateEvolutionSession(sessionId, { funnelId: funnelId ?? null, clientId: clientId ?? null, hasAgent: linkAgent });
+    if (target && linkAgent) {
+      const fresh = await getClientById(target.id);
+      if (!fresh) throw new Error("Cliente não encontrado.");
+      await upsertAgentConfigForConnection(fresh, sessionId, {
+        ...(selected ?? { enabled: false, followUpEnabled: false, followUps: [] }),
+        whatsappConnectionId: sessionId,
+      });
+    }
+    if (target && linkAgent && reuseConnectionId && reuseConnectionId !== sessionId) {
+      const previousSession = await getEvolutionSessionById(reuseConnectionId);
+      if (previousSession?.clientId === target.id) await updateEvolutionSession(reuseConnectionId, { hasAgent: false });
+    }
+
+    return NextResponse.json({ ok: true, funnelId, migratedConfig: !!(linkAgent && reuseConnectionId && selected) });
+  });
 }

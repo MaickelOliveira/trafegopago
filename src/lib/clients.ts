@@ -207,7 +207,11 @@ export function getAgentConfigForConnection(
     // conexão do mesmo cliente. Sem essa checagem, um número recém-adicionado
     // "puxava" a config antiga/genérica do cliente (podendo vir com enabled:true
     // mesmo nunca tendo sido configurada pra esse número específico).
-    if (client.agentConfigs && client.agentConfigs.length > 0) {
+    if (client.agentConfig?.whatsappConnectionId === connectionId) {
+      return client.agentConfig;
+    }
+    if ((client.agentConfigs && client.agentConfigs.length > 0)
+      || client.agentConfig?.whatsappConnectionId) {
       return undefined;
     }
   }
@@ -287,13 +291,10 @@ export async function migrateAgentConfigByOldConnectionId(
   return false;
 }
 
-/** Retorna todos os agentConfigs do cliente, sem duplicatas.
- *  Se agentConfigs[] existe e tem entradas, usa somente ele (ignora o legado agentConfig).
- *  Caso contrário, cai no agentConfig único como fallback. */
+/** Inclui agentes legados de outras conexões, com prioridade para a configuração
+ *  específica quando os dois formatos descrevem a mesma conexão. */
 export function getAllAgentConfigs(client: Client): AgentConfig[] {
-  const raw = (client.agentConfigs && client.agentConfigs.length > 0)
-    ? [...client.agentConfigs]
-    : (client.agentConfig ? [client.agentConfig] : []);
+  const raw = [...(client.agentConfigs ?? []), ...(client.agentConfig ? [client.agentConfig] : [])];
 
   // Se algum entry tem whatsappConnectionId, descarta os que não têm (são entradas órfãs/legado)
   const withConn = raw.filter((cfg) => !!cfg.whatsappConnectionId);
