@@ -44,6 +44,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
   const [linkAgent, setLinkAgent] = useState(false);
   const [reuseConnectionId, setReuseConnectionId] = useState("");
   const [savingLink, setSavingLink] = useState(false);
+  const [linkError, setLinkError] = useState("");
 
   // Delete confirm
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -192,14 +193,26 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
   async function handleLink() {
     if (evoModal.type !== "link") return;
     setSavingLink(true);
-    await fetch("/api/whatsapp/evolution-manager/link", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: evoModal.id, funnelId: linkFunnelId || null, clientId: linkClientId || null, linkAgent,
-        reuseConnectionId: reuseConnectionId || undefined,
-      }),
-    });
-    setSavingLink(false); setEvoModal({ type: "none" }); setReuseConnectionId(""); fetchSessions();
+    setLinkError("");
+    try {
+      const response = await fetch("/api/whatsapp/evolution-manager/link", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: evoModal.id, funnelId: linkFunnelId || null, clientId: linkClientId || null, linkAgent,
+          reuseConnectionId: reuseConnectionId || undefined,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        setLinkError(data.error || "Não foi possível salvar o vínculo. Tente novamente.");
+        return;
+      }
+      setEvoModal({ type: "none" }); setReuseConnectionId(""); fetchSessions();
+    } catch {
+      setLinkError("Não foi possível salvar o vínculo. Verifique a conexão e tente novamente.");
+    } finally {
+      setSavingLink(false);
+    }
   }
 
   async function handleDelete(id: string) {
@@ -348,6 +361,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
                       </button>
                     )}
                     <ActionBtn onClick={() => {
+                      setLinkError("");
                       setLinkFunnelId(s.linkedFunnelId ?? "");
                       const cid = s.linkedClientId ?? "";
                       setLinkClientId(cid);
@@ -507,6 +521,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
       {evoModal.type === "link" && (
         <Modal title={`Vincular — ${evoModal.instanceName}`} onClose={() => setEvoModal({ type: "none" })}>
           <div className="space-y-4">
+            {linkError && <p role="alert" className="text-sm text-red-600">{linkError}</p>}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
               <ClientFunnelSelect clients={clients} funnels={funnels} value={linkFunnelId} onChange={setLinkFunnelId} accentColor="green" />
