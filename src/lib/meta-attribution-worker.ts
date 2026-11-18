@@ -32,7 +32,7 @@ async function apply(group: Group, details?: MetaAttributionDetails) {
       if (details) for (const [key, value] of Object.entries(details)) {
         const existing = current[key as keyof Lead];
         if (current.campaignId && key.endsWith("Name") && hasReadableAttributionName(typeof existing === "string" ? existing : null)) continue;
-        if (value) Object.assign(patch, { [key]: value });
+        if (value && value !== current[key as keyof Lead]) Object.assign(patch, { [key]: value });
       }
       if (!Object.keys(patch).length) continue;
       Object.assign(current, patch);
