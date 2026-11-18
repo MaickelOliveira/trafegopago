@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getConfig, getClients } from "@/lib/clients";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
-import { getAdInfoById } from "@/lib/meta-api";
 
 const VERIFY_TOKEN = "trafegopago-meta-webhook";
 
@@ -93,7 +92,7 @@ export async function POST(req: NextRequest) {
             clientId, funnelId, name, phone, email,
             source: "form",
             adPlatform: "meta",
-            campaignName: campaign_name || ad_name || adset_name || null,
+            campaignName: campaign_name || null,
             campaignId: campaign_id ?? null,
             adSetName: adset_name || null,
             adSetId: adset_id ?? null,
@@ -143,36 +142,21 @@ export async function POST(req: NextRequest) {
           const { clientId, funnelId } = resolved;
           const isNew = !(await getLeadByPhone(clientId, phone, funnelId));
 
-          // Resolve o nome real da campanha via Graph API (mesmo padrão já
-          // usado nos webhooks WPPConnect/UazAPI) — headline do referral é
-          // só o título do anúncio, não o nome da campanha.
-          let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-          if (ctwaAdId && metaToken) {
-            adInfo = await getAdInfoById(ctwaAdId, metaToken).catch(() => null);
-          }
-
+          // The durable attribution worker resolves account-verified labels after capture.
           (await upsertLeadByPhone(clientId, phone, {
             clientId, funnelId,
             name: pushName,
             phone,
             source: "whatsapp",
-            ...(adInfo ? {
-              adPlatform: "meta",
-              adId: adInfo.adId,
-              adName: adInfo.adName,
-              adSetId: adInfo.adSetId,
-              adSetName: adInfo.adSetName,
-              campaignId: adInfo.campaignId,
-              campaignName: adInfo.campaignName,
-            } : referral ? {
+            ...(referral ? {
               adPlatform: "meta",
               adId: ctwaAdId ?? null,
-              campaignName: referral.headline ?? null,
-            } : { adPlatform: null, campaignName: null }),
+              adName: referral.headline ?? null,
+              adSourceUrl: referral.source_url ?? null,
+            } : {}),
             fbclid: null,
             status: isNew ? "novo" : undefined,
             notes: referral ? [
-              adInfo?.campaignName  && `Campanha: ${adInfo.campaignName}`,
               referral.headline     && `Anúncio: ${referral.headline}`,
               ctwaAdId              && `Ad ID: ${ctwaAdId}`,
               referral.source_url   && `URL: ${referral.source_url}`,
@@ -180,7 +164,7 @@ export async function POST(req: NextRequest) {
             ].filter(Boolean).join("\n") : undefined,
           }));
 
-          console.log(`[Meta/CTWA] ${pushName} (${phone}) — cliente: ${clientId}${adInfo ? ` — campanha: ${adInfo.campaignName}` : referral ? ` — anúncio: ${referral.headline}` : ""}`);
+          console.log(`[Meta/CTWA] ${pushName} (${phone}) — cliente: ${clientId}${referral ? ` — anúncio: ${referral.headline}` : ""}`);
         }
       }
     }

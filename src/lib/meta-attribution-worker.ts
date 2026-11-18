@@ -76,7 +76,7 @@ export async function processMetaAttribution() {
         const fresh = await readDocument<State>(STATE, { entries: {} });
         const previous = fresh.entries[group.key];
         if (previous && (previous.nextAttemptAt > now || (previous.leaseUntil ?? 0) > now)) return false;
-        fresh.entries[group.key] = { attempts: previous?.attempts ?? 0, ...previous, nextAttemptAt: now, leaseUntil: now + 120000, claim };
+        fresh.entries[group.key] = { ...previous, attempts: previous?.attempts ?? 0, nextAttemptAt: now, leaseUntil: now + 120000, claim };
         await writeDocument(STATE, fresh);
         return true;
       });
