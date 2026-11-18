@@ -33,6 +33,15 @@ export async function startBackgroundJobs() {
       } catch { console.error("[google-conversions] Não foi possível verificar a fila de conversões."); }
     };
 
+    // Attribution has its own clock: provider outages never hold up conversation processing.
+    const attributionTick = async () => {
+      try {
+        const { processMetaAttribution } = await import("./lib/meta-attribution-worker");
+        await processMetaAttribution();
+      } catch { console.error("[meta-attribution] A identificação de campanhas será tentada novamente."); }
+    };
+    setTimeout(() => { void attributionTick(); setInterval(attributionTick, 60_000); }, 5000);
+
     // Aguarda 5s após iniciar (servidor estabilizar) e depois roda a cada 60s
     setTimeout(async () => {
       (await tick());

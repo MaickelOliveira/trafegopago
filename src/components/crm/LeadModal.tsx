@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { campaignLabel, campaignPlatform } from "@/lib/campaign-label";
 import { clsx } from "clsx";
 import type { Lead, LeadReminder } from "@/lib/leads";
 import type { Funnel } from "@/lib/funnels";
@@ -670,6 +671,7 @@ export function LeadModal({
             )}
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               <span className="text-sm text-slate-500">
+                {campaignPlatform(lead) === "meta" ? "🟦 Meta Ads · " : campaignPlatform(lead) === "google" ? "🔴 Google Ads · " : ""}
                 {lead.source === "whatsapp" ? "💬 WhatsApp" : lead.source === "form" ? "📝 Formulário" : "✏️ Manual"}
               </span>
               <span className="text-slate-300">·</span>
@@ -831,7 +833,7 @@ export function LeadModal({
                         <input value={form.campaignName} onChange={(e) => setForm((f) => ({ ...f, campaignName: e.target.value }))}
                           placeholder="Nome da campanha" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
                       ) : (
-                        <p className="text-sm font-medium text-slate-800">{lead.campaignName ?? "—"}</p>
+                        <p className="text-sm font-medium text-slate-800">{campaignLabel(lead) ?? (campaignPlatform(lead) === "meta" ? "Identificando campanha…" : "—")}</p>
                       )}
                     </div>
                   </div>
@@ -861,9 +863,9 @@ export function LeadModal({
                     </p>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                       {lead.adPlatform   && <><span className="text-xs text-slate-400">Plataforma</span>  <span className="text-xs font-medium text-slate-700">{lead.adPlatform === "meta" ? "Meta Ads" : lead.adPlatform === "google" ? "Google Ads" : lead.adPlatform}</span></>}
-                      {lead.campaignName && <><span className="text-xs text-slate-400">Campanha</span>    <span className="text-xs font-medium text-slate-700 truncate">{lead.campaignName}</span></>}
-                      {lead.adSetName    && <><span className="text-xs text-slate-400">Conjunto</span>    <span className="text-xs font-medium text-slate-700 truncate">{lead.adSetName}</span></>}
-                      {lead.adName       && <><span className="text-xs text-slate-400">Anúncio</span>     <span className="text-xs font-medium text-slate-700 truncate">{lead.adName}</span></>}
+                      {lead.campaignName && <><span className="text-xs text-slate-400">Campanha</span>    <span className="text-xs font-medium text-slate-700 break-words">{lead.campaignName}</span></>}
+                      {lead.adSetName    && <><span className="text-xs text-slate-400">Conjunto</span>    <span className="text-xs font-medium text-slate-700 break-words">{lead.adSetName}</span></>}
+                      {lead.adName       && <><span className="text-xs text-slate-400">Anúncio</span>     <span className="text-xs font-medium text-slate-700 break-words">{lead.adName}</span></>}
                       {lead.adId         && <><span className="text-xs text-slate-400">Ad ID</span>       <span className="text-xs font-mono text-slate-500 truncate">{lead.adId}</span></>}
                       {lead.campaignId   && <><span className="text-xs text-slate-400">Campaign ID</span> <span className="text-xs font-mono text-slate-500 truncate">{lead.campaignId}</span></>}
                     </div>

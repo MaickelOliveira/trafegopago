@@ -1,3 +1,4 @@
+import { attributionPlatform } from "@/lib/lead-attribution";
 import { NextRequest, NextResponse } from "next/server";
 import { getWebhookById, incrementWebhookCount } from "@/lib/webhooks";
 import { getFunnelById } from "@/lib/funnels";
@@ -98,12 +99,7 @@ export async function POST(
   const columnId = columnExists ? wh.columnId : (funnel?.columns[0]?.id ?? "entrada");
 
   // Detecta plataforma de origem
-  const utmSourceRaw = (payload.utm_source ?? "").toLowerCase();
-  const metaSources = ["facebook", "instagram", "fb", "meta"];
-  const adPlatform: "meta" | "google" | null =
-    payload.fbclid || metaSources.includes(utmSourceRaw) ? "meta"
-    : payload.gclid || utmSourceRaw === "google"         ? "google"
-    : null;
+  const adPlatform = attributionPlatform({ utmSource: payload.utm_source, fbclid: payload.fbclid, gclid: payload.gclid });
 
   // Checa ANTES do upsert se o lead já existia — só dispara o evento CAPI
   // "Lead" pra quem é realmente novo, não a cada reenvio do mesmo telefone.
@@ -120,7 +116,10 @@ export async function POST(
     notes: `Origem: ${wh.name}`,
     customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
     adPlatform,
-    campaignName: payload.utm_campaign || payload.campanha || null,
+    campaignName: payload.campaign_name || payload.utm_campaign || payload.campanha || null,
+    campaignId: payload.campaign_id || payload.campaignId || null,
+    adSetId: payload.adset_id || payload.adSetId || null,
+    adId: payload.ad_id || payload.adId || null,
     utmSource: payload.utm_source || null,
     utmMedium: payload.utm_medium || null,
     utmCampaign: payload.utm_campaign || null,

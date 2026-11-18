@@ -1,3 +1,4 @@
+import { normalizeLeadAttribution, preserveCapturedAttribution } from "./lead-attribution";
 import { readRecordList, writeRecordList, type RecordFilter } from "./record-store";
 import { withDataTransaction } from "./document-store";
 import path from "path";
@@ -213,7 +214,7 @@ export async function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedA
   if (existing.length === 1) return existing[0];
 
   const now = new Date().toISOString();
-  const lead: Lead = { ...data, id: randomUUID(), createdAt: now, updatedAt: now };
+  const lead: Lead = normalizeLeadAttribution({ ...data, id: randomUUID(), createdAt: now, updatedAt: now });
   leads.push(lead);
   (await save(leads));
   await queueGoogleConversion(lead);
@@ -338,12 +339,13 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
     // Mesmo carimbo de aiPausedAt de updateLead() — ver comentário lá.
     if (patch.aiPaused === true) patch = { ...patch, aiPausedAt: now };
     else if (patch.aiPaused === false) patch = { ...patch, aiPausedAt: null };
-    leads[idx] = { ...leads[idx], ...patch, updatedAt: now };
+    patch = preserveCapturedAttribution(leads[idx], patch);
+    leads[idx] = normalizeLeadAttribution({ ...leads[idx], ...patch, updatedAt: now });
     (await save(leads));
     await queueGoogleConversion(leads[idx], previous);
     return leads[idx];
   }
-  const lead: Lead = {
+  const lead: Lead = normalizeLeadAttribution({
     id: randomUUID(),
     clientId,
     funnelId,
@@ -378,7 +380,7 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
     realPhone: patch.realPhone,
     createdAt: now,
     updatedAt: now,
-  };
+  });
   leads.push(lead);
   (await save(leads));
   await queueGoogleConversion(lead);

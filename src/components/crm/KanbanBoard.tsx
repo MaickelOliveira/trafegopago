@@ -6,7 +6,7 @@ import { LeadModal, prefetchConversation } from "./LeadModal";
 import ImportModal from "./ImportModal";
 import type { Lead, LeadReminder } from "@/lib/leads";
 import type { Funnel, FunnelColumn, TriggerPhrase } from "@/lib/funnels";
-import { campaignLabel } from "@/lib/campaign-label";
+import { campaignLabel, campaignPlatform } from "@/lib/campaign-label";
 import { Bell, CheckSquare, Plus, Settings2 } from "lucide-react";
 
 type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean; kanbanAgentPrompt?: string };
@@ -139,8 +139,8 @@ type PlatformFilterId = "meta" | "google" | "tiktok" | "linkedin";
 
 /** Detecta a plataforma de origem do lead (Meta, Google, TikTok, LinkedIn) a partir de adPlatform/utmSource. */
 function getLeadPlatform(lead: Lead): PlatformFilterId | null {
-  if (lead.adPlatform === "meta") return "meta";
-  if (lead.adPlatform === "google") return "google";
+  const paidPlatform = campaignPlatform(lead);
+  if (paidPlatform) return paidPlatform;
   const src = (lead.utmSource ?? "").toLowerCase();
   if (src.includes("tiktok")) return "tiktok";
   if (src.includes("linkedin")) return "linkedin";
@@ -912,10 +912,10 @@ export function KanbanBoard({
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   // Origens
-  const originMeta     = filtered.filter((l) => l.adPlatform === "meta").length;
-  const originGoogle   = filtered.filter((l) => l.adPlatform === "google").length;
-  const originWhatsapp = filtered.filter((l) => l.source === "whatsapp" && !l.adPlatform).length;
-  const originForm     = filtered.filter((l) => l.source === "form" && !l.adPlatform).length;
+  const originMeta     = filtered.filter((l) => getLeadPlatform(l) === "meta").length;
+  const originGoogle   = filtered.filter((l) => getLeadPlatform(l) === "google").length;
+  const originWhatsapp = filtered.filter((l) => l.source === "whatsapp" && !getLeadPlatform(l)).length;
+  const originForm     = filtered.filter((l) => l.source === "form" && !getLeadPlatform(l)).length;
   const originManual   = filtered.filter((l) => l.source === "manual").length;
   const hasOrigins = originMeta + originGoogle + originWhatsapp + originForm + originManual > 0;
 
