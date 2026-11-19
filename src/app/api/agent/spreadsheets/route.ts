@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const connId = req.nextUrl.searchParams.get("connId");

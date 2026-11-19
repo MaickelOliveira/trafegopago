@@ -1,48 +1,32 @@
+import { verifyMetaSignature } from "@/lib/webhook-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig, getClients } from "@/lib/clients";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
-import { getAdInfoById } from "@/lib/meta-api";
 
 const VERIFY_TOKEN = "trafegopago-meta-webhook";
 
 // ── Helpers de resolução de cliente ─────────────────────────────────────────
 
 /** Resolve clientId + funnelId a partir de um pageId (Lead Ads) */
-function resolveClientByPageId(pageId?: string): { clientId: string; funnelId: string } | null {
+async function resolveClientByPageId(pageId?: string): Promise<{ clientId: string; funnelId: string } | null> {
   if (!pageId) return null;
-  const clients = getClients();
-  const client = clients.find(c => c.metaPageId && c.metaPageId === pageId);
+  const clients = (await getClients());
+  const matches = clients.filter(c => c.metaPageId && c.metaPageId === pageId);
+  const client = matches.length === 1 ? matches[0] : undefined;
   if (!client) return null;
-  const funnels = getFunnels();
-  const funnel = funnels.find(f => f.clientId === client.id);
+  const funnels = (await getFunnels());
+  const owned = funnels.filter(funnel => funnel.clientId === client.id);
+  const funnel = client.trackingFunnelId ? owned.find(funnel => funnel.id === client.trackingFunnelId) : owned.length === 1 ? owned[0] : undefined;
   return funnel ? { clientId: client.id, funnelId: funnel.id } : null;
 }
 
 /** Resolve clientId + funnelId a partir do phoneNumberId (CTWA — conexão Meta) */
-function resolveClientByPhoneNumberId(phoneNumberId?: string): { clientId: string; funnelId: string } | null {
+async function resolveClientByPhoneNumberId(phoneNumberId?: string): Promise<{ clientId: string; funnelId: string } | null> {
   if (!phoneNumberId) return null;
-  const funnels = getFunnels();
-  const allClients = getClients();
-  for (const funnel of funnels) {
-    const conn = funnel.connections?.find(c => c.type === "meta" && c.metaPhoneNumberId === phoneNumberId);
-    if (!conn) continue;
-    // Prioriza agentConfig (fonte autoritativa) sobre funnel.clientId
-    const clientByAgent = allClients.find(c =>
-      c.agentConfig?.whatsappConnectionId === conn.id ||
-      c.agentConfigs?.some(a => a.whatsappConnectionId === conn.id)
-    );
-    const clientId = clientByAgent?.id ?? funnel.clientId;
-    if (clientId) return { clientId, funnelId: funnel.id };
-  }
-  return null;
-}
-
-/** Fallback: primeiro cliente com funil */
-function resolveClientFallback(): { clientId: string; funnelId: string } {
-  const funnels = getFunnels();
-  const first = funnels.find(f => f.clientId);
-  return { clientId: first?.clientId ?? "sem-cliente", funnelId: first?.id ?? "default" };
+  const funnels = (await getFunnels());
+  const matches = funnels.filter(funnel => funnel.connections?.some(connection => connection.type === "meta" && connection.metaPhoneNumberId === phoneNumberId));
+  return matches.length === 1 && matches[0].clientId ? { clientId: matches[0].clientId, funnelId: matches[0].id } : null;
 }
 
 // ── GET — verificação do webhook no Meta Business Manager ────────────────────
@@ -57,10 +41,17 @@ export async function GET(req: NextRequest) {
 
 // ── POST — recebe eventos do Meta (Lead Ads + Click to WhatsApp) ─────────────
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => null);
+  const raw = await req.text();
+  if (Buffer.byteLength(raw) > 2 * 1024 * 1024) return NextResponse.json({ error: "Payload muito grande." }, { status: 413 });
+  const appSecret = (await getConfig()).metaAppSecret || process.env.META_APP_SECRET;
+  if (!appSecret) return NextResponse.json({ error: "Configure a chave de verificação da Meta." }, { status: 503 });
+  if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"), appSecret)) return NextResponse.json({ error: "Assinatura inválida." }, { status: 403 });
+  let body;
+  try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "JSON inválido." }, { status: 400 }); }
+
   if (!body) return NextResponse.json({ ok: true });
 
-  const config = getConfig();
+  const config = (await getConfig());
   const metaToken = config.metaToken ?? "";
 
   for (const entry of (body.entry ?? [])) {
@@ -73,7 +64,7 @@ export async function POST(req: NextRequest) {
 
         try {
           const leadRes = await fetch(
-            `https://graph.facebook.com/v19.0/${leadgen_id}?fields=field_data,created_time&access_token=${metaToken}`
+            `https://graph.facebook.com/v26.0/${leadgen_id}?fields=field_data,created_time&access_token=${metaToken}`
           );
           if (!leadRes.ok) continue;
           const leadData = await leadRes.json();
@@ -88,19 +79,20 @@ export async function POST(req: NextRequest) {
           if (!phone) continue;
 
           // Resolve cliente pelo pageId (configurado em Configurações do cliente)
-          const resolved = resolveClientByPageId(page_id) ?? resolveClientFallback();
+          const resolved = (await resolveClientByPageId(page_id));
+          if (!resolved) continue;
           const { clientId, funnelId } = resolved;
-          const isNew = !getLeadByPhone(clientId, phone);
+          const isNew = !(await getLeadByPhone(clientId, phone, funnelId));
 
           // Remove campos já mapeados das notas extras
           const knownFields = new Set(["phone_number","phone","telefone","full_name","nome","name","email"]);
           const extraFields = Object.entries(fields).filter(([k]) => !knownFields.has(k));
 
-          upsertLeadByPhone(clientId, phone, {
+          (await upsertLeadByPhone(clientId, phone, {
             clientId, funnelId, name, phone, email,
             source: "form",
             adPlatform: "meta",
-            campaignName: campaign_name || ad_name || adset_name || null,
+            campaignName: campaign_name || null,
             campaignId: campaign_id ?? null,
             adSetName: adset_name || null,
             adSetId: adset_id ?? null,
@@ -118,7 +110,7 @@ export async function POST(req: NextRequest) {
               page_id       && `Page ID: ${page_id}`,
               ...extraFields.map(([k, v]) => `${k}: ${v}`),
             ].filter(Boolean).join("\n"),
-          });
+          }));
 
           console.log(`[Meta/LeadAds] ${name} (${phone}) — cliente: ${clientId} — campanha: ${campaign_name}`);
         } catch (e) {
@@ -145,48 +137,34 @@ export async function POST(req: NextRequest) {
           if (!phone || !text.trim()) continue;
 
           // Resolve cliente pelo phoneNumberId da conexão Meta
-          const resolved = resolveClientByPhoneNumberId(phoneNumberId) ?? resolveClientFallback();
+          const resolved = (await resolveClientByPhoneNumberId(phoneNumberId));
+          if (!resolved) continue;
           const { clientId, funnelId } = resolved;
-          const isNew = !getLeadByPhone(clientId, phone);
+          const isNew = !(await getLeadByPhone(clientId, phone, funnelId));
 
-          // Resolve o nome real da campanha via Graph API (mesmo padrão já
-          // usado nos webhooks WPPConnect/UazAPI) — headline do referral é
-          // só o título do anúncio, não o nome da campanha.
-          let adInfo: Awaited<ReturnType<typeof getAdInfoById>> = null;
-          if (ctwaAdId && metaToken) {
-            adInfo = await getAdInfoById(ctwaAdId, metaToken).catch(() => null);
-          }
-
-          upsertLeadByPhone(clientId, phone, {
+          // The durable attribution worker resolves account-verified labels after capture.
+          (await upsertLeadByPhone(clientId, phone, {
             clientId, funnelId,
             name: pushName,
             phone,
             source: "whatsapp",
-            ...(adInfo ? {
-              adPlatform: "meta",
-              adId: adInfo.adId,
-              adName: adInfo.adName,
-              adSetId: adInfo.adSetId,
-              adSetName: adInfo.adSetName,
-              campaignId: adInfo.campaignId,
-              campaignName: adInfo.campaignName,
-            } : referral ? {
+            ...(referral ? {
               adPlatform: "meta",
               adId: ctwaAdId ?? null,
-              campaignName: referral.headline ?? null,
-            } : { adPlatform: null, campaignName: null }),
+              adName: referral.headline ?? null,
+              adSourceUrl: referral.source_url ?? null,
+            } : {}),
             fbclid: null,
             status: isNew ? "novo" : undefined,
             notes: referral ? [
-              adInfo?.campaignName  && `Campanha: ${adInfo.campaignName}`,
               referral.headline     && `Anúncio: ${referral.headline}`,
               ctwaAdId              && `Ad ID: ${ctwaAdId}`,
               referral.source_url   && `URL: ${referral.source_url}`,
               referral.source_type  && `Tipo: ${referral.source_type}`,
             ].filter(Boolean).join("\n") : undefined,
-          });
+          }));
 
-          console.log(`[Meta/CTWA] ${pushName} (${phone}) — cliente: ${clientId}${adInfo ? ` — campanha: ${adInfo.campaignName}` : referral ? ` — anúncio: ${referral.headline}` : ""}`);
+          console.log(`[Meta/CTWA] ${pushName} (${phone}) — cliente: ${clientId}${referral ? ` — anúncio: ${referral.headline}` : ""}`);
         }
       }
     }

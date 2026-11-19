@@ -1,44 +1,25 @@
+import { assertAvailableLogin } from "@/lib/login-identity";
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClients, upsertClient } from "@/lib/clients";
+import { withDataTransaction } from "@/lib/document-store";
+import { parseClientSettings, publicClientSettings } from "@/lib/client-settings";
 import bcrypt from "bcryptjs";
-
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "manager") {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
-  }
-  const clients = getClients().map(({ passwordHash: _, ...c }) => c);
-  return NextResponse.json(clients);
+  if ((await getSession())?.role !== "manager") return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
+  return NextResponse.json((await getClients()).map(publicClientSettings));
 }
-
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "manager") {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
-  }
-
-  const body = await req.json();
-  const { name, email, password, color, cplTarget, funnelType, adAccounts, enabledSystems } = body;
-
-  if (!name || !email || !password) {
-    return NextResponse.json({ error: "Campos obrigatórios: name, email, password" }, { status: 400 });
-  }
-
-  const id = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
-  const passwordHash = bcrypt.hashSync(password, 10);
-
-  upsertClient({
-    id,
-    name,
-    email,
-    passwordHash,
-    color: color || "#6366F1",
-    cplTarget: cplTarget || 25,
-    funnelType: funnelType || "leads",
-    adAccounts: adAccounts || [],
-    enabledSystems: enabledSystems || [],
-  });
-
-  return NextResponse.json({ ok: true, id });
+  if ((await getSession())?.role !== "manager") return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
+  try {
+    const { patch, password } = parseClientSettings(await req.json(), true);
+    const passwordHash = await bcrypt.hash(password!, 12);
+    const id = `${patch.name!.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) || "cliente"}-${randomUUID().slice(0, 8)}`;
+    await withDataTransaction(async () => {
+      await assertAvailableLogin(patch.email!);
+      await upsertClient({ color: "#304a40", cplTarget: 25, funnelType: "leads", adAccounts: [], enabledSystems: [], ...patch, id, name: patch.name!, email: patch.email!, passwordHash });
+    });
+    return NextResponse.json({ ok: true, id }, { status: 201 });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Não foi possível criar o cliente." }, { status: 400 }); }
 }

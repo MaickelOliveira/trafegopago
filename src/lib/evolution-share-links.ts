@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -12,19 +12,12 @@ export type EvolutionShareLink = {
 
 const FILE = path.join(process.cwd(), "data", "evolution-share-links.json");
 
-function load(): EvolutionShareLink[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8")) as EvolutionShareLink[];
-  } catch {
-    return [];
-  }
+async function load(): Promise<EvolutionShareLink[]> {
+  return (await readDocument<EvolutionShareLink[]>("evolution-share-links.json", []));
 }
 
-function save(links: EvolutionShareLink[]) {
-  const dir = path.dirname(FILE);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(links, null, 2));
+async function save(links: EvolutionShareLink[]) {
+  await writeDocument("evolution-share-links.json", links);
 }
 
 export function isShareLinkValid(link: EvolutionShareLink | undefined): link is EvolutionShareLink {
@@ -33,8 +26,9 @@ export function isShareLinkValid(link: EvolutionShareLink | undefined): link is 
 
 /** Cria um link novo pra sessão — revoga qualquer link ativo anterior da MESMA
  *  sessão antes, pra nunca ter mais de um link válido por sessão ao mesmo tempo. */
-export function createShareLink(evolutionSessionId: string): EvolutionShareLink {
-  const links = load();
+export async function createShareLink(evolutionSessionId: string): Promise<EvolutionShareLink> {
+  return withDataTransaction(async () => {
+  const links = (await load());
   for (const l of links) {
     if (l.evolutionSessionId === evolutionSessionId && isShareLinkValid(l)) l.revoked = true;
   }
@@ -44,22 +38,27 @@ export function createShareLink(evolutionSessionId: string): EvolutionShareLink 
     createdAt: new Date().toISOString(),
   };
   links.unshift(link);
-  save(links);
+  (await save(links));
   return link;
+
+  });
 }
 
-export function getActiveShareLinkForSession(evolutionSessionId: string): EvolutionShareLink | undefined {
-  return load().find((l) => l.evolutionSessionId === evolutionSessionId && isShareLinkValid(l));
+export async function getActiveShareLinkForSession(evolutionSessionId: string): Promise<EvolutionShareLink | undefined> {
+  return (await load()).find((l) => l.evolutionSessionId === evolutionSessionId && isShareLinkValid(l));
 }
 
-export function getShareLinkByToken(token: string): EvolutionShareLink | undefined {
-  return load().find((l) => l.id === token);
+export async function getShareLinkByToken(token: string): Promise<EvolutionShareLink | undefined> {
+  return (await load()).find((l) => l.id === token);
 }
 
-export function markShareLinkUsed(token: string): void {
-  const links = load();
+export async function markShareLinkUsed(token: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const links = (await load());
   const idx = links.findIndex((l) => l.id === token);
   if (idx === -1) return;
   links[idx] = { ...links[idx], usedAt: new Date().toISOString() };
-  save(links);
+  (await save(links));
+
+  });
 }

@@ -1,3 +1,4 @@
+import { publicFunnel, publicTemplate } from "@/lib/public-records";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getLeads, attachLeadsHeat } from "@/lib/leads";
@@ -13,33 +14,33 @@ export default async function ClienteCrmPage() {
   if (!session || (session.role !== "client" && session.role !== "employee")) redirect("/login");
 
   const clientId = session.clientId!;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/login");
 
   // Resolves which funnels this session can see
-  let allFunnels = getFunnels().filter((f) => f.clientId === clientId);
+  let allFunnels = (await getFunnels()).filter((f) => f.clientId === clientId);
 
   if (session.role === "employee" && session.employeeId) {
-    const emp = getEmployeeById(session.employeeId);
+    const emp = (await getEmployeeById(session.employeeId));
     if (!emp || !emp.active) redirect("/login");
     allFunnels = allFunnels.filter((f) => employeeCanAccessFunnel(emp, f.id));
   } else if (session.role === "client") {
     // Auto-cria funil padrão se cliente ainda não tem nenhum
     if (allFunnels.length === 0) {
-      const created = createFunnel("Funil Principal");
-      updateFunnel(created.id, { clientId });
+      const created = (await createFunnel("Funil Principal"));
+      (await updateFunnel(created.id, { clientId }));
       allFunnels = [{ ...created, clientId }];
     }
   }
 
   const funnelIds = new Set(allFunnels.map((f) => f.id));
-  const allLeads = attachLeadsHeat(getLeads(clientId).filter((l) => funnelIds.has(l.funnelId)));
+  const allLeads = (await attachLeadsHeat((await getLeads(clientId)).filter((l) => funnelIds.has(l.funnelId))));
 
   // Employees can't delete leads
   const canDeleteLeads =
     session.role === "client" ||
     (session.role === "employee"
-      ? (getEmployeeById(session.employeeId!)?.permissions?.canDeleteLeads ?? false)
+      ? ((await getEmployeeById(session.employeeId!))?.permissions?.canDeleteLeads ?? false)
       : false);
 
   return (
@@ -48,7 +49,7 @@ export default async function ClienteCrmPage() {
       clientName={client.name}
       clientColor={client.color}
       initialLeads={allLeads}
-      initialFunnels={allFunnels}
+      initialFunnels={allFunnels.map(publicFunnel)}
       canDeleteLeads={canDeleteLeads}
     />
   );

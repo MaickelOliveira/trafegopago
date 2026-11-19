@@ -94,28 +94,25 @@ export function CrmClient({ clients, initialLeads, initialFunnels, selectedClien
   }, [selectedClient]);
 
   return (
-    <div className="flex flex-col min-h-full">
-      <div className="flex items-center justify-between px-6 lg:px-8 pt-6 pb-0 flex-shrink-0">
+    <div className="nexo-crm-page flex flex-col min-h-full">
+      <div className="nexo-crm-page-heading flex items-center justify-between px-6 lg:px-8 pt-6 pb-0 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">CRM</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {client ? `Pipeline de leads — ${client.name}` : "Selecione um cliente"}
           </p>
         </div>
+        <div className="nexo-crm-heading-tools">
+        {!fixedClient && <ClientSelector clients={clients} selected={selectedClient} onSelect={selectClient} />}
         <WhatsAppStatus
           clients={clients}
           clientId={selectedClient}
           funnels={clientFunnels.map(f => ({ id: f.id, name: f.name, clientId: f.clientId, whatsappPhone: f.whatsappPhone }))}
         />
+        </div>
       </div>
 
-      {!fixedClient && (
-        <div className="px-6 lg:px-8 pt-3 pb-4 flex-shrink-0 border-b border-slate-100">
-          <ClientSelector clients={clients} selected={selectedClient} onSelect={selectClient} />
-        </div>
-      )}
-
-      <div className="p-6 lg:p-8 pt-4">
+      <div className="nexo-crm-board-area p-6 lg:p-8 pt-4">
         {creating ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">

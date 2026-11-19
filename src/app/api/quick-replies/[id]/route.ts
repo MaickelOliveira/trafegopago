@@ -21,12 +21,12 @@ export async function PUT(req: NextRequest, { params }: { params: Params }) {
   const cid = body.clientId ?? session.clientId;
   if (!cid) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const updated = updateQuickReply(cid, id, {
+  const updated = (await updateQuickReply(cid, id, {
     shortcut: body.shortcut?.trim().replace(/^\//, ""),
     title: body.title?.trim(),
     text: body.text?.trim(),
     imageUrl: body.imageUrl?.trim() || undefined,
-  });
+  }));
 
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(updated);
@@ -40,6 +40,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Params }) {
   const clientId = req.nextUrl.searchParams.get("clientId") ?? session.clientId;
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const ok = deleteQuickReply(clientId, id);
+  const ok = (await deleteQuickReply(clientId, id));
   return NextResponse.json({ ok });
 }

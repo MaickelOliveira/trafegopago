@@ -7,12 +7,15 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { getClientById, getAgentConfigForConnection } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
-import { updateLead, getLeadByPhone } from "./leads";
+import { updateLead, getLeadById } from "./leads";
+import { getLeadForConnection } from "./lead-context";
+import { withDataTransaction } from "./document-store";
 import { getFunnelById } from "./funnels";
 import { sendCapiEvent } from "./meta-capi";
 import type { ChatMessage } from "./conversations";
 import type { Lead } from "./leads";
 import type { Funnel, TriggerPhrase } from "./funnels";
+import { reserveKanbanAnalysis } from "./kanban-usage";
 
 type KanbanAction =
   | { type: "mover_lead"; colunaId: string; motivo: string }
@@ -29,6 +32,27 @@ type KanbanAction =
 // a próxima execução (próxima mensagem, ou "Classificar leads") sempre lê o
 // histórico completo de novo, então o conteúdo pulado ainda é considerado.
 const leadsInFlight = new Set<string>();
+
+
+export function transitionAllowed(lead: Lead, funnel: Funnel, targetId: string): boolean {
+  if (funnel.id !== lead.funnelId || funnel.clientId !== lead.clientId) return false;
+  const source = funnel.columns.find(column => column.id === lead.status);
+  const target = funnel.columns.find(column => column.id === targetId);
+  return !!source && !!target && source.id !== target.id && !source.blockAutoMove && !target.blockAutoMove &&
+    (!source.allowedTransitions?.length || source.allowedTransitions.includes(targetId));
+}
+
+async function moveLeadAutomatically(expected: Lead, targetId: string): Promise<boolean> {
+  return withDataTransaction(async () => {
+    const current = await getLeadById(expected.id);
+    if (!current || current.updatedAt !== expected.updatedAt || current.clientId !== expected.clientId || current.funnelId !== expected.funnelId) return false;
+    const funnel = await getFunnelById(current.funnelId);
+    if (!funnel || !transitionAllowed(current, funnel, targetId)) return false;
+    const updated = await updateLead(current.id, { status: targetId });
+    if (updated) Object.assign(expected, updated);
+    return !!updated;
+  });
+}
 
 function buildSystemPrompt(lead: Lead, funnel: Funnel, kanbanAgentPrompt?: string): string {
   const columns = funnel.columns ?? [];
@@ -56,7 +80,7 @@ function buildSystemPrompt(lead: Lead, funnel: Funnel, kanbanAgentPrompt?: strin
         const labels = c.allowedTransitions
           .map((id) => columns.find((x) => x.id === id)?.label ?? id)
           .join(", ");
-        linhas.push(`  Pode receber leads vindos de: ${labels}`);
+        linhas.push(`  Desta etapa pode avançar para: ${labels}`);
       }
       const detalhe = linhas.length ? "\n" + linhas.join("\n") : "";
       return `• ${c.id} → ${c.label}${c.id === lead.status ? " (ETAPA ATUAL)" : ""}${detalhe}`;
@@ -83,7 +107,7 @@ Regras:
     Em qualquer caso, confidence >= 0.95 ao detectar gatilho direto.
 - PRIORIDADE 3: siga as "Instruções do gestor" acima, se houver.
 - Se não houver Contexto, Gatilhos nem Instruções do gestor aplicáveis à situação atual, NÃO mova o lead — não invente critério próprio.
-- IMPORTANTE: Avalie a conversa INTEIRA, não apenas a última frase — se o lead confirmou algo há algumas mensagens e depois só disse "ok" ou "até lá", o estado ainda reflete o que foi confirmado antes
+- IMPORTANTE: Avalie todo o histórico recente fornecido, não apenas a última frase — se o lead confirmou algo há algumas mensagens e depois só disse "ok" ou "até lá", considere o contexto
 - NUNCA mova para colunas bloqueadas
 - Não mova se o lead já está na coluna correta
 - Use atualizar_lead para: (a) capturar o nome real do lead, (b) anotar contexto importante
@@ -159,18 +183,18 @@ async function runKanbanAgent(
         ],
       },
     ],
-    generationConfig: { maxOutputTokens: 2048 },
+    generationConfig: { maxOutputTokens: 512 },
   });
 
-  // Monta bloco de conversa recente (últimas 12 mensagens + última mensagem)
-  // para análise holística — o agente vê o CONTEXTO completo, não só a última frase
-  const recentHistory = history.slice(-12);
+  // Limita o tamanho da conversa enviada à IA para conter custos e evitar
+  // que transcrições longas dominem a classificação.
+  const recentHistory = history.slice(-8);
   const blocoConversa = recentHistory
-    .map((m) => `[${m.role === "assistant" ? "Assistente" : "Lead"}]: ${m.content}`)
+    .map((m) => `[${m.role === "assistant" ? "Assistente" : "Lead"}]: ${m.content.slice(0, 500)}`)
     .join("\n");
   const promptAnalise = blocoConversa
-    ? `Conversa recente (analise TODO o bloco para determinar o estado atual do lead):\n${blocoConversa}\n\n[Lead] (última mensagem): ${lastMessage}\n\nCom base na conversa COMPLETA acima, execute as ações necessárias no CRM.`
-    : `Primeira mensagem do lead: ${lastMessage}\n\nExecute as ações necessárias no CRM.`;
+    ? `Conversa recente (analise TODO o bloco para determinar o estado atual do lead):\n${blocoConversa}\n\n[Lead] (última mensagem): ${lastMessage.slice(0, 500)}\n\nCom base na conversa acima, execute as ações necessárias no CRM.`
+    : `Primeira mensagem do lead: ${lastMessage.slice(0, 500)}\n\nExecute as ações necessárias no CRM.`;
 
   console.log(`[kanban-agent/prompt] enviando ${recentHistory.length + 1} mensagens para Gemini`);
 
@@ -183,7 +207,7 @@ async function runKanbanAgent(
     const fnCalls = allParts.filter((p) => p.functionCall).map((p) => p.functionCall!.name);
     const finishReason = response.candidates?.[0]?.finishReason ?? "?";
     const safetyRatings = response.candidates?.[0]?.safetyRatings?.map((r) => `${r.category}:${r.probability}`).join(",") ?? "";
-    console.log(`[kanban-agent/gemini] finishReason=${finishReason} fnCalls=[${fnCalls.join(",")}] text="${(response.text?.() ?? "").slice(0, 150)}" safety=[${safetyRatings}]`);
+    console.log(`[kanban-agent/gemini] finishReason=${finishReason} fnCalls=[${fnCalls.join(",")}] safety=[${safetyRatings}]`);
 
     for (const candidate of response.candidates ?? []) {
       for (const part of candidate.content?.parts ?? []) {
@@ -192,7 +216,7 @@ async function runKanbanAgent(
         if (part.functionCall.name === "mover_lead") {
           const args = part.functionCall.args as { coluna_id?: string; motivo?: string; confianca?: number };
           const colunaId = args.coluna_id ?? "";
-          const confianca = typeof args.confianca === "number" ? args.confianca : 1;
+          const confianca = typeof args.confianca === "number" && Number.isFinite(args.confianca) ? args.confianca : 0;
 
           // ── CAMADA 2: Validação de args ──────────────────────────────────
           if (!colunaId || typeof colunaId !== "string") {
@@ -213,13 +237,13 @@ async function runKanbanAgent(
           }
 
           // ── CAMADA 4: Threshold de confiança (75%) ───────────────────────
-          if (confianca < 0.75) {
+          if (confianca < 0.75 || confianca > 1) {
             console.log(`[kanban-agent/layer4] mover_lead bloqueado — confiança ${confianca.toFixed(2)} < 0.75`);
             continue;
           }
 
           const colunaValida = (funnel.columns ?? []).find((c) => c.id === colunaId);
-          if (colunaValida && !colunaValida.blockAutoMove && colunaId !== lead.status) {
+          if (colunaValida && !colunaAtual?.blockAutoMove && !colunaValida.blockAutoMove && colunaId !== lead.status && !actions.some(action => action.type === "mover_lead")) {
             actions.push({ type: "mover_lead", colunaId, motivo: args.motivo ?? "" });
             console.log(`[kanban-agent/layers-ok] mover_lead aprovado → ${colunaId} (confiança=${confianca.toFixed(2)})`);
           } else {
@@ -229,8 +253,8 @@ async function runKanbanAgent(
 
         if (part.functionCall.name === "atualizar_lead") {
           const args = part.functionCall.args as { nome?: string; notas?: string; valor?: number };
-          if (args.nome || args.notas || typeof args.valor === "number") {
-            actions.push({ type: "atualizar_lead", nome: args.nome, notas: args.notas, valor: args.valor });
+          if ((typeof args.nome === "string" && args.nome.length <= 200) || (typeof args.notas === "string" && args.notas.length <= 4000) || (typeof args.valor === "number" && Number.isFinite(args.valor) && args.valor > 0)) {
+            actions.push({ type: "atualizar_lead", nome: typeof args.nome === "string" ? args.nome.slice(0, 200) : undefined, notas: typeof args.notas === "string" ? args.notas.slice(0, 4000) : undefined, valor: typeof args.valor === "number" && Number.isFinite(args.valor) && args.valor > 0 ? args.valor : undefined });
           }
         }
       }
@@ -256,10 +280,11 @@ async function tryDirectPhraseMatch(
   client: { pixelId?: string; capiToken?: string; capiTestEventCode?: string } | null
 ): Promise<boolean> {
   const msg = lastMessage.toLowerCase().trim();
+  if (funnel.columns.find(column => column.id === lead.status)?.blockAutoMove) return false;
   if (!msg) return false;
 
   for (const col of funnel.columns ?? []) {
-    if (col.blockAutoMove) continue;
+    if (col.blockAutoMove || !transitionAllowed(lead, funnel, col.id)) continue;
     if (col.id === lead.status) continue;
     if (!col.triggerPhrases?.length) continue;
 
@@ -273,8 +298,8 @@ async function tryDirectPhraseMatch(
           : msg.includes(t);
 
       if (matched) {
-        console.log(`[kanban-agent/layer0] gatilho direto: msg="${msg}" phrase="${t}" mode=${phrase.match} → col=${col.id}`);
-        updateLead(lead.id, { status: col.id });
+        console.log(`[kanban-agent/layer0] gatilho direto: mode=${phrase.match} → col=${col.id}`);
+        if (!await moveLeadAutomatically(lead, col.id)) continue;
         if (col.metaEvent && client?.pixelId) {
           sendCapiEvent({
             pixelId: client.pixelId,
@@ -300,77 +325,6 @@ async function tryDirectPhraseMatch(
 }
 
 /**
- * Classifica um lead com base em todo o histórico de conversa.
- * Usado pelo endpoint de classificação em lote.
- * Retorna true se o lead foi movido.
- */
-export async function classifyLeadByHistory(
-  history: ChatMessage[],
-  lead: Lead,
-  funnel: Funnel,
-  geminiApiKey: string,
-  client: { pixelId?: string; capiToken?: string; capiTestEventCode?: string; kanbanAgentPrompt?: string } | null
-): Promise<boolean> {
-  if (history.length === 0) return false;
-
-  // Mesma trava usada por processKanbanActions — evita que a classificação em
-  // lote rode por cima de uma decisão em andamento pra esse lead vinda de uma
-  // mensagem ao vivo (ou vice-versa).
-  const lockKey = `${lead.clientId}:${lead.id}`;
-  if (leadsInFlight.has(lockKey)) {
-    console.log(`[kanban-agent/classify] já em andamento pra esse lead — pulando lead=${lead.name}`);
-    return false;
-  }
-  leadsInFlight.add(lockKey);
-
-  try {
-    // Para classificação em lote usamos toda a conversa como contexto
-    const lastMessage = history[history.length - 1]?.content ?? "";
-    const priorHistory = history.slice(0, -1);
-
-    const actions = await runKanbanAgent(lastMessage, priorHistory, lead, funnel, geminiApiKey, client?.kanbanAgentPrompt ?? undefined);
-    if (actions.length === 0) return false;
-
-    let moved = false;
-    for (const action of actions) {
-      if (action.type === "mover_lead") {
-        const col = (funnel.columns ?? []).find((c) => c.id === action.colunaId);
-        if (!col) continue;
-        updateLead(lead.id, { status: col.id });
-        console.log(`[kanban-agent/classify] Lead ${lead.name} → ${col.label} (${action.motivo})`);
-        if (col.metaEvent && client?.pixelId) {
-          sendCapiEvent({
-            pixelId: client.pixelId,
-            capiToken: client.capiToken,
-            testEventCode: client.capiTestEventCode || undefined,
-            eventName: col.metaEvent,
-            phone: lead.phone,
-            email: lead.email ?? undefined,
-            name: lead.name,
-            fbclid: lead.fbclid ?? undefined,
-            fbp: lead.fbp ?? undefined,
-            clientIp: lead.clientIp ?? undefined,
-            clientUserAgent: lead.clientUserAgent ?? undefined,
-            externalId: lead.id,
-            value: lead.value ?? undefined,
-          }).catch(() => {});
-        }
-        moved = true;
-      }
-      if (action.type === "atualizar_lead") {
-        const patch: Record<string, string> = {};
-        if (action.nome) patch.name = action.nome;
-        if (action.notas) patch.notes = action.notas;
-        if (Object.keys(patch).length) updateLead(lead.id, patch);
-      }
-    }
-    return moved;
-  } finally {
-    leadsInFlight.delete(lockKey);
-  }
-}
-
-/**
  * Ponto de entrada principal — chamado pelo webhook após cada mensagem.
  * Fire-and-forget: não bloqueia a resposta ao usuário.
  */
@@ -379,28 +333,16 @@ export async function processKanbanActions(
   history: ChatMessage[],
   clientId: string,
   phone: string,
-  connId?: string | null
+  connId: string | null | undefined,
+  incoming: ChatMessage,
 ): Promise<void> {
-  const client = getClientById(clientId);
-  // Agente desabilitado explicitamente pelo gestor
-  if (client?.kanbanAgentEnabled === false) {
-    console.log(`[kanban-agent] desabilitado para client=${clientId}`);
+  const client = (await getClientById(clientId));
+  // Exige ativação explícita. A ausência da configuração nunca liga a IA.
+  if (client?.kanbanAgentEnabled !== true || !lastMessage.trim()) {
     return;
   }
 
-  // Mesma resolução por conexão que o agente de atendimento usa (ver
-  // runGeminiAgent em gemini-agent.ts) — antes este agente sempre lia o campo
-  // legado client.agentConfig (nível cliente inteiro), que a tela "Agente IA"
-  // não preenche mais (ela salva por conexão em agentConfigs[]), então a
-  // chave configurada por cliente nunca era usada aqui, só a chave geral.
-  const agentCfg = client ? getAgentConfigForConnection(client, connId ?? undefined) : undefined;
-  const geminiApiKey = getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
-  if (!geminiApiKey) {
-    console.error(`[kanban-agent] GEMINI_API_KEY não configurada — client=${clientId}`);
-    return;
-  }
-
-  const lead = getLeadByPhone(clientId, phone);
+  const lead = await getLeadForConnection(clientId, phone, connId);
   if (!lead) {
     console.log(`[kanban-agent] lead não encontrado client=${clientId} phone=${phone}`);
     return;
@@ -418,14 +360,14 @@ export async function processKanbanActions(
   leadsInFlight.add(lockKey);
 
   try {
-    const funnel = getFunnelById(lead.funnelId);
-    if (!funnel) {
+    const funnel = (await getFunnelById(lead.funnelId));
+    if (!funnel || funnel.clientId !== clientId) {
       console.log(`[kanban-agent] funil não encontrado funnelId=${lead.funnelId}`);
       return;
     }
 
     const kanbanAgentPrompt = client?.kanbanAgentPrompt ?? undefined;
-    console.log(`[kanban-agent] iniciando — lead=${lead.name} status=${lead.status} msg="${lastMessage.slice(0, 80)}"`)
+    console.log(`[kanban-agent] iniciando — status=${lead.status}`);
 
     // ── CAMADA 0: correspondência direta de frases de gatilho (sem Gemini) ───────
     const directMatch = await tryDirectPhraseMatch(lastMessage, lead, funnel, client ?? null);
@@ -434,9 +376,19 @@ export async function processKanbanActions(
       return;
     }
 
+    // Frases de gatilho já foram verificadas sem custo. Sem critério semântico
+    // configurado, pedir ao Gemini outra análise não pode produzir ação válida.
+    if (!client?.kanbanAgentPrompt?.trim() && !funnel.columns.some(column => !column.blockAutoMove && column.aiDescription?.trim())) return;
+    // Mesma configuração por conexão usada pelo agente de atendimento.
+    const agentCfg = getAgentConfigForConnection(client, connId ?? undefined);
+    const geminiApiKey = await getGeminiApiKey(agentCfg?.geminiApiKey ?? undefined);
+    if (!geminiApiKey) return;
+    if (!await reserveKanbanAnalysis(clientId, lead.id, incoming)) return;
+    if ((await getClientById(clientId))?.kanbanAgentEnabled !== true) return;
+
     const actions = await runKanbanAgent(lastMessage, history, lead, funnel, geminiApiKey, kanbanAgentPrompt);
 
-    console.log(`[kanban-agent] Gemini retornou ${actions.length} ação(ões):`, JSON.stringify(actions));
+    console.log(`[kanban-agent] Gemini retornou ${actions.length} ação(ões)`);
 
     if (actions.length === 0) return;
 
@@ -448,7 +400,7 @@ export async function processKanbanActions(
           continue;
         }
 
-        updateLead(lead.id, { status: col.id });
+        if (!await moveLeadAutomatically(lead, col.id)) continue;
         console.log(`[kanban-agent] Lead ${lead.name} → ${col.label} (${action.motivo})`);
 
         // Dispara CAPI se a coluna tiver evento configurado
@@ -477,8 +429,12 @@ export async function processKanbanActions(
         if (action.notas) patch.notes = action.notas;
         if (typeof action.valor === "number" && action.valor > 0) patch.value = action.valor;
         if (Object.keys(patch).length) {
-          updateLead(lead.id, patch);
-          console.log(`[kanban-agent] Lead ${lead.id} atualizado:`, patch);
+          await withDataTransaction(async () => {
+            const current = await getLeadById(lead.id);
+            if (!current || current.updatedAt !== lead.updatedAt) return;
+            await updateLead(lead.id, patch);
+          });
+          console.log(`[kanban-agent] Lead ${lead.id} atualizado`);
         }
       }
     }

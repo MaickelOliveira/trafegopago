@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -22,32 +22,26 @@ export type WebhookConfig = {
 
 const FILE = path.join(process.cwd(), "data", "webhooks.json");
 
-function load(): WebhookConfig[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch {
-    return [];
-  }
+async function load(): Promise<WebhookConfig[]> {
+  return (await readDocument<WebhookConfig[]>("webhooks.json", []));
 }
 
-function save(items: WebhookConfig[]) {
-  const dir = path.dirname(FILE);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(items, null, 2));
+async function save(items: WebhookConfig[]) {
+  await writeDocument("webhooks.json", items);
 }
 
-export function getWebhooks(clientId?: string): WebhookConfig[] {
-  const all = load();
+export async function getWebhooks(clientId?: string): Promise<WebhookConfig[]> {
+  const all = (await load());
   return clientId ? all.filter((w) => w.clientId === clientId) : all;
 }
 
-export function getWebhookById(id: string): WebhookConfig | undefined {
-  return load().find((w) => w.id === id);
+export async function getWebhookById(id: string): Promise<WebhookConfig | undefined> {
+  return (await load()).find((w) => w.id === id);
 }
 
-export function createWebhook(data: Omit<WebhookConfig, "id" | "leadCount" | "createdAt">): WebhookConfig {
-  const items = load();
+export async function createWebhook(data: Omit<WebhookConfig, "id" | "leadCount" | "createdAt">): Promise<WebhookConfig> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const wh: WebhookConfig = {
     ...data,
     id: randomUUID(),
@@ -55,23 +49,31 @@ export function createWebhook(data: Omit<WebhookConfig, "id" | "leadCount" | "cr
     createdAt: new Date().toISOString(),
   };
   items.push(wh);
-  save(items);
+  (await save(items));
   return wh;
+
+  });
 }
 
-export function incrementWebhookCount(id: string) {
-  const items = load();
+export async function incrementWebhookCount(id: string) {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const idx = items.findIndex((w) => w.id === id);
   if (idx >= 0) {
     items[idx].leadCount += 1;
-    save(items);
+    (await save(items));
   }
+
+  });
 }
 
-export function deleteWebhook(id: string): boolean {
-  const items = load();
+export async function deleteWebhook(id: string): Promise<boolean> {
+  return withDataTransaction(async () => {
+  const items = (await load());
   const filtered = items.filter((w) => w.id !== id);
   if (filtered.length === items.length) return false;
-  save(filtered);
+  (await save(filtered));
   return true;
+
+  });
 }

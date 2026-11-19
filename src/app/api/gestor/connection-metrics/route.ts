@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (clientId) {
-    const client = getClientById(clientId);
+    const client = (await getClientById(clientId));
     if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
     const connections = await getConnectionMetricsForClient(clientId);
     return NextResponse.json({ connections });

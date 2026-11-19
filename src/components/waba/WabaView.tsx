@@ -159,9 +159,7 @@ export function WabaView({ clientId, initialTemplates, metaConnections, funnels 
     setImporting(true);
     setImportResult(null);
     setImportError(null);
-    const params = new URLSearchParams({ clientId, importWabaId: wabaId, importToken: token });
-    if (importConn?.phoneNumberId) params.set("importPhoneId", importConn.phoneNumberId);
-    const res = await fetch(`/api/waba/templates?${params}`);
+    const res = await fetch("/api/waba/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId, importWabaId: wabaId, importToken: token, importPhoneId: importConn?.phoneNumberId }) });
     if (res.ok) {
       const data = await res.json();
       setImportResult({ imported: data.imported });

@@ -9,7 +9,7 @@ export default async function AgentePage({ params }: { params: Promise<{ clientI
   if (!session || session.role !== "manager") redirect("/login");
 
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/gestor");
 
   return (

@@ -9,7 +9,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
 
   const { id } = await params;
-  const creative = getCreativeById(id);
+  const creative = (await getCreativeById(id));
   if (!creative) return NextResponse.json({ error: "Criativo não encontrado" }, { status: 404 });
 
   // Garante que só o destinatário pode aprovar/rejeitar
@@ -27,14 +27,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Informe o motivo da rejeição" }, { status: 400 });
   }
 
-  updateCreative({
+  (await updateCreative({
     ...creative,
     status,
     rejectionComment: status === "rejected" ? comment : null,
     comments: comment
       ? [...creative.comments, { by: session.role, text: comment, at: new Date().toISOString() }]
       : creative.comments,
-  });
+  }));
 
   return NextResponse.json({ ok: true, status });
 }

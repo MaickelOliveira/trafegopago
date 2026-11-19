@@ -19,13 +19,13 @@ export async function POST(
   }
 
   const { sessionId } = await params;
-  const evoSession = getEvolutionSessionById(sessionId);
+  const evoSession = (await getEvolutionSessionById(sessionId));
   if (!evoSession) return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
 
   const body = await req.json().catch(() => ({})) as { force?: boolean };
 
-  const existing = !body.force ? getActiveShareLinkForSession(sessionId) : undefined;
-  const link = existing ?? createShareLink(sessionId);
+  const existing = !body.force ? (await getActiveShareLinkForSession(sessionId)) : undefined;
+  const link = existing ?? (await createShareLink(sessionId));
 
   return NextResponse.json({ token: link.id });
 }

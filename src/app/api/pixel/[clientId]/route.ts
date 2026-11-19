@@ -13,7 +13,7 @@ export async function GET(
   const { clientId: rawId } = await params;
   const clientId = rawId.replace(/\.js$/, ""); // suporta nexo.js ou nexo
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) {
     return new NextResponse(`console.error('[Pixel] Cliente "${clientId}" não encontrado.');`, {
       status: 404,
@@ -22,7 +22,7 @@ export async function GET(
   }
 
   // Resolve a URL pública: appBaseUrl > x-forwarded-host (EasyPanel/Traefik) > origin
-  const appConfig      = getConfig();
+  const appConfig      = (await getConfig());
   const fwdHost        = req.headers.get("x-forwarded-host");
   const fwdProto       = (req.headers.get("x-forwarded-proto") ?? "https").split(",")[0].trim();
   const baseUrl        =

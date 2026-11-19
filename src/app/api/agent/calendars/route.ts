@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   const refreshToken = client?.agentConfig?.googleRefreshToken;
   if (!refreshToken) {
     return NextResponse.json({ error: "Google Calendar não conectado" }, { status: 400 });

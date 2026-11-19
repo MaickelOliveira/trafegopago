@@ -9,12 +9,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   const { id } = await params;
   const body = await req.json() as Partial<{ title: string; dueDate: string | null; owner: "gestor" | "cliente"; done: boolean }>;
-  const task = updateChecklistTask(id, {
+  const task = (await updateChecklistTask(id, {
     ...(body.title !== undefined ? { title: body.title } : {}),
     ...(body.dueDate !== undefined ? { dueDate: body.dueDate ?? undefined } : {}),
     ...(body.owner !== undefined ? { owner: body.owner } : {}),
     ...(body.done !== undefined ? { done: body.done } : {}),
-  });
+  }));
   if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(task);
 }
@@ -25,6 +25,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
   const { id } = await params;
-  const ok = deleteChecklistTask(id);
+  const ok = (await deleteChecklistTask(id));
   return NextResponse.json({ ok });
 }

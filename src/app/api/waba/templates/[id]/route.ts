@@ -1,3 +1,5 @@
+import { getSession } from "@/lib/auth";
+import { publicTemplate } from "@/lib/public-records";
 import { NextResponse } from "next/server";
 import { getTemplateById, deleteTemplate, syncTemplateStatus, updateTemplate } from "@/lib/waba-templates";
 import type { TemplateStatus } from "@/lib/waba-templates";
@@ -10,10 +12,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const tpl = getTemplateById(id);
+  const tpl = (await getTemplateById(id));
   if (!tpl) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const updated = await syncTemplateStatus(tpl);
-  return NextResponse.json(updated);
+  return NextResponse.json(publicTemplate(updated));
 }
 
 /** Envia template existente para aprovação da Meta (DRAFT → PENDING) */
@@ -22,12 +24,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const tpl = getTemplateById(id);
+  const tpl = (await getTemplateById(id));
   if (!tpl) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
-  const wabaId = body.wabaId ?? tpl.wabaId;
-  const metaToken = body.metaToken ?? tpl.metaToken;
+  const manager = (await getSession())?.role === "manager";
+  const wabaId = manager ? body.wabaId ?? tpl.wabaId : tpl.wabaId;
+  const metaToken = manager ? body.metaToken || tpl.metaToken : tpl.metaToken;
+  if (wabaId && !/^\d+$/.test(wabaId)) return NextResponse.json({ error: "Conta inválida." }, { status: 400 });
 
   if (!wabaId || !metaToken) {
     return NextResponse.json({ error: "wabaId e metaToken são necessários" }, { status: 400 });
@@ -39,7 +43,7 @@ export async function PATCH(
     language: tpl.language,
     components: tpl.components,
   };
-  const metaRes = await fetch(`https://graph.facebook.com/v19.0/${wabaId}/message_templates`, {
+  const metaRes = await fetch(`https://graph.facebook.com/v26.0/${wabaId}/message_templates`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${metaToken}` },
     body: JSON.stringify(metaBody),
@@ -47,13 +51,13 @@ export async function PATCH(
 
   if (metaRes.ok) {
     const data = await metaRes.json() as { id: string; status: string };
-    const updated = updateTemplate(id, {
+    const updated = (await updateTemplate(id, {
       metaId: data.id,
       wabaId,
       metaToken,
       status: (data.status?.toUpperCase() as "PENDING") ?? "PENDING",
-    });
-    return NextResponse.json(updated);
+    }));
+    return NextResponse.json(publicTemplate(updated));
   } else {
     const errText = await metaRes.text();
     return NextResponse.json({ error: errText }, { status: 502 });
@@ -66,22 +70,24 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const tpl = getTemplateById(id);
+  const tpl = (await getTemplateById(id));
   if (!tpl) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
   const { components, category, language, wabaId, phoneNumberId, metaToken, submitToMeta } = body;
 
-  const effectiveWabaId = wabaId ?? tpl.wabaId;
-  const effectiveToken = metaToken ?? tpl.metaToken;
+  const manager = (await getSession())?.role === "manager";
+  const effectiveWabaId = manager ? wabaId ?? tpl.wabaId : tpl.wabaId;
+  const effectiveToken = manager ? metaToken || tpl.metaToken : tpl.metaToken;
+  if (effectiveWabaId && !/^\d+$/.test(effectiveWabaId)) return NextResponse.json({ error: "Conta inválida." }, { status: 400 });
 
   const patch: Parameters<typeof updateTemplate>[1] = {
     ...(components && { components }),
     ...(category && { category }),
     ...(language && { language }),
-    ...(wabaId && { wabaId }),
-    ...(phoneNumberId && { phoneNumberId }),
-    ...(metaToken && { metaToken }),
+    ...(manager && wabaId && { wabaId }),
+    ...(manager && phoneNumberId && { phoneNumberId }),
+    ...(manager && metaToken && { metaToken }),
   };
 
   if (submitToMeta && effectiveWabaId && effectiveToken) {
@@ -91,7 +97,7 @@ export async function PUT(
       language: patch.language ?? tpl.language,
       components: patch.components ?? tpl.components,
     };
-    const metaRes = await fetch(`https://graph.facebook.com/v19.0/${effectiveWabaId}/message_templates`, {
+    const metaRes = await fetch(`https://graph.facebook.com/v26.0/${effectiveWabaId}/message_templates`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${effectiveToken}` },
       body: JSON.stringify(metaBody),
@@ -106,8 +112,8 @@ export async function PUT(
     }
   }
 
-  const updated = updateTemplate(id, patch);
-  return NextResponse.json(updated);
+  const updated = (await updateTemplate(id, patch));
+  return NextResponse.json(publicTemplate(updated));
 }
 
 export async function DELETE(
@@ -115,7 +121,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const ok = deleteTemplate(id);
+  const ok = (await deleteTemplate(id));
   return ok
     ? NextResponse.json({ ok: true })
     : NextResponse.json({ error: "Not found" }, { status: 404 });

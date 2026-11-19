@@ -7,7 +7,7 @@ export async function GET() {
   if (!session || (session.role !== "client" && session.role !== "employee")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const tasks = getChecklistTasks(session.clientId!);
+  const tasks = (await getChecklistTasks(session.clientId!));
   return NextResponse.json({ tasks });
 }
 
@@ -20,12 +20,12 @@ export async function POST(req: NextRequest) {
   if (!body.title?.trim() || !body.owner) {
     return NextResponse.json({ error: "title e owner são obrigatórios" }, { status: 400 });
   }
-  const task = createChecklistTask({
+  const task = (await createChecklistTask({
     clientId: session.clientId!,
     title: body.title.trim(),
     dueDate: body.dueDate || undefined,
     owner: body.owner,
     createdBy: "client",
-  });
+  }));
   return NextResponse.json(task);
 }

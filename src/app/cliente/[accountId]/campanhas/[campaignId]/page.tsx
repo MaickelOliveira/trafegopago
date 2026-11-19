@@ -10,13 +10,13 @@ export default async function ClienteCampaignPage({ params }: Props) {
   if (!session || session.role !== "client") redirect("/login");
 
   const { accountId, campaignId } = await params;
-  const client = getClientById(session.clientId!);
+  const client = (await getClientById(session.clientId!));
   if (!client) redirect("/login");
 
   const account = client.adAccounts.find((a) => a.id === accountId);
   if (!account) notFound();
 
-  const { passwordHash: _, ...safe } = client;
+  const safe = { id: client.id, name: client.name, color: client.color, cplTarget: client.cplTarget, funnelType: client.funnelType };
 
   return (
     <CampaignDetailView

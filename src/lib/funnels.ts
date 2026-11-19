@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -20,7 +20,7 @@ export type FunnelColumn = {
   allowedTransitions?: string[]; // camada 3: whitelist de IDs de colunas de destino permitidas (vazio = todas)
 };
 
-export type ConnectionType = "meta" | "uazapi";
+export type ConnectionType = "meta";
 
 export type FunnelConnection = {
   id: string;
@@ -30,8 +30,6 @@ export type FunnelConnection = {
   metaPhoneNumberId?: string;
   metaToken?: string;
   metaVerifyToken?: string;
-  // UazAPI
-  uazapiToken?: string;
 };
 
 export type Funnel = {
@@ -49,6 +47,7 @@ const FILE = path.join(process.cwd(), "data", "funnels.json");
 function normalizeFunnels(funnels: Funnel[]): Funnel[] {
   return funnels.map((f) => ({
     ...f,
+    connections: (f.connections ?? []).filter(connection => connection.type === "meta"),
     columns: f.columns.map((c) => ({
       ...c,
       triggerPhrases: (c.triggerPhrases as unknown as (string | TriggerPhrase)[])?.map((p) =>
@@ -58,27 +57,23 @@ function normalizeFunnels(funnels: Funnel[]): Funnel[] {
   }));
 }
 
-function load(): Funnel[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return normalizeFunnels(JSON.parse(readFileSync(FILE, "utf-8")));
-  } catch {
-    return [];
-  }
+async function load(): Promise<Funnel[]> {
+  return normalizeFunnels(await readDocument<Funnel[]>("funnels.json", []));
 }
 
-function save(funnels: Funnel[]) {
-  writeFileSync(FILE, JSON.stringify(funnels, null, 2));
+async function save(funnels: Funnel[]) {
+  await writeDocument("funnels.json", funnels);
 }
 
-export function getFunnels(): Funnel[] { return load(); }
+export async function getFunnels(): Promise<Funnel[]> { return (await load()); }
 
-export function getFunnelById(id: string): Funnel | undefined {
-  return load().find((f) => f.id === id);
+export async function getFunnelById(id: string): Promise<Funnel | undefined> {
+  return (await load()).find((f) => f.id === id);
 }
 
-export function createFunnel(name: string, columns?: FunnelColumn[]): Funnel {
-  const funnels = load();
+export async function createFunnel(name: string, columns?: FunnelColumn[]): Promise<Funnel> {
+  return withDataTransaction(async () => {
+  const funnels = (await load());
   const funnel: Funnel = {
     id: randomUUID(),
     name,
@@ -92,24 +87,33 @@ export function createFunnel(name: string, columns?: FunnelColumn[]): Funnel {
     ],
   };
   funnels.push(funnel);
-  save(funnels);
+  (await save(funnels));
   return funnel;
+
+  });
 }
 
-export function updateFunnel(id: string, patch: Partial<Omit<Funnel, "id">>): Funnel | null {
-  const funnels = load();
+export async function updateFunnel(id: string, patch: Partial<Omit<Funnel, "id">>): Promise<Funnel | null> {
+  return withDataTransaction(async () => {
+  const funnels = (await load());
+  if (patch.connections?.some(connection => connection.type !== "meta")) throw Error("Use Evolution ou a API oficial.");
   const idx = funnels.findIndex((f) => f.id === id);
   if (idx < 0) return null;
   funnels[idx] = { ...funnels[idx], ...patch };
-  save(funnels);
+  (await save(funnels));
   return funnels[idx];
+
+  });
 }
 
-export function deleteFunnel(id: string): boolean {
+export async function deleteFunnel(id: string): Promise<boolean> {
+  return withDataTransaction(async () => {
   if (id === "default") return false; // funil padrão não pode ser deletado
-  const funnels = load();
+  const funnels = (await load());
   const filtered = funnels.filter((f) => f.id !== id);
   if (filtered.length === funnels.length) return false;
-  save(filtered);
+  (await save(filtered));
   return true;
+
+  });
 }

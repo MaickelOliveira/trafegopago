@@ -1,3 +1,6 @@
+import { getEmployeeById, employeeCanAccessFunnel } from "@/lib/employees";
+import { publicTemplate } from "@/lib/public-records";
+import { getSession } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getTemplates, createTemplate, syncTemplateStatus, type TemplateLanguage } from "@/lib/waba-templates";
 import { getFunnels } from "@/lib/funnels";
@@ -7,18 +10,40 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId") ?? undefined;
   const sync = req.nextUrl.searchParams.get("sync") === "1";
+  const actor = await getSession();
+  const employee = actor?.role === "employee" ? await getEmployeeById(actor.employeeId!) : undefined;
 
+  if (req.nextUrl.searchParams.has("importToken") || req.nextUrl.searchParams.has("importWabaId")) {
+    return NextResponse.json({ error: "Use a importação pelo formulário, sem chaves no endereço." }, { status: 400 });
+  }
+
+  let templates = (await getTemplates(clientId));
+  if (employee) { const allowed = (await getFunnels()).filter(funnel => funnel.clientId === clientId && employeeCanAccessFunnel(employee, funnel.id)).flatMap(funnel => funnel.connections ?? []).map(connection => connection.metaPhoneNumberId); templates = templates.filter(template => !!template.phoneNumberId && allowed.includes(template.phoneNumberId)); }
+
+  if (sync) {
+    templates = await Promise.all((await Promise.all(templates.map(async (t) => (await syncTemplateStatus(t))))));
+  }
+
+  return NextResponse.json(templates.map(publicTemplate));
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const { clientId, name, category, language, components, wabaId, phoneNumberId, submitToMeta } = body;
+  const actor = await getSession();
   // Importar templates existentes do Meta (não cadastrados ainda)
-  const importWabaId  = req.nextUrl.searchParams.get("importWabaId");
-  const importToken   = req.nextUrl.searchParams.get("importToken");
-  const importPhoneId = req.nextUrl.searchParams.get("importPhoneId");
+  const importWabaId = body.importWabaId;
+  const importToken = body.importToken;
+  const importPhoneId = body.importPhoneId;
   if (importWabaId && importToken && clientId) {
-    const url = `https://graph.facebook.com/v19.0/${importWabaId}/message_templates?fields=name,status,category,language,components,rejected_reason&limit=200&access_token=${importToken}`;
+    if (actor?.role !== "manager") return NextResponse.json({ error: "A agência precisa vincular esta conta antes da importação." }, { status: 403 });
+    if (!/^\d+$/.test(importWabaId)) return NextResponse.json({ error: "Conta inválida." }, { status: 400 });
+    const url = `https://graph.facebook.com/v26.0/${importWabaId}/message_templates?fields=name,status,category,language,components,rejected_reason&limit=200`;
     let metaRes: Response;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15000);
-      metaRes = await fetch(url, { signal: controller.signal });
+      metaRes = await fetch(url, { signal: controller.signal, headers: { Authorization: `Bearer ${importToken}` } });
       clearTimeout(timer);
     } catch (e) {
       const msg = e instanceof Error && e.name === "AbortError" ? "Timeout: Meta API demorou mais de 15s." : String(e);
@@ -31,11 +56,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: `Meta API ${metaRes.status}: ${metaError}` }, { status: 502 });
     }
     const metaData = await metaRes.json() as { data: { id: string; name: string; status: string; category: string; language: string; components: object[]; rejected_reason?: string }[] };
-    const existing = getTemplates(clientId).map((t) => t.metaId);
-    const imported: ReturnType<typeof createTemplate>[] = [];
+    const existing = (await getTemplates(clientId)).map((t) => t.metaId);
+    const imported: Awaited<Awaited<ReturnType<typeof createTemplate>>>[] = [];
     for (const mt of metaData.data ?? []) {
       if (existing.includes(mt.id)) continue; // já importado
-      const tpl = createTemplate({
+      const tpl = (await createTemplate({
         clientId,
         name: mt.name,
         category: (mt.category as "MARKETING" | "UTILITY") ?? "MARKETING",
@@ -47,24 +72,19 @@ export async function GET(req: NextRequest) {
         phoneNumberId: importPhoneId ?? undefined,
         metaToken: importToken,
         rejectedReason: mt.rejected_reason ?? undefined,
-      });
+      }));
       imported.push(tpl);
     }
-    return NextResponse.json({ imported: imported.length, templates: getTemplates(clientId) });
+    return NextResponse.json({ imported: imported.length, templates: (await getTemplates(clientId)).map(publicTemplate) });
   }
 
-  let templates = getTemplates(clientId);
-
-  if (sync) {
-    templates = await Promise.all(templates.map((t) => syncTemplateStatus(t)));
+  const owned = (await getFunnels()).filter(funnel => funnel.clientId === clientId).flatMap(funnel => funnel.connections ?? []).find(connection => connection.type === "meta" && connection.metaPhoneNumberId === phoneNumberId);
+  const metaToken = actor?.role === "manager" ? body.metaToken || owned?.metaToken : owned?.metaToken;
+  if (actor?.role !== "manager") {
+    const knownBinding = (await getTemplates(clientId)).some(template => template.phoneNumberId === phoneNumberId && template.wabaId === wabaId);
+    if (!owned || !knownBinding || body.metaToken) return NextResponse.json({ error: "A agência precisa vincular esta conta de WhatsApp." }, { status: 403 });
   }
-
-  return NextResponse.json(templates);
-}
-
-export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { clientId, name, category, language, components, wabaId, phoneNumberId, metaToken, submitToMeta } = body;
+  if (wabaId && (typeof wabaId !== "string" || !/^\d+$/.test(wabaId))) return NextResponse.json({ error: "Conta inválida." }, { status: 400 });
 
   if (!clientId || !name || !category || !language || !components) {
     return NextResponse.json({ error: "clientId, name, category, language, components são obrigatórios" }, { status: 400 });
@@ -73,7 +93,7 @@ export async function POST(req: NextRequest) {
   // Nome deve ser snake_case sem espaços
   const safeName = name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
 
-  let tpl = createTemplate({
+  let tpl = (await createTemplate({
     clientId,
     name: safeName,
     category,
@@ -83,7 +103,7 @@ export async function POST(req: NextRequest) {
     wabaId: wabaId ?? undefined,
     phoneNumberId: phoneNumberId ?? undefined,
     metaToken: metaToken ?? undefined,
-  });
+  }));
 
   // Enviar para aprovação da Meta agora?
   if (submitToMeta && wabaId && metaToken) {
@@ -99,7 +119,7 @@ export async function POST(req: NextRequest) {
           ...(c.buttons ? { buttons: c.buttons } : {}),
         })),
       };
-      const metaRes = await fetch(`https://graph.facebook.com/v19.0/${wabaId}/message_templates`, {
+      const metaRes = await fetch(`https://graph.facebook.com/v26.0/${wabaId}/message_templates`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${metaToken}` },
         body: JSON.stringify(metaBody),
@@ -107,19 +127,19 @@ export async function POST(req: NextRequest) {
       if (metaRes.ok) {
         const metaData = await metaRes.json() as { id: string; status: string };
         const { updateTemplate } = await import("@/lib/waba-templates");
-        tpl = updateTemplate(tpl.id, {
+        tpl = (await updateTemplate(tpl.id, {
           metaId: metaData.id,
           status: (metaData.status?.toUpperCase() as "PENDING") ?? "PENDING",
-        }) ?? tpl;
+        })) ?? tpl;
       } else {
         const errText = await metaRes.text();
         const { updateTemplate } = await import("@/lib/waba-templates");
-        tpl = updateTemplate(tpl.id, { status: "REJECTED", rejectedReason: errText }) ?? tpl;
+        tpl = (await updateTemplate(tpl.id, { status: "REJECTED", rejectedReason: errText })) ?? tpl;
       }
     } catch (e) {
       console.error("[waba/templates] Erro ao enviar para Meta:", e);
     }
   }
 
-  return NextResponse.json(tpl, { status: 201 });
+  return NextResponse.json(publicTemplate(tpl), { status: 201 });
 }

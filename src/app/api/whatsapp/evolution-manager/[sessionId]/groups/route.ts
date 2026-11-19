@@ -14,7 +14,7 @@ export async function GET(
   }
 
   const { sessionId } = await params;
-  const evoSession = getEvolutionSessionById(sessionId);
+  const evoSession = (await getEvolutionSessionById(sessionId));
   if (!evoSession) {
     return NextResponse.json({ error: "Sessão não encontrada" }, { status: 404 });
   }

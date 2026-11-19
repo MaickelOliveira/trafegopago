@@ -1,22 +1,23 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Wallet, Users, MessageSquare, TrendingUp, Target, Trophy, BarChart3 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   RadialBarChart, RadialBar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ComposedChart, Line,
 } from "recharts";
 import { clsx } from "clsx";
-import type { MetaCampaign } from "@/lib/meta-api";
+import { dashboardInsights, loadDashboardData, type DashboardCampaign, type DashboardInsights, type DashboardDaily } from "@/lib/dashboard-data";
 
 type AdAccount = { id: string; name: string; platform: string };
 type Client   = { id: string; name: string; color: string; cplTarget: number; funnelType?: string; adAccounts: AdAccount[] };
 type CrmLead  = { id: string; name: string; phone: string; realPhone?: string; status: string; funnelId: string; createdAt: string; updatedAt?: string; value?: number | null };
 
-const PALETTE = ["#818cf8","#34d399","#fb923c","#f472b6","#38bdf8","#a78bfa","#4ade80","#fbbf24","#f87171","#2dd4bf"];
+const PALETTE = ["#afe507","#6db8c8","#e0bd79","#9daebc","#c9e985","#78ba9a","#92a6cd","#c7a591","#d4dbcc","#80b5aa"];
 
 function fmt(v: number)  { return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
-function fmtK(v: number) { return v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(Math.round(v)); }
+function fmtK(v: number) { return v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : v.toLocaleString("pt-BR",{maximumFractionDigits:2}); }
 
 // ── Tooltip customizado ──────────────────────────────────────────────────────
 const Tip = ({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string }) => {
@@ -38,18 +39,17 @@ const Tip = ({ active, payload, label }: { active?: boolean; payload?: { name: s
 };
 
 // ── KPI Card ─────────────────────────────────────────────────────────────────
-function KPI({ label, value, sub, icon, from, to, trend }: {
+function KPI({ label, value, sub, icon, trend }: {
   label: string; value: string; sub?: string; icon: string;
-  from: string; to: string; trend?: "up" | "down" | "neutral";
+  trend?: "up" | "down" | "neutral";
 }) {
+  const Icon = ({"💸":Wallet,"👁️":Users,"✅":MessageSquare,"📈":TrendingUp,"🎯":Target,"🏆":Trophy,"📊":BarChart3,"💰":Wallet} as Record<string,typeof Wallet>)[icon] ?? TrendingUp;
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${from} ${to} p-5 shadow-lg`}>
-      <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
-      <div className="absolute -right-1 -bottom-6 h-20 w-20 rounded-full bg-white/5" />
+    <div className="nexo-kpi">
       <div className="relative">
         <div className="flex items-center justify-between mb-4">
           <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">{label}</span>
-          <span className="text-2xl">{icon}</span>
+          <Icon size={19} className="nexo-kpi-icon" />
         </div>
         <p className="text-3xl font-black text-white tracking-tight">{value}</p>
         {sub && (
@@ -66,11 +66,17 @@ function KPI({ label, value, sub, icon, from, to, trend }: {
 
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-export function DashboardView({ client }: { client: Client }) {
-  const [account, setAccount]   = useState(client.adAccounts[0]);
+export function DashboardView({ client, canManageConnection = false }: { client: Client; canManageConnection?: boolean }) {
+  const [selectedAccountId,setSelectedAccountId] = useState<string|undefined>();
+  const account=client.adAccounts.find(item=>item.id===selectedAccountId)??client.adAccounts[0];
   const [datePreset, setDatePreset] = useState("last_30d");
-  const [campaigns, setCampaigns]  = useState<MetaCampaign[]>([]);
-  const [daily, setDaily]          = useState<{ date: string; spend: number; clicks: number; impressions: number; reach: number }[]>([]);
+  const [campaigns, setCampaigns] = useState<DashboardCampaign[]>([]);
+  const [summary,setSummary] = useState<DashboardInsights|null>(null);
+  const [adsError,setAdsError] = useState<string|null>(null);
+  const [adsReconnect,setAdsReconnect] = useState(false);
+  const [crmError,setCrmError] = useState<string|null>(null);
+  const [reloadKey,setReloadKey] = useState(0);
+  const [daily, setDaily]          = useState<DashboardDaily[]>([]);
   const [loading, setLoading]      = useState(true);
   const [crmLeads, setCrmLeads]    = useState<CrmLead[]>([]);
 
@@ -82,46 +88,27 @@ export function DashboardView({ client }: { client: Client }) {
   ];
 
   useEffect(() => {
-    if (!account) {
-      setLoading(false);
-      return;
-    }
+    const controller=new AbortController();
     setLoading(true);
-    const qs = new URLSearchParams({ datePreset });
-    const today = new Date();
-    const since = new Date(today.getTime() - 30 * 86400000).toISOString().slice(0, 10);
-    const until = today.toISOString().slice(0, 10);
-
-    Promise.all([
-      fetch(`/api/meta/${account.id}/campaigns?${qs}`).then((r) => r.ok ? r.json() : []).catch(() => []),
-      fetch(`/api/meta/${account.id}/insights?since=${since}&until=${until}&daily=1`).then((r) => r.ok ? r.json() : []).catch(() => []),
-      fetch(`/api/crm/leads?clientId=${client.id}`).then((r) => r.ok ? r.json() : []).catch(() => []),
-    ]).then(([camps, d, leads]) => {
-      setCampaigns(Array.isArray(camps) ? camps : []);
-      setDaily(Array.isArray(d) ? d : []);
-      setCrmLeads(Array.isArray(leads) ? leads : []);
-    }).catch(() => {
-      setCampaigns([]);
-      setDaily([]);
-      setCrmLeads([]);
-    }).finally(() => {
-      setLoading(false);
-    });
-  }, [account, datePreset]);
+    loadDashboardData(account,client.id,datePreset,controller.signal).then(result=>{
+      if(controller.signal.aborted)return;
+      setCampaigns(result.campaigns);setDaily(result.daily);setSummary(result.summary);
+      setAdsError(result.adsError);setAdsReconnect(result.adsReconnect);setCrmError(result.crmError);setCrmLeads(result.crmLeads);
+    }).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    return()=>controller.abort();
+  },[account,client.id,datePreset,reloadKey]);
+  const isGoogle=account?.platform==="google";
+  const adsAvailable=summary!==null;
+  const totals=summary??dashboardInsights(account?.platform??"meta",null);
 
   // ── Métricas agregadas ────────────────────────────────────────────────────
   const active          = campaigns.filter((c) => c.status === "ACTIVE");
   const withData        = campaigns.filter((c) => c.insights && c.insights.spend > 0);
-  const totalSpend      = campaigns.reduce((s, c) => s + (c.insights?.spend ?? 0), 0);
-  const totalImpressions= campaigns.reduce((s, c) => s + (c.insights?.impressions ?? 0), 0);
-  const totalReach      = campaigns.reduce((s, c) => s + (c.insights?.reach ?? 0), 0);
-  const totalClicks     = campaigns.reduce((s, c) => s + (c.insights?.clicks ?? 0), 0);
-  const totalLeads      = campaigns.reduce((s, c) => s + (c.insights?.leads ?? 0), 0);
-  const totalConversas  = campaigns.reduce((s, c) => s + (c.insights?.conversations ?? 0), 0);
-  const totalPurchases  = campaigns.reduce((s, c) => s + (c.insights?.purchases ?? 0), 0);
-  const totalRevenue    = campaigns.reduce((s, c) => s + (c.insights?.revenue ?? 0), 0);
-  const totalResults    = totalLeads + totalConversas + totalPurchases;
-  const metaRoas        = totalSpend > 0 && totalRevenue > 0 ? totalRevenue / totalSpend : null;
+  const totalSpend=totals.spend, totalImpressions=totals.impressions, totalReach=totals.reach??0;
+  const totalClicks=totals.clicks, totalLeads=totals.leads, totalConversas=totals.conversations;
+  const totalPurchases=totals.purchases, totalConversions=totals.conversions, totalRevenue=totals.revenue;
+  const totalResults=totalLeads+totalConversas+totalPurchases+totalConversions;
+  const metaRoas=totalSpend>0&&totalRevenue>0?totalRevenue/totalSpend:null;
 
   // ROAS via CRM: faturamento dos leads com status "ganho"
   const crmGanhoValor   = crmLeads.filter(l => l.status === "ganho").reduce((s, l) => s + (l.value ?? 0), 0);
@@ -129,18 +116,18 @@ export function DashboardView({ client }: { client: Client }) {
 
   // Usa pixel Meta se disponível; senão usa faturamento do CRM
   const overallRoas     = metaRoas ?? crmRoas;
-  const roasSource      = metaRoas ? "pixel" : crmRoas ? "crm" : null;
+  const roasSource = metaRoas ? isGoogle ? "google" : "pixel" : crmRoas ? "crm" : null;
 
-  const avgCtr          = withData.length > 0 ? withData.reduce((s, c) => s + (c.insights?.ctr ?? 0), 0) / withData.length : 0;
-  const avgCpm          = withData.length > 0 ? withData.reduce((s, c) => s + (c.insights?.cpm ?? 0), 0) / withData.length : 0;
+  const avgCtr = totals.ctr;
+  const avgCpm = totals.cpm;
 
   const funnelType = client.funnelType ?? "leads";
-  const resultLabel = funnelType === "sales" ? "Compras" : totalLeads > 0 ? "Leads" : "Conversas";
-  const resultValue = funnelType === "sales" ? totalPurchases : totalLeads > 0 ? totalLeads : totalConversas;
+  const resultLabel = isGoogle ? "Conversões" : funnelType === "sales" ? "Compras" : totalLeads > 0 ? "Leads" : "Conversas";
+  const resultValue = isGoogle ? totalConversions : funnelType === "sales" ? totalPurchases : totalLeads > 0 ? totalLeads : totalConversas;
   const costPerResult   = resultValue > 0 ? totalSpend / resultValue : null;
 
   // ── Dados para os gráficos ────────────────────────────────────────────────
-  const areaData = daily.slice(-30).map((d) => ({
+  const areaData = daily.map((d) => ({
     dia: d.date.slice(5),
     "Investido R$": parseFloat((d.spend ?? 0).toFixed(2)),
     "Cliques": d.clicks ?? 0,
@@ -156,7 +143,7 @@ export function DashboardView({ client }: { client: Client }) {
     .sort((a, b) => (b.insights?.spend ?? 0) - (a.insights?.spend ?? 0))
     .slice(0, 7)
     .map((c, i) => {
-      const res = (c.insights?.leads ?? 0) + (c.insights?.conversations ?? 0) + (c.insights?.purchases ?? 0);
+      const res = (c.insights?.leads ?? 0) + (c.insights?.conversations ?? 0) + (c.insights?.purchases ?? 0) + (c.insights?.conversions ?? 0);
       return {
         name: c.name.length > 16 ? c.name.slice(0, 16) + "…" : c.name,
         "Investido R$": parseFloat(c.insights!.spend.toFixed(2)),
@@ -180,7 +167,7 @@ export function DashboardView({ client }: { client: Client }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 p-6 lg:p-8 space-y-6">
+    <div className="nexo-dashboard min-h-screen bg-slate-950 p-6 lg:p-8 space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -191,21 +178,23 @@ export function DashboardView({ client }: { client: Client }) {
           </span>
           <div>
             <h1 className="text-xl font-bold text-white">{client.name}</h1>
-            <p className="text-xs text-slate-400">{active.length} ativas · {campaigns.length} total · Meta: R$ {client.cplTarget}/resultado</p>
+            <p className="text-xs text-slate-400">{adsAvailable ? `${active.length} ativas · ${campaigns.length} campanhas carregadas` : "Indicadores de anúncios indisponíveis"} · Meta: R$ {client.cplTarget}/resultado</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="nexo-dashboard-controls">
+          <div className="nexo-dashboard-account-options" role="group" aria-label="Contas de anúncio">
           {client.adAccounts.length > 1 && client.adAccounts.map((acc) => (
-            <button key={acc.id} onClick={() => setAccount(acc)}
+            <button key={acc.id} onClick={() => setSelectedAccountId(acc.id)} aria-pressed={account?.id === acc.id}
               className={clsx("rounded-xl border px-3 py-1.5 text-xs font-semibold transition",
                 account?.id === acc.id ? "border-indigo-500 bg-indigo-500/20 text-indigo-300" : "border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-300"
               )}>
-              {acc.name}
+              {acc.platform === "google" ? "Google Ads" : acc.platform === "meta" ? "Meta Ads" : acc.platform} · {acc.name}
             </button>
           ))}
-          <div className="flex rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+          </div>
+          <div className="nexo-dashboard-period-options flex rounded-xl border border-white/10 bg-white/5 overflow-hidden" role="group" aria-label="Período dos indicadores">
             {PRESETS.map((p) => (
-              <button key={p.value} onClick={() => setDatePreset(p.value)}
+              <button key={p.value} onClick={() => setDatePreset(p.value)} aria-pressed={datePreset === p.value}
                 className={clsx("px-3 py-2 text-xs font-semibold transition",
                   datePreset === p.value ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white hover:bg-white/10"
                 )}>
@@ -216,23 +205,19 @@ export function DashboardView({ client }: { client: Client }) {
         </div>
       </div>
 
+      {(adsError||crmError)&&<div role="alert" className="nexo-feedback error nexo-dashboard-feedback"><div>{adsError&&<p>{adsError}</p>}{adsReconnect&&!canManageConnection&&<p>Peça ao gestor para renovar a conexão da agência.</p>}{crmError&&<p>{crmError}</p>}</div>{adsReconnect&&canManageConnection&&<a className="nexo-secondary" href="/api/agent/google-ads-auth">Reconectar Google Ads</a>}<button className="nexo-secondary" onClick={()=>setReloadKey(value=>value+1)}>Tentar novamente</button></div>}
       {/* KPIs */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <KPI label="Investimento" value={fmt(totalSpend)} sub={`CPM médio ${fmt(avgCpm)}`} icon="💸"
-          from="from-indigo-600" to="to-violet-700" />
-        <KPI label="Alcance total" value={fmtK(totalReach)} sub={`${fmtK(totalImpressions)} impressões · CTR ${avgCtr.toFixed(2)}%`} icon="👁️"
-          from="from-sky-500" to="to-cyan-600" />
-        <KPI label={resultLabel} value={fmtK(resultValue)}
-          sub={costPerResult ? `Custo ${fmt(costPerResult)}` : "Sem resultados ainda"} icon="✅"
-          from="from-emerald-500" to="to-teal-600"
+        <KPI label="Investimento" value={adsAvailable?fmt(totalSpend):"—"} sub={adsAvailable?`CPM médio ${fmt(avgCpm)}`:"Dados indisponíveis"} icon="💸" />
+        <KPI label={isGoogle?"Impressões":"Alcance total"} value={adsAvailable?fmtK(isGoogle?totalImpressions:totalReach):"—"} sub={adsAvailable?`${isGoogle?fmtK(totalClicks)+" cliques":fmtK(totalImpressions)+" impressões"} · CTR ${avgCtr.toFixed(2)}%`:"Dados indisponíveis"} icon="👁️" />
+        <KPI label={resultLabel} value={adsAvailable?fmtK(resultValue):"—"}
+          sub={!adsAvailable?"Dados indisponíveis":costPerResult ? `Custo ${fmt(costPerResult)}` : "Sem resultados ainda"} icon="✅"
           trend={costPerResult && costPerResult <= client.cplTarget ? "up" : costPerResult ? "down" : "neutral"} />
         <KPI label="ROAS" value={overallRoas ? `${overallRoas.toFixed(2)}×` : "—"}
-          sub={overallRoas
-            ? `${roasSource === "crm" ? "Fatur. CRM" : "Pixel Meta"} · Meta ${roasMeta}× · ${overallRoas >= roasMeta ? "✓ Atingida" : "Abaixo da meta"}`
+          sub={!adsAvailable?"Dados indisponíveis":overallRoas
+            ? `${roasSource === "crm" ? "Fatur. CRM" : roasSource === "google" ? "Google Ads" : "Pixel Meta"} · Meta ${roasMeta}× · ${overallRoas >= roasMeta ? "✓ Atingida" : "Abaixo da meta"}`
             : "Registre valor nos leads ganhos"}
           icon={overallRoas && overallRoas >= roasMeta ? "🚀" : "📈"}
-          from={overallRoas && overallRoas >= roasMeta ? "from-green-500" : "from-orange-500"}
-          to={overallRoas && overallRoas >= roasMeta ? "to-emerald-700" : "to-amber-700"}
           trend={overallRoas ? (overallRoas >= roasMeta ? "up" : "down") : "neutral"} />
       </div>
 
@@ -241,7 +226,7 @@ export function DashboardView({ client }: { client: Client }) {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-sm font-bold text-white">Evolução diária</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Investimento e cliques nos últimos 30 dias</p>
+            <p className="text-xs text-slate-400 mt-0.5">Investimento e cliques no período selecionado</p>
           </div>
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="h-2.5 w-2.5 rounded-full bg-indigo-400" />Investido</span>
@@ -252,8 +237,8 @@ export function DashboardView({ client }: { client: Client }) {
           <AreaChart data={areaData}>
             <defs>
               <linearGradient id="gSpend" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#818cf8" stopOpacity={0.5} />
-                <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
+                <stop offset="0%" stopColor="#afe507" stopOpacity={0.5} />
+                <stop offset="100%" stopColor="#afe507" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gClicks" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#34d399" stopOpacity={0.4} />
@@ -264,7 +249,7 @@ export function DashboardView({ client }: { client: Client }) {
             <XAxis dataKey="dia" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} interval={4} />
             <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
             <Tooltip content={<Tip />} />
-            <Area type="monotone" dataKey="Investido R$" stroke="#818cf8" strokeWidth={2.5} fill="url(#gSpend)" dot={false} activeDot={{ r: 5, fill: "#818cf8", stroke: "#1e1b4b", strokeWidth: 2 }} />
+            <Area type="monotone" dataKey="Investido R$" stroke="#afe507" strokeWidth={2.5} fill="url(#gSpend)" dot={false} activeDot={{ r: 5, fill: "#afe507", stroke: "#1e1b4b", strokeWidth: 2 }} />
             <Area type="monotone" dataKey="Cliques" stroke="#34d399" strokeWidth={2.5} fill="url(#gClicks)" dot={false} activeDot={{ r: 5, fill: "#34d399", stroke: "#022c22", strokeWidth: 2 }} />
           </AreaChart>
         </ResponsiveContainer>
@@ -277,9 +262,10 @@ export function DashboardView({ client }: { client: Client }) {
           <p className="text-xs text-slate-400 mb-4">Queda em cada etapa do funil</p>
           {totalImpressions > 0 ? (() => {
             const steps = [
-              { name: "Impressões", value: totalImpressions, fill: "#818cf8" },
-              { name: "Alcance",    value: totalReach,       fill: "#38bdf8" },
+              { name: "Impressões", value: totalImpressions, fill: "#afe507" },
+              ...(!isGoogle?[{ name: "Alcance", value: totalReach, fill: "#38bdf8" }]:[]),
               { name: "Cliques",    value: totalClicks,      fill: "#34d399" },
+              ...(isGoogle?[{name:"Conversões",value:totalConversions,fill:"#78ba9a"}]:[]),
               ...(totalConversas > 0 ? [{ name: "Conversas", value: totalConversas, fill: "#a78bfa" }] : totalLeads > 0 ? [{ name: "Leads", value: totalLeads, fill: "#fb923c" }] : []),
               ...(totalPurchases > 0 ? [{ name: "Compras",   value: totalPurchases, fill: "#f472b6" }] : []),
             ].filter((d) => d.value > 0);
@@ -366,7 +352,7 @@ export function DashboardView({ client }: { client: Client }) {
           })() : (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <p className="text-3xl mb-2">📭</p>
-              <p className="text-sm text-slate-400">Sem dados de impressões</p>
+              <p className="text-sm text-slate-400">{adsAvailable?"Sem dados de impressões":"Indicadores indisponíveis"}</p>
             </div>
           )}
         </div>
@@ -399,7 +385,7 @@ export function DashboardView({ client }: { client: Client }) {
                 })}
               </div>
             </>
-          ) : <p className="text-center text-slate-500 py-16 text-sm">Sem dados de investimento</p>}
+          ) : <p className="text-center text-slate-500 py-16 text-sm">{adsAvailable?"Sem dados de investimento":"Indicadores indisponíveis"}</p>}
         </div>
 
         {/* ROAS Gauge */}
@@ -424,12 +410,12 @@ export function DashboardView({ client }: { client: Client }) {
             </div>
             <div className="w-full grid grid-cols-2 gap-3 mt-4">
               <div className="rounded-2xl bg-white/5 p-3 text-center">
-                <p className="text-xs text-slate-400">{roasSource === "crm" ? "Fatur. CRM (ganho)" : "Receita pixel"}</p>
-                <p className="text-sm font-bold text-white">{fmt(roasSource === "crm" ? crmGanhoValor : totalRevenue)}</p>
+                <p className="text-xs text-slate-400">{roasSource === "crm" ? "Fatur. CRM (ganho)" : isGoogle ? "Valor de conversões" : "Receita pixel"}</p>
+                <p className="text-sm font-bold text-white">{(roasSource === "crm" ? !crmError : adsAvailable) ? fmt(roasSource === "crm" ? crmGanhoValor : totalRevenue) : "—"}</p>
               </div>
               <div className="rounded-2xl bg-white/5 p-3 text-center">
                 <p className="text-xs text-slate-400">Investido</p>
-                <p className="text-sm font-bold text-white">{fmt(totalSpend)}</p>
+                <p className="text-sm font-bold text-white">{adsAvailable ? fmt(totalSpend) : "—"}</p>
               </div>
             </div>
             {roasSource === "crm" && (
@@ -469,14 +455,11 @@ export function DashboardView({ client }: { client: Client }) {
 
             {/* CRM KPIs */}
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-              <KPI label="Leads no CRM" value={String(crmTotal)} sub={`${crmEntrada} novos contatos`} icon="🎯"
-                from="from-violet-600" to="to-purple-700" />
-              <KPI label="Ganhos" value={String(crmGanho)} sub={crmValor > 0 ? `Valor: ${fmt(crmValor)}` : "Sem valor estimado"} icon="🏆"
-                from="from-emerald-500" to="to-green-700" trend={crmGanho > 0 ? "up" : "neutral"} />
-              <KPI label="Conversão CRM" value={`${crmConv}%`} sub={`${crmTotal} leads no total`} icon="📊"
-                from="from-sky-500" to="to-blue-700" trend={Number(crmConv) >= 10 ? "up" : "neutral"} />
-              <KPI label="Valor pipeline" value={fmt(crmLeads.filter(l => l.status !== "perdido").reduce((s, l) => s + (l.value ?? 0), 0))}
-                sub="Leads ativos" icon="💰" from="from-amber-500" to="to-orange-700" />
+              <KPI label="Leads no CRM" value={crmError?"—":String(crmTotal)} sub={`${crmEntrada} novos contatos`} icon="🎯" />
+              <KPI label="Ganhos" value={crmError?"—":String(crmGanho)} sub={crmValor > 0 ? `Valor: ${fmt(crmValor)}` : "Sem valor estimado"} icon="🏆" trend={crmGanho > 0 ? "up" : "neutral"} />
+              <KPI label="Conversão CRM" value={crmError?"—":`${crmConv}%`} sub={`${crmTotal} leads no total`} icon="📊" trend={Number(crmConv) >= 10 ? "up" : "neutral"} />
+              <KPI label="Valor pipeline" value={crmError?"—":fmt(crmLeads.filter(l => l.status !== "perdido").reduce((s, l) => s + (l.value ?? 0), 0))}
+                sub="Leads ativos" icon="💰" />
             </div>
 
             {/* Pipeline + Recentes */}
@@ -577,7 +560,7 @@ export function DashboardView({ client }: { client: Client }) {
                 activeDot={{ r: 8, fill: "#f472b6" }} />
             </ComposedChart>
           </ResponsiveContainer>
-        ) : <p className="text-center text-slate-500 py-12 text-sm">Sem dados de campanhas</p>}
+        ) : <p className="text-center text-slate-500 py-12 text-sm">{adsAvailable?"Sem dados de campanhas":"Indicadores indisponíveis"}</p>}
       </div>
     </div>
   );

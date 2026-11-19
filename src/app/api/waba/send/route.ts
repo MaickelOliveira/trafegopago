@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
 
   if (!templateId) return NextResponse.json({ error: "templateId é obrigatório" }, { status: 400 });
 
-  const tpl = getTemplateById(templateId);
+  const tpl = (await getTemplateById(templateId));
   if (!tpl) return NextResponse.json({ error: "Template não encontrado" }, { status: 404 });
   if (tpl.status !== "APPROVED") return NextResponse.json({ error: "Template não aprovado" }, { status: 422 });
 
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   if (phones === "all" && clientId) {
     // Todos os leads do cliente (filtrando por funil e/ou etapa kanban se especificados)
-    const leads = getLeads(clientId).filter((l) => {
+    const leads = (await getLeads(clientId)).filter((l) => {
       if (funnelId && l.funnelId !== funnelId) return false;
       if (columnId && l.status !== columnId) return false;
       return !!l.phone;

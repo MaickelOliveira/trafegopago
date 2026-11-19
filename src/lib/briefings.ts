@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -18,23 +18,17 @@ export type Briefing = {
 
 const FILE = path.join(process.cwd(), "data", "briefings.json");
 
-function load(): Briefing[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8")) as Briefing[];
-  } catch {
-    return [];
-  }
+async function load(): Promise<Briefing[]> {
+  return (await readDocument<Briefing[]>("briefings.json", []));
 }
 
-function save(briefings: Briefing[]) {
-  const dir = path.dirname(FILE);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(briefings, null, 2));
+async function save(briefings: Briefing[]) {
+  await writeDocument("briefings.json", briefings);
 }
 
-export function createBriefing(data: Omit<Briefing, "id" | "status" | "createdAt">): Briefing {
-  const briefings = load();
+export async function createBriefing(data: Omit<Briefing, "id" | "status" | "createdAt">): Promise<Briefing> {
+  return withDataTransaction(async () => {
+  const briefings = (await load());
   const briefing: Briefing = {
     ...data,
     id: randomUUID(),
@@ -42,20 +36,23 @@ export function createBriefing(data: Omit<Briefing, "id" | "status" | "createdAt
     createdAt: new Date().toISOString(),
   };
   briefings.unshift(briefing);
-  save(briefings);
+  (await save(briefings));
   return briefing;
+
+  });
 }
 
-export function getBriefingByToken(token: string): Briefing | undefined {
-  return load().find((b) => b.id === token);
+export async function getBriefingByToken(token: string): Promise<Briefing | undefined> {
+  return (await load()).find((b) => b.id === token);
 }
 
-export function listBriefingsByClient(clientId: string): Briefing[] {
-  return load().filter((b) => b.clientId === clientId);
+export async function listBriefingsByClient(clientId: string): Promise<Briefing[]> {
+  return (await load()).filter((b) => b.clientId === clientId);
 }
 
-export function submitBriefing(token: string, answers: Record<string, string>): Briefing | null {
-  const briefings = load();
+export async function submitBriefing(token: string, answers: Record<string, string>): Promise<Briefing | null> {
+  return withDataTransaction(async () => {
+  const briefings = (await load());
   const idx = briefings.findIndex((b) => b.id === token);
   if (idx === -1) return null;
   briefings[idx] = {
@@ -64,6 +61,8 @@ export function submitBriefing(token: string, answers: Record<string, string>): 
     answers,
     submittedAt: new Date().toISOString(),
   };
-  save(briefings);
+  (await save(briefings));
   return briefings[idx];
+
+  });
 }

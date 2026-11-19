@@ -17,12 +17,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Orçamento inválido" }, { status: 400 });
   }
 
-  const token = getConfig().metaToken;
+  const token = (await getConfig()).metaToken;
   // Meta API recebe orçamento em centavos (x100)
   const budgetCents = Math.round(budget * 100);
   const field = type === "lifetime" ? "lifetime_budget" : "daily_budget";
 
-  const res = await fetch(`https://graph.facebook.com/v19.0/${objectId}`, {
+  const res = await fetch(`https://graph.facebook.com/v26.0/${objectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({

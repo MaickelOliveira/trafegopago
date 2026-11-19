@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
   const connId = req.nextUrl.searchParams.get("connId");
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
   if (!agentGeminiKey) agentGeminiKey = client.agentConfig?.geminiApiKey;
 
-  const apiKey = getGeminiApiKey(agentGeminiKey);
+  const apiKey = (await getGeminiApiKey(agentGeminiKey));
   if (!apiKey) {
     return NextResponse.json({
       ok: false,

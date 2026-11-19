@@ -7,10 +7,10 @@ type Props = { params: Promise<{ clientId: string }> };
 
 export default async function GestorBriefingsPage({ params }: Props) {
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) notFound();
 
-  const briefings = listBriefingsByClient(clientId);
+  const briefings = (await listBriefingsByClient(clientId));
 
   return (
     <BriefingsView

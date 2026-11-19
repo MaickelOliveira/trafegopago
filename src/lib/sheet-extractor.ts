@@ -138,7 +138,7 @@ export async function extractAndWriteToSheet(opts: {
   // primeiro dia ficava fora da janela e a extração reconstruía o campo
   // "Pessoas" só com os novos nomes, apagando os antigos ao sobrescrever a linha.
   // ⚠️ 30 é um meio-termo — 80 chegou a multiplicar o custo da chamada por ~8x
-  // (e esse extrator roda em paralelo com o da Pousada pra cada enviar_resumo),
+  // (o extrator é executado após o resumo de conversa),
   // gerando um pico visível de uso na API do Gemini.
   const recent = messages.slice(-30);
   const conversation = recent

@@ -15,13 +15,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "imageUrl, legenda e instagramAccountId são obrigatórios" }, { status: 400 });
   }
 
-  const config = getConfig();
+  const config = (await getConfig());
   const token = config.metaToken;
 
   try {
     // 1. Cria container de mídia no Instagram
     const containerRes = await fetch(
-      `https://graph.facebook.com/v19.0/${instagramAccountId}/media`,
+      `https://graph.facebook.com/v26.0/${instagramAccountId}/media`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Publica o container
     const publishRes = await fetch(
-      `https://graph.facebook.com/v19.0/${instagramAccountId}/media_publish`,
+      `https://graph.facebook.com/v26.0/${instagramAccountId}/media_publish`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

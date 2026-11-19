@@ -1,103 +1,21 @@
-/**
- * Envia mensagem via Meta Cloud API (oficial) quando disponível,
- * com fallback para UazAPI ou WPPConnect.
- */
-
 import { getFunnels } from "./funnels";
-import { sendWhatsApp } from "./whatsapp";
 import { getConfig } from "./clients";
-import { sendText } from "./uazapi";
-import { getWppSessions } from "./wppconnect-sessions";
-import { sendText as wppSendText, sendMedia as wppSendMedia } from "./wppconnect-api";
 import { getEvolutionSessions } from "./evolution-sessions";
-import { sendText as evoSendText, sendMedia as evoSendMedia } from "./evolution-api";
-import { markPhoneSending, markSent as markWppSent } from "./wppconnect-sent";
-import { getServerWhatsAppSessions } from "./server-whatsapp-sessions";
-import { sendServerWhatsAppText } from "./server-whatsapp-api";
+import { sendText as evoSendText,sendMedia as evoSendMedia } from "./evolution-api";
+import { signMediaUrl } from "./media-access";
+import { getFunnelForConnection } from "./lead-context";
 
-export async function sendMessage(
-  phone: string,
-  message: string,
-  clientId: string,
-  preferredConnectionId?: string
-): Promise<boolean> {
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  const allConns = funnels.flatMap((f) => (f.connections ?? []).map((c) => ({ ...c, funnelId: f.id })));
-
-  // Se tem connectionId preferido, usa SOMENTE ele — nunca cai pra outro canal
-  // do cliente quando um específico foi pedido. Sem isso, um envio que falhava
-  // no canal certo (ex: Evolution retornando erro) caía silenciosamente em
-  // fallbacks completamente sem relação (Meta de outro funil, UazAPI legado
-  // genérico) e a função SEMPRE retornava true no final, mesmo quando nada
-  // realmente chegou ao destinatário — foi o que aconteceu com o resumo
-  // diário do JDF: a função "enviava" (retornava true), o guard de "já
-  // enviado hoje" era marcado, mas a mensagem nunca chegava de verdade no
-  // grupo configurado.
-  if (preferredConnectionId) {
-    const serverSession = getServerWhatsAppSessions().find(
-      (session) => session.id === preferredConnectionId && session.clientId === clientId,
-    );
-    if (serverSession) {
-      return sendServerWhatsAppText(serverSession.id, phone, message);
-    }
-
-    // WPPConnect: verifica sessões WPPConnect primeiro (não estão em funnels[].connections)
-    const wppSessions = getWppSessions();
-    const wppSession = wppSessions.find(s => s.id === preferredConnectionId);
-    if (wppSession) {
-      // Detecta número LID (≥13 dígitos, não começa com 55)
-      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
-      const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
-      markPhoneSending(rawPhone);
-      markWppSent(rawPhone, message);
-      return await wppSendText(wppSession.sessionName, wppSession.sessionToken, phone, message, isLid);
-    }
-
-    // Evolution API: mesmo racional — não está em funnels[].connections
-    const evoSessions = getEvolutionSessions();
-    const evoSession = evoSessions.find(s => s.id === preferredConnectionId);
-    if (evoSession) {
-      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
-      const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
-      markPhoneSending(rawPhone);
-      markWppSent(rawPhone, message);
-      return await evoSendText(evoSession.instanceName, evoSession.instanceApiKey, phone, message, isLid, true);
-    }
-
-    const preferred = allConns.find((c) => c.id === preferredConnectionId);
-    if (preferred) {
-      // Meta Cloud API
-      if (preferred.type === "meta" && preferred.metaPhoneNumberId && preferred.metaToken) {
-        return await sendMessageDirect(phone, message, preferred.metaPhoneNumberId, preferred.metaToken);
-      }
-      // UazAPI
-      if (preferred.type === "uazapi" && preferred.uazapiToken) {
-        return await sendText(preferred.uazapiToken, phone, message);
-      }
-    }
-
-    console.error(`[sendMessage] preferredConnectionId="${preferredConnectionId}" não encontrado em nenhuma sessão/conexão do clientId=${clientId} — abortando sem tentar outro canal`);
-    return false;
-  }
-
-  // Sem conexão preferida — tenta qualquer canal disponível do cliente.
-  for (const funnel of funnels) {
-    const metaConn = funnel.connections?.find((c) => c.type === "meta" && c.metaPhoneNumberId && c.metaToken);
-    if (metaConn) {
-      const ok = await sendMessageDirect(phone, message, metaConn.metaPhoneNumberId!, metaConn.metaToken!);
-      if (ok) return true;
-    }
-  }
-
-  // Sessão persistente mantida pelo processo interno da própria plataforma.
-  for (const session of getServerWhatsAppSessions().filter((item) => item.clientId === clientId)) {
-    const ok = await sendServerWhatsAppText(session.id, phone, message);
-    if (ok) return true;
-  }
-
-  // Fallback final: UazAPI legado
-  await sendWhatsApp(phone, message);
-  return true;
+export async function sendMessage(phone:string,message:string,clientId:string,preferredConnectionId?:string):Promise<boolean>{
+ const funnels=(await getFunnels()).filter(funnel=>funnel.clientId===clientId);
+ const official=funnels.flatMap(funnel=>(funnel.connections??[]).filter(connection=>connection.type==="meta"));
+ const evolution=(await getEvolutionSessions()).filter(session=>(!session.clientId||session.clientId===clientId)&&funnels.some(funnel=>funnel.id===session.funnelId));
+ const ids=[...official.map(connection=>connection.id),...evolution.map(session=>session.id)];
+ const selected=preferredConnectionId||(ids.length===1?ids[0]:undefined);
+ if(!selected||!await getFunnelForConnection(clientId,selected))return false;
+ const session=evolution.find(item=>item.id===selected);
+ if(session){const raw=phone.replace(/@.*$/,"").replace(/\D/g,"");return evoSendText(session.instanceName,session.instanceApiKey,phone,message,phone.endsWith("@lid")||(raw.length>=13&&!raw.startsWith("55")),true);}
+ const connection=official.find(item=>item.id===selected);
+ return !!connection?.metaPhoneNumberId&&!!connection.metaToken&&sendMessageDirect(phone,message,connection.metaPhoneNumberId,connection.metaToken);
 }
 
 export async function sendMessageDirect(
@@ -108,13 +26,14 @@ export async function sendMessageDirect(
 ): Promise<boolean> {
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`,
+      `https://graph.facebook.com/v26.0/${phoneNumberId}/messages`,
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
+        signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           messaging_product: "whatsapp",
           to: phone,
@@ -130,11 +49,11 @@ export async function sendMessageDirect(
     // (ex: janela de 24h fechada) — sem checar isso, marcávamos como enviado indevidamente.
     const ok = res.ok && !data?.error;
     if (!ok) {
-      console.error(`[sendMessageDirect] FALHOU status=${res.status} phoneNumberId=${phoneNumberId} phone=${phone} body=${bodyText.slice(0, 300)}`);
+      console.error(`[sendMessageDirect] FALHOU status=${res.status} phoneNumberId=${phoneNumberId} `);
     }
     return ok;
   } catch (e) {
-    console.error(`[sendMessageDirect] EXCEÇÃO phoneNumberId=${phoneNumberId} phone=${phone}:`, e);
+    console.error(`[sendMessageDirect] EXCEÇÃO phoneNumberId=${phoneNumberId} `, e);
     return false;
   }
 }
@@ -147,7 +66,7 @@ export async function sendMessageDirect(
  */
 export async function downloadMetaMedia(mediaId: string, accessToken: string): Promise<Buffer | null> {
   try {
-    const metaRes = await fetch(`https://graph.facebook.com/v19.0/${mediaId}`, {
+    const metaRes = await fetch(`https://graph.facebook.com/v26.0/${mediaId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(15_000),
     });
@@ -173,8 +92,8 @@ export async function downloadMetaMedia(mediaId: string, accessToken: string): P
   }
 }
 
-export function getGeminiApiKey(clientGeminiKey?: string): string | null {
-  const config = getConfig();
+export async function getGeminiApiKey(clientGeminiKey?: string): Promise<string | null> {
+  const config = (await getConfig());
   return (
     clientGeminiKey ||
     config.geminiApiKey ||
@@ -184,63 +103,26 @@ export function getGeminiApiKey(clientGeminiKey?: string): string | null {
   );
 }
 
-/**
- * Envia mídia (foto, vídeo, documento, áudio) via WPPConnect.
- * Usado pela IA para enviar arquivos de mídia na mesma conexão WPPConnect.
- */
-export async function sendMediaMessage(
-  phone: string,
-  mediaUrl: string,
-  clientId: string,
-  caption?: string,
-  preferredConnectionId?: string,
-): Promise<void> {
-  const wppSessions = getWppSessions().filter(s => s.clientId === clientId);
 
-  // Sessão preferida
-  if (preferredConnectionId) {
-    const wppSession = wppSessions.find(
-      s => s.id === preferredConnectionId || s.sessionName === preferredConnectionId,
-    );
-    if (wppSession) {
-      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
-      const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
-      markPhoneSending(rawPhone);
-      const ok = await wppSendMedia(wppSession.sessionName, wppSession.sessionToken, phone, mediaUrl, caption, isLid);
-      if (ok) return;
-    }
-  }
+export async function sendMediaMessage(phone:string,mediaUrl:string,clientId:string,caption?:string,preferredConnectionId?:string,mediaType?:"image"|"video"|"audio"|"document"):Promise<void>{
+ if(!preferredConnectionId||!await getFunnelForConnection(clientId,preferredConnectionId))throw Error("Selecione uma conexão deste cliente.");
+ const evolution=(await getEvolutionSessions()).find(session=>session.id===preferredConnectionId);
+ const raw=phone.replace(/@.*$/," ").replace(/\D/g,"");
+ if(evolution){if(!await evoSendMedia(evolution.instanceName,evolution.instanceApiKey,phone,mediaUrl,caption,raw.length>=13&&!raw.startsWith("55"),true))throw Error("O provedor não confirmou o envio.");return;}
+ const official=(await getFunnels()).filter(funnel=>funnel.clientId===clientId).flatMap(funnel=>funnel.connections??[]).find(connection=>connection.type==="meta"&&connection.id===preferredConnectionId);
+ if(!official?.metaPhoneNumberId||!official.metaToken)throw Error("Configure a conexão oficial.");
+ const link=await signMediaUrl(mediaUrl),url=new URL(link);if(url.protocol!=="https:")throw Error("Use um arquivo com endereço HTTPS.");
+ const ext=url.pathname.split(".").pop()?.toLowerCase(),type=mediaType||(["jpg","jpeg","png","gif","webp"].includes(ext||"")?"image":["mp4","mov"].includes(ext||"")?"video":["mp3","ogg","wav","m4a"].includes(ext||"")?"audio":"document");
+ const response=await fetch(`https://graph.facebook.com/v26.0/${official.metaPhoneNumberId}/messages`,{method:"POST",headers:{Authorization:`Bearer ${official.metaToken}`,"Content-Type":"application/json"},body:JSON.stringify({messaging_product:"whatsapp",to:phone,type,[type]:{link,...(caption&&type!=="audio"?{caption}:{})}}),signal:AbortSignal.timeout(20000)});
+ const data=await response.json();if(!response.ok||data.error)throw Error("A API oficial não confirmou o envio da mídia.");
+}
 
-  // Fallback: qualquer sessão WPPConnect do cliente
-  for (const s of wppSessions) {
-    const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
-    const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
-    markPhoneSending(rawPhone);
-    const ok = await wppSendMedia(s.sessionName, s.sessionToken, phone, mediaUrl, caption, isLid);
-    if (ok) return;
-  }
-
-  // Evolution API: mesmo fluxo (preferida primeiro, depois qualquer sessão do cliente)
-  const evoSessions = getEvolutionSessions().filter(s => s.clientId === clientId);
-  if (preferredConnectionId) {
-    const evoSession = evoSessions.find(
-      s => s.id === preferredConnectionId || s.instanceName === preferredConnectionId,
-    );
-    if (evoSession) {
-      const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
-      const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
-      markPhoneSending(rawPhone);
-      const ok = await evoSendMedia(evoSession.instanceName, evoSession.instanceApiKey, phone, mediaUrl, caption, isLid, true);
-      if (ok) return;
-    }
-  }
-  for (const s of evoSessions) {
-    const rawPhone = phone.replace(/@.*$/, "").replace(/\D/g, "");
-    const isLid = rawPhone.length >= 13 && !rawPhone.startsWith("55");
-    markPhoneSending(rawPhone);
-    const ok = await evoSendMedia(s.instanceName, s.instanceApiKey, phone, mediaUrl, caption, isLid, true);
-    if (ok) return;
-  }
-
-  console.error(`[whatsapp-send] sendMediaMessage: no WPPConnect/Evolution session for clientId=${clientId}`);
+/** Provider-native lists; only explicitly owned channels can send. */
+export async function sendInteractiveList(phone:string,clientId:string,connectionId:string,title:string,button:string,rows:{id:string;title:string;description?:string}[]):Promise<boolean>{
+ if(!await getFunnelForConnection(clientId,connectionId)||!rows.length||rows.length>10||!title||title.length>1024||button.length>20||rows.some(row=>!row.id||!row.title||row.title.length>24||row.id.length>200||(row.description?.length??0)>72)||new Set(rows.map(row=>row.id)).size!==rows.length)return false;
+ const session=(await getEvolutionSessions()).find(item=>item.id===connectionId);
+ if(session){const {sendList}=await import("./evolution-api");return sendList(session.instanceName,session.instanceApiKey,phone,title,button,rows);}
+ const connection=(await getFunnels()).filter(f=>f.clientId===clientId).flatMap(f=>f.connections??[]).find(c=>c.id===connectionId&&c.type==="meta");
+ if(!connection?.metaPhoneNumberId||!connection.metaToken)return false;
+ try{const response=await fetch(`https://graph.facebook.com/v26.0/${connection.metaPhoneNumberId}/messages`,{method:"POST",headers:{Authorization:`Bearer ${connection.metaToken}`,"Content-Type":"application/json"},body:JSON.stringify({messaging_product:"whatsapp",to:phone,type:"interactive",interactive:{type:"list",body:{text:title},action:{button,sections:[{rows}]}}}),signal:AbortSignal.timeout(20000)});const data=await response.json();return response.ok&&!data.error;}catch{return false;}
 }

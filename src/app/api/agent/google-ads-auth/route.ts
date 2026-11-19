@@ -4,13 +4,9 @@ import { getAdsAuthUrl } from "@/lib/google-ads-auth";
 import { getConfig } from "@/lib/clients";
 
 /** Retorna a URL base pública correta mesmo dentro de Docker/EasyPanel */
-function getPublicBase(req: NextRequest): string {
-  const config = getConfig();
-  if (config.appBaseUrl) return config.appBaseUrl.replace(/\/$/, "");
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (host) return `${proto}://${host}`;
-  return req.nextUrl.origin;
+async function getPublicBase(req: NextRequest): Promise<string> {
+  const config = (await getConfig());
+  return (process.env.APP_BASE_URL || config.appBaseUrl || req.nextUrl.origin).replace(/\/$/, "");
 }
 
 // GET /api/agent/google-ads-auth — inicia OAuth do Google Ads (conexão única
@@ -22,6 +18,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const baseUrl = getPublicBase(req);
-  return NextResponse.redirect(getAdsAuthUrl(baseUrl));
+  const baseUrl = (await getPublicBase(req));
+  try { return NextResponse.redirect(await getAdsAuthUrl(baseUrl)); }
+  catch { return NextResponse.redirect(`${baseUrl}/gestor/configuracoes?googleAds=setup`); }
 }
