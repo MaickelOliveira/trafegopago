@@ -43,6 +43,10 @@ async function update(req: NextRequest, toggle: boolean) {
       const recipients = parseLeadRecipients(patch.leadRecipients, !officialMeta);
       if (!recipients || (recipients.length && !connId)) return NextResponse.json({ error: "Confira a conexão, os números com DDI e os grupos selecionados." }, { status: 400 });
       updated.leadRecipients = recipients;
+      if (Object.keys(patch).length === 1) {
+        await upsertAgentConfigForConnection(client, connId, updated);
+        return NextResponse.json({ ok: true });
+      }
     }
     const followUpError = validateFollowUpConfig(updated, officialMeta);
     if (followUpError) return NextResponse.json({ error: followUpError }, { status: 400 });
