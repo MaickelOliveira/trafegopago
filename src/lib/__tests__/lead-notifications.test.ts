@@ -1,0 +1,164 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHmac } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { NextRequest } from "next/server";
+import { formFields, leadChatNumber, leadFormMessage, splitLeadMessage } from "../lead-form";
+
+const { pending, send } = vi.hoisted(() => ({
+  pending: [] as (() => Promise<void>)[],
+  send: vi.fn(async (_to: string, _body: string, _client: string, _connection: string) => true),
+}));
+vi.mock("next/server", async importOriginal => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (callback: () => Promise<void>) => pending.push(callback),
+}));
+// Esta suíte usa o armazenamento temporário do modo de teste.
+vi.mock("pg", () => ({ Pool: class { constructor() { throw new Error("Teste sem banco externo"); } } }));
+vi.mock("../auth", () => ({ getSession: async () => ({ role: "manager" }) }));
+vi.mock("../whatsapp-send", () => ({ sendMessage: send }));
+
+describe("ficha do lead", () => {
+  it("preserva múltiplas escolhas, valores zero, respostas negativas e dados aninhados", () => {
+    const text = leadFormMessage({
+      source: "Site", name: "Maria", phone: "(44) 99999-0000", email: "m@example.test",
+      fields: formFields({ interesses: ["Gradil", "Alambrado"], entrada: 0, instalar: false, local: { cidade: "Campo Mourão" }, utm_campaign: "Novembro" }),
+    });
+    for (const part of ["https://wa.me/5544999990000", "m@example.test", "Gradil, Alambrado", "Entrada: 0", "Instalar: Não", "Cidade: Campo Mourão", "Campanha UTM: Novembro"]) {
+      expect(text).toContain(part);
+    }
+  });
+  it("respeita DDI explícito e só monta link quando há um número discável", () => {
+    expect(leadChatNumber("+1 (202) 555-0100")).toBe("12025550100");
+    expect(leadChatNumber("00351 912 345 678")).toBe("351912345678");
+    expect(leadChatNumber("9999-0000")).toBe("");
+    expect(leadChatNumber("5544999990000")).toBe("5544999990000");
+  });
+  it("preserva respostas longas e emojis entre partes", () => {
+    const long = "🙂".repeat(5000);
+    const parts = splitLeadMessage(long, 651);
+    expect(parts.join("")).toBe(long);
+    expect(parts.every(p => p.length <= 651)).toBe(true);
+  });
+});
+
+describe.skipIf(process.env.TEST_POSTGRES === "1")("entrada de formulários e entrega por cliente", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "lead-form-test-"));
+  const data = path.join(root, "data");
+  const phone = "5544900000001";
+  const group = "120363000000000001@g.us";
+  const recipient = (value: string) => ({ id: value, label: value, value, type: value.includes("@") ? "group" : "phone" });
+  const storeFile = (file: string, value: unknown) => writeFileSync(path.join(data, file + ".json"), JSON.stringify(value));
+  const request = (url: string, body: unknown) => new NextRequest("https://example.test" + url, {
+    method: "POST", headers: { "Content-Type": "application/json", "x-hub-signature-256": "sha256=" + createHmac("sha256", "test-secret").update(JSON.stringify(body)).digest("hex") }, body: JSON.stringify(body),
+  });
+  const flush = async () => { for (const callback of pending.splice(0)) await callback(); };
+  let site: typeof import("../../app/api/crm/webhook/form/route");
+  let meta: typeof import("../../app/api/meta/webhook/route");
+  let pixel: typeof import("../../app/api/pixel/event/route");
+  let queue: typeof import("../lead-notifications");
+
+  beforeAll(async () => {
+    mkdirSync(data, { recursive: true });
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    site = await import("../../app/api/crm/webhook/form/route");
+    meta = await import("../../app/api/meta/webhook/route");
+    pixel = await import("../../app/api/pixel/event/route");
+    queue = await import("../lead-notifications");
+  });
+  beforeEach(() => {
+    rmSync(path.join(data, "lead-deliveries.json"), { recursive: true, force: true });
+    storeFile("clients", { clients: [
+      { id: "a", metaPageId: "p", agentConfigs: [
+        { whatsappConnectionId: "wa-a", avisos: [recipient("5544900000099")], leadRecipients: [recipient(phone), recipient(group), recipient(phone)] },
+      ] },
+      { id: "b", agentConfig: { whatsappConnectionId: "wa-b", avisos: [recipient("5544900000002")] } },
+    ] });
+    storeFile("funnels", ["a", "b"].map(id => ({ id, clientId: id, columns: [{ id: "novo" }] })));
+    storeFile("evolution-sessions", ["a", "b"].map(id => ({ id: "wa-" + id, clientId: id, funnelId: id })));
+    storeFile("config", { metaToken: "simulado", metaAppSecret: "test-secret" });
+    send.mockReset().mockResolvedValue(true);
+    pending.length = 0;
+  });
+  afterAll(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("salva e remove destinos pela API do agente mantendo Avisos independentes", async () => {
+    const agent = await import("../../app/api/agent/route");
+    const url = "/api/agent?clientId=a&connId=wa-a";
+    const invalid = await agent.PUT(request(url, { leadRecipients: [recipient("xyz")] }));
+    expect(invalid.status).toBe(400);
+    const response = await agent.PUT(request(url, { leadRecipients: [recipient(group), recipient(group)] }));
+    expect(response.status).toBe(200);
+    const saved = await (await agent.GET(request(url, {}))).json();
+    expect(saved.leadRecipients.map((r: {value: string}) => r.value)).toEqual([group]);
+    expect(saved.avisos[0].value).toBe("5544900000099");
+    await agent.PUT(request(url, { leadRecipients: [] }));
+    await site.POST(request("/?clientId=a", { phone: "44999990003", funnelId: "a" }));
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("encaminha ao número e ao grupo, sem usar os avisos ou outro cliente", async () => {
+    const form = { nome: "Ana", whatsapp: "(44) 99999-0000", tamanho: "20 m", funnelId: "a" };
+    const response = await site.POST(request("/?clientId=a", form));
+    expect(response.status).toBe(200);
+    await site.POST(request("/?clientId=a", form));
+    await site.POST(request("/?clientId=b", { ...form, funnelId: "b" }));
+    await flush();
+    expect(send.mock.calls.map(call => call[0]).sort()).toEqual([phone, group].sort());
+    for (const [, body, client, conn] of send.mock.calls) {
+      expect([client, conn]).toEqual(["a", "wa-a"]);
+      expect(body).toContain("Tamanho: 20 m");
+      expect(body).toContain("https://wa.me/5544999990000");
+    }
+    await site.POST(request("/?clientId=a", { ...form, tamanho: "40 m" }));
+    await flush();
+    expect(send).toHaveBeenCalledTimes(4);
+  });
+
+  it("entrega formulário do pixel e prioriza o webhook quando ambos recebem o mesmo contato", async () => {
+    const form = { event: "FormSubmit", source: "form", clientId: "a", phone: "44999990001", name: "Iara", fields: { materiais: ["Vidro", "Metal"] } };
+    expect((await pixel.POST(request("/", form))).status).toBe(200);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 20_000);
+    try {
+      await queue.processLeadNotifications();
+      expect(send.mock.calls[0][1]).toContain("Materiais: Vidro, Metal");
+      await pixel.POST(request("/", { ...form, phone: "44999990002" }));
+      await site.POST(request("/?clientId=a", { nome: "Iara", whatsapp: "44999990002", produto: "Gradil", funnelId: "a" }));
+      await flush();
+      clock.mockReturnValue(Date.now() + 20_000);
+      await queue.processLeadNotifications();
+      expect(send).toHaveBeenCalledTimes(4);
+      expect(send.mock.calls[3][1]).toContain("Produto: Gradil");
+    } finally { clock.mockRestore(); }
+  });
+
+  it("deduplica ID da Meta e só repete o destino que falhou", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ field_data: [
+      { name: "full_name", values: ["Lia"] }, { name: "phone_number", values: ["+1 202 555 0100"] },
+      { name: "servicos", values: ["Site", "Anúncio"] },
+    ] })));
+    const event = { entry: [{ id: "p", changes: [{ field: "leadgen", value: { leadgen_id: "l1" } }] }] };
+    await meta.POST(request("/", event));
+    send.mockImplementation(async to => to !== group);
+    await flush();
+    expect(send.mock.calls[0][1]).toContain("Serviços: Site, Anúncio");
+    expect(send.mock.calls[0][1]).toContain("https://wa.me/12025550100");
+    await meta.POST(request("/", event));
+    expect(pending).toHaveLength(0);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 120_000);
+    try {
+      send.mockResolvedValue(true);
+      await queue.processLeadNotifications();
+      await queue.processLeadNotifications();
+      expect(send.mock.calls.map(c => c[0]).sort()).toEqual([phone, group, group].sort());
+    } finally { clock.mockRestore(); }
+    await meta.POST(request("/", { entry: [{ id: "desconhecida", changes: event.entry[0].changes }] }));
+    expect(pending).toHaveLength(0);
+  });
+});

@@ -4,14 +4,15 @@ import { getFunnels } from "@/lib/funnels";
 import { getLeadByPhone } from "@/lib/leads";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
-import { upsertLeadByPhone } from "@/lib/leads";
+import { formFields as readFormFields } from "@/lib/lead-form";
+import { captureFormLead } from "@/lib/lead-notifications";
 
 function getCors(req: NextRequest) {
   const origin = req.headers.get("origin");
   return {
     "Access-Control-Allow-Origin": origin && origin !== "null" ? origin : "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Idempotency-Key",
 
   };
 }
@@ -29,7 +30,8 @@ export async function POST(req: NextRequest) {
   let body: Record<string, string>;
   try {
     const text = await req.text();
-    body = JSON.parse(text);
+    if (Buffer.byteLength(text) > 65536) return NextResponse.json({ error: "Formulário muito grande." }, { status: 413, headers: getCors(req) });
+    body = readFormFields(JSON.parse(text));
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
@@ -42,7 +44,8 @@ export async function POST(req: NextRequest) {
   if (!funnel) return NextResponse.json({ error: "Configure o funil de entrada deste cliente." }, { status: 422, headers: getCors(req) });
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
   if (!checkRateLimit(`form:${clientId}:${ip}`, 30, 60000)) return NextResponse.json({ error: "Aguarde antes de tentar novamente." }, { status: 429 });
-  const phone = (body.phone ?? body.whatsapp ?? "").replace(/\D/g, "");
+  const rawPhone = body.phone || body.whatsapp || body.telefone || body.celular || "";
+  const phone = rawPhone.replace(/\D/g, "");
   if (phone.length < 7 || phone.length > 20) return NextResponse.json({ error: "phone obrigatório" }, { status: 400 });
 
   // Detecta plataforma de anúncio
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
   const initialStatus = clientId === "pro-nexo" && funnel.columns.some(column => column.id === "novo")
     ? "novo"
     : funnel.columns[0]?.id ?? "novo";
-  const lead = (await upsertLeadByPhone(clientId, phone, {
+  const lead = await captureFormLead(clientId, phone, {
     funnelId: funnel.id,
     name: body.name ?? body.nome ?? "Lead do site",
     email: body.email ?? null,
@@ -86,7 +89,9 @@ export async function POST(req: NextRequest) {
     customFields: formFields,
     notes: notesLines.join("\n"),
     ...(existing ? {} : { status: initialStatus }),
-  }));
+  }, "site:" + funnel.id, {
+    source: "Formulário do site", name: body.name || body.nome || "Lead do site", phone: rawPhone, email: body.email, fields: body,
+  }, req.headers.get("idempotency-key") || body.submissionId);
 
   return NextResponse.json({ ok: true, leadId: lead.id }, { headers: getCors(req) });
 }

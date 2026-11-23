@@ -25,7 +25,12 @@ function FormWebhookCard({ baseUrl, clientId }: { baseUrl: string; clientId: str
     if (!form) return;
     form.addEventListener("submit", function (e) {
       e.preventDefault();
-      var data = Object.fromEntries(new FormData(form));
+      var data = Object.create(null);
+      new FormData(form).forEach(function(value, key) {
+        var answer = typeof value === "string" ? value : value.name;
+        if (key in data) data[key] = [].concat(data[key], answer);
+        else data[key] = answer;
+      });
       // Captura UTMs e fbclid da URL
       var params = new URLSearchParams(window.location.search);
       ["utm_source","utm_medium","utm_campaign","utm_content","utm_term","fbclid","gclid"].forEach(function(k){

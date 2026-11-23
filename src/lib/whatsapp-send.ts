@@ -5,7 +5,7 @@ import { sendText as evoSendText,sendMedia as evoSendMedia } from "./evolution-a
 import { signMediaUrl } from "./media-access";
 import { getFunnelForConnection } from "./lead-context";
 
-export async function sendMessage(phone:string,message:string,clientId:string,preferredConnectionId?:string):Promise<boolean>{
+export async function sendMessage(phone:string,message:string,clientId:string,preferredConnectionId?:string,addressType?: "recipient"):Promise<boolean>{
  const funnels=(await getFunnels()).filter(funnel=>funnel.clientId===clientId);
  const official=funnels.flatMap(funnel=>(funnel.connections??[]).filter(connection=>connection.type==="meta"));
  const evolution=(await getEvolutionSessions()).filter(session=>(!session.clientId||session.clientId===clientId)&&funnels.some(funnel=>funnel.id===session.funnelId));
@@ -13,7 +13,11 @@ export async function sendMessage(phone:string,message:string,clientId:string,pr
  const selected=preferredConnectionId||(ids.length===1?ids[0]:undefined);
  if(!selected||!await getFunnelForConnection(clientId,selected))return false;
  const session=evolution.find(item=>item.id===selected);
- if(session){const raw=phone.replace(/@.*$/,"").replace(/\D/g,"");return evoSendText(session.instanceName,session.instanceApiKey,phone,message,phone.endsWith("@lid")||(raw.length>=13&&!raw.startsWith("55")),true);}
+ if (session) {
+   const raw = phone.replace(/@.*$/, "").replace(/\D/g, "");
+   const isLid = addressType !== "recipient" && !phone.endsWith("@g.us") && (phone.endsWith("@lid") || (raw.length >= 13 && !raw.startsWith("55")));
+   return evoSendText(session.instanceName, session.instanceApiKey, phone, message, isLid, true, addressType === "recipient");
+ }
  const connection=official.find(item=>item.id===selected);
  return !!connection?.metaPhoneNumberId&&!!connection.metaToken&&sendMessageDirect(phone,message,connection.metaPhoneNumberId,connection.metaToken);
 }
