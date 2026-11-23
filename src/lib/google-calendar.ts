@@ -1,17 +1,18 @@
-import { google } from "googleapis";
+import { createOAuthState } from "./oauth-state";
+import { auth, calendar } from "googleapis/build/src/apis/calendar/index.js";
 import { getConfig } from "./clients";
 
-export function getOAuth2Client(baseUrl?: string) {
-  const config = getConfig();
+export async function getOAuth2Client(baseUrl?: string) {
+  const config = (await getConfig());
   const clientId = process.env.GOOGLE_CLIENT_ID || config.googleClientId;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || config.googleClientSecret;
   const base = baseUrl || config.appBaseUrl || "";
   const redirectUri = `${base}/api/agent/google-auth/callback`;
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+  return new auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
-export function getAuthUrl(clientId: string, baseUrl?: string, connId?: string | null): string {
-  const oauth2 = getOAuth2Client(baseUrl);
+export async function getAuthUrl(clientId: string, baseUrl?: string, connId?: string | null): Promise<string> {
+  const oauth2 = (await getOAuth2Client(baseUrl));
   return oauth2.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
@@ -20,21 +21,21 @@ export function getAuthUrl(clientId: string, baseUrl?: string, connId?: string |
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/drive.metadata.readonly",
     ],
-    state: JSON.stringify({ clientId, connId: connId ?? null }),
+    state: await createOAuthState("google-calendar", { clientId, connId }),
   });
 }
 
 export async function exchangeCode(code: string, baseUrl?: string): Promise<string> {
-  const oauth2 = getOAuth2Client(baseUrl);
+  const oauth2 = (await getOAuth2Client(baseUrl));
   const { tokens } = await oauth2.getToken(code);
   if (!tokens.refresh_token) throw new Error("No refresh token received");
   return tokens.refresh_token;
 }
 
 async function getCalendar(refreshToken: string) {
-  const oauth2 = getOAuth2Client();
+  const oauth2 = (await getOAuth2Client());
   oauth2.setCredentials({ refresh_token: refreshToken });
-  return google.calendar({ version: "v3", auth: oauth2 });
+  return calendar({ version: "v3", auth: oauth2 });
 }
 
 export type TimeSlot = { start: string; end: string };

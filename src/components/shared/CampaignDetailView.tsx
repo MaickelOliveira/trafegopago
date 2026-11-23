@@ -395,11 +395,11 @@ function AdCard({ ad, cplTarget, funnelType = "leads", onOpen, role, onStatusCha
     if (!igMediaId) return;
     // Para ads com IG media, buscar a URL de alta res imediatamente
     // (thumbnail_url do fbcdn para vídeos expira; IG media_url é estável)
-    fetch(`/api/meta/ig/${igMediaId}`)
+    fetch(ad.creative?.igPreviewUrl || `/api/meta/ig/${igMediaId}`)
       .then((r) => r.json())
       .then((d) => { if (d.url) setHiResThumb(d.url); })
       .catch(() => {});
-  }, [igMediaId]);
+  }, [igMediaId, ad.creative?.igPreviewUrl]);
 
   // Se tem igMediaId: espera IG media_url (evita URL expirada do fbcdn)
   // Se não tem: usa thumbnail diretamente
@@ -549,11 +549,11 @@ function AdLightbox({ ad, cplTarget, onClose }: { ad: DisplayAd; cplTarget: numb
   useEffect(() => {
     if (!isVideo || !ad.creative?.videoId) return;
     setLoadingVideo(true);
-    fetch(`/api/meta/video/${ad.creative.videoId}`)
+    fetch(ad.creative.videoPreviewUrl || `/api/meta/video/${ad.creative.videoId}`)
       .then((r) => r.json())
       .then((d) => setVideoSrc(d.source || null))
       .finally(() => setLoadingVideo(false));
-  }, [ad.creative?.videoId, isVideo]);
+  }, [ad.creative?.videoId, ad.creative?.videoPreviewUrl, isVideo]);
 
   // Fecha com ESC
   useEffect(() => {

@@ -113,7 +113,6 @@ export function ClientPortalHeader({
     { href: "/cliente", label: "Dashboard", icon: "📊", show: !isEmployee, activeColor: "bg-slate-800 text-white" },
     { href: "/cliente/crm", label: "CRM", icon: "📋", show: true, activeColor: "bg-blue-50 text-blue-700" },
     { href: "/cliente/inbox", label: "Mensagens", icon: "💬", show: true, activeColor: "bg-blue-50 text-blue-700" },
-    { href: "/cliente/pousada", label: "Pousada", icon: "🏡", show: !!enabledSystems?.includes("pousada"), activeColor: "bg-amber-50 text-amber-700" },
   ].filter((i) => i.show);
 
   // Itens usados com menos frequência — agrupados no menu "Mais"
@@ -123,7 +122,6 @@ export function ClientPortalHeader({
     { href: "/cliente/automacoes", label: "Automações", icon: "⚡", show: canViewAutomations, activeColor: "bg-emerald-50 text-emerald-700" },
     { href: "/cliente/agente-ia", label: "Agente de IA", icon: "🤖", show: canViewAgentIa, activeColor: "bg-violet-50 text-violet-700" },
     { href: "/cliente/disparos-wa", label: "Disparos WA", icon: "📨", show: canViewWaba, activeColor: "bg-green-50 text-green-700" },
-    { href: "/cliente/whatsapp-extensao", label: "WhatsApp 24h", icon: "☁️", show: canManageQR, activeColor: "bg-teal-50 text-teal-700" },
     { href: "/cliente/funcionarios", label: "Colaboradores", icon: "👥", show: !isEmployee, activeColor: "bg-slate-800 text-white" },
     { href: "/cliente/configuracoes", label: "Configurações", icon: "⚙️", show: !isEmployee, activeColor: "bg-slate-800 text-white" },
   ].filter((i) => i.show);

@@ -1,3 +1,4 @@
+import { getEmployeeById, employeeCanAccessFunnel } from "@/lib/employees";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClientById } from "@/lib/clients";
@@ -10,9 +11,10 @@ export async function GET() {
   }
 
   const clientId = session.clientId!;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
-  const connections = await getConnectionMetricsForClient(clientId);
+  const employee = session.role === "employee" ? await getEmployeeById(session.employeeId!) : undefined;
+  const connections = (await getConnectionMetricsForClient(clientId)).filter(connection => !employee || employeeCanAccessFunnel(employee, connection.funnelId)).map(connection => ({ ...connection, qr: undefined }));
   return NextResponse.json({ connections });
 }

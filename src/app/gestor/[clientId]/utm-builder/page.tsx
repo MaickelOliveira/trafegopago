@@ -6,10 +6,10 @@ type Props = { params: Promise<{ clientId: string }> };
 
 export default async function UtmBuilderPage({ params }: Props) {
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) notFound();
 
-  const config = getConfig();
+  const config = (await getConfig());
   const baseUrl = config.appBaseUrl?.replace(/\/$/, "") ?? "";
   const webhookUrl = baseUrl ? `${baseUrl}/api/crm/webhook/form?clientId=${clientId}` : `/api/crm/webhook/form?clientId=${clientId}`;
 

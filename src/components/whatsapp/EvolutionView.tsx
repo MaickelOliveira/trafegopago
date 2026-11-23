@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { EnrichedEvolutionSession } from "@/app/api/whatsapp/evolution-manager/route";
 import {
   ActionBtn,
@@ -32,7 +32,6 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [qrStage, setQrStage] = useState<"generating" | "scanning" | "done">("generating");
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const qrShownRef = useRef(false);
 
   // Link compartilhável de QR (pra enviar a quem tem o celular físico)
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -45,6 +44,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
   const [linkAgent, setLinkAgent] = useState(false);
   const [reuseConnectionId, setReuseConnectionId] = useState("");
   const [savingLink, setSavingLink] = useState(false);
+  const [linkError, setLinkError] = useState("");
 
   // Delete confirm
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -89,7 +89,6 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
     if (evoModal.type !== "qr") return;
 
     const { id, forceLogout } = evoModal;
-    qrShownRef.current = false;
     setQrImage(null);
     setQrStage("generating");
     setCooldownSeconds(0);
@@ -116,7 +115,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
         const d = await res.json() as { qr?: string | null; cooldownMs?: number };
         if (!alive) return;
         if (d.qr && d.qr !== lastQr) {
-          setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
+          setQrImage(d.qr); setQrStage("scanning");
           lastQr = d.qr; qrSetAt = Date.now();
           clearInterval(cooldownTick);
           setCooldownSeconds(0);
@@ -150,13 +149,13 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
           if (d.qr) {
             if (d.qr !== lastQr) {
               lastQr = d.qr; qrSetAt = Date.now();
-              setQrImage(d.qr); setQrStage("scanning"); qrShownRef.current = true;
+              setQrImage(d.qr); setQrStage("scanning");
             } else if (!d.connected && Date.now() - qrSetAt > 65000) {
               setQrImage(null); setQrStage("generating");
               connectAndFetchQr(false);
             }
           }
-          if (d.connected && qrShownRef.current) {
+          if (d.connected) {
             setQrStage("done"); clearInterval(poll); alive = false;
             setTimeout(() => { setEvoModal({ type: "none" }); fetchSessions(); }, 1500);
           }
@@ -194,14 +193,26 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
   async function handleLink() {
     if (evoModal.type !== "link") return;
     setSavingLink(true);
-    await fetch("/api/whatsapp/evolution-manager/link", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: evoModal.id, funnelId: linkFunnelId || null, clientId: linkClientId || null, linkAgent,
-        reuseConnectionId: reuseConnectionId || undefined,
-      }),
-    });
-    setSavingLink(false); setEvoModal({ type: "none" }); setReuseConnectionId(""); fetchSessions();
+    setLinkError("");
+    try {
+      const response = await fetch("/api/whatsapp/evolution-manager/link", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: evoModal.id, funnelId: linkFunnelId || null, clientId: linkClientId || null, linkAgent,
+          reuseConnectionId: reuseConnectionId || undefined,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        setLinkError(data.error || "Não foi possível salvar o vínculo. Tente novamente.");
+        return;
+      }
+      setEvoModal({ type: "none" }); setReuseConnectionId(""); fetchSessions();
+    } catch {
+      setLinkError("Não foi possível salvar o vínculo. Verifique a conexão e tente novamente.");
+    } finally {
+      setSavingLink(false);
+    }
   }
 
   async function handleDelete(id: string) {
@@ -241,7 +252,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Evolution API</h1>
+          <h2 className="text-2xl font-bold text-slate-900">Evolution API</h2>
           <p className="text-sm text-slate-500 mt-0.5">Gerencie suas instâncias Evolution API</p>
         </div>
         <div className="flex items-center gap-3">
@@ -260,7 +271,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
             ) : (
               <span>🔗</span>
             )}
-            Reconectar Webhooks
+            Atualizar integração
           </button>
           <button
             onClick={() => { setNewName(""); setCreateError(""); setEvoModal({ type: "create", stage: "name" }); }}
@@ -283,7 +294,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
         <span className="text-xl mt-0.5">🧬</span>
         <div className="flex-1 text-sm text-emerald-700">
           <p className="font-semibold mb-0.5">Evolution API Server</p>
-          <p className="text-emerald-600 text-xs">Configure o servidor e a API key admin em Configurações. Suporta rastreio CTWa de anúncios via <code className="font-mono bg-emerald-100 px-1 rounded">contextInfo.externalAdReplyInfo</code>.</p>
+          <p className="text-emerald-600 text-xs">Conecte o número e vincule-o a um cliente e funil. O acesso ao servidor fica em Plataforma e conexões.</p>
         </div>
       </div>
 
@@ -325,12 +336,15 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
                           : <span className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-0.5">Sem funil</span>}
                       </div>
                       {s.instanceWebhookUrl && (
-                        <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-lg px-2.5 py-1.5 max-w-lg">
+                        <details className="mt-2 max-w-lg text-xs text-slate-500">
+                          <summary className="cursor-pointer">Detalhes de recebimento</summary>
+                          <div className="flex items-center gap-2 mt-2 bg-slate-50 rounded-lg px-2.5 py-1.5">
                           <span className="text-xs text-slate-400">🔗</span>
                           <span className="text-xs font-mono text-slate-500 truncate flex-1">{s.instanceWebhookUrl}</span>
                           <button onClick={() => navigator.clipboard.writeText(s.instanceWebhookUrl).catch(() => {})}
                             className="text-xs text-blue-600 font-semibold hover:text-blue-800 whitespace-nowrap">Copiar</button>
-                        </div>
+                          </div>
+                        </details>
                       )}
                     </div>
                   </div>
@@ -347,6 +361,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
                       </button>
                     )}
                     <ActionBtn onClick={() => {
+                      setLinkError("");
                       setLinkFunnelId(s.linkedFunnelId ?? "");
                       const cid = s.linkedClientId ?? "";
                       setLinkClientId(cid);
@@ -506,6 +521,7 @@ export function EvolutionView({ funnels, clients, appBaseUrl }: { funnels: Funne
       {evoModal.type === "link" && (
         <Modal title={`Vincular — ${evoModal.instanceName}`} onClose={() => setEvoModal({ type: "none" })}>
           <div className="space-y-4">
+            {linkError && <p role="alert" className="text-sm text-red-600">{linkError}</p>}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">🎯 Funil do CRM</label>
               <ClientFunnelSelect clients={clients} funnels={funnels} value={linkFunnelId} onChange={setLinkFunnelId} accentColor="green" />

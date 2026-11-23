@@ -6,6 +6,8 @@ import { LeadModal, prefetchConversation } from "./LeadModal";
 import ImportModal from "./ImportModal";
 import type { Lead, LeadReminder } from "@/lib/leads";
 import type { Funnel, FunnelColumn, TriggerPhrase } from "@/lib/funnels";
+import { campaignLabel, campaignPlatform } from "@/lib/campaign-label";
+import { Bell, CheckSquare, Plus, Settings2 } from "lucide-react";
 
 type ClientOption = { id: string; name: string; color: string; metaAccountId?: string; pixelId?: string; kanbanAgentEnabled?: boolean; kanbanAgentPrompt?: string };
 
@@ -78,10 +80,6 @@ function fmt(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function hexToLight(hex: string): string {
-  return hex + "22";
-}
-
 type DatePreset = "all" | "today" | "yesterday" | "last_7d" | "last_30d" | "this_month" | "last_month" | "custom";
 
 /** Campo de data usado pelo filtro: "activity" (última atividade, padrão atual)
@@ -141,8 +139,8 @@ type PlatformFilterId = "meta" | "google" | "tiktok" | "linkedin";
 
 /** Detecta a plataforma de origem do lead (Meta, Google, TikTok, LinkedIn) a partir de adPlatform/utmSource. */
 function getLeadPlatform(lead: Lead): PlatformFilterId | null {
-  if (lead.adPlatform === "meta") return "meta";
-  if (lead.adPlatform === "google") return "google";
+  const paidPlatform = campaignPlatform(lead);
+  if (paidPlatform) return paidPlatform;
   const src = (lead.utmSource ?? "").toLowerCase();
   if (src.includes("tiktok")) return "tiktok";
   if (src.includes("linkedin")) return "linkedin";
@@ -641,6 +639,17 @@ export function KanbanBoard({
     return initialFunnels[0]?.id ?? "default";
   });
   const filterClient = selectedClient ?? clients[0]?.id ?? "all";
+  const [campaignLabels, setCampaignLabels] = useState<{clientId: string; labels: Record<string, string>}>({clientId: "", labels: {}});
+  const campaignLeadSignature = leads.filter(lead => lead.clientId === filterClient).map(lead => `${lead.id}:${lead.campaignId}:${lead.campaignName}:${lead.utmCampaign}`).join("|");
+  useEffect(() => {
+    if (!filterClient || filterClient === "all") return;
+    const controller = new AbortController();
+    fetch(`/api/crm/campaign-labels?clientId=${encodeURIComponent(filterClient)}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (!controller.signal.aborted && data?.labels) setCampaignLabels({ clientId: filterClient, labels: data.labels }); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [filterClient, campaignLeadSignature]);
   const [search, setSearch]   = useState("");
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [customStart, setCustomStart] = useState("");
@@ -652,6 +661,7 @@ export function KanbanBoard({
   const [showFunnelMgr, setShowFunnelMgr] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const [remindersNow, setRemindersNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setRemindersNow(Date.now()), 30_000);
@@ -721,39 +731,10 @@ export function KanbanBoard({
   }
 
   // Agente Kanban — liga/desliga
-  const [agentEnabled, setAgentEnabled] = useState(
-    clients.find((c) => c.id === (selectedClient ?? clients[0]?.id))?.kanbanAgentEnabled !== false
-  );
+  const [agentStateByClient, setAgentStateByClient] = useState<Record<string, boolean>>({});
+  const activeAgentClientId = selectedClient ?? clients[0]?.id ?? "";
+  const agentEnabled = agentStateByClient[activeAgentClientId] ?? (clients.find(c => c.id === activeAgentClientId)?.kanbanAgentEnabled === true);
   const [togglingAgent, setTogglingAgent] = useState(false);
-  const [classifying, setClassifying] = useState(false);
-  const [classifyResult, setClassifyResult] = useState<string | null>(null);
-
-  async function classifyAll() {
-    // Mais de um cliente na lista = visão global do gestor (sem seletor fixo de
-    // cliente) — nesse caso classifica a PLATAFORMA INTEIRA, não só o filtro
-    // atual do dropdown. Na tela de um cliente específico (só 1 na lista),
-    // continua restrito a esse cliente.
-    const isPlatformWide = clients.length > 1;
-    const cid = selectedClient ?? clients[0]?.id;
-    if (!isPlatformWide && !cid) return;
-    setClassifying(true);
-    setClassifyResult(null);
-    const url = isPlatformWide ? "/api/crm/kanban-agent" : `/api/crm/kanban-agent?clientId=${cid}`;
-    const res = await fetch(url, { method: "POST" });
-    if (res.ok) {
-      const data = await res.json() as { processed: number; moved: number; total: number };
-      setClassifyResult(`${data.moved} de ${data.processed} leads movidos`);
-      // Recarrega os leads
-      const leadsUrl = isPlatformWide ? "/api/crm/leads" : `/api/crm/leads?clientId=${cid}`;
-      const leadsRes = await fetch(leadsUrl);
-      if (leadsRes.ok) setLeads(await leadsRes.json());
-      setTimeout(() => setClassifyResult(null), 5000);
-    } else {
-      const err = await res.json().catch(() => ({}));
-      alert(`Erro ao classificar leads: ${err.error ?? res.status}`);
-    }
-    setClassifying(false);
-  }
 
   async function toggleAgent() {
     const cid = selectedClient ?? clients[0]?.id;
@@ -765,7 +746,7 @@ export function KanbanBoard({
       body: JSON.stringify({ enabled: !agentEnabled }),
     });
     if (res.ok) {
-      setAgentEnabled((v) => !v);
+      setAgentStateByClient(previous => ({ ...previous, [cid]: !agentEnabled }));
     } else {
       const err = await res.json().catch(() => ({}));
       alert(`Erro ao alterar IA: ${err.error ?? res.status}`);
@@ -931,10 +912,10 @@ export function KanbanBoard({
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   // Origens
-  const originMeta     = filtered.filter((l) => l.adPlatform === "meta").length;
-  const originGoogle   = filtered.filter((l) => l.adPlatform === "google").length;
-  const originWhatsapp = filtered.filter((l) => l.source === "whatsapp" && !l.adPlatform).length;
-  const originForm     = filtered.filter((l) => l.source === "form" && !l.adPlatform).length;
+  const originMeta     = filtered.filter((l) => getLeadPlatform(l) === "meta").length;
+  const originGoogle   = filtered.filter((l) => getLeadPlatform(l) === "google").length;
+  const originWhatsapp = filtered.filter((l) => l.source === "whatsapp" && !getLeadPlatform(l)).length;
+  const originForm     = filtered.filter((l) => l.source === "form" && !getLeadPlatform(l)).length;
   const originManual   = filtered.filter((l) => l.source === "manual").length;
   const hasOrigins = originMeta + originGoogle + originWhatsapp + originForm + originManual > 0;
 
@@ -1035,10 +1016,10 @@ export function KanbanBoard({
   if (!funnel) return <p className="text-slate-400 text-sm">Nenhum funil encontrado.</p>;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="nexo-kanban flex flex-col gap-3">
 
       {/* Stats bar */}
-      <div className="grid grid-cols-4 gap-3 flex-shrink-0">
+      <div className="nexo-crm-summary grid grid-cols-2 sm:grid-cols-4 gap-3 flex-shrink-0">
         {[
           { label: "Total de leads", value: String(filtered.length), sub: `${funnels.length} funil${funnels.length !== 1 ? "s" : ""}` },
           { label: "Valor no pipeline", value: fmt(totalValue), sub: "soma dos leads ativos" },
@@ -1055,7 +1036,7 @@ export function KanbanBoard({
 
       {/* Origins bar */}
       {hasOrigins && (
-        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        <div className="nexo-crm-origins flex items-center gap-2 flex-shrink-0 flex-wrap">
           <span className="text-xs text-slate-400 font-medium">Origens:</span>
           {originMeta > 0 && (
             <span className="flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
@@ -1142,11 +1123,12 @@ export function KanbanBoard({
       )}
 
       {/* Toolbar */}
-      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+      <div className="nexo-crm-toolbar flex items-center gap-2 flex-shrink-0 flex-wrap">
         {/* Seletor de funil */}
         <div className="flex items-center gap-1 shrink-0">
           <select
             value={activeFunnel}
+            aria-label="Selecionar funil"
             onChange={(e) => {
               setActiveFunnel(e.target.value);
               if (selectedClient) localStorage.setItem(`crm_funnel_${selectedClient}`, e.target.value);
@@ -1157,8 +1139,8 @@ export function KanbanBoard({
               <option key={f.id} value={f.id}>{f.name}</option>
             ))}
           </select>
-          <button onClick={() => setShowFunnelMgr((v) => !v)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-400 hover:text-slate-600 transition" title="Gerenciar funis">
-            ⚙️
+          <button onClick={() => setShowFunnelMgr((v) => !v)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-400 hover:text-slate-600 transition" title="Gerenciar funis" aria-label="Gerenciar funis">
+            <Settings2 size={15} />
           </button>
         </div>
 
@@ -1166,6 +1148,7 @@ export function KanbanBoard({
         <div className="flex items-center gap-1.5 flex-wrap shrink-0">
           <select
             value={datePreset}
+            aria-label="Filtrar período"
             onChange={(e) => setDatePreset(e.target.value as DatePreset)}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 outline-none focus:border-blue-400"
           >
@@ -1223,6 +1206,7 @@ export function KanbanBoard({
           {PLATFORM_FILTERS.map((p) => (
             <button
               key={p.id}
+              aria-pressed={platformFilter.has(p.id)}
               onClick={() => setPlatformFilter((prev) => {
                 const next = new Set(prev);
                 if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
@@ -1247,7 +1231,7 @@ export function KanbanBoard({
           </svg>
           <input
             value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar lead..."
+            placeholder="Buscar lead..." aria-label="Buscar lead"
             className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-1.5 text-sm outline-none focus:border-blue-400"
           />
         </div>
@@ -1257,7 +1241,7 @@ export function KanbanBoard({
         <button
           onClick={toggleAgent}
           disabled={togglingAgent}
-          title={agentEnabled ? "Agente IA ativo — clique para desativar" : "Agente IA desativado — clique para ativar"}
+          title={agentEnabled ? "IA do Kanban ativa. Limite: 30 análises por cliente ao dia. Cada mensagem é analisada uma única vez." : "IA do Kanban desligada. Frases de gatilho, se configuradas, são verificadas sem custo quando a IA estiver ativa."}
           className={clsx(
             "rounded-lg border px-3 py-1.5 text-xs font-semibold transition shrink-0 flex items-center gap-1.5",
             agentEnabled
@@ -1269,29 +1253,15 @@ export function KanbanBoard({
           {togglingAgent ? "..." : agentEnabled ? "IA ativa" : "IA desligada"}
         </button>
 
+        <button type="button" aria-expanded={showTools} aria-controls="nexo-crm-tools" onClick={() => setShowTools(value => !value)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold"><Settings2 size={14} /> Mais ações</button>
+        <div id="nexo-crm-tools" className={`nexo-crm-tools${showTools ? " is-open" : ""}`}>
         {/* Prompt do agente Kanban */}
         <button
           onClick={openPromptModal}
           title="Configurar o prompt que guia quando a IA move ou pula um lead no Kanban"
           className="rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 transition shrink-0"
         >
-          ⚙️ Prompt do agente
-        </button>
-
-        {/* Classificar todos os leads com IA */}
-        <button
-          onClick={classifyAll}
-          disabled={classifying}
-          title="Analisa a conversa de todos os leads e move cada um para a coluna correta"
-          className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition shrink-0 flex items-center gap-1.5 disabled:opacity-50"
-        >
-          {classifying ? (
-            <><svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Classificando...</>
-          ) : classifyResult ? (
-            <><svg className="h-3 w-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg> {classifyResult}</>
-          ) : (
-            <>✦ Classificar leads</>
-          )}
+          <Settings2 size={14} /> Prompt do agente
         </button>
 
         {/* Selecionar vários / Selecionar todos */}
@@ -1309,7 +1279,7 @@ export function KanbanBoard({
               : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
           )}
         >
-          ☑ {selectionMode ? "Cancelar seleção" : "Selecionar vários"}
+          <CheckSquare size={14} /> {selectionMode ? "Cancelar seleção" : "Selecionar vários"}
         </button>
         {selectionMode && (
           <button
@@ -1331,12 +1301,14 @@ export function KanbanBoard({
           Importar Kommo
         </button>
 
+        </div>
+
         <button
           onClick={() => setShowReminders(true)}
           title="Ver todos os lembretes agendados"
           className="relative rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition shrink-0 flex items-center gap-1.5"
         >
-          🔔 Lembretes
+          <Bell size={14} /> Lembretes
           {overdueReminders.length > 0 && (
             <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
               {overdueReminders.length}
@@ -1346,9 +1318,9 @@ export function KanbanBoard({
 
         <button
           onClick={() => setShowNewForm(true)}
-          className="ml-auto rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition shrink-0"
+          className="nexo-crm-new ml-auto rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition shrink-0"
         >
-          + Novo lead
+          <Plus size={15} /> Novo lead
         </button>
       </div>
 
@@ -1480,7 +1452,7 @@ export function KanbanBoard({
       )}
 
       {/* Kanban */}
-      <div className="flex gap-3 overflow-x-auto pb-4">
+      <div className="nexo-stages overflow-x-auto pb-4">
         {funnel.columns.map((col) => {
           const colLeads = byCol(col.id);
           const colValue = colLeads.reduce((s, l) => s + (l.value ?? 0), 0);
@@ -1489,12 +1461,11 @@ export function KanbanBoard({
               key={col.id}
               onDragOver={onDragOver}
               onDrop={() => onDrop(col.id)}
-              className="flex flex-col w-60 flex-shrink-0"
+              className="nexo-stage flex flex-col min-w-0"
             >
               {/* Column header */}
               <div
-                className="rounded-t-xl px-3 py-2.5 border-x border-t"
-                style={{ background: hexToLight(col.color), borderColor: col.color + "55" }}
+                className="nexo-stage-header rounded-t-xl px-3 py-2.5 border-x border-t"
               >
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
@@ -1502,7 +1473,7 @@ export function KanbanBoard({
                   {col.id === "entrada" && (
                     <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600 border border-indigo-200 shrink-0">auto</span>
                   )}
-                  <span className="ml-auto rounded-full bg-white/80 px-2 py-0.5 text-xs font-bold text-slate-600 border shrink-0" style={{ borderColor: col.color + "44" }}>
+                  <span className="nexo-stage-count ml-auto rounded-full px-2 py-0.5 text-xs font-semibold shrink-0">
                     {colLeads.length}
                   </span>
                 </div>
@@ -1514,13 +1485,13 @@ export function KanbanBoard({
 
               {/* Cards */}
               <div
-                className="rounded-b-xl border-x border-b p-2 space-y-2"
-                style={{ background: hexToLight(col.color) + "88", borderColor: col.color + "55" }}
+                className="nexo-stage-body rounded-b-xl border-x border-b p-2 space-y-2"
               >
                 {colLeads.map((lead) => {
                   const client = clients.find((c) => c.id === lead.clientId);
                   const days = daysSince(lead.updatedAt ?? lead.createdAt);
                   const platform = getLeadPlatform(lead);
+                  const campaignName = (campaignLabels.clientId === lead.clientId ? campaignLabels.labels[lead.id] : null) ?? campaignLabel(lead);
                   return (
                     <div
                       key={lead.id}
@@ -1529,7 +1500,7 @@ export function KanbanBoard({
                       onMouseEnter={() => { if (lead.source === "whatsapp") prefetchConversation(lead.realPhone ?? lead.phone, lead.clientId, lead.funnelId); }}
                       onClick={() => { if (selectionMode) { toggleSelect(lead.id, { stopPropagation: () => {} } as React.MouseEvent); } else { setSelected(lead); } }}
                       className={clsx(
-                        "rounded-lg border bg-white p-3 shadow-sm cursor-pointer hover:shadow-md transition select-none",
+                        "nexo-lead-card rounded-lg border bg-white p-3 shadow-sm cursor-pointer hover:shadow-md transition select-none",
                         selectedIds.has(lead.id)
                           ? "border-blue-400 ring-2 ring-blue-300 ring-offset-1"
                           : "border-slate-200 hover:border-blue-300"
@@ -1581,20 +1552,10 @@ export function KanbanBoard({
 
                       <div className="flex items-center gap-1 flex-wrap mb-1">
                         <PlatformIcon lead={lead} />
-                        {platform === "google" ? (
-                          // Google Ads: campaignName costuma vir mal preenchido (ex: "g") — mostra
-                          // o utm_medium em vez disso.
-                          lead.utmMedium && (
-                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 truncate max-w-[100px]">
-                              {lead.utmMedium}
-                            </span>
-                          )
-                        ) : (
-                          lead.campaignName && !["google","meta","facebook","instagram","fb"].includes(lead.campaignName.toLowerCase()) && (
-                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 truncate max-w-[100px]">
-                              {lead.campaignName}
-                            </span>
-                          )
+                        {(campaignName || platform === "meta" || platform === "google") && (
+                          <span className="nexo-campaign-label rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 truncate max-w-[180px]" title={campaignName ?? "Confira a conexão da conta de anúncios para identificar a campanha."}>
+                            {campaignName ?? "Campanha não identificada"}
+                          </span>
                         )}
                         {lead.adName && lead.adName !== lead.campaignName && (
                           <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600 truncate max-w-[100px]">

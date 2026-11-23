@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useState, useEffect, useCallback } from "react";
 import type { AgentConfig } from "@/lib/clients";
@@ -35,7 +36,7 @@ function formatPhone(phone: string) {
 function displayConnection(phone: string, type: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length >= 8) return formatPhone(phone);
-  return type === "wppconnect" || type === "evolution" ? "Linha WhatsApp" : phone;
+  return type === "evolution" ? "Linha WhatsApp" : phone;
 }
 
 export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
@@ -272,7 +273,7 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
               <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-xl shrink-0">🔑</div>
               <div>
                 <p className="text-sm font-medium text-slate-800">Retomada inteligente</p>
-                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Quando você assume o atendimento, pode reativar a IA depois com a palavra <span className="font-mono text-rose-600">"{mainAgent.aiResumeKeyword}"</span>.</p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Quando você assume o atendimento, pode reativar a IA depois com a palavra <span className="font-mono text-rose-600">&quot;{mainAgent.aiResumeKeyword}&quot;</span>.</p>
               </div>
             </div>
           )}
@@ -526,7 +527,7 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
                       </div>
                       <div>
                         <p className="font-medium text-slate-800 text-sm">{displayConnection(conn.phone, conn.type)}</p>
-                        <p className="text-xs text-slate-400 capitalize">{conn.type === "server" ? "WhatsApp 24h no servidor" : conn.type === "wppconnect" || conn.type === "evolution" ? "WhatsApp" : conn.type}</p>
+                        <p className="text-xs text-slate-400 capitalize">{conn.type === "evolution" ? "Evolution" : "API oficial"}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -542,19 +543,9 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
-                      Pronto para atender — a IA está funcionando neste número
+                      Conexão disponível para atendimento
                     </div>
-                  ) : conn.type === "server" ? (
-                    <div className="space-y-3 border-t border-slate-50 px-5 pb-4 pt-3">
-                      <p className="text-sm text-amber-700">⚠️ A conexão 24h precisa de um novo código no celular.</p>
-                      <a
-                        href="/cliente/whatsapp-extensao"
-                        className="inline-flex rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-700"
-                      >
-                        Reconectar no servidor
-                      </a>
-                    </div>
-                  ) : (
+                  ) : conn.type==="meta" ? (<div className="px-5 pb-4 text-sm text-amber-700">A conexão oficial precisa de atenção. Peça à agência para conferir o acesso na Meta.</div>) : (
                     <div className="px-5 pb-4 space-y-3 border-t border-slate-50">
                       <p className="text-sm text-amber-700 pt-3">
                         ⚠️ WhatsApp desconectado. Gere um novo QR Code e escaneie pelo celular para reconectar.
@@ -582,8 +573,8 @@ export function ClientAgenteIa({ agentConfigs, clientName }: Props) {
                             <ol className="text-xs text-slate-500 text-left space-y-1 max-w-xs">
                               <li>1. Abra o <strong>WhatsApp</strong> no seu celular</li>
                               <li>2. Toque nos <strong>3 pontinhos</strong> (⋮) no canto superior</li>
-                              <li>3. Acesse <strong>"Aparelhos conectados"</strong></li>
-                              <li>4. Toque em <strong>"Conectar aparelho"</strong></li>
+                              <li>3. Acesse <strong>&quot;Aparelhos conectados&quot;</strong></li>
+                              <li>4. Toque em <strong>&quot;Conectar aparelho&quot;</strong></li>
                               <li>5. Aponte a câmera para o QR Code acima</li>
                             </ol>
                           </div>

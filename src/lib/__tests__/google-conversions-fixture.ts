@@ -1,0 +1,6 @@
+import type { Client } from "../clients";
+import type { Lead } from "../leads";
+import type { GoogleConversionSettings } from "../google-conversion-plan";
+export const conversionSettings = ():GoogleConversionSettings => ({enabled:true,enabledAt:"2026-11-01T00:00:00Z",accountId:"1234567890",conversionCustomerId:"1234567890",funnelId:"audit-conversion-funnel",qualifiedColumnId:"contato",saleColumnId:"ganho",qualifiedActionId:"101",saleActionId:"102"});
+export const conversionClient = ():Client => ({id:"audit-conversion-client",name:"Synthetic conversion client",email:"conversion@example.invalid",passwordHash:"synthetic-not-a-login",color:"#afe507",cplTarget:25,funnelType:"leads",adAccounts:[{id:"123-456-7890",name:"Synthetic Google account",platform:"google"}],googleConversions:conversionSettings()});
+export const conversionLead = (patch:Partial<Lead>={}):Lead => ({id:"audit-conversion-lead",clientId:"audit-conversion-client",funnelId:"audit-conversion-funnel",name:"Synthetic contact",phone:"00000000000",email:"contact@example.invalid",source:"form",adPlatform:"google",campaignName:null,utmSource:"google",utmMedium:"cpc",utmCampaign:null,utmContent:null,utmTerm:null,fbclid:null,gclid:"synthetic_google_click",value:149.9,status:"contato",notes:"synthetic private notes",ai:null,createdAt:"2026-11-02T10:00:00Z",updatedAt:"2026-11-04T10:00:00Z",...patch});

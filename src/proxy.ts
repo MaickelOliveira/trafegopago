@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
+import { authorizeApi } from "./lib/api-access";
 
 // Lazy — evita quebrar `next build` (que pode importar/avaliar este módulo
 // sem env vars de runtime disponíveis) e evita derrubar o processo inteiro na
@@ -13,15 +14,48 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(process.env.JWT_SECRET);
 }
 
+function continueRequest(request: NextRequest) {
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const policy = [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+    `style-src 'self' 'nonce-${nonce}'`,
+    "style-src-attr 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' https: wss:",
+    "media-src 'self' blob: data: https:",
+    "frame-src https:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+  const headers = new Headers(request.headers);
+  headers.set("x-nonce", nonce);
+  headers.set("Content-Security-Policy", policy);
+  const response = NextResponse.next({ request: { headers } });
+  response.headers.set("Content-Security-Policy", policy);
+  return response;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (pathname.startsWith("/api/")) {
+    try {
+      const refusal = await authorizeApi(request);
+      return refusal ?? NextResponse.next();
+    } catch {
+      return NextResponse.json({ error: "Serviço temporariamente indisponível." }, { status: 503 });
+    }
+  }
   const token = request.cookies.get("tp_session")?.value;
 
   // Páginas estáticas públicas (ex: política de privacidade pra revisão do
   // Google/Meta, página de download da extensão pra mandar link a qualquer
   // pessoa) — acessíveis sempre, sem redirecionar mesmo se já logado.
   if (pathname.startsWith("/privacidade") || pathname.startsWith("/extensao-download")) {
-    return NextResponse.next();
+    return continueRequest(request);
   }
 
   // Briefing é um formulário voltado pro cliente final — precisa abrir sempre,
@@ -46,7 +80,7 @@ export async function proxy(request: NextRequest) {
   if (isPublic) {
     if (token && !isBriefing && !isConectar && !isGuestForm && !isServicoForm) {
       try {
-        const { payload } = await jwtVerify(token, getSecret());
+        const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
         const role = (payload as { role: string }).role;
         const url = request.nextUrl.clone();
         url.pathname = role === "manager" ? "/gestor" : "/cliente";
@@ -55,7 +89,7 @@ export async function proxy(request: NextRequest) {
         // token inválido, deixa ir pra login
       }
     }
-    return NextResponse.next();
+    return continueRequest(request);
   }
 
   if (!token) {
@@ -65,7 +99,7 @@ export async function proxy(request: NextRequest) {
   }
 
   try {
-    const { payload } = await jwtVerify(token, getSecret());
+    const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
     const role = (payload as { role: string }).role;
 
     if (isGestor && role !== "manager") {
@@ -80,7 +114,7 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    return NextResponse.next();
+    return continueRequest(request);
   } catch {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
@@ -89,5 +123,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|otf|eot|mp4|mp3|pdf|zip)).*)"],
+  matcher: ["/api/:path*", "/((?!api|_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|otf|eot|mp4|mp3|pdf|zip)).*)"],
 };

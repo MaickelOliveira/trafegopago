@@ -7,6 +7,6 @@ export default async function SocialPage() {
   const session = await getSession();
   if (!session || session.role !== "manager") redirect("/login");
 
-  const clients = getClients().map((c) => ({ id: c.id, name: c.name, color: c.color }));
+  const clients = (await getClients()).map((c) => ({ id: c.id, name: c.name, color: c.color }));
   return <SocialMediaView clients={clients} />;
 }

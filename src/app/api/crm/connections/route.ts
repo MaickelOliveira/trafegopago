@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import {getEmployeeById,employeeCanAccessFunnel} from "@/lib/employees";
 import { getSession } from "@/lib/auth";
 import { getLiveConnectionsForClient } from "@/lib/connection-metrics";
 
@@ -15,5 +16,6 @@ export async function GET(req: NextRequest) {
   if (!clientId) return NextResponse.json({ connections: [] });
 
   const connections = await getLiveConnectionsForClient(clientId);
-  return NextResponse.json({ connections });
+  const employee=session.role==="employee"?await getEmployeeById(session.employeeId!):undefined;
+  return NextResponse.json({ connections:connections.filter(connection=>!employee||employeeCanAccessFunnel(employee,connection.funnelId)) });
 }

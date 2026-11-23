@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getLeadById } from "@/lib/leads";
-import { cancelFollowUpsForPhone, getPendingFollowUps } from "@/lib/followups";
+import { cancelFollowUp, getActiveFollowUpsForLead, getRecentFollowUpsForLead } from "@/lib/followups";
+import { withDataTransaction } from "@/lib/document-store";
 
 // DELETE /api/crm/leads/[id]/followups — cancela todos os follow-ups do lead
 export async function DELETE(
@@ -9,18 +10,19 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession();
-  if (!session || session.role !== "manager") {
+  if (!session || !["manager", "client", "employee"].includes(session.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const lead = getLeadById(id);
+  const lead = (await getLeadById(id));
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (session.role !== "manager" && session.clientId !== lead.clientId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  cancelFollowUpsForPhone(lead.clientId, lead.phone);
+  await withDataTransaction(async()=>{ for(const followUp of await getActiveFollowUpsForLead(lead))await cancelFollowUp(followUp.id, "manual"); });
   return NextResponse.json({ ok: true });
 }
 
-// GET /api/crm/leads/[id]/followups — lista follow-ups pendentes do lead
+// GET /api/crm/leads/[id]/followups — próximos envios e histórico recente do lead
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -29,9 +31,11 @@ export async function GET(
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const lead = getLeadById(id);
+  const lead = (await getLeadById(id));
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (session.role !== "manager" && session.clientId !== lead.clientId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const pending = getPendingFollowUps(lead.clientId).filter((f) => f.phone === lead.phone);
-  return NextResponse.json(pending);
+  const pending = await getActiveFollowUpsForLead(lead);
+  const recent = await getRecentFollowUpsForLead(lead);
+  return NextResponse.json({ pending, recent });
 }

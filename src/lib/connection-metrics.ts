@@ -1,30 +1,10 @@
-// Camada de métricas de atendimento da IA por conexão (número de WhatsApp).
-// Status ao vivo extraído de connection-status/route.ts (mesmo comportamento,
-// só que paralelizado) — usado tanto pela rota do cliente quanto do gestor.
-import { getFunnels } from "@/lib/funnels";
-import { getClients } from "@/lib/clients";
-import { getWppSessions } from "@/lib/wppconnect-sessions";
-import { getEvolutionSessions } from "@/lib/evolution-sessions";
-import { getInstanceStatus } from "@/lib/uazapi";
-import { checkConnectionStatus } from "@/lib/wppconnect-api";
-import { checkConnectionStatus as checkEvolutionConnectionStatus, getInstancePhone } from "@/lib/evolution-api";
-import { getAllConversationsByClientId, getHistory, phoneVariants } from "@/lib/conversations";
-import { getLeads } from "@/lib/leads";
-import { getAllDevices, computeDisplayState } from "@/lib/extension-devices";
-import { getServerWhatsAppSessions } from "@/lib/server-whatsapp-sessions";
-import { getServerWhatsAppStatus } from "@/lib/server-whatsapp-api";
-
-export type LiveConnection = {
-  id: string;
-  phone: string;
-  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension" | "server";
-  status: string;
-  connected: boolean;
-  funnelId: string;
-  funnelName: string;
-  qr?: string | null; // QR cru (sem renderizar PNG) — só relevante pra conexões uazapi pareando
-};
-
+import { getFunnels } from "./funnels";
+import { getClients } from "./clients";
+import { getEvolutionSessions } from "./evolution-sessions";
+import { checkConnectionStatus as checkEvolutionConnectionStatus,getInstancePhone } from "./evolution-api";
+import { getAllConversationsByClientId,getHistory,phoneVariants } from "./conversations";
+import { getLeads } from "./leads";
+export type LiveConnection={id:string;phone:string;type:"meta"|"evolution";status:string;connected:boolean;funnelId:string;funnelName:string;qr?:string|null};
 export type ConnectionMetrics = LiveConnection & {
   conversationCount: number;
   messageCount: number;
@@ -35,173 +15,26 @@ export type ConnectionMetrics = LiveConnection & {
 
 const WINDOW_MS_DEFAULT = 7 * 24 * 60 * 60 * 1000;
 
-/** Live-ping de todas as conexões (meta/uazapi/wppconnect) de um cliente.
- *  Mesmo comportamento/fallbacks de connection-status/route.ts, mas em paralelo. */
-export async function getLiveConnectionsForClient(clientId: string): Promise<LiveConnection[]> {
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  const seen = new Set<string>();
-  const tasks: Promise<LiveConnection>[] = [];
-
-  for (const funnel of funnels) {
-    for (const conn of funnel.connections ?? []) {
-      if (seen.has(conn.id)) continue;
-      seen.add(conn.id);
-
-      if (conn.type === "uazapi" && conn.uazapiToken) {
-        tasks.push(
-          getInstanceStatus(conn.uazapiToken)
-            .then((st) => ({
-              id: conn.id,
-              phone: st.phone ?? conn.phone ?? conn.id,
-              type: "uazapi" as const,
-              status: st.status,
-              connected: st.status === "connected",
-              funnelId: funnel.id,
-              funnelName: funnel.name,
-              qr: st.qr ?? null,
-            }))
-            .catch(() => ({
-              id: conn.id,
-              phone: conn.phone,
-              type: "uazapi" as const,
-              status: "error",
-              connected: false,
-              funnelId: funnel.id,
-              funnelName: funnel.name,
-            }))
-        );
-      } else if (conn.type === "meta") {
-        tasks.push(
-          Promise.resolve({
-            id: conn.id,
-            phone: conn.metaPhoneNumberId ?? conn.phone ?? "",
-            type: "meta" as const,
-            status: "connected",
-            connected: true,
-            funnelId: funnel.id,
-            funnelName: funnel.name,
-          })
-        );
-      }
-    }
-  }
-
-  const clientFunnelIds = new Set(funnels.map((f) => f.id));
-  const wppSessions = getWppSessions().filter(
-    (s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId))
-  );
-  for (const s of wppSessions) {
-    const linkedFunnel = funnels.find((f) => f.id === s.funnelId);
-    tasks.push(
-      checkConnectionStatus(s.sessionName, s.sessionToken)
-        .then((status) => ({
-          id: s.id,
-          phone: s.sessionName,
-          type: "wppconnect" as const,
-          status,
-          // UNKNOWN = timeout/resposta inesperada; se a IA funciona a sessão provavelmente está ativa
-          connected: status === "CONNECTED" || status === "UNKNOWN",
-          funnelId: linkedFunnel?.id ?? "",
-          funnelName: linkedFunnel?.name ?? "Sem funil",
-        }))
-        // Em caso de erro de rede, exibe como conectado para não assustar o cliente
-        .catch(() => ({
-          id: s.id,
-          phone: s.sessionName,
-          type: "wppconnect" as const,
-          status: "UNKNOWN",
-          connected: true,
-          funnelId: linkedFunnel?.id ?? "",
-          funnelName: linkedFunnel?.name ?? "Sem funil",
-        }))
-    );
-  }
-
-  const evoSessions = getEvolutionSessions().filter(
-    (s) => s.clientId === clientId || (s.funnelId && clientFunnelIds.has(s.funnelId))
-  );
-  for (const s of evoSessions) {
-    const linkedFunnel = funnels.find((f) => f.id === s.funnelId);
-    tasks.push(
-      checkEvolutionConnectionStatus(s.instanceName)
-        .then(async (status) => ({
-          id: s.id,
-          phone: (await getInstancePhone(s.instanceName).catch(() => null)) ?? s.instanceName,
-          type: "evolution" as const,
-          status,
-          connected: status === "CONNECTED" || status === "UNKNOWN",
-          funnelId: linkedFunnel?.id ?? "",
-          funnelName: linkedFunnel?.name ?? "Sem funil",
-        }))
-        .catch(() => ({
-          id: s.id,
-          phone: s.instanceName,
-          type: "evolution" as const,
-          status: "UNKNOWN",
-          connected: true,
-          funnelId: linkedFunnel?.id ?? "",
-          funnelName: linkedFunnel?.name ?? "Sem funil",
-        }))
-    );
-  }
-
-  const serverSessions = getServerWhatsAppSessions().filter(
-    (session) => session.clientId === clientId || clientFunnelIds.has(session.funnelId),
-  );
-  for (const session of serverSessions) {
-    const linkedFunnel = funnels.find((funnel) => funnel.id === session.funnelId);
-    tasks.push(
-      getServerWhatsAppStatus(session.id)
-        .then((status) => ({
-          id: session.id,
-          phone: status.phone ?? session.phone,
-          type: "server" as const,
-          status: status.status,
-          connected: status.status === "connected",
-          funnelId: session.funnelId,
-          funnelName: linkedFunnel?.name ?? "Funil Principal",
-        }))
-        .catch(() => ({
-          id: session.id,
-          phone: session.phone,
-          type: "server" as const,
-          status: "disconnected",
-          connected: false,
-          funnelId: session.funnelId,
-          funnelName: linkedFunnel?.name ?? "Funil Principal",
-        })),
-    );
-  }
-
-  // Dispositivo(s) da extensão Chrome vinculados a algum funil deste cliente
-  // — mesma lacuna que existia em /api/crm/conversations/[phone]/route.ts:
-  // sem isso, o seletor "responder pelo número" nunca lista a extensão, e o
-  // fallback de seleção automática (sameFunnel ?? anyConnected ?? [0]) acaba
-  // caindo numa conexão de OUTRO canal (ex: uma sessão Evolution antiga
-  // desconectada), mesmo quando é a extensão que está recebendo mensagem.
-  const extDevices = getAllDevices().filter(
-    (d) => d.status === "active" && d.funnelId && clientFunnelIds.has(d.funnelId)
-  );
-  for (const d of extDevices) {
-    const linkedFunnel = funnels.find((f) => f.id === d.funnelId);
-    const state = computeDisplayState(d);
-    tasks.push(
-      Promise.resolve({
-        id: d.id,
-        // Extensão não tem um número de telefone próprio (usa o WhatsApp Web
-        // já logado no navegador do cliente) — não tem o que mostrar como
-        // "phone" de verdade, mas precisa de um rótulo pro seletor.
-        phone: "Extensão (WhatsApp Web)",
-        type: "extension" as const,
-        status: state,
-        connected: state === "connected",
-        funnelId: linkedFunnel?.id ?? "",
-        funnelName: linkedFunnel?.name ?? "Sem funil",
-      })
-    );
-  }
-
-  return Promise.all(tasks);
+export async function getLiveConnectionsForClient(clientId:string):Promise<LiveConnection[]> {
+ const funnels=(await getFunnels()).filter(funnel=>funnel.clientId===clientId);
+ const results:Promise<LiveConnection>[]=[];
+ for(const funnel of funnels)for(const connection of funnel.connections??[]){
+  if(connection.type!=="meta")continue;
+  results.push((async()=>{
+   let status="not_configured",phone=connection.phone||connection.metaPhoneNumberId||"";
+   if(connection.metaPhoneNumberId&&connection.metaToken)try{
+    const response=await fetch(`https://graph.facebook.com/v26.0/${connection.metaPhoneNumberId}?fields=display_phone_number`,{headers:{Authorization:`Bearer ${connection.metaToken}`},signal:AbortSignal.timeout(5000),cache:"no-store"});
+    if(response.ok){const data=await response.json();phone=data.display_phone_number||phone;status="connected";}else status="error";
+   }catch{status="unknown";}
+   return {id:connection.id,phone,type:"meta",status,connected:status==="connected",funnelId:funnel.id,funnelName:funnel.name};
+  })());
+ }
+ for(const session of await getEvolutionSessions()){
+  const funnel=funnels.find(item=>item.id===session.funnelId);
+  if(!funnel||(session.clientId&&session.clientId!==clientId))continue;
+  results.push((async()=>{const status=await checkEvolutionConnectionStatus(session.instanceName);return{id:session.id,phone:(await getInstancePhone(session.instanceName).catch(()=>null))||session.instanceName,type:"evolution",status,connected:status==="CONNECTED",funnelId:funnel.id,funnelName:funnel.name};})());
+ }
+ return Promise.all(results);
 }
 
 /** Métricas de atendimento por conexão: volume (conversas/mensagens na janela) e
@@ -212,24 +45,25 @@ export async function getConnectionMetricsForClient(
 ): Promise<ConnectionMetrics[]> {
   const [connections, conversations, leads] = [
     await getLiveConnectionsForClient(clientId),
-    getAllConversationsByClientId(clientId),
-    getLeads(clientId),
+    (await getAllConversationsByClientId(clientId)),
+    (await getLeads(clientId)),
   ];
 
   const since = Date.now() - windowMs;
 
-  return connections.map((conn) => {
+  return Promise.all(connections.map(async (conn) => {
     const convsForConn = conversations.filter((c) => c.connId === conn.id);
     const recentConvs = convsForConn.filter((c) => c.lastActivity >= since);
 
-    const messageCount = recentConvs.reduce((sum, c) => {
-      const history = getHistory(c.phone, clientId, conn.id);
-      return sum + history.filter((m) => m.ts >= since).length;
-    }, 0);
+    let messageCount = 0;
+    for (const conversation of recentConvs) {
+      const history = await getHistory(conversation.phone, clientId, conn.id);
+      messageCount += history.filter((message) => message.ts >= since).length;
+    }
 
     // Junta leads a esta conexão pelo telefone (best-effort — Lead não guarda connId)
     const convPhoneSet = new Set(convsForConn.map((c) => c.phone));
-    const leadsForConn = leads.filter((l) =>
+    const leadsForConn = leads.filter((l) => l.funnelId === conn.funnelId &&
       phoneVariants(l.realPhone ?? l.phone).some((v) => convPhoneSet.has(v))
     );
     const leadsNeedingHuman = leadsForConn.filter((l) => l.needsAttention || l.aiPaused).length;
@@ -242,19 +76,19 @@ export async function getConnectionMetricsForClient(
       leadsNeedingHuman,
       resolutionRate: leadsForConn.length > 0 ? (leadsForConn.length - leadsNeedingHuman) / leadsForConn.length : null,
     };
-  });
+  }));
 }
 
 export async function getConnectionMetricsForAllClients(
   windowMs?: number
 ): Promise<Array<{ clientId: string; clientName: string; connections: ConnectionMetrics[] }>> {
-  const clients = getClients();
+  const clients = (await getClients());
   const results = await Promise.all(
-    clients.map(async (c) => ({
+    (await Promise.all(clients.map(async (c) => ({
       clientId: c.id,
       clientName: c.name,
       connections: await getConnectionMetricsForClient(c.id, windowMs),
-    }))
+    }))))
   );
   return results;
 }

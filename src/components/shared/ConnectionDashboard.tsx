@@ -6,7 +6,7 @@ import { clsx } from "clsx";
 type ConnectionMetrics = {
   id: string;
   phone: string;
-  type: "meta" | "uazapi" | "wppconnect" | "evolution" | "extension" | "server";
+  type: "meta" | "evolution";
   status: string;
   connected: boolean;
   funnelId: string;
@@ -27,11 +27,7 @@ type Props = {
 
 const TYPE_LABEL: Record<ConnectionMetrics["type"], string> = {
   meta: "Meta API",
-  uazapi: "WhatsApp",
-  wppconnect: "WhatsApp",
   evolution: "WhatsApp",
-  extension: "Extensão",
-  server: "WhatsApp 24h",
 };
 
 function formatPhone(phone: string) {

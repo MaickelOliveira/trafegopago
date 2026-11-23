@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientById, getConfig } from "@/lib/clients";
+import { getAllAgentConfigs, getClientById, getConfig } from "@/lib/clients";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export async function GET(
   const { clientId: rawId } = await params;
   const clientId = rawId.replace(/\.js$/, ""); // suporta nexo.js ou nexo
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) {
     return new NextResponse(`console.error('[Pixel] Cliente "${clientId}" não encontrado.');`, {
       status: 404,
@@ -22,7 +22,7 @@ export async function GET(
   }
 
   // Resolve a URL pública: appBaseUrl > x-forwarded-host (EasyPanel/Traefik) > origin
-  const appConfig      = getConfig();
+  const appConfig      = (await getConfig());
   const fwdHost        = req.headers.get("x-forwarded-host");
   const fwdProto       = (req.headers.get("x-forwarded-proto") ?? "https").split(",")[0].trim();
   const baseUrl        =
@@ -32,7 +32,7 @@ export async function GET(
   const gadsId    = client.googleAdsId    ?? "";
   const gadsLabel = client.googleConvLabel ?? "";
 
-  const script = buildScript({ clientId, baseUrl, pixelId, gadsId, gadsLabel });
+  const script = buildScript({ clientId, baseUrl, pixelId, gadsId, gadsLabel, receiveLeads: getAllAgentConfigs(client).some(c => c.leadRecipients?.length) });
 
   return new NextResponse(script, {
     headers: {
@@ -44,6 +44,7 @@ export async function GET(
 }
 
 interface ScriptConfig {
+  receiveLeads: boolean;
   clientId:  string;
   baseUrl:   string;
   pixelId:   string;
@@ -204,10 +205,30 @@ function buildScript(cfg: ScriptConfig): string {
       var hasPhone = form.querySelector('input[type="tel"], [name*="phone"], [name*="tel"], [name*="whatsapp"], [name*="fone"], [name*="celular"]');
       if (!hasPhone) return;
       form.addEventListener("submit", function() {
-        var phone = getFieldValue(form, ["phone","tel","whatsapp","fone","celular","telefone"]);
+        var phone = getFieldValue(form, ["phone","tel","whatsapp","fone","celular","telefone"]) || (hasPhone.value || "");
         var name  = getFieldValue(form, ["name","nome","first_name","firstname"]);
         var email = getFieldValue(form, ["email","e-mail"]);
-        if (phone) sendEvent({ event: "FormSubmit", phone: phone, name: name, email: email, source: "form" });
+        if (!phone) return;
+        var event = { event: "FormSubmit", phone: phone, name: name || "", email: email || "", source: "form" };
+        if (${JSON.stringify(cfg.receiveLeads)}) {
+          // Apenas formulários comerciais. Nunca inspecionar valores em login, cadastro com senha ou pagamento.
+          if (form.querySelector('input[type="password"], [autocomplete^="cc-"], [autocomplete="one-time-code"]')) return;
+          var controls = Array.from(form.elements);
+          var privateField = /senha|password|passwd|token|secret|captcha|csrf|card.?number|credit.?card|cart[aã]o|cvv|cvc|one.?time|bank.?account/i;
+          if (controls.some(function(el) { return el.type !== "hidden" && privateField.test([el.name,el.id,el.autocomplete].join(" ")); })) return;
+          var answers = Object.create(null);
+          controls.forEach(function(el) {
+            if (!/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.disabled || !el.getClientRects().length ||
+                /^(hidden|password|file|button|submit|reset|image)$/i.test(el.type) || privateField.test(el.name || el.id) ||
+                ((el.type === "checkbox" || el.type === "radio") && !el.checked)) return;
+            var label = (el.labels && el.labels[0] && el.labels[0].textContent.trim()) || el.name || el.id;
+            if (!label) return;
+            var values = el.tagName === "SELECT" ? Array.from(el.selectedOptions).map(function(o) { return o.text.trim() || o.value; }) : [el.value];
+            answers[label] = (answers[label] || []).concat(values.filter(Boolean));
+          });
+          event.fields = answers;
+        }
+        sendEvent(event);
       });
     });
   }

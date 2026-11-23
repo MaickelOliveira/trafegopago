@@ -9,11 +9,11 @@ type Props = { params: Promise<{ clientId: string }> };
 
 export default async function WabaPage({ params }: Props) {
   const { clientId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) notFound();
 
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  const templates = getTemplates(clientId);
+  const funnels = (await getFunnels()).filter((f) => f.clientId === clientId);
+  const templates = (await getTemplates(clientId));
 
   // Coleta phoneNumberIds e tokens disponíveis nas conexões Meta do cliente
   const metaConnections = funnels.flatMap((f) =>
@@ -28,7 +28,7 @@ export default async function WabaPage({ params }: Props) {
       })),
   );
 
-  const evolutionConnections = getEvolutionSessions().filter((s) => s.clientId === clientId);
+  const evolutionConnections = (await getEvolutionSessions()).filter((s) => s.clientId === clientId);
 
   return (
     <DisparosWaView

@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 import { getConfig } from "@/lib/clients";
 import { getCreativeById, updateCreative } from "@/lib/creatives";
 
-const BASE = "https://graph.facebook.com/v19.0";
+const BASE = "https://graph.facebook.com/v26.0";
 type Params = { params: Promise<{ id: string }> };
 
 async function getPageId(accountId: string, token: string): Promise<string | null> {
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const { id } = await params;
-  const creative = getCreativeById(id);
+  const creative = (await getCreativeById(id));
   if (!creative) return NextResponse.json({ error: "Criativo não encontrado" }, { status: 404 });
   if (creative.status === "published") {
     return NextResponse.json({ error: "Criativo já publicado" }, { status: 400 });
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { adsetId, adName, publishStatus = "PAUSED" } = await req.json();
   if (!adsetId) return NextResponse.json({ error: "adsetId obrigatório" }, { status: 400 });
 
-  const token = getConfig().metaToken;
+  const token = (await getConfig()).metaToken;
   const accountId = creative.adAccountId;
 
   try {
@@ -168,7 +168,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const metaAdId = adData.id;
 
     // 5. Atualizar criativo
-    updateCreative({ ...creative, status: "published", metaAdId, metaCreativeId });
+    (await updateCreative({ ...creative, status: "published", metaAdId, metaCreativeId }));
 
     return NextResponse.json({ ok: true, metaAdId, metaCreativeId });
   } catch (err) {

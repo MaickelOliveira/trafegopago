@@ -73,10 +73,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "clientId e tema são obrigatórios" }, { status: 400 });
   }
 
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
-  const config = getConfig();
+  const config = (await getConfig());
   if (!config.anthropicApiKey) {
     return NextResponse.json({ error: "Anthropic API key não configurada" }, { status: 400 });
   }

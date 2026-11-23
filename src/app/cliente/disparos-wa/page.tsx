@@ -1,3 +1,4 @@
+import { publicFunnel, publicTemplate } from "@/lib/public-records";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getClientById } from "@/lib/clients";
@@ -13,16 +14,16 @@ export default async function ClienteDisparosWaPage() {
   if (!session || (session.role !== "client" && session.role !== "employee")) redirect("/login");
   if (session.role === "employee") {
     const { getEmployeeById } = await import("@/lib/employees");
-    const emp = session.employeeId ? getEmployeeById(session.employeeId) : null;
+    const emp = session.employeeId ? (await getEmployeeById(session.employeeId)) : null;
     if (!emp || !emp.active || !emp.permissions?.canViewWaba) redirect("/cliente/crm");
   }
 
   const clientId = session.clientId!;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) redirect("/login");
 
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
-  const templates = getTemplates(clientId);
+  const funnels = (await getFunnels()).filter((f) => f.clientId === clientId);
+  const templates = (await getTemplates(clientId));
 
   const metaConnections = funnels.flatMap((f) =>
     (f.connections ?? [])
@@ -31,20 +32,20 @@ export default async function ClienteDisparosWaPage() {
         id: c.id,
         phone: c.phone,
         phoneNumberId: c.metaPhoneNumberId!,
-        token: c.metaToken!,
+        token: "",
         funnelName: f.name,
       })),
   );
 
-  const evolutionConnections = getEvolutionSessions().filter((s) => s.clientId === clientId);
+  const evolutionConnections = (await getEvolutionSessions()).filter((s) => s.clientId === clientId);
 
   return (
     <DisparosWaView
       clientId={clientId}
-      initialTemplates={templates}
+      initialTemplates={templates.map(publicTemplate)}
       metaConnections={metaConnections}
-      evolutionConnections={evolutionConnections}
-      funnels={funnels}
+      evolutionConnections={evolutionConnections.map(connection => ({ ...connection, instanceApiKey: "" }))}
+      funnels={funnels.map(publicFunnel)}
     />
   );
 }

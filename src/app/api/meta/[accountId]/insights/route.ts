@@ -9,12 +9,12 @@ async function authorize(accountId: string) {
   const session = await getSession();
   if (!session) return null;
 
-  if (session.role === "manager") return getConfig().metaToken;
+  if (session.role === "manager") return (await getConfig()).metaToken;
 
-  const client = getClientById(session.clientId!);
+  const client = (await getClientById(session.clientId!));
   const owns = client?.adAccounts.some((a) => a.id === accountId);
   if (!owns) return null;
-  return getConfig().metaToken;
+  return (await getConfig()).metaToken;
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
@@ -33,6 +33,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       const data = await getDailyInsights(accountId, token, since, until);
       return NextResponse.json(data);
     }
+    if (daily) return NextResponse.json(await getDailyInsights(accountId, token, undefined, undefined, datePreset || "last_30d"));
     if (since && until) {
       const data = await getAccountInsightsRange(accountId, token, since, until);
       return NextResponse.json(data);

@@ -6,7 +6,7 @@ type Props = { params: Promise<{ clientId: string; campaignId: string }> };
 
 export default async function GestorCampaignPage({ params }: Props) {
   const { clientId, campaignId } = await params;
-  const client = getClientById(clientId);
+  const client = (await getClientById(clientId));
   if (!client) notFound();
 
   const accountId = client.adAccounts[0]?.id;

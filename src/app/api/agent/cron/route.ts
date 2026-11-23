@@ -1,3 +1,4 @@
+import { authorizeCron } from "@/lib/cron-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig } from "@/lib/clients";
 import { processDueFollowUpsAndBatches } from "@/lib/cron-tasks";
@@ -8,12 +9,7 @@ import { processDueBroadcastItems } from "@/lib/broadcast-items";
 // 60s) — útil para acionar manualmente (testes) ou como gatilho externo
 // redundante (ex: EasyPanel). Ambos chamam a mesma lógica em cron-tasks.ts.
 export async function GET(req: NextRequest) {
-  const { agentCronSecret } = getConfig();
-  const secret = req.nextUrl.searchParams.get("secret");
-
-  if (agentCronSecret && secret !== agentCronSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!await authorizeCron(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const result = await processDueFollowUpsAndBatches();
   const broadcasts = await processDueBroadcastItems();

@@ -20,11 +20,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
-  const { metaToken: token } = getConfig();
+  const { metaToken: token } = (await getConfig());
   if (!token) return NextResponse.json({ error: "Token Meta não configurado" }, { status: 400 });
 
   const adAccountId = req.nextUrl.searchParams.get("adAccountId");
-  const base = "https://graph.facebook.com/v19.0";
+  const base = "https://graph.facebook.com/v26.0";
   const fields = `fields=id,name&limit=200&access_token=${token}`;
 
   const all: RawPixel[] = [];

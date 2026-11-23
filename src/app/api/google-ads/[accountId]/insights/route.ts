@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { ownsAdAccount } from "@/lib/ad-account-access";
 import { getClientById } from "@/lib/clients";
 import { getGoogleAdsCreds } from "@/lib/google-ads-creds";
-import { getAccountInsightsRange, getDailyInsights, formatGoogleAdsError, type GoogleAdsCreds } from "@/lib/google-ads-api";
+import { getAccountInsightsRange, getDailyInsights, formatGoogleAdsError, googleAdsIssue, type GoogleAdsCreds } from "@/lib/google-ads-api";
 import { datePresetToRange } from "@/lib/date-presets";
 
 type Params = { params: Promise<{ accountId: string }> };
@@ -13,11 +14,11 @@ async function authorize(accountId: string): Promise<GoogleAdsCreds | null | und
   if (!session) return null;
 
   if (session.role !== "manager") {
-    const client = getClientById(session.clientId!);
-    const owns = client?.adAccounts.some((a) => a.id === accountId && a.platform === "google");
+    const client = (await getClientById(session.clientId!));
+    const owns = client && ownsAdAccount(client.adAccounts, "google", accountId);
     if (!owns) return null;
   }
-  return getGoogleAdsCreds() ?? undefined;
+  return (await getGoogleAdsCreds()) ?? undefined;
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
@@ -46,6 +47,6 @@ export async function GET(req: NextRequest, { params }: Params) {
     const data = await getAccountInsightsRange(creds, accountId, since, until);
     return NextResponse.json(data);
   } catch (e) {
-    return NextResponse.json({ error: formatGoogleAdsError(e) }, { status: 500 });
+    return NextResponse.json({ error: formatGoogleAdsError(e), googleAdsIssue: googleAdsIssue(e) }, { status: 500 });
   }
 }

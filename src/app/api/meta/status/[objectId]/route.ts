@@ -17,9 +17,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Status inválido" }, { status: 400 });
   }
 
-  const token = getConfig().metaToken;
+  const token = (await getConfig()).metaToken;
 
-  const res = await fetch(`https://graph.facebook.com/v19.0/${objectId}`, {
+  const res = await fetch(`https://graph.facebook.com/v26.0/${objectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ status, access_token: token }),

@@ -19,8 +19,10 @@ export async function generateSummaryText(
   phone: string,
   motivo: string,
   geminiApiKey?: string,
+  clientId?: string,
+  connId?: string,
 ): Promise<string> {
-  const history = getHistory(phone);
+  const history = (await getHistory(phone, clientId, connId));
   if (history.length === 0) return "Sem histórico de conversa.";
 
   const recent = history.slice(-20);

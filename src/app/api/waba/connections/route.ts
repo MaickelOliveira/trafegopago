@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json([], { status: 200 });
 
-  const funnels = getFunnels().filter((f) => f.clientId === clientId);
+  const funnels = (await getFunnels()).filter((f) => f.clientId === clientId);
   const connections: WabaConnection[] = funnels.flatMap((f) =>
     (f.connections ?? [])
       .filter((c) => c.type === "meta" && c.metaPhoneNumberId)

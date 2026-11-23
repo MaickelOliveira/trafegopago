@@ -18,11 +18,11 @@ export async function GET(req: NextRequest) {
   const adAccountId = req.nextUrl.searchParams.get("adAccountId");
   if (!adAccountId) return NextResponse.json({ error: "adAccountId required" }, { status: 400 });
 
-  const { metaToken } = getConfig();
+  const { metaToken } = (await getConfig());
   if (!metaToken) return NextResponse.json({ error: "Meta token não configurado" }, { status: 400 });
 
   const res = await fetch(
-    `https://graph.facebook.com/v19.0/${adAccountId}/customconversions?fields=id,name,custom_event_type,pixel&access_token=${metaToken}`
+    `https://graph.facebook.com/v26.0/${adAccountId}/customconversions?fields=id,name,custom_event_type,pixel&access_token=${metaToken}`
   );
   const data = await res.json();
   if (!res.ok) return NextResponse.json({ error: data.error?.message ?? "Erro Meta API" }, { status: 502 });
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `customEventType inválido. Use: ${VALID_EVENT_TYPES.join(", ")}` }, { status: 400 });
   }
 
-  const { metaToken } = getConfig();
+  const { metaToken } = (await getConfig());
   if (!metaToken) return NextResponse.json({ error: "Meta token não configurado" }, { status: 400 });
 
   const formData = new URLSearchParams({
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
   });
 
   const res = await fetch(
-    `https://graph.facebook.com/v19.0/${adAccountId}/customconversions`,
+    `https://graph.facebook.com/v26.0/${adAccountId}/customconversions`,
     { method: "POST", body: formData }
   );
   const data = await res.json();

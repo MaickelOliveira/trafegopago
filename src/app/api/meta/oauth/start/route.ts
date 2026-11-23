@@ -1,3 +1,4 @@
+import { createOAuthState } from "@/lib/oauth-state";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getConfig } from "@/lib/clients";
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
-  const config = getConfig();
+  const config = (await getConfig());
   if (!config.metaAppId || !config.metaAppSecret) {
     return NextResponse.json({ error: "Configure o App ID e App Secret da Meta primeiro." }, { status: 400 });
   }
@@ -29,7 +30,8 @@ export async function GET(req: NextRequest) {
     redirect_uri: redirectUri,
     scope: "ads_read,ads_management,business_management",
     response_type: "code",
+    state: await createOAuthState("meta"),
   });
 
-  return NextResponse.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params}`);
+  return NextResponse.redirect(`https://www.facebook.com/v26.0/dialog/oauth?${params}`);
 }

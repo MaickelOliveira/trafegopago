@@ -1,16 +1,20 @@
+import { readRecordList, writeRecordList, type RecordFilter } from "./record-store";
+import { withDataTransaction } from "./document-store";
 /**
  * Batching de mensagens — acumula mensagens do mesmo contato
  * e responde de uma vez após a janela de espera configurada.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { normalizePhone } from "./leads";
 
 export type PendingResponse = {
   id: string;
   clientId: string;
   phone: string;
+  connId?: string;
+  processingAt?: string;
   messages: string[];       // mensagens acumuladas
   respondAfter: string;     // ISO — quando processar
   status: "pending" | "processing" | "done";
@@ -20,18 +24,9 @@ export type PendingResponse = {
 
 const FILE = path.join(process.cwd(), "data", "pending-responses.json");
 
-function load(): PendingResponse[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch {
-    return [];
-  }
-}
+const load = (filter?: RecordFilter, options?: Parameters<typeof readRecordList>[2]) => readRecordList<PendingResponse>("pending-responses.json", filter, options);
 
-function save(items: PendingResponse[]) {
-  writeFileSync(FILE, JSON.stringify(items, null, 2));
-}
+const save = (items: PendingResponse[]) => writeRecordList("pending-responses.json", items);
 
 // Se o setTimeout in-process de um batch se perder (ex: restart do servidor
 // antes de disparar), o registro fica "pending" para sempre no arquivo — sem
@@ -40,18 +35,21 @@ function save(items: PendingResponse[]) {
 // junto ao Gemini como se fosse tudo uma única mensagem atual.
 const STALE_PENDING_MS = 10 * 60 * 1000; // 10 minutos após o respondAfter original
 
-export function upsertPending(
+export async function upsertPending(
   clientId: string,
   phone: string,
   newMessage: string,
-  waitSeconds: number
-): PendingResponse {
-  const items = load();
+  waitSeconds: number,
+  connId?: string
+): Promise<PendingResponse> {
+  return withDataTransaction(async () => {
+  if (!Number.isFinite(waitSeconds) || waitSeconds < 0 || waitSeconds > 3600) throw new Error("Tempo de espera inválido.");
+  const items = (await load({ clientId, phone, connId: connId ?? null, status: "pending" }));
   const now = new Date();
   const respondAfter = new Date(now.getTime() + waitSeconds * 1000).toISOString();
 
   const idx = items.findIndex(
-    (p) => p.clientId === clientId && p.phone === phone && p.status === "pending"
+    (p) => p.clientId === clientId && normalizePhone(p.phone) === normalizePhone(phone) && p.connId === connId && p.status === "pending"
   );
 
   if (idx >= 0) {
@@ -64,7 +62,7 @@ export function upsertPending(
       items[idx].messages.push(newMessage);
       items[idx].respondAfter = respondAfter;
       items[idx].updatedAt = now.toISOString();
-      save(items);
+      (await save(items));
       return items[idx];
     }
   }
@@ -72,7 +70,8 @@ export function upsertPending(
   const item: PendingResponse = {
     id: randomUUID(),
     clientId,
-    phone,
+    phone: normalizePhone(phone),
+    connId,
     messages: [newMessage],
     respondAfter,
     status: "pending",
@@ -80,43 +79,58 @@ export function upsertPending(
     updatedAt: now.toISOString(),
   };
   items.push(item);
-  save(items);
+  (await save(items));
   return item;
+
+  });
 }
 
-export function getDuePending(): PendingResponse[] {
+export async function getDuePending(): Promise<PendingResponse[]> {
   const now = new Date();
-  return load().filter(
+  return (await load({ status: "pending" }, { before: { field: "respondAfter", value: new Date().toISOString() }, limit: 20 })).filter(
     (p) => p.status === "pending" && new Date(p.respondAfter) <= now
   );
 }
 
-export function getPendingForPhone(clientId: string, phone: string): PendingResponse | undefined {
-  return load().find(
-    (p) => p.clientId === clientId && p.phone === phone && p.status === "pending"
+export async function getPendingForPhone(clientId: string, phone: string, connId?: string): Promise<PendingResponse | undefined> {
+  return (await load({ clientId, phone, connId: connId ?? null, status: "pending" })).find(
+    (p) => p.clientId === clientId && normalizePhone(p.phone) === normalizePhone(phone) && p.connId === connId && p.status === "pending"
   );
 }
 
-export function markProcessing(id: string): void {
-  const items = load();
+export async function markProcessing(id: string): Promise<boolean> {
+  return withDataTransaction(async () => {
+  const items = (await load({ id }));
   const idx = items.findIndex((p) => p.id === id);
-  if (idx >= 0) { items[idx].status = "processing"; save(items); }
+  if (idx < 0 || items[idx].status !== "pending" || Date.parse(items[idx].respondAfter) > Date.now()) return false;
+  items[idx].status = "processing";
+  items[idx].processingAt = new Date().toISOString();
+  await save(items);
+  return true;
+
+  });
 }
 
-export function markDone(id: string): void {
-  const items = load();
+export async function markDone(id: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const items = (await load({ id }));
   const idx = items.findIndex((p) => p.id === id);
-  if (idx >= 0) { items[idx].status = "done"; save(items); }
+  if (idx >= 0) { items[idx].status = "done"; (await save(items)); }
+
+  });
 }
 
-export function cancelPendingForPhone(clientId: string, phone: string): void {
-  const items = load();
+export async function cancelPendingForPhone(clientId: string, phone: string, connId?: string): Promise<void> {
+  return withDataTransaction(async () => {
+  const items = (await load({ clientId, phone, ...(connId === undefined ? {} : { connId }), status: ["pending", "processing"] }));
   let changed = false;
   for (const p of items) {
-    if (p.clientId === clientId && p.phone === phone && p.status === "pending") {
+    if (p.clientId === clientId && normalizePhone(p.phone) === normalizePhone(phone) && (connId === undefined || p.connId === connId) && ["pending", "processing"].includes(p.status)) {
       p.status = "done";
       changed = true;
     }
   }
-  if (changed) save(items);
+  if (changed) (await save(items));
+
+  });
 }

@@ -12,9 +12,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Extensão Chrome tem seu próprio toolchain (tsc --noEmit) — não é código
-    // Next/React, não faz sentido rodar as regras deste config nela.
-    "extension/**",
   ]),
 ]);
 

@@ -4,8 +4,8 @@ import { getAuthUrl } from "@/lib/google-calendar";
 import { getConfig } from "@/lib/clients";
 
 /** Retorna a URL base pública correta mesmo dentro de Docker/EasyPanel */
-function getPublicBase(req: NextRequest): string {
-  const config = getConfig();
+async function getPublicBase(req: NextRequest): Promise<string> {
+  const config = (await getConfig());
   // 1. Configuração explícita do admin (mais confiável)
   if (config.appBaseUrl) return config.appBaseUrl.replace(/\/$/, "");
   // 2. Headers do reverse proxy (EasyPanel/Traefik)
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
 
   const connId = req.nextUrl.searchParams.get("connId");
-  const baseUrl = getPublicBase(req);
-  const url = getAuthUrl(clientId, baseUrl, connId);
+  const baseUrl = (await getPublicBase(req));
+  const url = (await getAuthUrl(clientId, baseUrl, connId));
   return NextResponse.redirect(url);
 }

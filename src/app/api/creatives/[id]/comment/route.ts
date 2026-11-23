@@ -9,7 +9,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
 
   const { id } = await params;
-  const creative = getCreativeById(id);
+  const creative = (await getCreativeById(id));
   if (!creative) return NextResponse.json({ error: "Criativo não encontrado" }, { status: 404 });
 
   if (session.role === "client" && session.clientId !== creative.clientId) {
@@ -19,13 +19,13 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { text } = await req.json();
   if (!text?.trim()) return NextResponse.json({ error: "Comentário vazio" }, { status: 400 });
 
-  updateCreative({
+  (await updateCreative({
     ...creative,
     comments: [
       ...creative.comments,
       { by: session.role, text: text.trim(), at: new Date().toISOString() },
     ],
-  });
+  }));
 
   return NextResponse.json({ ok: true });
 }

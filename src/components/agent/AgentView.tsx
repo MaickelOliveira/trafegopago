@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { RecipientList } from "./RecipientList";
+import type { AvisoRecipient } from "@/lib/clients";
 import { clsx } from "clsx";
 import { useSearchParams } from "next/navigation";
 import { isValidAgentPhone, sanitizeAgentPhoneList, splitAgentPhoneInput } from "@/lib/agent-phone-policy";
@@ -31,16 +33,9 @@ type WaConnection = {
   phone?: string;
   name?: string;
   status: string; // "connected" | "connecting" | "disconnected"
-  type: "uazapi" | "meta" | "wppconnect" | "evolution" | "server";
+  type: "meta" | "evolution";
   funnelId: string;
   funnelName: string;
-};
-
-type AvisoRecipient = {
-  id: string;
-  label: string;
-  value: string;
-  type: "phone" | "group";
 };
 
 type AgentCfg = {
@@ -53,6 +48,11 @@ type AgentCfg = {
   avisos?: AvisoRecipient[];
   followUps: FollowUpStep[];
   followUpContext?: string;
+  followUpAiReviewEnabled?: boolean;
+  followUpSendDays?: number[];
+  followUpSendStart?: string;
+  followUpSendEnd?: string;
+  followUpMaxPer7Days?: 1 | 2;
   whatsappConnectionId?: string;
   messageWaitSeconds?: number;
   systemPrompt?: string;
@@ -135,15 +135,14 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [cfg, setCfg] = useState<AgentCfg>({
     enabled: false, followUpEnabled: false, followUps: [],
   });
+  const configRequest = useRef(0);
+  const [configLoaded, setConfigLoaded] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [configsSummary, setConfigsSummary] = useState<ConfigSummary[]>([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; model?: string; response?: string; error?: string } | null>(null);
-  const [cronUrl, setCronUrl] = useState("");
-  const [cronSecret, setCronSecret] = useState("");
-  const [generatingSecret, setGeneratingSecret] = useState(false);
   const [waConnections, setWaConnections] = useState<WaConnection[]>([]);
   const [loadingWa, setLoadingWa] = useState(false);
   const [addingMedia, setAddingMedia] = useState(false);
@@ -164,29 +163,6 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [spreadsheetError, setSpreadsheetError] = useState("");
   const [manualSpreadsheetInput, setManualSpreadsheetInput] = useState("");
   const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string; category: string; language: string; phoneNumberId?: string; components?: { type: string; text?: string }[] }[]>([]);
-
-  // Avisos
-  const [addingAviso, setAddingAviso] = useState(false);
-  const [newAviso, setNewAviso] = useState<{ label: string; value: string; type: "phone" | "group" }>({ label: "", value: "", type: "phone" });
-  const [wppGroups, setWppGroups] = useState<{ id: string; name: string }[]>([]);
-  const [loadingGroups, setLoadingGroups] = useState(false);
-  const [showGroupPicker, setShowGroupPicker] = useState(false);
-
-  async function fetchWppGroups() {
-    const wppConn = waConnections.find((c) => c.type === "wppconnect" && (selectedConnId === null || c.id === selectedConnId));
-    if (!wppConn) return;
-    setLoadingGroups(true);
-    setShowGroupPicker(true);
-    try {
-      const res = await fetch(`/api/whatsapp/wppconnect-manager/${wppConn.id}/groups`);
-      if (res.ok) {
-        const data = await res.json() as { groups: { id: string; name: string }[] };
-        setWppGroups(data.groups);
-      }
-    } catch { /* ignore */ } finally {
-      setLoadingGroups(false);
-    }
-  }
 
   // Base de conhecimento
   type KbDoc = { id: string; name: string; filename: string; chars?: number; uploadedAt: number };
@@ -259,15 +235,23 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   async function loadConnConfig(connId: string | null) {
+    const request = ++configRequest.current;
+    setConfigLoaded(false);
     const url = connId
       ? `/api/agent?clientId=${clientId}&connId=${encodeURIComponent(connId)}`
       : `/api/agent?clientId=${clientId}`;
-    const res = await fetch(url);
-    const d = await res.json();
+    const res = await fetch(url).catch(() => null);
+    const d = await res?.json().catch(() => null);
+    if (request !== configRequest.current) return;
+    if (!res?.ok || !d) { setMsg(d?.error || "Não foi possível carregar o agente."); return; }
+    setConfigLoaded(true);
     // migra summaryPhone legado para avisos[]
     if (d.summaryPhone && !d.avisos?.length) {
       d.avisos = [{ id: "legacy", label: "Gestor", value: d.summaryPhone, type: "phone" }];
     }
+    // Os destinatários são editados no CRM. Um formulário do agente aberto antes
+    // dessa edição deve salvar apenas as configurações do próprio agente.
+    delete d.leadRecipients;
     setCfg(d);
     setIgnoredPhonesDraft((d.ignoredPhones ?? []).join("\n"));
     if (!connId && d._agentConfigsSummary) setConfigsSummary(d._agentConfigsSummary);
@@ -331,16 +315,6 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   useEffect(() => {
-    // Busca o secret do cron existente
-    fetch("/api/gestor/config")
-      .then((r) => r.json())
-      .then((d) => { if (d.agentCronSecret) setCronSecret(d.agentCronSecret); })
-      .catch(() => {});
-
-    if (typeof window !== "undefined") {
-      setCronUrl(`${window.location.origin}/api/agent/cron?secret=`);
-    }
-
     loadWaConnections();
 
     // Carrega templates Meta aprovados
@@ -358,104 +332,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   async function loadWaConnections() {
     setLoadingWa(true);
     try {
-      // Busca funis do cliente + instâncias enriquecidas do WhatsApp Manager + sessões WPPConnect/Evolution
-      const [funnelsRes, managerRes, wppRes, evoRes, serverRes] = await Promise.all([
-        fetch(`/api/crm/funnels?clientId=${clientId}`),
-        fetch("/api/whatsapp/manager"),
-        fetch("/api/whatsapp/wppconnect-manager"),
-        fetch("/api/whatsapp/evolution-manager"),
-        fetch(`/api/integrations/whatsapp-server?clientId=${encodeURIComponent(clientId)}`),
-      ]);
-      const funnels: { id: string; name: string; connections?: { id: string; phone?: string; type: string; uazapiToken?: string; metaPhoneNumberId?: string }[] }[] =
-        funnelsRes.ok ? await funnelsRes.json() : [];
-      // EnrichedInstance array from /api/whatsapp/manager
-      type EnrichedInst = { token: string; name: string; status: string; phone: string | null };
-      const enrichedList: EnrichedInst[] = managerRes.ok ? await managerRes.json() : [];
-      // WPPConnect sessions
-      type WppSess = { id: string; sessionName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
-      const wppSessions: WppSess[] = wppRes.ok ? await wppRes.json() : [];
-      // Evolution sessions
-      type EvoSess = { id: string; instanceName: string; status: string; phone: string | null; linkedFunnelId: string | null; linkedFunnelName: string | null };
-      const evoSessions: EvoSess[] = evoRes.ok ? await evoRes.json() : [];
-      type ServerSess = { id: string; status: string; phone: string; name?: string; funnelId: string; funnelName: string };
-      const serverPayload: { connections?: ServerSess[] } = serverRes.ok ? await serverRes.json() : {};
-
-      // Lookup by token or name
-      const byToken = new Map(enrichedList.map(e => [e.token, e]));
-      const byName  = new Map(enrichedList.map(e => [e.name,  e]));
-
-      // Funnel IDs belonging to this client
-      const clientFunnelIds = new Set(funnels.map(f => f.id));
-
-      const conns: WaConnection[] = [];
-      for (const funnel of funnels) {
-        for (const conn of funnel.connections ?? []) {
-          if (conn.type === "uazapi") {
-            const inst = byToken.get(conn.uazapiToken ?? "") ?? byName.get(conn.id);
-            conns.push({
-              id: conn.id,
-              phone: inst?.phone ?? conn.phone,
-              name: inst?.name,
-              status: inst?.status ?? "disconnected",
-              type: "uazapi",
-              funnelId: funnel.id,
-              funnelName: funnel.name,
-            });
-          } else if (conn.type === "meta") {
-            conns.push({
-              id: conn.id,
-              phone: conn.metaPhoneNumberId,
-              status: "connected",
-              type: "meta",
-              funnelId: funnel.id,
-              funnelName: funnel.name,
-            });
-          }
-        }
-      }
-
-      // Adiciona sessões WPPConnect vinculadas aos funis do cliente
-      for (const wpp of wppSessions) {
-        if (wpp.linkedFunnelId && clientFunnelIds.has(wpp.linkedFunnelId)) {
-          conns.push({
-            id: wpp.id,
-            phone: wpp.phone ?? undefined,
-            name: wpp.sessionName,
-            status: wpp.status,
-            type: "wppconnect",
-            funnelId: wpp.linkedFunnelId,
-            funnelName: wpp.linkedFunnelName ?? "",
-          });
-        }
-      }
-
-      // Adiciona instâncias Evolution vinculadas aos funis do cliente
-      for (const evo of evoSessions) {
-        if (evo.linkedFunnelId && clientFunnelIds.has(evo.linkedFunnelId)) {
-          conns.push({
-            id: evo.id,
-            phone: evo.phone ?? undefined,
-            name: evo.instanceName,
-            status: evo.status,
-            type: "evolution",
-            funnelId: evo.linkedFunnelId,
-            funnelName: evo.linkedFunnelName ?? "",
-          });
-        }
-      }
-
-      for (const server of serverPayload.connections ?? []) {
-        conns.push({
-          id: server.id,
-          phone: server.phone,
-          name: server.name ?? "WhatsApp 24h",
-          status: server.status,
-          type: "server",
-          funnelId: server.funnelId,
-          funnelName: server.funnelName,
-        });
-      }
-
+      const response=await fetch(`/api/crm/connections?clientId=${encodeURIComponent(clientId)}`);
+      if(!response.ok)throw Error("Não foi possível conferir as conexões.");
+      const payload=await response.json();
+      const conns:WaConnection[]=(payload.connections??[]).filter((connection:WaConnection)=>connection.type==="meta"||connection.type==="evolution").map((connection:WaConnection & {connected:boolean})=>({...connection,status:connection.connected?"connected":"disconnected"}));
       setWaConnections(conns);
       // Auto-seleciona a conexão indicada pelo redirect do OAuth (se existir), senão a primeira
       const redirectConnId = searchParams.get("connId");
@@ -484,13 +364,24 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }, [searchParams]);
 
   async function toggleField(field: "enabled" | "followUpEnabled", value: boolean) {
+    if (field === "followUpEnabled" && value && (!cfg.followUps?.length || cfg.followUps.length > 2)) {
+      setMsg("✗ Configure uma ou duas etapas e salve antes de ativar o follow-up.");
+      return;
+    }
+    const previous = cfg[field];
     setCfg((c) => ({ ...c, [field]: value }));
     const connParam = selectedConnId ? `&connId=${encodeURIComponent(selectedConnId)}` : "";
-    await fetch(`/api/agent?clientId=${clientId}${connParam}`, {
+    const response = await fetch(`/api/agent?clientId=${clientId}${connParam}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ field, value }),
-    });
+    }).catch(() => null);
+    if (!response?.ok) {
+      setCfg(c => ({ ...c, [field]: previous }));
+      const result = await response?.json().catch(() => null);
+      setMsg(`✗ ${result?.error ?? "Não foi possível alterar esta opção."}`);
+      return;
+    }
     // Update summary badge
     if (selectedConnId) {
       setConfigsSummary(prev => prev.map(s =>
@@ -500,6 +391,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   async function save() {
+    if (!configLoaded) return;
     if (cfg.businessHoursEnabled && (cfg.businessHoursDays ?? []).length === 0) {
       setMsg("✗ Selecione pelo menos um dia da semana no horário de atendimento.");
       return;
@@ -535,7 +427,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         });
       }
     } else {
-      setMsg("✗ Erro ao salvar.");
+      const error = await res.json().catch(() => null);
+      setMsg(`✗ ${error?.error ?? "Erro ao salvar."}`);
     }
   }
 
@@ -544,7 +437,10 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     window.location.href = `/api/agent/google-auth?clientId=${clientId}${connParam}`;
   }
 
-  const selectedConnType = waConnections.find((c) => c.id === selectedConnId)?.type ?? "uazapi";
+  const selectedConnType = waConnections.find((c) => c.id === selectedConnId)?.type ?? "evolution";
+
+  const groupsUrl = selectedConnId && selectedConnType === "evolution"
+    ? `/api/whatsapp/evolution-manager/${encodeURIComponent(selectedConnId)}/groups` : undefined;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
@@ -575,7 +471,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               const agentName = summary?.name;
               const label = agentName ? `${agentName} (${phone})` : phone;
               const badge = summary?.enabled ? " ✓" : "";
-              const icon = conn.type === "meta" ? "📘" : conn.type === "wppconnect" ? "📱" : conn.type === "evolution" ? "🧬" : conn.type === "server" ? "☁️" : "⚡";
+              const icon = conn.type === "meta" ? "📘" : "🧬";
               return (
                 <option key={conn.id} value={conn.id}>
                   {icon} {label}{badge}
@@ -648,8 +544,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         <Toggle
           label="Follow-up automático"
           sub={(cfg.followUps?.length ?? 0) > 0
-            ? `${cfg.followUps.length} step${cfg.followUps.length !== 1 ? "s" : ""} configurado${cfg.followUps.length !== 1 ? "s" : ""}`
-            : "Nenhum step configurado ainda"}
+            ? `${cfg.followUps.length} etapa${cfg.followUps.length !== 1 ? "s" : ""} · espera após resposta da empresa`
+            : "Configure uma ou duas etapas antes de ativar"}
           checked={cfg.followUpEnabled}
           onChange={(v) => toggleField("followUpEnabled", v)}
           color="green"
@@ -672,7 +568,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
               <span className="text-[10px] text-slate-400">
                 ({(() => {
                   const t = waConnections.find(c => c.id === selectedConnId)?.type;
-                  return t === "meta" ? "Meta API" : t === "wppconnect" ? "WPPConnect" : t === "evolution" ? "Evolution API" : "UazAPI";
+                  return t === "meta" ? "API oficial" : "Evolution";
                 })()})
               </span>
             </>
@@ -711,7 +607,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           )}
         </div>
         <p className="text-xs text-slate-400">
-          Se o cliente enviar várias mensagens seguidas — "oi", "tudo bem?", "quero saber sobre preços" — o agente
+          Se o cliente enviar várias mensagens seguidas — &quot;oi&quot;, &quot;tudo bem?&quot;, &quot;quero saber sobre preços&quot; — o agente
           acumula tudo e responde de uma vez após esse tempo. Recomendado: 15–30 segundos.
         </p>
       </div>
@@ -821,7 +717,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         </label>
         <p className="text-xs text-slate-500">
           Quando ligado, a IA manda a saudação abaixo (sem passar pela IA de verdade — é enviada direto) só na
-          primeira mensagem de cada "dia de conversa" com o cliente. Depois disso fica em silêncio pro resto do
+          primeira mensagem de cada &quot;dia de conversa&quot; com o cliente. Depois disso fica em silêncio pro resto do
           dia — quando virar a meia-noite, a próxima mensagem do cliente recebe a saudação de novo, mesmo dias
           seguidos.
         </p>
@@ -937,7 +833,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         <p className="text-xs font-semibold text-teal-600 uppercase tracking-wide">📊 Planilha do Google Sheets</p>
         <p className="text-xs text-slate-500">
           A IA registra automaticamente uma nova linha na aba correta da planilha conforme o tipo de reserva
-          (hospedagem, day use, almoço, etc.), preenchendo as colunas de cada aba.
+          (orçamentos, pedidos e agendamentos), preenchendo as colunas de cada aba.
         </p>
 
         {!cfg.calendarConnected ? (
@@ -1083,48 +979,78 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">⏰ Sequência de Follow-ups</p>
           <button
+            disabled={(cfg.followUps?.length ?? 0) >= 2}
             onClick={() => {
               const newStep: FollowUpStep = {
                 id: crypto.randomUUID(),
                 delayHours: 24,
                 message: "",
                 label: `Follow-up ${(cfg.followUps?.length ?? 0) + 1}`,
+                messageType: selectedConnType === "meta" ? "template" : "text",
               };
               setCfg((c) => ({ ...c, followUps: [...(c.followUps ?? []), newStep] }));
             }}
-            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40 transition"
           >
             + Adicionar step
           </button>
         </div>
 
         <p className="text-xs text-slate-400">
-          Cada step é enviado após o prazo configurado. Quando o lead responde, a sequência reinicia do zero.
+          A espera começa depois de uma resposta automática da IA. Se o cliente responder ou um atendente assumir, as próximas etapas são interrompidas e o motivo fica no histórico. Uma nova resposta da IA pode iniciar outro ciclo.
         </p>
 
         {/* Contexto para análise inteligente do follow-up */}
         <div className="space-y-1.5">
           <label className="block text-xs font-medium text-slate-600">
-            Contexto do negócio para follow-up inteligente
+            Contexto do negócio para texto e revisão por IA
           </label>
           <textarea
             value={cfg.followUpContext ?? ""}
             onChange={(e) => setCfg((c) => ({ ...c, followUpContext: e.target.value }))}
             rows={3}
             placeholder={
-              "Ex: Pousada e espaço para eventos. Clientes são pessoas físicas interessadas em hospedagem, day use ou eventos. Não enviar follow-up para fornecedores, candidatos a emprego ou conversas pessoais."
+              "Ex: Empresa de serviços. Clientes interessados em orçamento ou agendamento. Não enviar follow-up para fornecedores, candidatos a emprego ou conversas pessoais."
             }
             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
           />
           <p className="text-[11px] text-slate-400">
-            A IA lê este contexto antes de enviar cada follow-up para decidir se a conversa merece retorno. Seja específico: o que o negócio vende, quem é o cliente ideal, e o que deve ser filtrado.
+            Usado para gerar texto personalizado e, se você optar, revisar a conversa antes do envio.
           </p>
         </div>
+
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 space-y-3">
+          <p className="text-xs font-semibold text-slate-700">Quando pode enviar</p>
+          <div className="flex flex-wrap gap-1.5">
+            {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((day, index) => {
+              const selected = (cfg.followUpSendDays ?? [1, 2, 3, 4, 5]).includes(index);
+              return <button key={day} type="button" aria-pressed={selected} onClick={() => setCfg(current => {
+                const days = current.followUpSendDays ?? [1, 2, 3, 4, 5];
+                return { ...current, followUpSendDays: selected ? days.filter(value => value !== index) : [...days, index].sort() };
+              })} className={clsx("rounded-lg border px-2.5 py-1 text-xs", selected ? "border-emerald-400 bg-emerald-100 text-emerald-800" : "border-slate-200 bg-white text-slate-500")}>{day}</button>;
+            })}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-slate-600">Das <input type="time" value={cfg.followUpSendStart ?? "09:00"} onChange={event => setCfg(current => ({ ...current, followUpSendStart: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5" /></label>
+            <label className="text-xs text-slate-600">Até <input type="time" value={cfg.followUpSendEnd ?? "18:00"} onChange={event => setCfg(current => ({ ...current, followUpSendEnd: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5" /></label>
+          </div>
+          <label className="block text-xs text-slate-600">Máximo por contato em 7 dias
+            <select value={cfg.followUpMaxPer7Days ?? 2} onChange={event => setCfg(current => ({ ...current, followUpMaxPer7Days: Number(event.target.value) as 1 | 2 }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+              <option value={1}>1 mensagem</option><option value={2}>2 mensagens</option>
+            </select>
+          </label>
+          <p className="text-[11px] text-slate-500">Horário de São Paulo. Fora da janela, o envio espera o próximo período permitido.</p>
+        </div>
+
+        {selectedConnType !== "meta" && <label className="flex items-start gap-2 text-xs text-slate-600">
+          <input type="checkbox" checked={!!cfg.followUpAiReviewEnabled} onChange={event => setCfg(current => ({ ...current, followUpAiReviewEnabled: event.target.checked }))} className="mt-0.5" />
+          <span>Usar IA também para revisar se o lembrete faz sentido. Desligado: valem as regras de resposta do cliente, etapa, horário e limite. Se a revisão por IA falhar, o envio fica marcado como falha para conferência.</span>
+        </label>}
 
         {(cfg.followUps ?? []).length === 0 && (
           <div className="rounded-xl border border-dashed border-emerald-200 p-4 text-center">
             <p className="text-sm text-slate-400">Nenhum follow-up configurado.</p>
-            <p className="text-xs text-slate-300 mt-1">Clique em "+ Adicionar step" para criar a sequência.</p>
+            <p className="text-xs text-slate-300 mt-1">Clique em &quot;+ Adicionar step&quot; para criar a sequência.</p>
           </div>
         )}
 
@@ -1199,7 +1125,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
                 {/* Tipo de mensagem — tabs */}
                 <div className="flex gap-1 rounded-lg bg-emerald-100 p-0.5">
-                  {(["text", "ai", ...(selectedConnType === "meta" ? ["template"] : [])] as ("text" | "ai" | "template")[]).map((t) => (
+                  {((selectedConnType === "meta" ? ["template"] : ["text", "ai"]) as ("text" | "ai" | "template")[]).map((t) => (
                     <button
                       key={t}
                       onClick={() => updateStep({ messageType: t })}
@@ -1337,184 +1263,11 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
       {/* Avisos */}
       <div className="rounded-2xl border border-amber-200 bg-white p-5 space-y-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">🔔 Avisos</p>
-          {!addingAviso && (
-            <div className="flex gap-2">
-              {waConnections.some((c) => c.type === "wppconnect") && (
-                <button
-                  onClick={fetchWppGroups}
-                  disabled={loadingGroups}
-                  className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition disabled:opacity-50"
-                >
-                  {loadingGroups ? "Carregando..." : "👥 Listar grupos"}
-                </button>
-              )}
-              <button
-                onClick={() => { setAddingAviso(true); setNewAviso({ label: "", value: "", type: "phone" }); }}
-                className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-600 transition"
-              >
-                + Adicionar destinatário
-              </button>
-            </div>
-          )}
-        </div>
-
-        <p className="text-xs text-slate-500">
-          Quando o agente gerar um aviso ou resumo de conversa, todos os destinatários abaixo receberão a mensagem via WhatsApp.
-        </p>
-
-        {/* Seletor de grupos WPPConnect */}
-        {showGroupPicker && (
-          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-violet-700">👥 Selecione um grupo para adicionar</p>
-              <button
-                onClick={() => setShowGroupPicker(false)}
-                className="text-xs text-slate-400 hover:text-slate-600"
-              >
-                Fechar
-              </button>
-            </div>
-            {loadingGroups ? (
-              <p className="text-xs text-slate-400">Carregando grupos...</p>
-            ) : wppGroups.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Nenhum grupo encontrado. Verifique se a sessão está conectada.</p>
-            ) : (
-              <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-                {wppGroups.map((g) => {
-                  const alreadyAdded = (cfg.avisos ?? []).some((a) => a.value === g.id);
-                  return (
-                    <button
-                      key={g.id}
-                      disabled={alreadyAdded}
-                      onClick={() => {
-                        if (alreadyAdded) return;
-                        const id = Math.random().toString(36).slice(2);
-                        setCfg((c) => ({ ...c, avisos: [...(c.avisos ?? []), { id, label: g.name, value: g.id, type: "group" }] }));
-                        setShowGroupPicker(false);
-                      }}
-                      className={clsx(
-                        "w-full text-left rounded-lg border px-3 py-2 text-sm transition",
-                        alreadyAdded
-                          ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
-                          : "bg-white border-violet-200 text-slate-700 hover:border-violet-500 hover:bg-violet-50"
-                      )}
-                    >
-                      <span className="font-medium">{g.name}</span>
-                      {alreadyAdded && <span className="ml-2 text-[10px] text-slate-400">já adicionado</span>}
-                      <span className="block text-[10px] text-slate-400 font-mono mt-0.5 truncate">{g.id}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Lista de destinatários */}
-        {(cfg.avisos ?? []).length > 0 && (
-          <div className="space-y-2">
-            {(cfg.avisos ?? []).map((r) => (
-              <div key={r.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <span className={clsx(
-                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                  r.type === "group" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"
-                )}>
-                  {r.type === "group" ? "Grupo" : "Número"}
-                </span>
-                <span className="flex-1 text-sm font-medium text-slate-700 truncate">{r.label}</span>
-                <span className="text-xs text-slate-400 font-mono truncate max-w-[160px]">{r.value}</span>
-                <button
-                  onClick={() => setCfg((c) => ({ ...c, avisos: (c.avisos ?? []).filter((x) => x.id !== r.id) }))}
-                  className="shrink-0 rounded-md px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 transition"
-                >
-                  Remover
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {(cfg.avisos ?? []).length === 0 && !addingAviso && (
-          <p className="text-xs text-slate-400 italic">Nenhum destinatário configurado.</p>
-        )}
-
-        {/* Formulário de novo destinatário */}
-        {addingAviso && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
-            <p className="text-xs font-semibold text-amber-700">Novo destinatário</p>
-
-            {/* Tipo */}
-            <div className="flex gap-2">
-              {(["phone", "group"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setNewAviso((a) => ({ ...a, type: t }))}
-                  className={clsx(
-                    "flex-1 rounded-lg border py-1.5 text-xs font-semibold transition",
-                    newAviso.type === t
-                      ? "bg-amber-500 border-amber-500 text-white"
-                      : "bg-white border-slate-200 text-slate-600 hover:border-amber-400"
-                  )}
-                >
-                  {t === "phone" ? "📱 Número" : "👥 Grupo WhatsApp"}
-                </button>
-              ))}
-            </div>
-
-            {/* Label */}
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Rótulo</label>
-              <input
-                type="text"
-                value={newAviso.label}
-                onChange={(e) => setNewAviso((a) => ({ ...a, label: e.target.value }))}
-                placeholder='ex: "Gestor", "Grupo Vendas"'
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-              />
-            </div>
-
-            {/* Valor */}
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                {newAviso.type === "phone" ? "Número (com DDI)" : "ID do grupo"}
-              </label>
-              <input
-                type="text"
-                value={newAviso.value}
-                onChange={(e) => setNewAviso((a) => ({ ...a, value: e.target.value }))}
-                placeholder={newAviso.type === "phone" ? "5511999990000" : "120363xxxxxxxx@g.us"}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
-              />
-              {newAviso.type === "group" && (
-                <p className="mt-1 text-[11px] text-slate-400">
-                  O ID do grupo está no formato <span className="font-mono">120363xxxxxxxx@g.us</span>. Você pode obtê-lo no WhatsApp Web (URL do grupo) ou solicitando ao suporte.
-                </p>
-              )}
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => {
-                  if (!newAviso.label.trim() || !newAviso.value.trim()) return;
-                  const id = Math.random().toString(36).slice(2);
-                  setCfg((c) => ({ ...c, avisos: [...(c.avisos ?? []), { id, ...newAviso }] }));
-                  setAddingAviso(false);
-                }}
-                className="flex-1 rounded-lg bg-amber-500 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 transition"
-              >
-                Confirmar
-              </button>
-              <button
-                onClick={() => setAddingAviso(false)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
+        <RecipientList key={selectedConnId} title="🔔 Avisos"
+          description="Quando o agente gerar um aviso ou resumo de conversa, os destinatários abaixo receberão a mensagem via WhatsApp."
+          recipients={cfg.avisos ?? []} groupsUrl={groupsUrl}
+          onChange={(avisos) => setCfg((c) => ({ ...c, avisos }))}
+        />
 
         {/* Template Meta para avisos */}
         {(() => {
@@ -1712,59 +1465,6 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
         )}
       </div>
 
-      {/* Cron */}
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">⚙️ Agendador Interno</p>
-          {!cronSecret && (
-            <button
-              onClick={async () => {
-                setGeneratingSecret(true);
-                const secret = Array.from(crypto.getRandomValues(new Uint8Array(24)))
-                  .map((b) => b.toString(16).padStart(2, "0")).join("");
-                const res = await fetch("/api/gestor/config");
-                const cfg = await res.json();
-                await fetch("/api/gestor/config", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ ...cfg, agentCronSecret: secret }),
-                });
-                setCronSecret(secret);
-                setGeneratingSecret(false);
-              }}
-              disabled={generatingSecret}
-              className="rounded-lg bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-600 transition disabled:opacity-50"
-            >
-              {generatingSecret ? "Gerando..." : "Gerar chave secreta"}
-            </button>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-          <p className="text-sm font-semibold text-green-700">✓ Cron automático ativo</p>
-          <p className="text-xs text-green-600 mt-0.5">
-            O agendador roda internamente a cada minuto — sem configuração no EasyPanel.
-            Follow-ups e mensagens em espera são processados automaticamente.
-          </p>
-        </div>
-        <p className="text-xs text-slate-400">
-          Caso queira acionar manualmente ou monitorar externamente, use a URL abaixo:
-        </p>
-        {cronSecret ? (
-          <div className="relative rounded-lg bg-slate-800 px-4 py-3">
-            <code className="text-xs text-green-400 break-all">{cronUrl}{cronSecret}</code>
-            <button
-              onClick={() => navigator.clipboard.writeText(`${cronUrl}${cronSecret}`)}
-              className="absolute top-2 right-2 rounded bg-slate-600 px-2 py-1 text-xs text-slate-300 hover:bg-slate-500"
-            >
-              Copiar
-            </button>
-          </div>
-        ) : (
-          <p className="text-xs text-slate-400 italic">Gere uma chave acima para ter a URL de acionamento manual.</p>
-        )}
-      </div>
-
       {/* Divisão inteligente de mensagens */}
       <div className="rounded-2xl border border-purple-200 bg-white p-5 space-y-4 shadow-sm">
         <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide">✂️ Divisão de Mensagens</p>
@@ -1877,6 +1577,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
                       try {
                         const fd = new FormData();
                         fd.append("file", file);
+                        fd.append("clientId",clientId);
+                        if(selectedConnId)fd.append("connId",selectedConnId);
                         const res = await fetch("/api/upload", { method: "POST", body: fd });
                         const data = await res.json() as { url?: string; error?: string };
                         if (data.url) {
@@ -2096,7 +1798,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       <div className="flex justify-end">
         <button
           onClick={save}
-          disabled={saving}
+          disabled={saving || !configLoaded}
           className="rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
         >
           {saving ? "Salvando..." : "Salvar configurações"}

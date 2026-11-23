@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readDocument, writeDocument, withDataTransaction } from "./document-store";
 import path from "path";
 import { randomUUID } from "crypto";
 
@@ -31,6 +31,7 @@ export type Employee = {
   name: string;
   email: string;
   passwordHash: string;
+  sessionVersion?: number;
   active: boolean;               // false = bloqueado
   allowedFunnelIds: string[];    // lista de IDs; ["*"] = todos os funis
   permissions: EmployeePermissions;
@@ -38,63 +39,69 @@ export type Employee = {
   createdAt: number;
 };
 
-function load(): Employee[] {
-  try {
-    if (!existsSync(FILE)) return [];
-    return JSON.parse(readFileSync(FILE, "utf-8"));
-  } catch { return []; }
+async function load(): Promise<Employee[]> {
+  return (await readDocument<Employee[]>("employees.json", []));
 }
 
-function save(data: Employee[]) {
-  if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(data, null, 2));
+async function save(data: Employee[]) {
+  await writeDocument("employees.json", data);
 }
 
-export function getEmployees(clientId: string): Employee[] {
-  return load().filter((e) => e.clientId === clientId);
+export async function getEmployees(clientId: string): Promise<Employee[]> {
+  return (await load()).filter((e) => e.clientId === clientId);
 }
 
-export function getEmployeeById(id: string): Employee | undefined {
-  return load().find((e) => e.id === id);
+export async function getEmployeeById(id: string): Promise<Employee | undefined> {
+  return (await load()).find((e) => e.id === id);
 }
 
-export function getEmployeeByEmail(email: string): Employee | undefined {
-  return load().find((e) => e.email.toLowerCase() === email.toLowerCase());
+export async function getEmployeeByEmail(email: string): Promise<Employee | undefined> {
+  return (await load()).find((e) => e.email.toLowerCase() === email.toLowerCase());
 }
 
-export function createEmployee(
+export async function createEmployee(
   data: Omit<Employee, "id" | "createdAt">
-): Employee {
-  const all = load();
+): Promise<Employee> {
+  return withDataTransaction(async () => {
+  const all = (await load());
   const employee: Employee = {
     ...data,
     id: randomUUID(),
     createdAt: Date.now(),
   };
   all.push(employee);
-  save(all);
+  (await save(all));
   return employee;
+
+  });
 }
 
-export function updateEmployee(
+export async function updateEmployee(
   id: string,
   patch: Partial<Omit<Employee, "id" | "clientId" | "createdAt">>
-): Employee | null {
-  const all = load();
+): Promise<Employee | null> {
+  return withDataTransaction(async () => {
+  const all = (await load());
   const idx = all.findIndex((e) => e.id === id);
   if (idx === -1) return null;
-  all[idx] = { ...all[idx], ...patch };
-  save(all);
+  const sessionVersion = patch.passwordHash && patch.passwordHash !== all[idx].passwordHash ? (all[idx].sessionVersion ?? 0) + 1 : (all[idx].sessionVersion ?? 0);
+  all[idx] = { ...all[idx], ...patch, sessionVersion };
+  (await save(all));
   return all[idx];
+
+  });
 }
 
-export function deleteEmployee(id: string): boolean {
-  const all = load();
+export async function deleteEmployee(id: string): Promise<boolean> {
+  return withDataTransaction(async () => {
+  const all = (await load());
   const idx = all.findIndex((e) => e.id === id);
   if (idx === -1) return false;
   all.splice(idx, 1);
-  save(all);
+  (await save(all));
   return true;
+
+  });
 }
 
 /** Verifica se o funcionário tem acesso a um funil específico */
