@@ -1,3 +1,4 @@
+import type { LeadNotificationInput } from "./lead-notifications";
 import { normalizeLeadAttribution, preserveCapturedAttribution } from "./lead-attribution";
 import { readRecordList, writeRecordList, type RecordFilter } from "./record-store";
 import { withDataTransaction } from "./document-store";
@@ -198,6 +199,13 @@ async function queueGoogleConversion(lead: Lead, previous?: Lead): Promise<void>
   await enqueueLeadGoogleConversion(lead, previous);
 }
 
+async function onCrmLeadCreated(lead: Lead, rawPhone: string, input?: LeadNotificationInput) {
+  const { queueCrmLead } = await import("./lead-notifications");
+  await queueCrmLead(lead, rawPhone, input);
+  await queueGoogleConversion(lead);
+  await fireEntryColumnMetaEvent(lead);
+}
+
 export async function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedAt">): Promise<Lead> {
   return withDataTransaction(async () => {
   const leads = (await load({ clientId: data.clientId, phone: data.phone, funnelId: data.funnelId }));
@@ -217,8 +225,7 @@ export async function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedA
   const lead: Lead = normalizeLeadAttribution({ ...data, id: randomUUID(), createdAt: now, updatedAt: now });
   leads.push(lead);
   (await save(leads));
-  await queueGoogleConversion(lead);
-  (await fireEntryColumnMetaEvent(lead));
+  await onCrmLeadCreated(lead, data.phone);
   return lead;
 
   });
@@ -293,7 +300,7 @@ export function toDialablePhone(raw: string): string {
   return "55" + normalizePhone(raw);
 }
 
-export async function upsertLeadByPhone(clientId: string, phone: string, patch: Partial<Lead>): Promise<Lead> {
+export async function upsertLeadByPhone(clientId: string, phone: string, patch: Partial<Lead>, notification?: LeadNotificationInput): Promise<Lead> {
   return withDataTransaction(async () => {
   const leads = (await load({ clientId, phone, funnelId: patch.funnelId ?? "default" }));
   patch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
@@ -343,6 +350,10 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
     leads[idx] = normalizeLeadAttribution({ ...leads[idx], ...patch, updatedAt: now });
     (await save(leads));
     await queueGoogleConversion(leads[idx], previous);
+    if (patch.source === "form" && !notification?.pixel) {
+      const { queueCrmLead } = await import("./lead-notifications");
+      await queueCrmLead(leads[idx], phone, notification, true);
+    }
     return leads[idx];
   }
   const lead: Lead = normalizeLeadAttribution({
@@ -383,8 +394,7 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
   });
   leads.push(lead);
   (await save(leads));
-  await queueGoogleConversion(lead);
-  (await fireEntryColumnMetaEvent(lead));
+  await onCrmLeadCreated(lead, phone, notification);
   return lead;
 
   });

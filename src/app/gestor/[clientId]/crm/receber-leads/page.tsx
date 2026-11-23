@@ -26,7 +26,7 @@ export default async function ReceiveLeadsPage({ params }: { params: Promise<{ c
       <div>
         <p className="text-sm text-slate-500">{client.name}</p>
         <h1 className="text-2xl font-bold text-slate-900">Receber leads</h1>
-        <p className="mt-1 text-sm text-slate-600">Escolha quem recebe as respostas do formulário e o link para conversar com o lead pelo WhatsApp. O envio funciona mesmo com a IA desligada.</p>
+        <p className="mt-1 text-sm text-slate-600">Escolha quem recebe o aviso quando um lead é criado no CRM deste funil. A mensagem inclui os dados do contato, as respostas disponíveis e o link do WhatsApp. O envio funciona mesmo com a IA desligada.</p>
       </div>
       {connections.length ? <LeadRecipientsForm key={clientId} clientId={clientId} connections={connections} /> : (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">

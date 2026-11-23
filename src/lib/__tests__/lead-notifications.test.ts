@@ -134,7 +134,38 @@ describe.skipIf(process.env.TEST_POSTGRES === "1")("entrada de formulários e en
     }
     await site.POST(request("/?clientId=a", { ...form, tamanho: "40 m" }));
     await flush();
-    expect(send).toHaveBeenCalledTimes(4);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("dispara na criação pelo webhook personalizado e nunca cruza funis do mesmo cliente", async () => {
+    const clients = { clients: [{ id: "a", agentConfigs: [
+      { whatsappConnectionId: "wa-other", leadRecipients: [recipient("5544900000022")] },
+      { whatsappConnectionId: "wa-a", enabled: false, leadRecipients: [recipient(group)] },
+    ] }] };
+    storeFile("clients", clients);
+    storeFile("funnels", ["a", "other"].map(id => ({ id, clientId: "a", columns: [{ id: "novo" }] })));
+    storeFile("evolution-sessions", [{ id: "wa-a", clientId: "a", funnelId: "a" }, { id: "wa-other", clientId: "a", funnelId: "other" }]);
+    storeFile("webhooks", [{ id: "site-test", clientId: "a", active: true, name: "Pré Moldados", funnelId: "a", columnId: "novo", fieldMapping: { nameField: "nome", phoneField: "telefone" }, leadCount: 0 }]);
+    const webhook = await import("../../app/api/wh/[id]/route");
+    const payload = { nome: "Teste Jort", telefone: "(44) 99999-0091", projeto: "Barracão rural", area: "600", mensagem: "Teste CRM", submission_id: "id-interno" };
+    const post = () => webhook.POST(request("/api/wh/site-test", payload), { params: Promise.resolve({ id: "site-test" }) });
+    expect((await post()).status).toBe(200);
+    expect((await post()).status).toBe(200);
+    await flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    const [to, text, client, connection] = send.mock.calls[0];
+    expect([to,client,connection]).toEqual([group,"a","wa-a"]);
+    for (const value of ["Novo lead no CRM", "Barracão rural", "600", "Teste CRM", "https://wa.me/5544999990091"]) expect(text).toContain(value);
+    expect(text).not.toContain("id-interno");
+    const { createLead, updateLead, getLeadByPhone } = await import("../leads");
+    const saved = (await getLeadByPhone("a", payload.telefone, "a"))!;
+    await updateLead(saved.id, { status: "ganho" });
+    await createLead({ ...saved, phone: payload.telefone });
+    await flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    await createLead({ ...saved, phone: "44999990092", source: "manual" });
+    await flush();
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it("entrega formulário do pixel e prioriza o webhook quando ambos recebem o mesmo contato", async () => {
