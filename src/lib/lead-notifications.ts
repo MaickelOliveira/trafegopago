@@ -15,7 +15,7 @@ const day = 1440 * minute;
 
 type Origin = { contact: string; pixel: boolean; created: number };
 type Delivery = Origin & {
-  clientId: string; connectionId: string; to: string;
+  clientId: string; funnelId?: string; connectionId: string; to: string;
   name: string; phone: string; parts: string[]; index: number;
   due: number; deadline: number; retention: number; attempts: number; claim?: string;
 };
@@ -26,60 +26,67 @@ function receipt(row: Delivery): Receipt {
 }
 const readQueue = () => readDocument<Queue>(collection, {});
 
-async function enqueue(clientId: string, funnelId: string, sourceId: string, form: LeadForm, submissionId?: string) {
+export type LeadNotificationInput = { form: LeadForm; pixel: boolean; submissionId?: string };
+
+function contactKey(clientId: string, funnelId: string, phone: string, to: string) {
+  return createHash("sha256").update(JSON.stringify([clientId, funnelId, phone, to])).digest("hex");
+}
+
+// Called inside the CRM write transaction. Updates can only enrich a pending pixel delivery.
+export async function queueCrmLead(lead: Lead, rawPhone: string, input?: LeadNotificationInput, onlyEnrich = false) {
+  const { clientId, funnelId } = lead;
   const client = await getClientById(clientId);
-  if (!client) return [];
+  if (!client) return;
   const configs = getAllAgentConfigs(client).filter(cfg => cfg.whatsappConnectionId && cfg.leadRecipients?.length);
-  if (!configs.length) return [];
+  if (!configs.length) return;
+
   const jobs = await readQueue();
-  const message = leadFormMessage(form);
-  const identity = submissionId || JSON.stringify(Object.entries(form.fields).sort(([a], [b]) => a.localeCompare(b)));
+  const sourceNames = { form: "Formulário", whatsapp: "WhatsApp", manual: "Cadastro manual" };
+  const form: LeadForm = input?.form ?? {
+    source: lead.customFields?.formulario || sourceNames[lead.source] || "CRM",
+    name: lead.name, phone: lead.realPhone || (lead.isLid ? "" : rawPhone), email: lead.email,
+    fields: lead.customFields ?? {},
+  };
+  const message = leadFormMessage(form, true);
+  const phone = leadChatNumber(form.phone) || form.phone;
   const now = Date.now();
-  const pixel = sourceId.startsWith("pixel:");
-  const added: string[] = [];
+  const pixel = input?.pixel === true;
+  const changed: string[] = [];
+
   for (const cfg of configs) {
     const connectionId = cfg.whatsappConnectionId!;
     const funnel = await getFunnelForConnection(clientId, connectionId);
-    if (!funnel) continue;
-    const meta = funnel.connections?.some(c => c.id === connectionId && c.type === "meta");
+    if (funnel?.id !== funnelId) continue;
+    const official = funnel.connections?.some(c => c.id === connectionId && c.type === "meta");
     for (const recipient of cfg.leadRecipients ?? []) {
       const to = normalizeRecipient(recipient.type, recipient.value);
-      if (!to || (meta && recipient.type === "group")) continue;
-      const id = createHash("sha256").update(JSON.stringify([clientId, sourceId, identity, to])).digest("hex");
+      if (!to || (official && recipient.type === "group")) continue;
+      const id = createHash("sha256").update(JSON.stringify([clientId, lead.id, connectionId, to])).digest("hex");
       const prior = jobs[id];
-      if (prior && (!("expires" in prior) || prior.expires > now)) continue;
-      // O pixel também observa o submit de sites que já chamam o webhook do CRM.
-      // Dê prioridade à ficha do webhook, sem silenciar um novo orçamento direto.
-      const contact = createHash("sha256").update(JSON.stringify([clientId, funnelId, leadChatNumber(form.phone) || form.phone, to])).digest("hex");
-      const overlapping = Object.entries(jobs).filter(([, other]) => other.contact === contact && other.pixel !== pixel && now - other.created < 90_000);
-      if (pixel && overlapping.length) continue;
-      if (!pixel) {
-        for (const [key, other] of overlapping) {
-          if (!("expires" in other) && !other.claim) delete jobs[key];
-        }
+      if (prior) {
+        if ("expires" in prior || !prior.pixel || pixel || prior.claim || prior.index !== 0) continue;
+      } else if (onlyEnrich) {
+        continue;
       }
       jobs[id] = {
-        contact, pixel, created: now,
-        clientId, connectionId, to, name: form.name, phone: leadChatNumber(form.phone) || form.phone,
-        parts: splitLeadMessage(message, meta && cfg.metaSummaryTemplateName ? 650 : 3600), index: 0,
-        due: pixel ? now + 15_000 : now, deadline: now + day, retention: submissionId ? 7 * day : 3 * minute, attempts: 0,
+        contact: contactKey(clientId, funnelId, phone, to), pixel, created: now,
+        clientId, funnelId, connectionId, to, name: form.name, phone,
+        parts: splitLeadMessage(message, official && cfg.metaSummaryTemplateName ? 650 : 3600), index: 0,
+        due: pixel ? now + 15_000 : now, deadline: now + day, retention: input?.submissionId ? 7 * day : 3 * minute, attempts: 0,
       };
-      added.push(id);
+      changed.push(id);
     }
   }
-  if (added.length) await writeDocument(collection, jobs);
-  return added;
+  if (!changed.length) return;
+  await writeDocument(collection, jobs);
+  if (!pixel) {
+    try { after(() => processLeadNotifications(changed)); }
+    catch { /* A criação fora de uma requisição é atendida pelo worker da fila. */ }
+  }
 }
 
-// Confirma o lead e a fila na mesma transação. O envio ao provedor acontece depois do commit.
-export async function captureFormLead(clientId: string, phone: string, patch: Partial<Lead>, sourceId: string, form: LeadForm, submissionId?: string) {
-  const { lead, ids } = await withDataTransaction(async () => {
-    const lead = await upsertLeadByPhone(clientId, phone, patch);
-    const ids = await enqueue(clientId, lead.funnelId, sourceId, form, submissionId);
-    return { lead, ids };
-  });
-  if (ids.length && !sourceId.startsWith("pixel:")) after(() => processLeadNotifications(ids));
-  return lead;
+export function captureFormLead(clientId: string, phone: string, patch: Partial<Lead>, sourceId: string, form: LeadForm, submissionId?: string) {
+  return upsertLeadByPhone(clientId, phone, patch, { form, pixel: sourceId.startsWith("pixel:"), submissionId });
 }
 
 async function sendPart(job: Delivery): Promise<"sent" | "retry" | "cancel"> {
@@ -88,6 +95,7 @@ async function sendPart(job: Delivery): Promise<"sent" | "retry" | "cancel"> {
   if (!cfg?.leadRecipients?.some(r => normalizeRecipient(r.type, r.value) === job.to)) return "cancel";
   const funnel = await getFunnelForConnection(job.clientId, job.connectionId);
   if (!funnel) return "cancel";
+  if (job.funnelId ? job.funnelId !== funnel.id : job.contact !== contactKey(job.clientId, funnel.id, job.phone, job.to)) return "cancel";
   const part = job.parts[job.index];
   if (await sendMessage(job.to, part, job.clientId, job.connectionId, "recipient")) return "sent";
   const meta = funnel.connections?.find(c => c.id === job.connectionId && c.type === "meta");

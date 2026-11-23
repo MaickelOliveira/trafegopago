@@ -57,7 +57,7 @@ export type LeadForm = {
   mappedKeys?: string[];
 };
 
-export function leadFormMessage(form: LeadForm): string {
+export function leadFormMessage(form: LeadForm, createdInCrm = false): string {
   const phone = leadChatNumber(form.phone);
   const contactKeys = new Set([
     "phone", "whatsapp", "telefone", "celular", "phone_number", "your-phone",
@@ -67,13 +67,14 @@ export function leadFormMessage(form: LeadForm): string {
   const answers: string[] = [];
   const attribution: string[] = [];
   for (const [key, value] of Object.entries(form.fields)) {
-    if (!value || key === "funnelId" || (contactKeys.has(fieldKey(key)) && displayed.has(value))) continue;
+    if (/^(submission_id|form_position|consent|consentimento_medicao|enviado_em|pagina_origem|formulario|fbclid|gclid|fbp|fbc|gbraid|wbraid|client_ip|user_agent)$/i.test(fieldKey(key))) continue;
+    if (!value || key === "funnelId" || (contactKeys.has(fieldKey(key)) && (displayed.has(value) || (phone && leadChatNumber(value) === phone)))) continue;
     const section = /^(utm_|fbclid$|fbp$|gclid$|campanha$|campaign_|ad_|form_id$|page_id$)/.test(fieldKey(key)) ? attribution : answers;
     section.push(`• ${label(key)}: ${value}`);
   }
   return [
-    "📋 *Novo lead de formulário*",
-    [`*Nome:* ${form.name}`, `*Telefone:* ${form.phone}`, form.email && `*E-mail:* ${form.email}`].filter(Boolean).join("\n"),
+    createdInCrm ? "📋 *Novo lead no CRM*" : "📋 *Novo lead de formulário*",
+    [`*Nome:* ${form.name}`, form.phone && `*Telefone:* ${form.phone}`, form.email && `*E-mail:* ${form.email}`].filter(Boolean).join("\n"),
     phone && `*Conversar no WhatsApp*\nhttps://wa.me/${phone}`,
     answers.length && `*Respostas do formulário*\n${answers.join("\n")}`,
     [`*Origem:* ${form.source}`, ...attribution].join("\n"),
