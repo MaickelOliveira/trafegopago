@@ -2,7 +2,8 @@ import { attributionPlatform } from "@/lib/lead-attribution";
 import { NextRequest, NextResponse } from "next/server";
 import { getWebhookById, incrementWebhookCount } from "@/lib/webhooks";
 import { getFunnelById } from "@/lib/funnels";
-import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
+import { captureFormLead } from "@/lib/lead-notifications";
+import { getLeadByPhone } from "@/lib/leads";
 import { getClientById } from "@/lib/clients";
 import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
@@ -107,7 +108,7 @@ export async function POST(
 
   // Upsert: se lead já existe no mesmo funil (mesmo se veio por WhatsApp), atualiza status
   // para a coluna configurada no webhook (ex: "Novo"). Se não existe, cria.
-  const lead = (await upsertLeadByPhone(wh.clientId, phone, {
+  const lead = (await captureFormLead(wh.clientId, phone, {
     funnelId: wh.funnelId,
     name,
     email: email ?? null,
@@ -130,8 +131,11 @@ export async function POST(
     fbp: payload.fbp || null,
     clientIp,
     clientUserAgent,
-
-  }));
+  }, "webhook:" + id, {
+    source: payload.formulario || wh.name,
+    name, phone: rawPhone, email, fields: payload,
+    mappedKeys: [nameField, phoneField, ...(emailField ? [emailField] : [])],
+  }, payload.submission_id || payload.submissionId));
   (await incrementWebhookCount(id));
 
   // Dispara evento CAPI "Lead" pra lead novo — esse webhook já captura telefone,

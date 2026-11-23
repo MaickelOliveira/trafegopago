@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -155,7 +155,7 @@ describe.skipIf(process.env.TEST_POSTGRES === "1")("entrada de formulários e en
     expect(send).toHaveBeenCalledTimes(1);
     const [to, text, client, connection] = send.mock.calls[0];
     expect([to,client,connection]).toEqual([group,"a","wa-a"]);
-    for (const value of ["Novo lead no CRM", "Barracão rural", "600", "Teste CRM", "https://wa.me/5544999990091"]) expect(text).toContain(value);
+    for (const value of ["Novo lead de formulário", "Barracão rural", "600", "Teste CRM", "https://wa.me/5544999990091"]) expect(text).toContain(value);
     expect(text).not.toContain("id-interno");
     const { createLead, updateLead, getLeadByPhone } = await import("../leads");
     const saved = (await getLeadByPhone("a", payload.telefone, "a"))!;
@@ -165,7 +165,51 @@ describe.skipIf(process.env.TEST_POSTGRES === "1")("entrada de formulários e en
     expect(send).toHaveBeenCalledTimes(1);
     await createLead({ ...saved, phone: "44999990092", source: "manual" });
     await flush();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("só avisa após o primeiro formulário, inclusive quando o WhatsApp já criou o contato", async () => {
+    const { captureWhatsAppLead } = await import("../leads");
+    const raw = "44999990123";
+    const contact = await captureWhatsAppLead("a", raw, { funnelId: "a", source: "whatsapp" });
+    await pixel.POST(request("/", { clientId: "a", phone: raw, event: "Lead", source: "whatsapp" }));
+    await flush();
+    await queue.processLeadNotifications();
+    expect(send).not.toHaveBeenCalled();
+
+    storeFile("webhooks", [{ id: "form-jort", clientId: "a", active: true, name: "Jort", funnelId: "a", columnId: "novo", fieldMapping: { nameField: "nome", phoneField: "telefone" }, leadCount: 0 }]);
+    const webhook = await import("../../app/api/wh/[id]/route");
+    const post = () => webhook.POST(request("/api/wh/form-jort", { nome: "Teste", telefone: raw, projeto: "Barracão" }), { params: Promise.resolve({ id: "form-jort" }) });
+    expect((await (await post()).json()).leadId).toBe(contact?.id);
+    await flush();
+    expect(send.mock.calls.map(c => c[0]).sort()).toEqual([group, phone].sort());
+    expect(send.mock.calls[0][1]).toContain("Projeto: Barracão");
+
+    // Mesmo após a limpeza dos recibos, conversar ou reenviar não gera outro aviso.
+    storeFile("lead-deliveries", {});
+    await captureWhatsAppLead("a", raw, { funnelId: "a", source: "whatsapp" });
+    await post();
+    await flush();
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancela um aviso antigo de conversa e deixa o formulário posterior chegar", async () => {
+    const { captureWhatsAppLead } = await import("../leads");
+    const raw = "44999990124";
+    const contact = await captureWhatsAppLead("a", raw, { funnelId: "a", source: "whatsapp" });
+    const id = createHash("sha256").update(JSON.stringify(["a", contact!.id, "wa-a", group])).digest("hex");
+    const now = Date.now();
+    storeFile("lead-deliveries", { [id]: {
+      contact: "antigo", pixel: false, created: now, clientId: "a", funnelId: "a", connectionId: "wa-a",
+      to: group, name: "Desconhecido", phone: raw, parts: ["📋 *Novo lead no CRM*\n\n*Origem:* WhatsApp"],
+      index: 0, due: now, deadline: now + 60000, retention: 180000, attempts: 0,
+    } });
+    await queue.processLeadNotifications();
+    expect(send).not.toHaveBeenCalled();
+    await site.POST(request("/?clientId=a", { telefone: raw, funnelId: "a", projeto: "Industrial" }));
+    await flush();
+    expect(send.mock.calls.map(c => c[0]).sort()).toEqual([group, phone].sort());
+    expect(send.mock.calls[0][1]).toContain("Projeto: Industrial");
   });
 
   it("entrega formulário do pixel e prioriza o webhook quando ambos recebem o mesmo contato", async () => {

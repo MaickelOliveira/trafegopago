@@ -66,6 +66,7 @@ export type Lead = {
   isLid?: boolean;    // Contato usa LID interno do WhatsApp (novo protocolo) — envia com isLid:true
   realPhone?: string; // Número real resolvido do contato LID (para exibição)
   customFields?: Record<string, string>; // Campos extras do formulário de origem
+  firstFormSubmissionAt?: string;
   reminders?: LeadReminder[]; // Lembretes agendados para este lead
   needsAttention?: boolean;        // IA pediu ajuda humana (resumo_solicitado) e ainda não foi resolvido
   needsAttentionReason?: string;   // motivo informado pela IA
@@ -199,9 +200,7 @@ async function queueGoogleConversion(lead: Lead, previous?: Lead): Promise<void>
   await enqueueLeadGoogleConversion(lead, previous);
 }
 
-async function onCrmLeadCreated(lead: Lead, rawPhone: string, input?: LeadNotificationInput) {
-  const { queueCrmLead } = await import("./lead-notifications");
-  await queueCrmLead(lead, rawPhone, input);
+async function onCrmLeadCreated(lead: Lead) {
   await queueGoogleConversion(lead);
   await fireEntryColumnMetaEvent(lead);
 }
@@ -225,7 +224,7 @@ export async function createLead(data: Omit<Lead, "id" | "createdAt" | "updatedA
   const lead: Lead = normalizeLeadAttribution({ ...data, id: randomUUID(), createdAt: now, updatedAt: now });
   leads.push(lead);
   (await save(leads));
-  await onCrmLeadCreated(lead, data.phone);
+  await onCrmLeadCreated(lead);
   return lead;
 
   });
@@ -348,11 +347,12 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
     else if (patch.aiPaused === false) patch = { ...patch, aiPausedAt: null };
     patch = preserveCapturedAttribution(leads[idx], patch);
     leads[idx] = normalizeLeadAttribution({ ...leads[idx], ...patch, updatedAt: now });
+    if (notification) leads[idx].firstFormSubmissionAt = previous.firstFormSubmissionAt ?? now;
     (await save(leads));
     await queueGoogleConversion(leads[idx], previous);
-    if (patch.source === "form" && !notification?.pixel) {
+    if (notification) {
       const { queueCrmLead } = await import("./lead-notifications");
-      await queueCrmLead(leads[idx], phone, notification, true);
+      await queueCrmLead(leads[idx], notification, !!previous.firstFormSubmissionAt);
     }
     return leads[idx];
   }
@@ -387,6 +387,7 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
     notes: patch.notes ?? "",
     ai: patch.ai ?? null,
     customFields: patch.customFields,
+    ...(notification && { firstFormSubmissionAt: now }),
     isLid: patch.isLid,
     realPhone: patch.realPhone,
     createdAt: now,
@@ -394,7 +395,11 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
   });
   leads.push(lead);
   (await save(leads));
-  await onCrmLeadCreated(lead, phone, notification);
+  if (notification) {
+    const { queueCrmLead } = await import("./lead-notifications");
+    await queueCrmLead(lead, notification);
+  }
+  await onCrmLeadCreated(lead);
   return lead;
 
   });

@@ -4,7 +4,7 @@ import { getAllAgentConfigs, getClientById } from "./clients";
 import { readDocument, withDataTransaction, writeDocument } from "./document-store";
 import { getFunnelForConnection } from "./lead-context";
 import { leadChatNumber, leadFormMessage, splitLeadMessage, type LeadForm } from "./lead-form";
-import { upsertLeadByPhone, type Lead } from "./leads";
+import { getLeadByPhone, upsertLeadByPhone, type Lead } from "./leads";
 import { normalizeRecipient } from "./lead-recipient";
 import { sendMessage } from "./whatsapp-send";
 import { getTemplates, sendTemplate } from "./waba-templates";
@@ -13,7 +13,7 @@ const collection = "lead-deliveries.json";
 const minute = 60_000;
 const day = 1440 * minute;
 
-type Origin = { contact: string; pixel: boolean; created: number };
+type Origin = { formSubmission?: true; contact: string; pixel: boolean; created: number };
 type Delivery = Origin & {
   clientId: string; funnelId?: string; connectionId: string; to: string;
   name: string; phone: string; parts: string[]; index: number;
@@ -22,7 +22,7 @@ type Delivery = Origin & {
 type Receipt = Origin & { expires: number };
 type Queue = Record<string, Delivery | Receipt>;
 function receipt(row: Delivery): Receipt {
-  return { contact: row.contact, pixel: row.pixel, created: row.created, expires: Date.now() + row.retention };
+  return { formSubmission: row.formSubmission, contact: row.contact, pixel: row.pixel, created: row.created, expires: Date.now() + row.retention };
 }
 const readQueue = () => readDocument<Queue>(collection, {});
 
@@ -32,8 +32,8 @@ function contactKey(clientId: string, funnelId: string, phone: string, to: strin
   return createHash("sha256").update(JSON.stringify([clientId, funnelId, phone, to])).digest("hex");
 }
 
-// Called inside the CRM write transaction. Updates can only enrich a pending pixel delivery.
-export async function queueCrmLead(lead: Lead, rawPhone: string, input?: LeadNotificationInput, onlyEnrich = false) {
+// Only form intake supplies this input. Repeat submissions can enrich a pending pixel job.
+export async function queueCrmLead(lead: Lead, input: LeadNotificationInput, onlyEnrich = false) {
   const { clientId, funnelId } = lead;
   const client = await getClientById(clientId);
   if (!client) return;
@@ -41,16 +41,10 @@ export async function queueCrmLead(lead: Lead, rawPhone: string, input?: LeadNot
   if (!configs.length) return;
 
   const jobs = await readQueue();
-  const sourceNames = { form: "Formulário", whatsapp: "WhatsApp", manual: "Cadastro manual" };
-  const form: LeadForm = input?.form ?? {
-    source: lead.customFields?.formulario || sourceNames[lead.source] || "CRM",
-    name: lead.name, phone: lead.realPhone || (lead.isLid ? "" : rawPhone), email: lead.email,
-    fields: lead.customFields ?? {},
-  };
-  const message = leadFormMessage(form, true);
+  const { form, pixel } = input;
+  const message = leadFormMessage(form);
   const phone = leadChatNumber(form.phone) || form.phone;
   const now = Date.now();
-  const pixel = input?.pixel === true;
   const changed: string[] = [];
 
   for (const cfg of configs) {
@@ -63,16 +57,16 @@ export async function queueCrmLead(lead: Lead, rawPhone: string, input?: LeadNot
       if (!to || (official && recipient.type === "group")) continue;
       const id = createHash("sha256").update(JSON.stringify([clientId, lead.id, connectionId, to])).digest("hex");
       const prior = jobs[id];
-      if (prior) {
+      if (prior && (prior.formSubmission || prior.pixel || (!("expires" in prior) && await isFormDelivery(prior)))) {
         if ("expires" in prior || !prior.pixel || pixel || prior.claim || prior.index !== 0) continue;
       } else if (onlyEnrich) {
         continue;
       }
       jobs[id] = {
-        contact: contactKey(clientId, funnelId, phone, to), pixel, created: now,
+        formSubmission: true, contact: contactKey(clientId, funnelId, phone, to), pixel, created: now,
         clientId, funnelId, connectionId, to, name: form.name, phone,
         parts: splitLeadMessage(message, official && cfg.metaSummaryTemplateName ? 650 : 3600), index: 0,
-        due: pixel ? now + 15_000 : now, deadline: now + day, retention: input?.submissionId ? 7 * day : 3 * minute, attempts: 0,
+        due: pixel ? now + 15_000 : now, deadline: now + day, retention: input.submissionId ? 7 * day : 3 * minute, attempts: 0,
       };
       changed.push(id);
     }
@@ -89,7 +83,21 @@ export function captureFormLead(clientId: string, phone: string, patch: Partial<
   return upsertLeadByPhone(clientId, phone, patch, { form, pixel: sourceId.startsWith("pixel:"), submissionId });
 }
 
+// Jobs persisted before form-only delivery have no structured origin.
+async function isFormDelivery(job: Delivery): Promise<boolean> {
+  if (job.formSubmission || job.pixel) return true;
+  const message = job.parts.join("\n");
+  if (message.startsWith("📋 *Novo lead de formulário*")) return true;
+  const origin = message.match(/(?:^|\n)\*Origem:\* ([^\n]+)(?:\n• [^\n]*)*$/)?.[1];
+  if (origin === "Formulário da Meta" || origin === "Formulário do site") return true;
+  if (!origin || ["WhatsApp", "Cadastro manual", "CRM"].includes(origin) || !job.funnelId) return false;
+  const lead = await getLeadByPhone(job.clientId, job.phone, job.funnelId);
+  return !!lead?.notes?.split("\n").some(line => line.startsWith("Origem: "))
+    && origin === (lead.customFields?.formulario || "Formulário");
+}
+
 async function sendPart(job: Delivery): Promise<"sent" | "retry" | "cancel"> {
+  if (!await isFormDelivery(job)) return "cancel";
   const client = await getClientById(job.clientId);
   const cfg = client && getAllAgentConfigs(client).find(c => c.whatsappConnectionId === job.connectionId);
   if (!cfg?.leadRecipients?.some(r => normalizeRecipient(r.type, r.value) === job.to)) return "cancel";
