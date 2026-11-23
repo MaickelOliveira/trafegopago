@@ -46,7 +46,6 @@ type AgentCfg = {
   googleCalendarId?: string;
   summaryPhone?: string;
   avisos?: AvisoRecipient[];
-  leadRecipients?: AvisoRecipient[];
   followUps: FollowUpStep[];
   followUpContext?: string;
   followUpAiReviewEnabled?: boolean;
@@ -250,6 +249,9 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
     if (d.summaryPhone && !d.avisos?.length) {
       d.avisos = [{ id: "legacy", label: "Gestor", value: d.summaryPhone, type: "phone" }];
     }
+    // Os destinatários são editados no CRM. Um formulário do agente aberto antes
+    // dessa edição deve salvar apenas as configurações do próprio agente.
+    delete d.leadRecipients;
     setCfg(d);
     setIgnoredPhonesDraft((d.ignoredPhones ?? []).join("\n"));
     if (!connId && d._agentConfigsSummary) setConfigsSummary(d._agentConfigsSummary);
@@ -1304,16 +1306,6 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           );
         })()}
       </div>
-
-      <fieldset disabled={!selectedConnId || !configLoaded} className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
-        <RecipientList key={selectedConnId} title="Receber lead"
-          description="A cada formulário recebido deste cliente, envie as respostas e o link para conversar com o lead pelo WhatsApp."
-          recipients={cfg.leadRecipients ?? []} groupsUrl={groupsUrl} allowGroups={selectedConnType !== "meta"}
-          onChange={(leadRecipients) => setCfg((c) => ({ ...c, leadRecipients }))}
-        />
-        {!selectedConnId && <p className="mt-2 text-xs text-slate-500">Selecione uma conexão de WhatsApp acima para adicionar destinatários.</p>}
-        {selectedConnType === "meta" && <p className="mt-2 text-xs text-slate-500">Para enviar fora da janela de atendimento, selecione o template de três variáveis em Avisos. Para grupos, selecione uma conexão Evolution.</p>}
-      </fieldset>
 
       {/* Resumo diário */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">

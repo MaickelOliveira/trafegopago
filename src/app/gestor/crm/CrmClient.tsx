@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { Inbox } from "lucide-react";
 import { KanbanBoard } from "@/components/crm/KanbanBoard";
 import { WhatsAppStatus } from "@/components/crm/WhatsAppStatus";
 import type { Lead } from "@/lib/leads";
@@ -104,6 +106,12 @@ export function CrmClient({ clients, initialLeads, initialFunnels, selectedClien
         </div>
         <div className="nexo-crm-heading-tools">
         {!fixedClient && <ClientSelector clients={clients} selected={selectedClient} onSelect={selectClient} />}
+        {client && (
+          <Link href={`/gestor/${encodeURIComponent(client.id)}/crm/receber-leads`} prefetch={false}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-blue-300 hover:text-blue-700">
+            <Inbox size={16} aria-hidden="true" /> Receber leads
+          </Link>
+        )}
         <WhatsAppStatus
           clients={clients}
           clientId={selectedClient}

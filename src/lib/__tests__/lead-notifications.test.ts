@@ -103,6 +103,22 @@ describe.skipIf(process.env.TEST_POSTGRES === "1")("entrada de formulários e en
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("preserva os destinos do CRM quando o agente é salvo e permite receber com a IA desligada", async () => {
+    const agent = await import("../../app/api/agent/route");
+    const url = "/api/agent?clientId=a&connId=wa-a";
+    await agent.PATCH(request(url, { field: "enabled", value: false }));
+    const previous = await (await agent.GET(request(url, {}))).json();
+    delete previous.leadRecipients; // A tela do agente edita somente os campos que controla.
+    expect((await agent.PUT(request(url, { leadRecipients: [recipient(group)] }))).status).toBe(200);
+    expect((await agent.PUT(request(url, { ...previous, name: "Atendimento" }))).status).toBe(200);
+    const saved = await (await agent.GET(request(url, {}))).json();
+    expect(saved.enabled).toBe(false);
+    expect(saved.leadRecipients.map((r: { value: string }) => r.value)).toEqual([group]);
+    await site.POST(request("/?clientId=a", { nome: "Ana", telefone: "44999990008", produto: "Gradil", funnelId: "a" }));
+    await flush();
+    expect(send.mock.calls.map(call => call[0])).toEqual([group]);
+  });
+
   it("encaminha ao número e ao grupo, sem usar os avisos ou outro cliente", async () => {
     const form = { nome: "Ana", whatsapp: "(44) 99999-0000", tamanho: "20 m", funnelId: "a" };
     const response = await site.POST(request("/?clientId=a", form));
