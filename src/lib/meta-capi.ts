@@ -1,3 +1,4 @@
+import { storedLeadRefusedMeasurement } from "./lead-ad-preference-store";
 import crypto from "crypto";
 import { getConfig } from "./clients";
 
@@ -21,6 +22,7 @@ export async function sendCapiEvent(opts: {
   value?: number;
   currency?: string;
 }): Promise<void> {
+  if (opts.externalId && await storedLeadRefusedMeasurement(opts.externalId)) return;
   // Usa token de conversão do cliente se disponível, senão o token global
   const token = opts.capiToken || (await getConfig()).metaToken;
   if (!token || !opts.pixelId) {

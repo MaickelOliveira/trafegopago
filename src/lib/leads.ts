@@ -1,3 +1,4 @@
+import { preserveFormPreference } from "./lead-ad-preference";
 import { normalizeLeadAttribution, preserveCapturedAttribution } from "./lead-attribution";
 import { readRecordList, writeRecordList, type RecordFilter } from "./record-store";
 import { withDataTransaction } from "./document-store";
@@ -234,6 +235,7 @@ export async function updateLead(id: string, patch: Partial<Omit<Lead, "id" | "c
   // normalizePhone(l.phone) nas buscas de outras funções, criando duplicatas.
   const previous = { ...leads[idx] };
   const normalizedPatch = { ...patch };
+  if ("customFields" in normalizedPatch) normalizedPatch.customFields = preserveFormPreference(previous.customFields, normalizedPatch.customFields);
   if (normalizedPatch.phone) normalizedPatch.phone = normalizePhone(normalizedPatch.phone);
   if (normalizedPatch.realPhone) normalizedPatch.realPhone = normalizePhone(normalizedPatch.realPhone);
   // Carimba (ou limpa) aiPausedAt centralizado aqui — usado pela reativação
@@ -339,6 +341,7 @@ export async function upsertLeadByPhone(clientId: string, phone: string, patch: 
     // Mesmo carimbo de aiPausedAt de updateLead() — ver comentário lá.
     if (patch.aiPaused === true) patch = { ...patch, aiPausedAt: now };
     else if (patch.aiPaused === false) patch = { ...patch, aiPausedAt: null };
+    if ("customFields" in patch) patch.customFields = preserveFormPreference(previous.customFields, patch.customFields);
     patch = preserveCapturedAttribution(leads[idx], patch);
     leads[idx] = normalizeLeadAttribution({ ...leads[idx], ...patch, updatedAt: now });
     (await save(leads));
