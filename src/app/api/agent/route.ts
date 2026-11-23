@@ -5,6 +5,7 @@ import { withDataTransaction } from "@/lib/document-store";
 import { getFunnelForConnection } from "@/lib/lead-context";
 import { cancelFollowUpsForConnection, cancelFollowUpsForPhone } from "@/lib/followups";
 import { sanitizeAgentPhoneList } from "@/lib/agent-phone-policy";
+import { parseLeadRecipients } from "@/lib/lead-recipient";
 import { validateFollowUpConfig } from "@/lib/followup-policy";
 async function context(req: NextRequest) {
   if ((await getSession())?.role !== "manager") return null;
@@ -38,6 +39,11 @@ async function update(req: NextRequest, toggle: boolean) {
     const updated: AgentConfig = { ...current, ...patch, googleRefreshToken: current.googleRefreshToken, dailySummaryLastSentDate: current.dailySummaryLastSentDate, geminiApiKey: patch.geminiApiKey || current.geminiApiKey, whatsappConnectionId: connId, ignoredPhones: patch.ignoredPhones === undefined ? current.ignoredPhones : sanitizeAgentPhoneList(patch.ignoredPhones) };
     const funnel = connId ? await getFunnelForConnection(client.id, connId) : undefined;
     const officialMeta = !!funnel?.connections?.some(connection => connection.id === connId && connection.type === "meta");
+    if (!toggle && patch.leadRecipients !== undefined) {
+      const recipients = parseLeadRecipients(patch.leadRecipients, !officialMeta);
+      if (!recipients || (recipients.length && !connId)) return NextResponse.json({ error: "Confira a conexão, os números com DDI e os grupos selecionados." }, { status: 400 });
+      updated.leadRecipients = recipients;
+    }
     const followUpError = validateFollowUpConfig(updated, officialMeta);
     if (followUpError) return NextResponse.json({ error: followUpError }, { status: 400 });
     await upsertAgentConfigForConnection(client, connId, updated);

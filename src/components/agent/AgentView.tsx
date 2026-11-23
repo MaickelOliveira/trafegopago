@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { RecipientList } from "./RecipientList";
+import type { AvisoRecipient } from "@/lib/clients";
 import { clsx } from "clsx";
 import { useSearchParams } from "next/navigation";
 import { isValidAgentPhone, sanitizeAgentPhoneList, splitAgentPhoneInput } from "@/lib/agent-phone-policy";
@@ -36,13 +38,6 @@ type WaConnection = {
   funnelName: string;
 };
 
-type AvisoRecipient = {
-  id: string;
-  label: string;
-  value: string;
-  type: "phone" | "group";
-};
-
 type AgentCfg = {
   enabled: boolean;
   followUpEnabled: boolean;
@@ -51,6 +46,7 @@ type AgentCfg = {
   googleCalendarId?: string;
   summaryPhone?: string;
   avisos?: AvisoRecipient[];
+  leadRecipients?: AvisoRecipient[];
   followUps: FollowUpStep[];
   followUpContext?: string;
   followUpAiReviewEnabled?: boolean;
@@ -140,6 +136,8 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [cfg, setCfg] = useState<AgentCfg>({
     enabled: false, followUpEnabled: false, followUps: [],
   });
+  const configRequest = useRef(0);
+  const [configLoaded, setConfigLoaded] = useState(false);
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [configsSummary, setConfigsSummary] = useState<ConfigSummary[]>([]);
   const [saving, setSaving] = useState(false);
@@ -166,29 +164,6 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   const [spreadsheetError, setSpreadsheetError] = useState("");
   const [manualSpreadsheetInput, setManualSpreadsheetInput] = useState("");
   const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string; category: string; language: string; phoneNumberId?: string; components?: { type: string; text?: string }[] }[]>([]);
-
-  // Avisos
-  const [addingAviso, setAddingAviso] = useState(false);
-  const [newAviso, setNewAviso] = useState<{ label: string; value: string; type: "phone" | "group" }>({ label: "", value: "", type: "phone" });
-  const [evolutionGroups, setEvolutionGroups] = useState<{ id: string; name: string }[]>([]);
-  const [loadingGroups, setLoadingGroups] = useState(false);
-  const [showGroupPicker, setShowGroupPicker] = useState(false);
-
-  async function fetchEvolutionGroups() {
-    const evolutionConn = waConnections.find((c) => c.type === "evolution" && (selectedConnId === null || c.id === selectedConnId));
-    if (!evolutionConn) return;
-    setLoadingGroups(true);
-    setShowGroupPicker(true);
-    try {
-      const res = await fetch(`/api/whatsapp/evolution-manager/${evolutionConn.id}/groups`);
-      if (res.ok) {
-        const data = await res.json() as { groups: { id: string; name: string }[] };
-        setEvolutionGroups(data.groups);
-      }
-    } catch { /* ignore */ } finally {
-      setLoadingGroups(false);
-    }
-  }
 
   // Base de conhecimento
   type KbDoc = { id: string; name: string; filename: string; chars?: number; uploadedAt: number };
@@ -261,12 +236,16 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   async function loadConnConfig(connId: string | null) {
+    const request = ++configRequest.current;
+    setConfigLoaded(false);
     const url = connId
       ? `/api/agent?clientId=${clientId}&connId=${encodeURIComponent(connId)}`
       : `/api/agent?clientId=${clientId}`;
-    const res = await fetch(url);
-    const d = await res.json();
-    if (!res.ok) { setMsg(d.error || "Não foi possível carregar o agente."); return; }
+    const res = await fetch(url).catch(() => null);
+    const d = await res?.json().catch(() => null);
+    if (request !== configRequest.current) return;
+    if (!res?.ok || !d) { setMsg(d?.error || "Não foi possível carregar o agente."); return; }
+    setConfigLoaded(true);
     // migra summaryPhone legado para avisos[]
     if (d.summaryPhone && !d.avisos?.length) {
       d.avisos = [{ id: "legacy", label: "Gestor", value: d.summaryPhone, type: "phone" }];
@@ -410,6 +389,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   async function save() {
+    if (!configLoaded) return;
     if (cfg.businessHoursEnabled && (cfg.businessHoursDays ?? []).length === 0) {
       setMsg("✗ Selecione pelo menos um dia da semana no horário de atendimento.");
       return;
@@ -456,6 +436,9 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
   }
 
   const selectedConnType = waConnections.find((c) => c.id === selectedConnId)?.type ?? "evolution";
+
+  const groupsUrl = selectedConnId && selectedConnType === "evolution"
+    ? `/api/whatsapp/evolution-manager/${encodeURIComponent(selectedConnId)}/groups` : undefined;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
@@ -1278,184 +1261,11 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
 
       {/* Avisos */}
       <div className="rounded-2xl border border-amber-200 bg-white p-5 space-y-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">🔔 Avisos</p>
-          {!addingAviso && (
-            <div className="flex gap-2">
-              {waConnections.some((c) => c.type === "evolution" && c.id === selectedConnId) && (
-                <button
-                  onClick={fetchEvolutionGroups}
-                  disabled={loadingGroups}
-                  className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition disabled:opacity-50"
-                >
-                  {loadingGroups ? "Carregando..." : "👥 Listar grupos"}
-                </button>
-              )}
-              <button
-                onClick={() => { setAddingAviso(true); setNewAviso({ label: "", value: "", type: "phone" }); }}
-                className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-600 transition"
-              >
-                + Adicionar destinatário
-              </button>
-            </div>
-          )}
-        </div>
-
-        <p className="text-xs text-slate-500">
-          Quando o agente gerar um aviso ou resumo de conversa, todos os destinatários abaixo receberão a mensagem via WhatsApp.
-        </p>
-
-        {/* Seletor de grupos Evolution */}
-        {showGroupPicker && (
-          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-violet-700">👥 Selecione um grupo para adicionar</p>
-              <button
-                onClick={() => setShowGroupPicker(false)}
-                className="text-xs text-slate-400 hover:text-slate-600"
-              >
-                Fechar
-              </button>
-            </div>
-            {loadingGroups ? (
-              <p className="text-xs text-slate-400">Carregando grupos...</p>
-            ) : evolutionGroups.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Nenhum grupo encontrado. Verifique se a sessão está conectada.</p>
-            ) : (
-              <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-                {evolutionGroups.map((g) => {
-                  const alreadyAdded = (cfg.avisos ?? []).some((a) => a.value === g.id);
-                  return (
-                    <button
-                      key={g.id}
-                      disabled={alreadyAdded}
-                      onClick={() => {
-                        if (alreadyAdded) return;
-                        const id = Math.random().toString(36).slice(2);
-                        setCfg((c) => ({ ...c, avisos: [...(c.avisos ?? []), { id, label: g.name, value: g.id, type: "group" }] }));
-                        setShowGroupPicker(false);
-                      }}
-                      className={clsx(
-                        "w-full text-left rounded-lg border px-3 py-2 text-sm transition",
-                        alreadyAdded
-                          ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
-                          : "bg-white border-violet-200 text-slate-700 hover:border-violet-500 hover:bg-violet-50"
-                      )}
-                    >
-                      <span className="font-medium">{g.name}</span>
-                      {alreadyAdded && <span className="ml-2 text-[10px] text-slate-400">já adicionado</span>}
-                      <span className="block text-[10px] text-slate-400 font-mono mt-0.5 truncate">{g.id}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Lista de destinatários */}
-        {(cfg.avisos ?? []).length > 0 && (
-          <div className="space-y-2">
-            {(cfg.avisos ?? []).map((r) => (
-              <div key={r.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <span className={clsx(
-                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                  r.type === "group" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"
-                )}>
-                  {r.type === "group" ? "Grupo" : "Número"}
-                </span>
-                <span className="flex-1 text-sm font-medium text-slate-700 truncate">{r.label}</span>
-                <span className="text-xs text-slate-400 font-mono truncate max-w-[160px]">{r.value}</span>
-                <button
-                  onClick={() => setCfg((c) => ({ ...c, avisos: (c.avisos ?? []).filter((x) => x.id !== r.id) }))}
-                  className="shrink-0 rounded-md px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 transition"
-                >
-                  Remover
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {(cfg.avisos ?? []).length === 0 && !addingAviso && (
-          <p className="text-xs text-slate-400 italic">Nenhum destinatário configurado.</p>
-        )}
-
-        {/* Formulário de novo destinatário */}
-        {addingAviso && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
-            <p className="text-xs font-semibold text-amber-700">Novo destinatário</p>
-
-            {/* Tipo */}
-            <div className="flex gap-2">
-              {(["phone", "group"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setNewAviso((a) => ({ ...a, type: t }))}
-                  className={clsx(
-                    "flex-1 rounded-lg border py-1.5 text-xs font-semibold transition",
-                    newAviso.type === t
-                      ? "bg-amber-500 border-amber-500 text-white"
-                      : "bg-white border-slate-200 text-slate-600 hover:border-amber-400"
-                  )}
-                >
-                  {t === "phone" ? "📱 Número" : "👥 Grupo WhatsApp"}
-                </button>
-              ))}
-            </div>
-
-            {/* Label */}
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Rótulo</label>
-              <input
-                type="text"
-                value={newAviso.label}
-                onChange={(e) => setNewAviso((a) => ({ ...a, label: e.target.value }))}
-                placeholder='ex: "Gestor", "Grupo Vendas"'
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-              />
-            </div>
-
-            {/* Valor */}
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                {newAviso.type === "phone" ? "Número (com DDI)" : "ID do grupo"}
-              </label>
-              <input
-                type="text"
-                value={newAviso.value}
-                onChange={(e) => setNewAviso((a) => ({ ...a, value: e.target.value }))}
-                placeholder={newAviso.type === "phone" ? "5511999990000" : "120363xxxxxxxx@g.us"}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
-              />
-              {newAviso.type === "group" && (
-                <p className="mt-1 text-[11px] text-slate-400">
-                  O ID do grupo está no formato <span className="font-mono">120363xxxxxxxx@g.us</span>. Você pode obtê-lo no WhatsApp Web (URL do grupo) ou solicitando ao suporte.
-                </p>
-              )}
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => {
-                  if (!newAviso.label.trim() || !newAviso.value.trim()) return;
-                  const id = Math.random().toString(36).slice(2);
-                  setCfg((c) => ({ ...c, avisos: [...(c.avisos ?? []), { id, ...newAviso }] }));
-                  setAddingAviso(false);
-                }}
-                className="flex-1 rounded-lg bg-amber-500 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 transition"
-              >
-                Confirmar
-              </button>
-              <button
-                onClick={() => setAddingAviso(false)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
+        <RecipientList key={selectedConnId} title="🔔 Avisos"
+          description="Quando o agente gerar um aviso ou resumo de conversa, os destinatários abaixo receberão a mensagem via WhatsApp."
+          recipients={cfg.avisos ?? []} groupsUrl={groupsUrl}
+          onChange={(avisos) => setCfg((c) => ({ ...c, avisos }))}
+        />
 
         {/* Template Meta para avisos */}
         {(() => {
@@ -1494,6 +1304,16 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
           );
         })()}
       </div>
+
+      <fieldset disabled={!selectedConnId || !configLoaded} className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
+        <RecipientList key={selectedConnId} title="Receber lead"
+          description="A cada formulário recebido deste cliente, envie as respostas e o link para conversar com o lead pelo WhatsApp."
+          recipients={cfg.leadRecipients ?? []} groupsUrl={groupsUrl} allowGroups={selectedConnType !== "meta"}
+          onChange={(leadRecipients) => setCfg((c) => ({ ...c, leadRecipients }))}
+        />
+        {!selectedConnId && <p className="mt-2 text-xs text-slate-500">Selecione uma conexão de WhatsApp acima para adicionar destinatários.</p>}
+        {selectedConnType === "meta" && <p className="mt-2 text-xs text-slate-500">Para enviar fora da janela de atendimento, selecione o template de três variáveis em Avisos. Para grupos, selecione uma conexão Evolution.</p>}
+      </fieldset>
 
       {/* Resumo diário */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
@@ -1986,7 +1806,7 @@ export function AgentView({ clientId, clientName }: { clientId: string; clientNa
       <div className="flex justify-end">
         <button
           onClick={save}
-          disabled={saving}
+          disabled={saving || !configLoaded}
           className="rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
         >
           {saving ? "Salvando..." : "Salvar configurações"}

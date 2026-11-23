@@ -26,6 +26,10 @@ export async function startBackgroundJobs() {
       } catch {
         console.error("[backup] O backup diário precisa de atenção. Consulte a configuração e o histórico.");
       }
+      try {
+        const { processLeadNotifications } = await import("./lib/lead-notifications");
+        void processLeadNotifications().catch(() => console.error("[Receber lead] Falha ao verificar a fila."));
+      } catch { console.error("[Receber lead] Falha ao iniciar a entrega."); }
       // Independent outbox: conversion delivery never holds up AI processing.
       try {
         const { processGoogleConversionOutbox } = await import("./lib/google-conversion-outbox");

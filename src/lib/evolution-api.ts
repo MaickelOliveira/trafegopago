@@ -322,6 +322,7 @@ export async function sendText(
   // resposta pra um número diferente do que originou a conversa, sem erro
   // visível (a Evolution aceita o envio mesmo que o número não exista).
   skipNormalize = false,
+  exactRecipient = false,
 ): Promise<boolean> {
   if (!(await base())) return false;
   try {
@@ -329,7 +330,7 @@ export async function sendText(
     // telefone real — precisa do sufixo "@lid" explícito, senão a Evolution
     // trata os dígitos como se fossem um número de telefone normal (e falha
     // com "exists: false", já que aquele número não existe de verdade).
-    const number = evolutionRecipientNumber(phone, isLid, skipNormalize, normalizeBrPhone);
+    const number = exactRecipient ? phone : evolutionRecipientNumber(phone, isLid, skipNormalize, normalizeBrPhone);
     for (const phoneKey of evolutionRecipientKeys(phone, number)) {
       markPhoneSending(phoneKey, instanceName);
       markSent(phoneKey, message, instanceName);

@@ -1,10 +1,12 @@
 import { verifyMetaSignature } from "@/lib/webhook-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { getConfig, getClients } from "@/lib/clients";
+import { formFields } from "@/lib/lead-form";
+import { captureFormLead } from "@/lib/lead-notifications";
 import { upsertLeadByPhone, getLeadByPhone } from "@/lib/leads";
 import { getFunnels } from "@/lib/funnels";
 
-const VERIFY_TOKEN = "trafegopago-meta-webhook";
+
 
 // ── Helpers de resolução de cliente ─────────────────────────────────────────
 
@@ -34,7 +36,9 @@ export async function GET(req: NextRequest) {
   const mode      = req.nextUrl.searchParams.get("hub.mode");
   const token     = req.nextUrl.searchParams.get("hub.verify_token");
   const challenge = req.nextUrl.searchParams.get("hub.challenge");
-  if (mode === "subscribe" && token === VERIFY_TOKEN && challenge)
+  const verifyToken = process.env.META_VERIFY_TOKEN || process.env.META_WEBHOOK_VERIFY_TOKEN;
+  if (!verifyToken) return NextResponse.json({ error: "Configure o token de verificação da Meta." }, { status: 503 });
+  if (mode === "subscribe" && token === verifyToken && challenge)
     return new NextResponse(challenge, { status: 200 });
   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
@@ -69,17 +73,17 @@ export async function POST(req: NextRequest) {
           if (!leadRes.ok) continue;
           const leadData = await leadRes.json();
 
-          const fields: Record<string, string> = {};
-          for (const f of (leadData.field_data ?? []))
-            fields[f.name] = Array.isArray(f.values) ? f.values[0] : f.values;
-
-          const phone = (fields.phone_number || fields.phone || fields.telefone || "").replace(/\D/g, "");
+          const fields = formFields(Object.fromEntries((leadData.field_data ?? []).map(
+            (field: { name: string; values: unknown }) => [field.name, field.values]
+          )));
+          const rawPhone = fields.phone_number || fields.phone || fields.telefone || fields.whatsapp || fields.celular || "";
+          const phone = rawPhone.replace(/\D/g, "");
           const name  = fields.full_name || fields.nome || fields.name || "Lead Meta Ads";
           const email = fields.email || null;
           if (!phone) continue;
 
           // Resolve cliente pelo pageId (configurado em Configurações do cliente)
-          const resolved = (await resolveClientByPageId(page_id));
+          const resolved = (await resolveClientByPageId(page_id || entry.id));
           if (!resolved) continue;
           const { clientId, funnelId } = resolved;
           const isNew = !(await getLeadByPhone(clientId, phone, funnelId));
@@ -88,7 +92,7 @@ export async function POST(req: NextRequest) {
           const knownFields = new Set(["phone_number","phone","telefone","full_name","nome","name","email"]);
           const extraFields = Object.entries(fields).filter(([k]) => !knownFields.has(k));
 
-          (await upsertLeadByPhone(clientId, phone, {
+          await captureFormLead(clientId, phone, {
             clientId, funnelId, name, phone, email,
             source: "form",
             adPlatform: "meta",
@@ -110,7 +114,10 @@ export async function POST(req: NextRequest) {
               page_id       && `Page ID: ${page_id}`,
               ...extraFields.map(([k, v]) => `${k}: ${v}`),
             ].filter(Boolean).join("\n"),
-          }));
+          }, "meta", {
+            source: "Formulário da Meta", name, phone: rawPhone, email,
+            fields: { ...formFields({ campaign_name, campaign_id, ad_set_name: adset_name, ad_set_id: adset_id, ad_name, ad_id, form_id, page_id }), ...fields },
+          }, String(leadgen_id));
 
           console.log(`[Meta/LeadAds] ${name} (${phone}) — cliente: ${clientId} — campanha: ${campaign_name}`);
         } catch (e) {
