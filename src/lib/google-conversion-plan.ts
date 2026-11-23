@@ -1,3 +1,4 @@
+import { formMeasurementRefused } from "./lead-ad-preference";
 import { createHash } from "node:crypto";
 import type { Client } from "./clients";
 import type { Lead } from "./leads";
@@ -22,6 +23,7 @@ export type PlannedGoogleConversion = {
 };
 
 export function planGoogleConversion(client: Client, lead: Lead, previous?: Lead): PlannedGoogleConversion | null {
+  if (formMeasurementRefused(lead.customFields)) return null;
   const settings = client.googleConversions;
   if (!settings?.enabled || lead.clientId !== client.id || lead.funnelId !== settings.funnelId) return null;
   if (previous && (previous.id !== lead.id || previous.clientId !== lead.clientId)) return null;

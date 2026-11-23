@@ -1,3 +1,4 @@
+import { storedLeadRefusedMeasurement } from "./lead-ad-preference-store";
 import { databaseExecutor, databasePool } from "./document-store";
 import { getClientById, getConfig } from "./clients";
 import type { Lead } from "./leads";
@@ -41,6 +42,10 @@ export async function processGoogleConversionOutbox(): Promise<void> {
       const claim = await lock.query<QueueRow>(`UPDATE google_conversion_events SET status='processing',attempts=attempts+1,processing_at=now(),updated_at=now()
         WHERE id=(SELECT id FROM google_conversion_events WHERE status='pending' AND next_attempt_at<=now() ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`);
       const row = claim.rows[0]; if (!row) break;
+      if (await storedLeadRefusedMeasurement(row.lead_id, row.client_id)) {
+        await lock.query("UPDATE google_conversion_events SET status='cancelled',reason='measurement_refused',gclid=NULL,updated_at=now() WHERE id=$1", [row.id]);
+        continue;
+      }
       const current = await getClientById(row.client_id);
       const settings = current?.googleConversions;
       const funnel = settings ? await getFunnelById(settings.funnelId) : undefined;
