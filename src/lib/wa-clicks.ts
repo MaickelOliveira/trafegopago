@@ -19,6 +19,9 @@ export type WaClick = {
   utmTerm: string | null;
   fbclid: string | null;
   gclid: string | null;
+  eventId: string | null;      // event_id do Lead do navegador (dedup Pixel x CAPI)
+  fbp: string | null;          // cookie _fbp
+  pageUrl: string | null;      // página onde o clique ocorreu
   createdAt: string;
   matchedPhone: string | null; // preenchido após match com a mensagem do lead
 };

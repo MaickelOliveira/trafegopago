@@ -107,8 +107,28 @@ function buildScript(cfg: ScriptConfig): string {
     catch(e) { return {}; }
   }
 
+  function getCookie(n) {
+    var m = d.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  // event_id único por conversão: o MESMO valor vai no fbq (navegador) e no CAPI
+  // (servidor) — é a chave que a Meta usa para deduplicar os dois eventos.
+  function newEventId() {
+    var r = (w.crypto && w.crypto.randomUUID) ? w.crypto.randomUUID()
+      : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    return "lead_" + r;
+  }
+
+  // Dispara o Lead do Pixel (navegador) com eventID, se o fbq do cliente estiver na página.
+  function fireMetaLead(eventId) {
+    try {
+      if (typeof w.fbq === "function") w.fbq("track", "Lead", {}, { eventID: eventId });
+    } catch(e) {}
+  }
+
   function sendEvent(data) {
-    var payload = Object.assign({ clientId: _cfg.clientId, url: w.location.href }, loadUTMs(), data);
+    var payload = Object.assign({ clientId: _cfg.clientId, url: w.location.href, fbp: getCookie("_fbp") }, loadUTMs(), data);
     try {
       if (navigator.sendBeacon) {
         navigator.sendBeacon(_cfg.eventEndpoint, JSON.stringify(payload));
@@ -143,8 +163,10 @@ function buildScript(cfg: ScriptConfig): string {
       if (el.hasAttribute("data-wa-track")) return; // tratado pelo handler de data-wa-track
       el.addEventListener("click", function() {
         var utms = loadUTMs();
+        var eid = newEventId();
         firePixels(utms);
-        sendEvent({ event: "WhatsAppClick", source: "whatsapp_click" });
+        fireMetaLead(eid);
+        sendEvent({ event: "WhatsAppClick", source: "whatsapp_click", eventId: eid });
       });
     });
   }
@@ -166,7 +188,9 @@ function buildScript(cfg: ScriptConfig): string {
     }
 
     var utms = loadUTMs();
+    var eid = newEventId();
     firePixels(utms);
+    fireMetaLead(eid);
 
     var url = _cfg.redirectEndpoint
       + "?clientId=" + encodeURIComponent(_cfg.clientId)
@@ -180,6 +204,10 @@ function buildScript(cfg: ScriptConfig): string {
     if (utms.utmTerm)     url += "&trm=" + encodeURIComponent(utms.utmTerm);
     if (utms.fbclid)      url += "&fbc=" + encodeURIComponent(utms.fbclid);
     if (utms.gclid)       url += "&gcd=" + encodeURIComponent(utms.gclid);
+    url += "&eid=" + encodeURIComponent(eid);
+    url += "&pg="  + encodeURIComponent(w.location.href);
+    var fbpC = getCookie("_fbp");
+    if (fbpC) url += "&fbp=" + encodeURIComponent(fbpC);
 
     setTimeout(function() { w.open(url, "_blank"); }, 300);
   }
@@ -228,6 +256,9 @@ function buildScript(cfg: ScriptConfig): string {
           });
           event.fields = answers;
         }
+        var eid = newEventId();
+        fireMetaLead(eid);
+        event.eventId = eid;
         sendEvent(event);
       });
     });
@@ -237,7 +268,9 @@ function buildScript(cfg: ScriptConfig): string {
 
   w._tp = {
     identify: function(phone, data) {
-      sendEvent(Object.assign({ event: "Lead", phone: phone, source: "manual" }, data || {}));
+      var eid = (data && data.eventId) || newEventId();
+      fireMetaLead(eid);
+      sendEvent(Object.assign({ event: "Lead", phone: phone, source: "manual", eventId: eid }, data || {}));
     },
     track: function(eventName, data) {
       sendEvent(Object.assign({ event: eventName }, data || {}));

@@ -22,6 +22,8 @@ type PixelEvent = {
   utmTerm?: string;
   fbclid?: string;
   gclid?: string;
+  eventId?: string;
+  fbp?: string;
 };
 
 const LEAD_EVENTS = ["Lead", "FormSubmit"];
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest) {
 
   if (!body || typeof body !== "object" || Array.isArray(body) || Object.entries(body).some(([k, v]) => k === "fields" ? !v || typeof v !== "object" || Array.isArray(v) : v != null && typeof v !== "string")) return NextResponse.json({ ok: false }, { status: 400 });
   const { clientId, event, phone, name, email, source, url,
-    utmSource, utmMedium, utmCampaign, utmContent, utmTerm, fbclid, gclid } = body;
+    utmSource, utmMedium, utmCampaign, utmContent, utmTerm, fbclid, gclid, eventId, fbp } = body;
 
   if (!clientId) return NextResponse.json({ ok: true });
 
@@ -53,6 +55,9 @@ export async function POST(req: NextRequest) {
       utmTerm:     utmTerm     ?? null,
       fbclid:      fbclid      ?? null,
       gclid:       gclid       ?? null,
+      eventId:     eventId     ?? null,
+      fbp:         fbp         ?? null,
+      pageUrl:     url         ?? null,
     }));
     return NextResponse.json({ ok: true });
   }
@@ -90,6 +95,10 @@ export async function POST(req: NextRequest) {
     utmTerm: utmTerm ?? null,
     fbclid: fbclid ?? null,
     gclid: gclid ?? null,
+    // Só grava se vier valor — não apaga o que um lead já existente tinha.
+    ...(eventId ? { metaEventId: eventId } : {}),
+    ...(fbp ? { fbp } : {}),
+    ...(url ? { eventSourceUrl: url } : {}),
   };
   const digits = phone.replace(/\D/g, "");
   if (event === "FormSubmit" || (event === "Lead" && source === "form")) {
