@@ -275,7 +275,7 @@ async function tryDirectPhraseMatch(
       if (matched) {
         console.log(`[kanban-agent/layer0] gatilho direto: msg="${msg}" phrase="${t}" mode=${phrase.match} → col=${col.id}`);
         updateLead(lead.id, { status: col.id });
-        if (col.metaEvent && client?.pixelId) {
+        if (col.metaEvent && client?.pixelId && !lead.metaConsentDenied) {
           sendCapiEvent({
             pixelId: client.pixelId,
             capiToken: client.capiToken,
@@ -338,7 +338,7 @@ export async function classifyLeadByHistory(
         if (!col) continue;
         updateLead(lead.id, { status: col.id });
         console.log(`[kanban-agent/classify] Lead ${lead.name} → ${col.label} (${action.motivo})`);
-        if (col.metaEvent && client?.pixelId) {
+        if (col.metaEvent && client?.pixelId && !lead.metaConsentDenied) {
           sendCapiEvent({
             pixelId: client.pixelId,
             capiToken: client.capiToken,
@@ -452,7 +452,7 @@ export async function processKanbanActions(
         console.log(`[kanban-agent] Lead ${lead.name} → ${col.label} (${action.motivo})`);
 
         // Dispara CAPI se a coluna tiver evento configurado
-        if (col.metaEvent && client?.pixelId) {
+        if (col.metaEvent && client?.pixelId && !lead.metaConsentDenied) {
           sendCapiEvent({
             pixelId: client.pixelId,
             capiToken: client.capiToken,

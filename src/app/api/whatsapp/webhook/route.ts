@@ -275,7 +275,7 @@ export async function POST(req: NextRequest) {
       ?.columns.find((c) => c.id === "entrada")?.metaEvent;
     if (isNew && adPlatform === "meta" && !entryColHasMetaEvent) {
       const clientObj = getClientById(cid);
-      if (clientObj?.pixelId) {
+      if (clientObj?.pixelId && !newLead.metaConsentDenied) {
         sendCapiEvent({
           pixelId:   clientObj.pixelId,
           capiToken: clientObj.capiToken,
