@@ -212,6 +212,7 @@ export async function POST(req: NextRequest) {
     // Para leads novos: tenta associar a um clique recente via pixel/redirect (matchClick),
     // e cai back no payload inline da mensagem [_:...] se não houver match.
     let tracking: ReturnType<typeof parseWaTracking> = null;
+    let clickMeta: { eventId: string | null; fbp: string | null; pageUrl: string | null; ts: number } | null = null;
     if (isNew) {
       const click = matchClick(cid, phone);
       if (click) {
@@ -224,6 +225,7 @@ export async function POST(req: NextRequest) {
           fbclid:      click.fbclid,
           gclid:       click.gclid,
         };
+        clickMeta = { eventId: click.eventId ?? null, fbp: click.fbp ?? null, pageUrl: click.pageUrl ?? null, ts: new Date(click.createdAt).getTime() };
       } else {
         tracking = parseWaTracking(rawText);
       }
@@ -256,6 +258,12 @@ export async function POST(req: NextRequest) {
         gclid:       tracking.gclid,
         campaignName: tracking.utmCampaign,
       } : {}),
+      ...(clickMeta ? {
+        metaEventId: clickMeta.eventId,
+        fbp: clickMeta.fbp,
+        eventSourceUrl: clickMeta.pageUrl,
+        fbclickTimeMs: clickMeta.ts,
+      } : {}),
     });
 
     // Envia Lead para Meta CAPI quando lead novo veio de anúncio Meta.
@@ -280,6 +288,9 @@ export async function POST(req: NextRequest) {
           clientIp: newLead.clientIp ?? undefined,
           clientUserAgent: newLead.clientUserAgent ?? undefined,
           externalId: newLead.id,
+          eventId: newLead.metaEventId ?? undefined,
+          eventSourceUrl: newLead.eventSourceUrl ?? undefined,
+          fbclickTimeMs: newLead.fbclickTimeMs ?? undefined,
         }).catch((e) => console.error("[CAPI WA]", e));
       }
     }

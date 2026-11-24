@@ -50,6 +50,9 @@ export type Lead = {
   fbclid: string | null;
   gclid: string | null;
   fbp?: string | null;              // Cookie _fbp do navegador (Meta CAPI — sobe a qualidade de correspondência)
+  metaEventId?: string | null;      // event_id do Lead disparado no navegador (fbq eventID) — reaproveitado no CAPI p/ deduplicar
+  fbclickTimeMs?: number | null;    // Momento do clique no anúncio (ms) — compõe o fbc corretamente
+  eventSourceUrl?: string | null;   // Página do site onde o Lead ocorreu
   clientIp?: string | null;         // IP real do navegador no momento da captura do lead (Meta CAPI)
   clientUserAgent?: string | null;  // User-Agent real do navegador no momento da captura do lead (Meta CAPI)
   value: number | null;
@@ -211,6 +214,9 @@ function fireEntryColumnMetaEvent(lead: Lead): void {
     clientIp: lead.clientIp ?? undefined,
     clientUserAgent: lead.clientUserAgent ?? undefined,
     externalId: lead.id,
+    eventId: col.metaEvent === "Lead" ? lead.metaEventId ?? undefined : undefined,
+    eventSourceUrl: lead.eventSourceUrl ?? undefined,
+    fbclickTimeMs: lead.fbclickTimeMs ?? undefined,
   }).catch((e) => console.error("[Meta CAPI] evento da coluna de entrada", e));
 }
 
@@ -357,6 +363,9 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     fbclid: patch.fbclid ?? null,
     gclid: patch.gclid ?? null,
     fbp: patch.fbp ?? null,
+    metaEventId: patch.metaEventId ?? null,
+    fbclickTimeMs: patch.fbclickTimeMs ?? null,
+    eventSourceUrl: patch.eventSourceUrl ?? null,
     clientIp: patch.clientIp ?? null,
     clientUserAgent: patch.clientUserAgent ?? null,
     value: patch.value ?? null,

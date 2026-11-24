@@ -16,6 +16,9 @@ export const dynamic = "force-dynamic";
  *   trm        — utm_term
  *   fbc        — fbclid
  *   gcd        — gclid
+ *   eid        — event_id do Lead no navegador (dedup Pixel x CAPI)
+ *   fbp        — cookie _fbp
+ *   pg         — URL da página do clique
  */
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
@@ -39,6 +42,9 @@ export async function GET(req: NextRequest) {
       utmTerm:     p.get("trm")  || null,
       fbclid:      p.get("fbc")  || null,
       gclid:       p.get("gcd")  || null,
+      eventId:     p.get("eid")  || null,
+      fbp:         p.get("fbp")  || null,
+      pageUrl:     p.get("pg")   || null,
     });
   } catch (err) {
     console.error("[wa-redirect] Falha ao salvar clique:", err);

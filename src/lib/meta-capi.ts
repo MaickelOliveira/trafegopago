@@ -18,6 +18,12 @@ export async function sendCapiEvent(opts: {
   clientIp?: string;        // IP real capturado na criação do lead — NÃO é hasheado
   clientUserAgent?: string; // User-Agent real capturado na criação do lead — NÃO é hasheado
   externalId?: string;
+  // Chave de deduplicação Pixel x CAPI. Deve ser IDÊNTICA ao eventID usado no
+  // fbq('track', ..., {eventID}) do navegador. Sem ela, a Meta conta o evento
+  // do pixel e o da API como eventos separados (alerta "cobertura da API de Conversões").
+  eventId?: string;
+  eventSourceUrl?: string;  // URL da página onde o evento ocorreu (quando veio do site)
+  fbclickTimeMs?: number;   // Momento real do clique no anúncio (ms) — compõe o fbc
   value?: number;
   currency?: string;
 }): Promise<void> {
@@ -47,7 +53,9 @@ export async function sendCapiEvent(opts: {
   if (opts.fbclid) {
     // Formato oficial do fbc: fb.1.<timestamp em ms>.<fbclid> — fbc/fbp NÃO são
     // hasheados (diferente de email/telefone/nome, que são PII).
-    userData.fbc = `fb.1.${Date.now()}.${opts.fbclid}`;
+    // O timestamp deve ser o do clique no anúncio (não o do envio), senão o fbc
+    // não casa com o do navegador e a correspondência cai.
+    userData.fbc = `fb.1.${opts.fbclickTimeMs ?? Date.now()}.${opts.fbclid}`;
   }
   if (opts.fbp) userData.fbp = opts.fbp;
   if (opts.clientIp) userData.client_ip_address = opts.clientIp;
@@ -56,9 +64,14 @@ export async function sendCapiEvent(opts: {
   const eventData: Record<string, unknown> = {
     event_name: opts.eventName,
     event_time: Math.floor(Date.now() / 1000),
-    action_source: "other",
+    // "website" só é válido com event_source_url; sem ela mantém "other".
+    action_source: opts.eventSourceUrl ? "website" : "other",
     user_data: userData,
   };
+  // Fallback estável por lead+evento: reenvios do mesmo evento são descartados pela Meta.
+  const eventId = opts.eventId || (opts.externalId ? `${opts.eventName}_${opts.externalId}` : undefined);
+  if (eventId) eventData.event_id = eventId;
+  if (opts.eventSourceUrl) eventData.event_source_url = opts.eventSourceUrl;
   if (opts.value != null) {
     eventData.custom_data = { currency: opts.currency ?? "BRL", value: opts.value };
   }

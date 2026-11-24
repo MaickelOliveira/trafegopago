@@ -82,7 +82,7 @@ export async function POST(
     "nome", "name", "telefone", "phone", "celular", "email",
     "your-name", "your-phone", "your-email",
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
-    "fbclid", "gclid", "campanha", "fbp",
+    "fbclid", "gclid", "campanha", "fbp", "event_id", "event_source_url", "fbclid_ts",
   ]);
   const customFields: Record<string, string> = {};
   for (const [k, v] of Object.entries(payload)) {
@@ -127,6 +127,10 @@ export async function POST(
     fbclid: payload.fbclid || null,
     gclid: payload.gclid || null,
     fbp: payload.fbp || null,
+    // Mesmo event_id usado no fbq('track','Lead',{}, {eventID}) do site — deduplica Pixel x CAPI.
+    metaEventId: payload.event_id || null,
+    eventSourceUrl: payload.event_source_url || null,
+    fbclickTimeMs: Number(payload.fbclid_ts) > 0 ? Number(payload.fbclid_ts) : null,
     clientIp,
     clientUserAgent,
     value: null,
@@ -158,6 +162,9 @@ export async function POST(
         clientIp: lead.clientIp ?? undefined,
         clientUserAgent: lead.clientUserAgent ?? undefined,
         externalId: lead.id,
+        eventId: lead.metaEventId ?? undefined,
+        eventSourceUrl: lead.eventSourceUrl ?? undefined,
+        fbclickTimeMs: lead.fbclickTimeMs ?? undefined,
       }).catch((e) => console.error("[Meta CAPI]", e));
     }
   }
