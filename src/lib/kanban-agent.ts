@@ -300,7 +300,7 @@ async function tryDirectPhraseMatch(
       if (matched) {
         console.log(`[kanban-agent/layer0] gatilho direto: mode=${phrase.match} → col=${col.id}`);
         if (!await moveLeadAutomatically(lead, col.id)) continue;
-        if (col.metaEvent && client?.pixelId) {
+        if (col.metaEvent && client?.pixelId && !lead.metaConsentDenied) {
           sendCapiEvent({
             pixelId: client.pixelId,
             capiToken: client.capiToken,
@@ -404,7 +404,7 @@ export async function processKanbanActions(
         console.log(`[kanban-agent] Lead ${lead.name} → ${col.label} (${action.motivo})`);
 
         // Dispara CAPI se a coluna tiver evento configurado
-        if (col.metaEvent && client?.pixelId) {
+        if (col.metaEvent && client?.pixelId && !lead.metaConsentDenied) {
           sendCapiEvent({
             pixelId: client.pixelId,
             capiToken: client.capiToken,

@@ -73,7 +73,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const col = funnel?.columns.find((c) => c.id === body.status);
     if (col?.metaEvent) {
       const client = (await getClientById(lead.clientId));
-      if (client?.pixelId) {
+      // Visitante que negou medição no site: nada é enviado à Meta.
+      if (client?.pixelId && !lead.metaConsentDenied) {
         sendCapiEvent({
           pixelId: client.pixelId,
           capiToken: client.capiToken, // Token de Conversão da API por cliente
