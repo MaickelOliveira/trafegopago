@@ -50,6 +50,7 @@ export type Lead = {
   fbclid: string | null;
   gclid: string | null;
   fbp?: string | null;              // Cookie _fbp do navegador (Meta CAPI — sobe a qualidade de correspondência)
+  metaConsentDenied?: boolean;      // Visitante negou medição de anúncios no site — não enviar nada à Meta
   metaEventId?: string | null;      // event_id do Lead disparado no navegador (fbq eventID) — reaproveitado no CAPI p/ deduplicar
   fbclickTimeMs?: number | null;    // Momento do clique no anúncio (ms) — compõe o fbc corretamente
   eventSourceUrl?: string | null;   // Página do site onde o Lead ocorreu
@@ -200,7 +201,7 @@ function fireEntryColumnMetaEvent(lead: Lead): void {
   const col = funnel?.columns.find((c) => c.id === lead.status);
   if (!col?.metaEvent) return;
   const client = getClientById(lead.clientId);
-  if (!client?.pixelId) return;
+  if (!client?.pixelId || lead.metaConsentDenied) return;
   sendCapiEvent({
     pixelId: client.pixelId,
     capiToken: client.capiToken,
@@ -364,6 +365,7 @@ export function upsertLeadByPhone(clientId: string, phone: string, patch: Partia
     gclid: patch.gclid ?? null,
     fbp: patch.fbp ?? null,
     metaEventId: patch.metaEventId ?? null,
+    metaConsentDenied: patch.metaConsentDenied,
     fbclickTimeMs: patch.fbclickTimeMs ?? null,
     eventSourceUrl: patch.eventSourceUrl ?? null,
     clientIp: patch.clientIp ?? null,

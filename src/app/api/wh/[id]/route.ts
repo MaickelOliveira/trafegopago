@@ -82,7 +82,7 @@ export async function POST(
     "nome", "name", "telefone", "phone", "celular", "email",
     "your-name", "your-phone", "your-email",
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
-    "fbclid", "gclid", "campanha", "fbp", "event_id", "event_source_url", "fbclid_ts",
+    "fbclid", "gclid", "campanha", "fbp", "event_id", "event_source_url", "fbclid_ts", "consentimento_medicao",
   ]);
   const customFields: Record<string, string> = {};
   for (const [k, v] of Object.entries(payload)) {
@@ -129,6 +129,7 @@ export async function POST(
     fbp: payload.fbp || null,
     // Mesmo event_id usado no fbq('track','Lead',{}, {eventID}) do site — deduplica Pixel x CAPI.
     metaEventId: payload.event_id || null,
+    metaConsentDenied: payload.consentimento_medicao === "negado",
     eventSourceUrl: payload.event_source_url || null,
     fbclickTimeMs: Number(payload.fbclid_ts) > 0 ? Number(payload.fbclid_ts) : null,
     clientIp,
@@ -146,7 +147,10 @@ export async function POST(
   // configurado — nesse caso o próprio upsertLeadByPhone já disparou o evento
   // da coluna (fireEntryColumnMetaEvent em leads.ts), e disparar os dois seria duplicado.
   const entryColHasMetaEvent = !!funnel?.columns.find((c) => c.id === columnId)?.metaEvent;
-  if (isNewLead && !entryColHasMetaEvent) {
+  // O site informa se o visitante autorizou medição de anúncios. Se negou, não enviamos
+  // dados dele (nem hasheados) para a Meta.
+  const measurementDenied = payload.consentimento_medicao === "negado";
+  if (isNewLead && !entryColHasMetaEvent && !measurementDenied) {
     const client = getClientById(wh.clientId);
     if (client?.pixelId) {
       sendCapiEvent({
