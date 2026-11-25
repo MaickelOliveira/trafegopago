@@ -42,6 +42,8 @@ export async function sendCapiEvent(opts: {
     const digits = opts.phone.replace(/\D/g, "");
     const withCountryCode = digits.startsWith("55") ? digits : `55${digits}`;
     userData.ph = sha256(withCountryCode);
+    // País (ISO 3166-1 alfa-2, hasheado): melhora a correspondência de eventos.
+    if (withCountryCode.startsWith("55")) userData.country = sha256("br");
   }
   if (opts.email) userData.em = sha256(opts.email);
   if (opts.externalId) userData.external_id = sha256(opts.externalId);
