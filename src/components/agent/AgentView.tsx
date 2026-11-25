@@ -121,6 +121,11 @@ function Field({ label, value, onChange, placeholder, type = "text", hint }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        // Evita que o navegador preencha a senha de login no campo da chave (sobrescrevia a chave Gemini ao salvar)
+        autoComplete={type === "password" ? "new-password" : "off"}
+        spellCheck={false}
+        data-1p-ignore
+        data-lpignore="true"
         className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition"
       />
       {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}

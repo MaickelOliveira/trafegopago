@@ -7,6 +7,7 @@ import { cancelFollowUpsForConnection, cancelFollowUpsForPhone } from "@/lib/fol
 import { sanitizeAgentPhoneList } from "@/lib/agent-phone-policy";
 import { parseLeadRecipients } from "@/lib/lead-recipient";
 import { validateFollowUpConfig } from "@/lib/followup-policy";
+import { resolveGeminiApiKeyUpdate } from "@/lib/gemini-key";
 async function context(req: NextRequest) {
   if ((await getSession())?.role !== "manager") return null;
   const id = req.nextUrl.searchParams.get("clientId"); if (!id) return null;
@@ -36,7 +37,7 @@ async function update(req: NextRequest, toggle: boolean) {
     const ctx = await context(req); if (!ctx) return NextResponse.json({ error: "Selecione um cliente e uma conexão permitida." }, { status: 403 });
     const { client, current, connId } = ctx;
     const patch = toggle ? { [body.field]: body.value } : body;
-    const updated: AgentConfig = { ...current, ...patch, googleRefreshToken: current.googleRefreshToken, dailySummaryLastSentDate: current.dailySummaryLastSentDate, geminiApiKey: patch.geminiApiKey || current.geminiApiKey, whatsappConnectionId: connId, ignoredPhones: patch.ignoredPhones === undefined ? current.ignoredPhones : sanitizeAgentPhoneList(patch.ignoredPhones) };
+    const updated: AgentConfig = { ...current, ...patch, googleRefreshToken: current.googleRefreshToken, dailySummaryLastSentDate: current.dailySummaryLastSentDate, geminiApiKey: resolveGeminiApiKeyUpdate(patch.geminiApiKey, current.geminiApiKey), whatsappConnectionId: connId, ignoredPhones: patch.ignoredPhones === undefined ? current.ignoredPhones : sanitizeAgentPhoneList(patch.ignoredPhones) };
     const funnel = connId ? await getFunnelForConnection(client.id, connId) : undefined;
     const officialMeta = !!funnel?.connections?.some(connection => connection.id === connId && connection.type === "meta");
     if (!toggle && patch.leadRecipients !== undefined) {
