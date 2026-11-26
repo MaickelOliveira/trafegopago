@@ -26,8 +26,17 @@ export function parseClientSettings(body: unknown, creating = false): { patch: P
     patch.adAccounts = input.adAccounts.map(item => { if (!item || typeof item.id !== "string" || !/^(act_)?\d{3,30}$/.test(item.id) || typeof item.name !== "string" || !item.name.trim() || item.name.length > 200 || !["meta", "google"].includes(item.platform)) throw Error("Confira o identificador e o nome das contas de anúncios."); return { id: item.id, name: item.name.trim(), platform: item.platform }; });
     if (new Set(patch.adAccounts.map(item => `${item.platform}:${item.id}`)).size !== patch.adAccounts.length) throw Error("Há contas duplicadas.");
   }
-  if (input.capiToken) { if (typeof input.capiToken !== "string" || input.capiToken.length > 4096) throw Error("Chave de conversão inválida."); patch.capiToken = input.capiToken.trim(); }
+  if (input.capiToken) {
+    if (typeof input.capiToken !== "string" || input.capiToken.length > 4096) throw Error("Chave de conversão inválida.");
+    // Tokens da Meta começam com "EA". Impede que a senha preenchida pelo navegador substitua a chave.
+    if (!isMetaAccessToken(input.capiToken)) throw Error("Chave de conversão inválida: cole o token gerado no Gerenciador de Eventos (começa com EA).");
+    patch.capiToken = input.capiToken.trim();
+  }
   let password: string | undefined;
   if (input.password || creating) { if (typeof input.password !== "string" || input.password.length < 12 || Buffer.byteLength(input.password, "utf8") > 72) throw Error("A senha deve ter pelo menos 12 caracteres e no máximo 72 bytes."); password = input.password; }
   return { patch, password };
+}
+
+export function isMetaAccessToken(value: string): boolean {
+  return /^EA[A-Za-z0-9]{40,}$/.test(value.trim());
 }
