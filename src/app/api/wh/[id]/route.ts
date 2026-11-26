@@ -5,7 +5,7 @@ import { parseFbc } from "@/lib/meta-fbc";
 import { getWebhookById, incrementWebhookCount } from "@/lib/webhooks";
 import { getFunnelById } from "@/lib/funnels";
 import { captureFormLead } from "@/lib/lead-notifications";
-import { getLeadByPhone } from "@/lib/leads";
+import { getLeadByPhone, recordMetaCapiResult } from "@/lib/leads";
 import { getClientById } from "@/lib/clients";
 import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
@@ -169,7 +169,9 @@ export async function POST(
   if (isNewLead && !entryColHasMetaEvent && !measurementDenied) {
     const client = (await getClientById(wh.clientId));
     if (client?.pixelId) {
-      sendCapiEvent({
+      // Aguarda o envio (no máximo ~10 s) para que um reinício do processo logo após a
+      // resposta não corte o evento; o resultado fica registrado no lead (meta_capi).
+      await sendCapiEvent({
         pixelId: client.pixelId,
         capiToken: client.capiToken,
         testEventCode: client.capiTestEventCode || undefined,
@@ -185,7 +187,9 @@ export async function POST(
         eventId: lead.metaEventId ?? undefined,
         eventSourceUrl: lead.eventSourceUrl ?? undefined,
         fbclickTimeMs: lead.fbclickTimeMs ?? undefined,
-      }).catch((e) => console.error("[Meta CAPI]", e));
+      })
+        .then((result) => recordMetaCapiResult(lead.id, result))
+        .catch((e) => console.error("[Meta CAPI]", e));
     }
   }
 

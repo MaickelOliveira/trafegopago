@@ -26,12 +26,13 @@ export async function sendCapiEvent(opts: {
   fbclickTimeMs?: number;   // Momento real do clique no anúncio (ms) — compõe o fbc
   value?: number;
   currency?: string;
-}): Promise<void> {
+}): Promise<string> {
   // Usa token de conversão do cliente se disponível, senão o token global
   const token = opts.capiToken || (await getConfig()).metaToken;
   if (!token || !opts.pixelId) {
-    console.warn(`[Meta CAPI] evento "${opts.eventName}" NÃO enviado — faltando ${!token ? "token (capiToken do cliente e metaToken global vazios)" : "pixelId"}`);
-    return;
+    const missing = !token ? "token (capiToken do cliente e metaToken global vazios)" : "pixelId";
+    console.warn(`[Meta CAPI] evento "${opts.eventName}" NÃO enviado — faltando ${missing}`);
+    return `não enviado: faltando ${missing}`;
   }
 
   const userData: Record<string, string> = {};
@@ -90,12 +91,12 @@ export async function sendCapiEvent(opts: {
 
   const res = await fetch(
     `https://graph.facebook.com/v26.0/${opts.pixelId}/events`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(10_000) }
   ).catch((e) => {
     console.error(`[Meta CAPI] fetch falhou (erro de rede) para evento "${opts.eventName}" pixel=${opts.pixelId}:`, e);
     return null;
   });
-  if (!res) return;
+  if (!res) return "erro de rede ao chamar a Meta";
 
   // Sempre lê o corpo — a Meta pode responder 200 com events_received:0 e
   // mensagens de aviso quando o evento é rejeitado por validação (ex:
@@ -105,13 +106,18 @@ export async function sendCapiEvent(opts: {
 
   if (!res.ok) {
     console.error(`[Meta CAPI] resposta com erro (status ${res.status}) para evento "${opts.eventName}" pixel=${opts.pixelId}:`, body);
-    return;
+    const message = (body as { error?: { message?: string } } | null)?.error?.message;
+    return `recusado pela Meta (HTTP ${res.status})${message ? `: ${message.slice(0, 200)}` : ""}`;
   }
 
   const eventsReceived = (body as { events_received?: number } | null)?.events_received;
+  const mode = testEventCode ? ` [teste ${testEventCode}]` : "";
   if (eventsReceived === 0) {
     console.warn(`[Meta CAPI] evento "${opts.eventName}" respondeu 200 mas events_received=0 (rejeitado na validação) — pixel=${opts.pixelId}${testEventCode ? ` test_event_code="${testEventCode}"` : ""}:`, body);
   } else {
     console.log(`[Meta CAPI] evento "${opts.eventName}" enviado com sucesso — pixel=${opts.pixelId}${testEventCode ? ` test_event_code="${testEventCode}"` : ""}:`, body);
+    const sent = Object.entries({ ip: opts.clientIp, navegador: opts.clientUserAgent, fbp: opts.fbp, fbc: opts.fbclid }).filter(([, v]) => v).map(([k]) => k).join(", ");
+    return `${opts.eventName} aceito pela Meta${mode}${sent ? ` com ${sent}` : " sem ip/fbp/fbc"}`;
   }
+  return `${opts.eventName} recusado na validação da Meta${mode} (events_received=0)`;
 }

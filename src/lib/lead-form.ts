@@ -9,7 +9,7 @@ const labels: Record<string, string> = {
   form_id: "ID do formulário", page_id: "ID da página", fbclid: "Identificador de clique Meta",
   gclid: "Identificador de clique Google", fbp: "Identificador do navegador Meta",
   fbc: "Identificador de clique Meta (fbc)", client_ip_address: "IP do visitante", client_user_agent: "Navegador do visitante",
-  external_id: "ID externo (hash)", event_id: "ID do evento Meta", event_source_url: "Página do evento",
+  external_id: "ID externo (hash)", event_id: "ID do evento Meta", event_source_url: "Página do evento", meta_capi: "Envio à Meta (API de Conversões)",
 };
 
 function fieldKey(key: string) {

@@ -198,7 +198,21 @@ async function fireEntryColumnMetaEvent(lead: Lead): Promise<void> {
     eventId: col.metaEvent === "Lead" ? lead.metaEventId ?? undefined : undefined,
     eventSourceUrl: lead.eventSourceUrl ?? undefined,
     fbclickTimeMs: lead.fbclickTimeMs ?? undefined,
-  }).catch((e) => console.error("[Meta CAPI] evento da coluna de entrada", e));
+  })
+    // Grava o resultado no próprio lead (aparece nos dados do formulário no CRM).
+    // Roda depois do commit da transação atual, então abre uma nova.
+    .then((result) => recordMetaCapiResult(lead.id, result))
+    .catch((e) => console.error("[Meta CAPI] evento da coluna de entrada", e));
+}
+
+/** Guarda no lead o último resultado do envio à API de Conversões, com data/hora. */
+export async function recordMetaCapiResult(leadId: string, result: string): Promise<void> {
+  const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  await withDataTransaction(async () => {
+    const current = (await load({ id: leadId })).find((l) => l.id === leadId);
+    if (!current) return;
+    await updateLead(leadId, { customFields: { ...(current.customFields ?? {}), meta_capi: `${stamp} — ${result}` } });
+  });
 }
 
 async function queueGoogleConversion(lead: Lead, previous?: Lead): Promise<void> {
