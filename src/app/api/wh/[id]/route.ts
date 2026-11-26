@@ -97,7 +97,7 @@ export async function POST(
     "nome", "name", "telefone", "phone", "celular", "email",
     "your-name", "your-phone", "your-email",
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
-    "fbclid", "gclid", "campanha", "fbp", "fbc", "client_ip_address", "client_user_agent", "external_id", "event_id", "event_source_url", "fbclid_ts", "consentimento_medicao",
+    "fbclid", "gclid", "campanha", "fbp", "event_id", "event_source_url", "fbclid_ts", "consentimento_medicao",
   ]);
   const customFields: Record<string, string> = {};
   for (const [k, v] of Object.entries(payload)) {

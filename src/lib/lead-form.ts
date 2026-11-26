@@ -8,6 +8,8 @@ const labels: Record<string, string> = {
   ad_name: "Anúncio", ad_id: "ID do anúncio", ad_set_name: "Conjunto de anúncios", ad_set_id: "ID do conjunto",
   form_id: "ID do formulário", page_id: "ID da página", fbclid: "Identificador de clique Meta",
   gclid: "Identificador de clique Google", fbp: "Identificador do navegador Meta",
+  fbc: "Identificador de clique Meta (fbc)", client_ip_address: "IP do visitante", client_user_agent: "Navegador do visitante",
+  external_id: "ID externo (hash)", event_id: "ID do evento Meta", event_source_url: "Página do evento",
 };
 
 function fieldKey(key: string) {
@@ -67,9 +69,9 @@ export function leadFormMessage(form: LeadForm, createdInCrm = false): string {
   const answers: string[] = [];
   const attribution: string[] = [];
   for (const [key, value] of Object.entries(form.fields)) {
-    if (/^(submission_id|form_position|consent|consentimento_medicao|enviado_em|pagina_origem|formulario|fbclid|gclid|fbp|fbc|gbraid|wbraid|client_ip|user_agent|client_ip_address|client_user_agent|external_id|event_id|event_source_url)$/i.test(fieldKey(key))) continue;
+    if (/^(submission_id|form_position|consent|consentimento_medicao|enviado_em|pagina_origem|formulario)$/i.test(fieldKey(key))) continue;
     if (!value || key === "funnelId" || (contactKeys.has(fieldKey(key)) && (displayed.has(value) || (phone && leadChatNumber(value) === phone)))) continue;
-    const section = /^(utm_|fbclid$|fbp$|gclid$|campanha$|campaign_|ad_|form_id$|page_id$)/.test(fieldKey(key)) ? attribution : answers;
+    const section = /^(utm_|fbclid$|fbp$|fbc$|gclid$|gbraid$|wbraid$|client_ip|client_user_agent$|user_agent$|external_id$|event_id$|event_source_url$|campanha$|campaign_|ad_|form_id$|page_id$)/.test(fieldKey(key)) ? attribution : answers;
     section.push(`• ${label(key)}: ${value}`);
   }
   return [
