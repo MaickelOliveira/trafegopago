@@ -1,5 +1,7 @@
 import { attributionPlatform } from "@/lib/lead-attribution";
 import { NextRequest, NextResponse } from "next/server";
+import { isIP } from "node:net";
+import { parseFbc } from "@/lib/meta-fbc";
 import { getWebhookById, incrementWebhookCount } from "@/lib/webhooks";
 import { getFunnelById } from "@/lib/funnels";
 import { captureFormLead } from "@/lib/lead-notifications";
@@ -74,10 +76,20 @@ export async function POST(
   // IP e User-Agent reais do navegador que chamou o webhook — a requisição
   // vem direto do site (fetch client-side), então é o momento mais próximo
   // possível da conversão real pra esses dois dados (usados pelo Meta CAPI).
-  const clientIp = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim())
+  // Quando o site chama o webhook pelo servidor (ex.: WordPress da Jort), os headers
+  // trazem o IP/navegador do servidor, não do visitante — por isso o IP e o
+  // User-Agent enviados no payload pelo site têm prioridade.
+  const payloadIp = (payload.client_ip_address || "").trim();
+  const payloadUa = (payload.client_user_agent || "").trim();
+  const clientIp = (isIP(payloadIp) ? payloadIp : null)
+    || (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim())
     || req.headers.get("x-real-ip")
     || null;
-  const clientUserAgent = req.headers.get("user-agent") || null;
+  const clientUserAgent = (payloadUa ? payloadUa.slice(0, 500) : null) || req.headers.get("user-agent") || null;
+
+  // fbc pronto do site (cookie _fbc ou montado do fbclid): fb.<n>.<ms do clique>.<fbclid>
+  const fbc = parseFbc(payload.fbc);
+  const fbp = /^fb\.\d{1,2}\.\d{13}\.[\w-]{1,500}$/.test(payload.fbp || "") ? payload.fbp : null;
 
   // Captura todos os campos extras (excluindo os campos já mapeados e UTMs)
   const SKIP_KEYS = new Set([
@@ -85,7 +97,7 @@ export async function POST(
     "nome", "name", "telefone", "phone", "celular", "email",
     "your-name", "your-phone", "your-email",
     "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
-    "fbclid", "gclid", "campanha", "fbp", "event_id", "event_source_url", "fbclid_ts", "consentimento_medicao",
+    "fbclid", "gclid", "campanha", "fbp", "fbc", "client_ip_address", "client_user_agent", "external_id", "event_id", "event_source_url", "fbclid_ts", "consentimento_medicao",
   ]);
   const customFields: Record<string, string> = {};
   for (const [k, v] of Object.entries(payload)) {
@@ -100,7 +112,7 @@ export async function POST(
   const columnId = columnExists ? wh.columnId : (funnel?.columns[0]?.id ?? "entrada");
 
   // Detecta plataforma de origem
-  const adPlatform = attributionPlatform({ utmSource: payload.utm_source, fbclid: payload.fbclid, gclid: payload.gclid });
+  const adPlatform = attributionPlatform({ utmSource: payload.utm_source, fbclid: payload.fbclid || fbc?.fbclid, gclid: payload.gclid });
 
   // Checa ANTES do upsert se o lead já existia — só dispara o evento CAPI
   // "Lead" pra quem é realmente novo, não a cada reenvio do mesmo telefone.
@@ -126,14 +138,14 @@ export async function POST(
     utmCampaign: payload.utm_campaign || null,
     utmContent: payload.utm_content || null,
     utmTerm: payload.utm_term || null,
-    fbclid: payload.fbclid || null,
+    fbclid: payload.fbclid || fbc?.fbclid || null,
     gclid: payload.gclid || null,
-    fbp: payload.fbp || null,
+    fbp: fbp || null,
     // Mesmo event_id usado no fbq('track','Lead',{}, {eventID}) do site — deduplica Pixel x CAPI.
     metaEventId: payload.event_id || null,
     metaConsentDenied: payload.consentimento_medicao === "negado",
     eventSourceUrl: payload.event_source_url || null,
-    fbclickTimeMs: Number(payload.fbclid_ts) > 0 ? Number(payload.fbclid_ts) : null,
+    fbclickTimeMs: Number(payload.fbclid_ts) > 0 ? Number(payload.fbclid_ts) : (fbc?.clickTimeMs ?? null),
     clientIp,
     clientUserAgent,
   }, "webhook:" + id, {

@@ -67,7 +67,7 @@ export function leadFormMessage(form: LeadForm, createdInCrm = false): string {
   const answers: string[] = [];
   const attribution: string[] = [];
   for (const [key, value] of Object.entries(form.fields)) {
-    if (/^(submission_id|form_position|consent|consentimento_medicao|enviado_em|pagina_origem|formulario|fbclid|gclid|fbp|fbc|gbraid|wbraid|client_ip|user_agent)$/i.test(fieldKey(key))) continue;
+    if (/^(submission_id|form_position|consent|consentimento_medicao|enviado_em|pagina_origem|formulario|fbclid|gclid|fbp|fbc|gbraid|wbraid|client_ip|user_agent|client_ip_address|client_user_agent|external_id|event_id|event_source_url)$/i.test(fieldKey(key))) continue;
     if (!value || key === "funnelId" || (contactKeys.has(fieldKey(key)) && (displayed.has(value) || (phone && leadChatNumber(value) === phone)))) continue;
     const section = /^(utm_|fbclid$|fbp$|gclid$|campanha$|campaign_|ad_|form_id$|page_id$)/.test(fieldKey(key)) ? attribution : answers;
     section.push(`• ${label(key)}: ${value}`);
