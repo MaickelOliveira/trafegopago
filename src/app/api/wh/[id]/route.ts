@@ -5,7 +5,7 @@ import { parseFbc } from "@/lib/meta-fbc";
 import { getWebhookById, incrementWebhookCount } from "@/lib/webhooks";
 import { getFunnelById } from "@/lib/funnels";
 import { captureFormLead } from "@/lib/lead-notifications";
-import { getLeadByPhone, recordMetaCapiResult } from "@/lib/leads";
+import { getLeadByPhone, leadMatchExtras, recordMetaCapiResult } from "@/lib/leads";
 import { getClientById } from "@/lib/clients";
 import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
@@ -184,6 +184,7 @@ export async function POST(
         clientIp: lead.clientIp ?? undefined,
         clientUserAgent: lead.clientUserAgent ?? undefined,
         externalId: lead.id,
+        ...leadMatchExtras(lead),
         eventId: lead.metaEventId ?? undefined,
         eventSourceUrl: lead.eventSourceUrl ?? undefined,
         fbclickTimeMs: lead.fbclickTimeMs ?? undefined,

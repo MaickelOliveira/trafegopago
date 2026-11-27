@@ -8,6 +8,7 @@ import { getAllConversationsByClientId } from "./conversations";
 import { getFunnelById } from "./funnels";
 import { getClientById } from "./clients";
 import { sendCapiEvent } from "./meta-capi";
+import { parseCityState } from "./meta-location";
 
 export type LeadStatus = "novo" | "contato" | "proposta" | "ganho" | "perdido";
 export type LeadSource = "whatsapp" | "form" | "manual";
@@ -184,6 +185,14 @@ async function fireEntryColumnMetaEvent(lead: Lead): Promise<void> {
   void sendStageMetaEvent(lead, col.metaEvent);
 }
 
+/** Dados extras de correspondência guardados no lead: cidade/UF e o ID do visitante do site. */
+export function leadMatchExtras(lead: Lead): { city?: string; state?: string; extraExternalIds?: string[] } {
+  const fields = lead.customFields ?? {};
+  const location = parseCityState(fields.cidade ?? fields.city ?? fields.cidade_uf);
+  const siteVisitor = fields.external_id;
+  return { ...location, ...(typeof siteVisitor === "string" && /^[a-f0-9]{64}$/.test(siteVisitor) ? { extraExternalIds: [siteVisitor] } : {}) };
+}
+
 /**
  * Evento da Meta de uma etapa do funil, sempre pelo servidor e em nome do lead.
  * - ID fixo por lead e evento: mover de novo para a mesma etapa não conta em dobro.
@@ -208,6 +217,7 @@ export async function sendStageMetaEvent(lead: Lead, eventName: string): Promise
     clientIp: lead.clientIp ?? undefined,
     clientUserAgent: lead.clientUserAgent ?? undefined,
     externalId: lead.id,
+    ...leadMatchExtras(lead),
     eventId: eventName === "Lead" ? lead.metaEventId ?? `Lead_${lead.id}` : `${eventName}_${lead.id}`,
     eventSourceUrl: lead.eventSourceUrl ?? undefined,
     fbclickTimeMs: lead.fbclickTimeMs ?? undefined,

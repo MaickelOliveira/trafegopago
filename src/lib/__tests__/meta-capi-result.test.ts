@@ -16,6 +16,17 @@ describe("sendCapiEvent result", () => {
     expect(body.test_event_code).toBe("TEST1");
     expect(body.data[0].user_data.fbc).toBe("fb.1.1.abc");
   });
+  it("sends city, state and every external id in hash", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ events_received: 1 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    const visitor = "a".repeat(64);
+    await sendCapiEvent({ ...base, externalId: "lead-1", extraExternalIds: [visitor, "not-a-hash"], city: "campomourao", state: "pr" });
+    const user = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).data[0].user_data;
+    expect(user.external_id).toHaveLength(2);
+    expect(user.external_id).toContain(visitor);
+    expect(user.ct).toMatch(/^[a-f0-9]{64}$/);
+    expect(user.st).toMatch(/^[a-f0-9]{64}$/);
+  });
   it("reports Meta errors and missing credentials instead of failing silently", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { message: "Invalid token" } }), { status: 400 })));
     expect(await sendCapiEvent(base)).toBe("recusado pela Meta (HTTP 400): Invalid token");

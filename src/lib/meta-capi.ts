@@ -18,6 +18,10 @@ export async function sendCapiEvent(opts: {
   clientIp?: string;        // IP real capturado na criação do lead — NÃO é hasheado
   clientUserAgent?: string; // User-Agent real capturado na criação do lead — NÃO é hasheado
   externalId?: string;
+  /** IDs externos já em hash (ex.: visitante do site), enviados junto com o do lead. */
+  extraExternalIds?: string[];
+  city?: string;   // ct — já normalizado (metaCity); vai em hash
+  state?: string;  // st — UF em minúsculas; vai em hash
   // Chave de deduplicação Pixel x CAPI. Deve ser IDÊNTICA ao eventID usado no
   // fbq('track', ..., {eventID}) do navegador. Sem ela, a Meta conta o evento
   // do pixel e o da API como eventos separados (alerta "cobertura da API de Conversões").
@@ -35,7 +39,7 @@ export async function sendCapiEvent(opts: {
     return `não enviado: faltando ${missing}`;
   }
 
-  const userData: Record<string, string> = {};
+  const userData: Record<string, string | string[]> = {};
   if (opts.phone) {
     // A Meta exige o telefone COM código do país (sem "+") pra hashear — o
     // telefone salvo no lead vem normalizado SEM o "55" (formato usado nas
@@ -47,7 +51,13 @@ export async function sendCapiEvent(opts: {
     if (withCountryCode.startsWith("55")) userData.country = sha256("br");
   }
   if (opts.email) userData.em = sha256(opts.email);
-  if (opts.externalId) userData.external_id = sha256(opts.externalId);
+  const externalIds = [
+    ...(opts.externalId ? [sha256(opts.externalId)] : []),
+    ...(opts.extraExternalIds ?? []).filter(id => /^[a-f0-9]{64}$/.test(id)),
+  ];
+  if (externalIds.length) userData.external_id = [...new Set(externalIds)];
+  if (opts.city) userData.ct = sha256(opts.city);
+  if (opts.state) userData.st = sha256(opts.state);
   if (opts.name) {
     const parts = opts.name.trim().split(/\s+/).filter(Boolean);
     if (parts.length > 0) userData.fn = sha256(parts[0]);
