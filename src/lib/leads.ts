@@ -180,13 +180,26 @@ async function fireEntryColumnMetaEvent(lead: Lead): Promise<void> {
   const funnel = (await getFunnelById(lead.funnelId));
   const col = funnel?.columns.find((c) => c.id === lead.status);
   if (!col?.metaEvent) return;
-  const client = (await getClientById(lead.clientId));
+  // Em segundo plano: roda depois do commit e abre a própria transação para gravar o resultado.
+  void sendStageMetaEvent(lead, col.metaEvent);
+}
+
+/**
+ * Evento da Meta de uma etapa do funil, sempre pelo servidor e em nome do lead.
+ * - ID fixo por lead e evento: mover de novo para a mesma etapa não conta em dobro.
+ * - Lead usa o mesmo event_id do site (dedup com Pixel/API do site).
+ * - fbc usa o momento real do clique; Purchase vai sempre com moeda e valor.
+ * O resultado fica no lead (meta_capi).
+ */
+export async function sendStageMetaEvent(lead: Lead, eventName: string): Promise<void> {
+  const client = await getClientById(lead.clientId);
   if (!client?.pixelId || lead.metaConsentDenied) return;
-  sendCapiEvent({
+  const isPurchase = eventName === "Purchase";
+  const result = await sendCapiEvent({
     pixelId: client.pixelId,
     capiToken: client.capiToken,
     testEventCode: client.capiTestEventCode || undefined,
-    eventName: col.metaEvent,
+    eventName,
     phone: lead.phone,
     email: lead.email ?? undefined,
     name: lead.name,
@@ -195,14 +208,13 @@ async function fireEntryColumnMetaEvent(lead: Lead): Promise<void> {
     clientIp: lead.clientIp ?? undefined,
     clientUserAgent: lead.clientUserAgent ?? undefined,
     externalId: lead.id,
-    eventId: col.metaEvent === "Lead" ? lead.metaEventId ?? undefined : undefined,
+    eventId: eventName === "Lead" ? lead.metaEventId ?? `Lead_${lead.id}` : `${eventName}_${lead.id}`,
     eventSourceUrl: lead.eventSourceUrl ?? undefined,
     fbclickTimeMs: lead.fbclickTimeMs ?? undefined,
-  })
-    // Grava o resultado no próprio lead (aparece nos dados do formulário no CRM).
-    // Roda depois do commit da transação atual, então abre uma nova.
-    .then((result) => recordMetaCapiResult(lead.id, result))
-    .catch((e) => console.error("[Meta CAPI] evento da coluna de entrada", e));
+    value: isPurchase ? lead.value ?? 0 : lead.value ?? undefined,
+    currency: "BRL",
+  }).catch((e) => `erro ao enviar: ${e instanceof Error ? e.message : String(e)}`);
+  await recordMetaCapiResult(lead.id, result).catch(() => {});
 }
 
 /** Guarda no lead o último resultado do envio à API de Conversões, com data/hora. */

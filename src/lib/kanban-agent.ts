@@ -7,11 +7,10 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { getClientById, getAgentConfigForConnection } from "./clients";
 import { getGeminiApiKey } from "./whatsapp-send";
-import { updateLead, getLeadById } from "./leads";
+import { updateLead, getLeadById, sendStageMetaEvent } from "./leads";
 import { getLeadForConnection } from "./lead-context";
 import { withDataTransaction } from "./document-store";
 import { getFunnelById } from "./funnels";
-import { sendCapiEvent } from "./meta-capi";
 import type { ChatMessage } from "./conversations";
 import type { Lead } from "./leads";
 import type { Funnel, TriggerPhrase } from "./funnels";
@@ -277,7 +276,6 @@ async function tryDirectPhraseMatch(
   lastMessage: string,
   lead: Lead,
   funnel: Funnel,
-  client: { pixelId?: string; capiToken?: string; capiTestEventCode?: string } | null
 ): Promise<boolean> {
   const msg = lastMessage.toLowerCase().trim();
   if (funnel.columns.find(column => column.id === lead.status)?.blockAutoMove) return false;
@@ -300,23 +298,7 @@ async function tryDirectPhraseMatch(
       if (matched) {
         console.log(`[kanban-agent/layer0] gatilho direto: mode=${phrase.match} → col=${col.id}`);
         if (!await moveLeadAutomatically(lead, col.id)) continue;
-        if (col.metaEvent && client?.pixelId && !lead.metaConsentDenied) {
-          sendCapiEvent({
-            pixelId: client.pixelId,
-            capiToken: client.capiToken,
-            testEventCode: client.capiTestEventCode || undefined,
-            eventName: col.metaEvent,
-            phone: lead.phone,
-            email: lead.email ?? undefined,
-            name: lead.name,
-            fbclid: lead.fbclid ?? undefined,
-            fbp: lead.fbp ?? undefined,
-            clientIp: lead.clientIp ?? undefined,
-            clientUserAgent: lead.clientUserAgent ?? undefined,
-            externalId: lead.id,
-            value: lead.value ?? undefined,
-          }).catch(() => {});
-        }
+        if (col.metaEvent) void sendStageMetaEvent(lead, col.metaEvent);
         return true;
       }
     }
@@ -370,7 +352,7 @@ export async function processKanbanActions(
     console.log(`[kanban-agent] iniciando — status=${lead.status}`);
 
     // ── CAMADA 0: correspondência direta de frases de gatilho (sem Gemini) ───────
-    const directMatch = await tryDirectPhraseMatch(lastMessage, lead, funnel, client ?? null);
+    const directMatch = await tryDirectPhraseMatch(lastMessage, lead, funnel);
     if (directMatch) {
       console.log(`[kanban-agent] movido via gatilho direto — sem chamar Gemini`);
       return;
@@ -404,23 +386,7 @@ export async function processKanbanActions(
         console.log(`[kanban-agent] Lead ${lead.name} → ${col.label} (${action.motivo})`);
 
         // Dispara CAPI se a coluna tiver evento configurado
-        if (col.metaEvent && client?.pixelId && !lead.metaConsentDenied) {
-          sendCapiEvent({
-            pixelId: client.pixelId,
-            capiToken: client.capiToken,
-            testEventCode: client.capiTestEventCode || undefined,
-            eventName: col.metaEvent,
-            phone: lead.phone,
-            email: lead.email ?? undefined,
-            name: lead.name,
-            fbclid: lead.fbclid ?? undefined,
-            fbp: lead.fbp ?? undefined,
-            clientIp: lead.clientIp ?? undefined,
-            clientUserAgent: lead.clientUserAgent ?? undefined,
-            externalId: lead.id,
-            value: lead.value ?? undefined,
-          }).catch(() => {});
-        }
+        if (col.metaEvent) void sendStageMetaEvent(lead, col.metaEvent);
       }
 
       if (action.type === "atualizar_lead") {

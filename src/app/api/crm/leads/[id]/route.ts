@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getLeadById, updateLead, deleteLead } from "@/lib/leads";
+import { getLeadById, updateLead, deleteLead, sendStageMetaEvent } from "@/lib/leads";
 import { getFunnelById } from "@/lib/funnels";
-import { getClientById } from "@/lib/clients";
-import { sendCapiEvent } from "@/lib/meta-capi";
 import { runAutomationsForEvent } from "@/lib/crm-automations";
 import { syncLeadAiPause } from "@/lib/lead-context";
 import { withDataTransaction } from "@/lib/document-store";
@@ -71,27 +69,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (body.status && previous && body.status !== previous.status) {
     const funnel = (await getFunnelById(lead.funnelId));
     const col = funnel?.columns.find((c) => c.id === body.status);
-    if (col?.metaEvent) {
-      const client = (await getClientById(lead.clientId));
-      // Visitante que negou medição no site: nada é enviado à Meta.
-      if (client?.pixelId && !lead.metaConsentDenied) {
-        sendCapiEvent({
-          pixelId: client.pixelId,
-          capiToken: client.capiToken, // Token de Conversão da API por cliente
-          testEventCode: client.capiTestEventCode || undefined,
-          eventName: col.metaEvent,
-          phone: lead.phone,
-          email: lead.email ?? undefined,
-          name: lead.name,
-          fbclid: lead.fbclid ?? undefined,
-          fbp: lead.fbp ?? undefined,
-          clientIp: lead.clientIp ?? undefined,
-          clientUserAgent: lead.clientUserAgent ?? undefined,
-          externalId: lead.id,
-          value: lead.value ?? undefined,
-        }).catch((e) => console.error("[Meta CAPI]", e));
-      }
-    }
+    if (col?.metaEvent) void sendStageMetaEvent(lead, col.metaEvent);
 
     // Dispara automações CRM de column_changed e column_entered (fire-and-forget)
     (await runAutomationsForEvent("column_changed", lead, { toColumnId: body.status }));

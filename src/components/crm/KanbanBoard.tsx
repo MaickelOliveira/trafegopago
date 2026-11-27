@@ -820,24 +820,8 @@ export function KanbanBoard({
   const [metricsLoading, setMetricsLoading] = useState(false);
   const currentClientMeta = clients.find((c) => c.id === filterClient);
 
-  // Inicializa Meta Pixel quando o cliente muda
-  useEffect(() => {
-    const pixelId = currentClientMeta?.pixelId;
-    if (!pixelId || typeof window === "undefined") return;
-    const w = window as typeof window & { fbq?: (...args: unknown[]) => void; _fbq?: unknown };
-    if (!w.fbq) {
-      const fn = ((...args: unknown[]) => {
-        (fn as { queue?: unknown[] }).queue?.push(args);
-      }) as { (...a: unknown[]): void; queue: unknown[]; loaded: boolean; version: string };
-      fn.queue = []; fn.loaded = true; fn.version = "2.0";
-      w.fbq = fn; w._fbq = fn;
-      const s = document.createElement("script");
-      s.async = true; s.src = "https://connect.facebook.net/en_US/fbevents.js";
-      document.head.appendChild(s);
-    }
-    w.fbq("init", pixelId);
-    w.fbq("track", "PageView");
-  }, [currentClientMeta?.pixelId]);
+  // O Pixel não roda no CRM: o navegador aqui é da equipe, não do lead. Os eventos
+  // de etapa vão só pelo servidor (sendStageMetaEvent), em nome do lead.
 
   useEffect(() => {
     const acct = currentClientMeta?.metaAccountId;
@@ -941,15 +925,6 @@ export function KanbanBoard({
 
     setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status: colId } : l));
 
-    // Dispara Pixel (browser) se a coluna tiver metaEvent
-    if (col?.metaEvent && currentClientMeta?.pixelId) {
-      try {
-        const w = window as typeof window & { fbq?: (...args: unknown[]) => void };
-        const eventData: Record<string, unknown> = {};
-        if (lead.value != null) { eventData.value = lead.value; eventData.currency = "BRL"; }
-        w.fbq?.("track", col.metaEvent, eventData);
-      } catch { /* fbq não disponível */ }
-    }
 
     // CAPI dispara no servidor via route handler
     await fetch(`/api/crm/leads/${id}`, {
