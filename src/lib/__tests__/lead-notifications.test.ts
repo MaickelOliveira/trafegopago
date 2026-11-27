@@ -25,9 +25,12 @@ describe("ficha do lead", () => {
       source: "Site", name: "Maria", phone: "(44) 99999-0000", email: "m@example.test",
       fields: formFields({ interesses: ["Gradil", "Alambrado"], entrada: 0, instalar: false, local: { cidade: "Campo Mourão" }, utm_campaign: "Novembro" }),
     });
-    for (const part of ["https://wa.me/5544999990000", "m@example.test", "Gradil, Alambrado", "Entrada: 0", "Instalar: Não", "Cidade: Campo Mourão", "Campanha UTM: Novembro"]) {
+    for (const part of ["https://wa.me/5544999990000", "m@example.test", "Gradil, Alambrado", "Entrada: 0", "Instalar: Não", "Cidade: Campo Mourão"]) {
       expect(text).toContain(part);
     }
+    // Origem e rastreamento ficam no CRM, não na mensagem do WhatsApp.
+    expect(text).not.toContain("Origem");
+    expect(text).not.toContain("Campanha UTM");
   });
   it("respeita DDI explícito e só monta link quando há um número discável", () => {
     expect(leadChatNumber("+1 (202) 555-0100")).toBe("12025550100");

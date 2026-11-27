@@ -67,19 +67,18 @@ export function leadFormMessage(form: LeadForm, createdInCrm = false): string {
   ]);
   const displayed = new Set([form.name, form.phone, form.email]);
   const answers: string[] = [];
-  const attribution: string[] = [];
   for (const [key, value] of Object.entries(form.fields)) {
     if (/^(submission_id|form_position|consent|consentimento_medicao|enviado_em|pagina_origem|formulario)$/i.test(fieldKey(key))) continue;
     if (!value || key === "funnelId" || (contactKeys.has(fieldKey(key)) && (displayed.has(value) || (phone && leadChatNumber(value) === phone)))) continue;
-    const section = /^(utm_|fbclid$|fbp$|fbc$|gclid$|gbraid$|wbraid$|client_ip|client_user_agent$|user_agent$|external_id$|event_id$|event_source_url$|campanha$|campaign_|ad_|form_id$|page_id$)/.test(fieldKey(key)) ? attribution : answers;
-    section.push(`• ${label(key)}: ${value}`);
+    // A mensagem do WhatsApp mostra só as respostas; origem e rastreamento ficam no CRM.
+    if (/^(utm_|fbclid$|fbp$|fbc$|gclid$|gbraid$|wbraid$|client_ip|client_user_agent$|user_agent$|external_id$|event_id$|event_source_url$|meta_capi$|campanha$|campaign_|ad_|form_id$|page_id$)/.test(fieldKey(key))) continue;
+    answers.push(`• ${label(key)}: ${value}`);
   }
   return [
     createdInCrm ? "📋 *Novo lead no CRM*" : "📋 *Novo lead de formulário*",
     [`*Nome:* ${form.name}`, form.phone && `*Telefone:* ${form.phone}`, form.email && `*E-mail:* ${form.email}`].filter(Boolean).join("\n"),
     phone && `*Conversar no WhatsApp*\nhttps://wa.me/${phone}`,
     answers.length && `*Respostas do formulário*\n${answers.join("\n")}`,
-    [`*Origem:* ${form.source}`, ...attribution].join("\n"),
   ].filter(Boolean).join("\n\n");
 }
 
