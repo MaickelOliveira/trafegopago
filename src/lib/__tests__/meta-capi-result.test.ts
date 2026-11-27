@@ -16,6 +16,12 @@ describe("sendCapiEvent result", () => {
     expect(body.test_event_code).toBe("TEST1");
     expect(body.data[0].user_data.fbc).toBe("fb.1.1.abc");
   });
+  it("shows the purchase value in the result", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ events_received: 1 }), { status: 200 })));
+    const result = await sendCapiEvent({ ...base, eventName: "Purchase", value: 125000, currency: "BRL" });
+    expect(result).toContain("Purchase aceito pela Meta — valor BRL 125.000,00");
+  });
+
   it("sends city, state and every external id in hash", async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ events_received: 1 }), { status: 200 }));
     vi.stubGlobal("fetch", fetch);

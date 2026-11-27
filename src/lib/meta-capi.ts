@@ -127,7 +127,8 @@ export async function sendCapiEvent(opts: {
   } else {
     console.log(`[Meta CAPI] evento "${opts.eventName}" enviado com sucesso — pixel=${opts.pixelId}${testEventCode ? ` test_event_code="${testEventCode}"` : ""}:`, body);
     const sent = Object.entries({ ip: opts.clientIp, navegador: opts.clientUserAgent, fbp: opts.fbp, fbc: opts.fbclid }).filter(([, v]) => v).map(([k]) => k).join(", ");
-    return `${opts.eventName} aceito pela Meta${mode}${sent ? ` com ${sent}` : " sem ip/fbp/fbc"}`;
+    const money = opts.value != null ? ` — valor ${(opts.currency ?? "BRL")} ${opts.value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "";
+    return `${opts.eventName} aceito pela Meta${mode}${money}${sent ? ` com ${sent}` : " sem ip/fbp/fbc"}`;
   }
   return `${opts.eventName} recusado na validação da Meta${mode} (events_received=0)`;
 }
